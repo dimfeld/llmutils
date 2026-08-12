@@ -228,6 +228,14 @@ describe('agent_messaging/runtime_dir', () => {
     });
   });
 
+  test('maps a missing registration leaf to registration_not_found', async () => {
+    const runtime = await createRuntime();
+
+    await expect(runtime.readRegistration('missing-agent')).rejects.toMatchObject({
+      code: 'registration_not_found',
+    });
+  });
+
   test('writes registration files with owner-only mode and atomically replaces them', async () => {
     const runtime = await createRuntime();
     const initial = subagentRegistration(runtime);
@@ -351,6 +359,27 @@ describe('agent_messaging/runtime_dir', () => {
     await expect(runtime.listRegistrations()).rejects.toThrow(AgentMessagingRuntimeDirectoryError);
   });
 
+  test('rejects malformed public option objects and fields', async () => {
+    const runtime = await createRuntime();
+    const registration = subagentRegistration(runtime);
+
+    await expect(
+      runtime.listRegistrations({ skipMalformed: 'yes' } as never)
+    ).rejects.toMatchObject({ code: 'invalid_registration' });
+    await expect(
+      runtime.validateSocketPath(runtime.socketPath(registration.id), {
+        allowMissing: 'yes',
+      } as never)
+    ).rejects.toMatchObject({ code: 'invalid_registration' });
+    await expect(
+      runtime.writeRegistration(registration, { requireSocket: 'yes' } as never)
+    ).rejects.toMatchObject({ code: 'invalid_registration' });
+    await expect(
+      runtime.writeRegistration(registration, { unexpected: true } as never)
+    ).rejects.toMatchObject({ code: 'invalid_registration' });
+    expect(fs.existsSync(runtime.registrationPath(registration.id))).toBe(false);
+  });
+
   test('rejects symlinked registration entries and socket path components', async () => {
     const runtime = await createRuntime();
     const valid = subagentRegistration(runtime);
@@ -447,7 +476,9 @@ describe('agent_messaging/runtime_dir', () => {
     const registrationPath = runtime.registrationPath(registration.id);
 
     await fs.promises.mkdir(registrationPath);
-    await expect(runtime.writeRegistration(registration)).rejects.toThrow();
+    await expect(runtime.writeRegistration(registration)).rejects.toMatchObject({
+      code: 'unexpected_path_entry',
+    });
 
     const names = await readdir(runtime.agentsDirectory);
     expect(names).toEqual(['worker-id.json']);

@@ -148,6 +148,25 @@ export interface WriteRegistrationOptions {
   requireSocket?: boolean;
 }
 
+const listRegistrationsOptionsSchema = z
+  .object({
+    skipMalformed: z.boolean().optional(),
+  })
+  .strict();
+
+const validateSocketPathOptionsSchema = z
+  .object({
+    allowMissing: z.boolean().optional(),
+    requireSocket: z.boolean().optional(),
+  })
+  .strict();
+
+const writeRegistrationOptionsSchema = z
+  .object({
+    requireSocket: z.boolean().optional(),
+  })
+  .strict();
+
 function containsControlCharacters(value: string): boolean {
   for (const character of value) {
     const codePoint = character.codePointAt(0);
@@ -160,6 +179,17 @@ function containsControlCharacters(value: string): boolean {
 
 function validationMessage(result: { error: { issues: Array<{ message: string }> } }): string {
   return result.error.issues[0]?.message ?? 'Agent registration failed validation';
+}
+
+function parseRuntimeDirectoryOptions<T>(value: unknown, schema: z.ZodType<T>, label: string): T {
+  const result = schema.safeParse(value);
+  if (!result.success) {
+    throw new AgentMessagingRuntimeDirectoryError(
+      'invalid_registration',
+      `${label} are invalid: ${validationMessage(result)}`
+    );
+  }
+  return result.data;
 }
 
 function parseAgentId(value: unknown): string {
@@ -467,6 +497,11 @@ export class AgentMessagingRuntimeDirectory {
     options: ValidateSocketPathOptions = {}
   ): Promise<void> {
     this.ensureOpen();
+    const parsedOptions = parseRuntimeDirectoryOptions(
+      options,
+      validateSocketPathOptionsSchema,
+      'Socket path options'
+    );
     if (!path.isAbsolute(socketPath)) {
       throw new AgentMessagingRuntimeDirectoryError(
         'path_outside_runtime',
@@ -481,13 +516,13 @@ export class AgentMessagingRuntimeDirectory {
       );
     }
 
-    await this.validatePathComponents(socketPath, options.allowMissing ?? false);
+    await this.validatePathComponents(socketPath, parsedOptions.allowMissing ?? false);
 
     let stats: fsSync.Stats;
     try {
       stats = await fs.lstat(socketPath);
     } catch (error) {
-      if (isNotFoundError(error) && options.allowMissing) {
+      if (isNotFoundError(error) && parsedOptions.allowMissing) {
         return;
       }
       throw error;
@@ -498,7 +533,7 @@ export class AgentMessagingRuntimeDirectory {
         `Symlinked socket entry is not allowed: ${socketPath}`
       );
     }
-    if (options.requireSocket && !stats.isSocket()) {
+    if (parsedOptions.requireSocket && !stats.isSocket()) {
       throw new AgentMessagingRuntimeDirectoryError(
         'unexpected_path_entry',
         `Expected a Unix socket at ${socketPath}`
@@ -537,13 +572,18 @@ export class AgentMessagingRuntimeDirectory {
     options: WriteRegistrationOptions = {}
   ): Promise<string> {
     this.ensureOpen();
+    const parsedOptions = parseRuntimeDirectoryOptions(
+      options,
+      writeRegistrationOptionsSchema,
+      'Registration write options'
+    );
     const parsed = this.validateRegistrationForRuntime(registration);
     const registrationPath = this.getContainedRegistrationPath(parsed.id);
     await this.validateRegistrationTarget(
       parsed,
       registrationPath,
       true,
-      options.requireSocket ?? false
+      parsedOptions.requireSocket ?? false
     );
 
     let existingStats: fsSync.Stats | undefined;
@@ -558,6 +598,12 @@ export class AgentMessagingRuntimeDirectory {
       throw new AgentMessagingRuntimeDirectoryError(
         'symlink_path',
         `Symlinked registration entry is not allowed: ${registrationPath}`
+      );
+    }
+    if (existingStats !== undefined && !existingStats.isFile()) {
+      throw new AgentMessagingRuntimeDirectoryError(
+        'unexpected_path_entry',
+        `Registration path is not a regular file: ${registrationPath}`
       );
     }
 
@@ -636,7 +682,7 @@ export class AgentMessagingRuntimeDirectory {
   public async readRegistration(idOrPath: string): Promise<AgentRegistration> {
     this.ensureOpen();
     const registrationPath = this.resolveRegistrationPath(idOrPath);
-    await this.validatePathComponents(registrationPath, false);
+    await this.validatePathComponents(registrationPath, true);
 
     let stats: fsSync.Stats;
     try {
@@ -698,8 +744,13 @@ export class AgentMessagingRuntimeDirectory {
     options: ListRegistrationsOptions = {}
   ): Promise<AgentRegistration[]> {
     this.ensureOpen();
+    const parsedOptions = parseRuntimeDirectoryOptions(
+      options,
+      listRegistrationsOptionsSchema,
+      'Registration listing options'
+    );
     await this.validatePathComponents(this.agentsDirectory, false);
-    const skipMalformed = options.skipMalformed ?? true;
+    const skipMalformed = parsedOptions.skipMalformed ?? true;
     const entries = await fs.readdir(this.agentsDirectory, { withFileTypes: true });
     const names = entries
       .filter(
