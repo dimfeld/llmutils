@@ -1840,6 +1840,40 @@ describe('review issue disposition persistence', () => {
     expect(updatedPlan.reviewIssues).toEqual([...rejectedIssues, incomingIssues[0]]);
   });
 
+  test('a save disposition does not count incoming rejected issues as open findings', async () => {
+    await writePlanToDb(
+      {
+        id: 28,
+        title: 'Ignore incoming rejected findings',
+        goal: 'Rejected findings must not block proof generation',
+        details: 'Details',
+        tasks: [],
+      },
+      { cwdForIdentity: testDir }
+    );
+
+    const rejectedIssue = {
+      id: 'incoming-rejected',
+      severity: 'major' as const,
+      category: 'bug' as const,
+      content: 'This finding is already rejected.',
+      rejected: true,
+      rejectedReason: 'Intentional behavior',
+      rejectedAt: '2026-08-03T12:00:00.000Z',
+    };
+
+    await expect(
+      persistReviewIssueDisposition(28, { kind: 'save', issuesToSave: [rejectedIssue] }, testDir)
+    ).resolves.toMatchObject({
+      appendedTaskCount: 0,
+      issuesSavedCount: 0,
+      issuesResolvedCount: 0,
+    });
+
+    const updatedPlan = (await resolvePlanByNumericId(28, testDir)).plan;
+    expect(updatedPlan.reviewIssues).toEqual([]);
+  });
+
   test('resolveSavedReviewIssues indexes the same list listSavedReviewIssues prints, rejected entries included', async () => {
     const issues = [
       {

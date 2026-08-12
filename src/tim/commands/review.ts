@@ -573,6 +573,7 @@ function applyReviewIssueSave(
   const rejectedKeys = new Set(rejectedIssues.map((issue) => reviewIssueKey(issue)));
   const refreshedIssues = filterActionableReviewIssues(issues)
     .map((issue) => ({ ...issue }))
+    .filter((issue) => issue.rejected !== true)
     .filter((issue) => !rejectedKeys.has(reviewIssueKey(issue)));
 
   if (mode === 'replace') {

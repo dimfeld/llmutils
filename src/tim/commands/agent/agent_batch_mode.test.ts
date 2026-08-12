@@ -2109,6 +2109,83 @@ describe('timAgent - Batch Mode Execution Loop', () => {
         'Skipping proof generation: final review saved 1 non-rejected review issue.'
       );
     });
+
+    test('non-interactive completion path runs proof generation when review only has rejected issues', async () => {
+      await createPlanFile({
+        uuid: 'rejected-proof-plan',
+        reviewIssues: [
+          {
+            severity: 'major',
+            category: 'bug',
+            content: 'An intentionally rejected finding.',
+            rejected: true,
+            rejectedReason: 'Required behavior.',
+            rejectedAt: '2026-08-03T12:00:00.000Z',
+          },
+        ],
+        tasks: [
+          {
+            title: 'Task 0',
+            description: 'Already done',
+            done: true,
+          },
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        planAutocompleteStatus: 'done',
+        proofGeneration: {
+          mode: 'after-completion',
+          instructions: 'Capture proof artifacts.',
+        },
+      });
+      // Rejected findings are retained as a rejection ledger but are not counted as
+      // saved open issues by the review command.
+      handleReviewCommandSpy.mockResolvedValueOnce({ tasksAppended: 0, issuesSaved: 0 });
+
+      executorExecuteSpy.mockImplementation(async () => {
+        await createPlanFile({
+          uuid: 'rejected-proof-plan',
+          reviewIssues: [
+            {
+              severity: 'major',
+              category: 'bug',
+              content: 'An intentionally rejected finding.',
+              rejected: true,
+              rejectedReason: 'Required behavior.',
+              rejectedAt: '2026-08-03T12:00:00.000Z',
+            },
+          ],
+          tasks: [
+            {
+              title: 'Task 0',
+              description: 'Already done',
+              done: true,
+            },
+            {
+              title: 'Task 1',
+              description: 'First task',
+              steps: [{ prompt: 'Do task 1', done: true }],
+              done: true,
+            },
+          ],
+        });
+      });
+
+      await timAgent(1, { log: false, nonInteractive: true } as any, {});
+
+      expect(runProofGenerationSpy).toHaveBeenCalledTimes(1);
+      expect(logSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('Skipping proof generation: final review saved')
+      );
+    });
   });
 
   describe('finalization timestamps and manual mode', () => {
