@@ -770,6 +770,7 @@ Important config areas:
 - `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`
 - `inbox.prs` - PR inbox behavior; `enabled` plus an `ignoreUsers` list that concatenates across config layers (see [PR inbox](#pr-inbox))
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
+- `experimental` - opt-in flags for unfinished features; currently only `agentMessaging`, which is disabled unless set to `true`
 
 PR creation and dual-review issue merging share the `smallTasks` defaults. Override both
 in one place when you want to swap the lightweight model or executor:
@@ -803,6 +804,15 @@ simplify:
   exclude:
     - Generated files
 ```
+
+The `experimental` block holds opt-in flags for features that are still under construction. Every flag is optional and disabled when absent:
+
+```yaml
+experimental:
+  agentMessaging: true
+```
+
+`agentMessaging` is the flag for direct messaging between the orchestrator and its subagents. The contracts and configuration exist, but no messaging behavior is active yet, so a run with the flag on currently behaves exactly like a run with it off. See [docs/agent-messaging.md](docs/agent-messaging.md).
 
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
 
@@ -866,6 +876,8 @@ tim automatically provides these environment variables to child processes when t
 | `TIM_BRANCH`         | `branch`                   |
 
 Built-ins are tim-owned: they override same-named values from inherited shell env and workspace `.env`. Explicit per-command/per-executor `env` overrides are the only way to replace a reserved built-in.
+
+The `environment` block also rejects the internal agent-identity variables `TIM_AGENT_MESSAGING_DIR`, `TIM_AGENT_ID`, `TIM_AGENT_NAME`, `TIM_AGENT_TYPE`, and `TIM_AGENT_ROLE`. These are set by tim for its own processes and have no template placeholder. See [docs/agent-messaging.md](docs/agent-messaging.md).
 
 **Precedence (from lowest to highest):**
 
@@ -1036,3 +1048,4 @@ Use a unique prefix per developer to prevent accidental PR-to-plan matching from
 - [`docs/web-interface.md`](docs/web-interface.md) - web architecture and UI workflow details
 - [`docs/database.md`](docs/database.md) - SQLite-backed plan storage and materialization
 - [`docs/proof-generation.md`](docs/proof-generation.md) - capturing demo artifacts for completed plans
+- [`docs/agent-messaging.md`](docs/agent-messaging.md) - the experimental agent-messaging flag and its contracts

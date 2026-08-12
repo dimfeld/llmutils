@@ -112,11 +112,26 @@ object in isolation.
 
 ## Reserved built-ins vs. process-control variables
 
-The schema only rejects the **eight context built-ins** in
-`TIM_ENVIRONMENT_CONTEXT_DEFINITIONS` (`TIM_WORKSPACE_ID`, `TIM_WORKSPACE_NAME`,
-`TIM_WORKSPACE_PATH`, `TIM_REPO_PATH`, `TIM_PLAN_ID`, `TIM_PLAN_UUID`,
-`TIM_PLAN_FILE_PATH`, `TIM_BRANCH`). These are the only names the
-`environment` config block forbids users from redefining.
+The schema rejects two groups of names, both collected in
+`RESERVED_TIM_ENVIRONMENT_VARIABLES` / `RESERVED_TIM_ENVIRONMENT_VARIABLE_SET`:
+
+1. The **eight context built-ins** in `TIM_ENVIRONMENT_CONTEXT_DEFINITIONS`
+   (`TIM_WORKSPACE_ID`, `TIM_WORKSPACE_NAME`, `TIM_WORKSPACE_PATH`,
+   `TIM_REPO_PATH`, `TIM_PLAN_ID`, `TIM_PLAN_UUID`, `TIM_PLAN_FILE_PATH`,
+   `TIM_BRANCH`). These have one-to-one placeholder parity and are rendered by
+   `renderBuiltInTimEnvironment()`.
+2. The **internal agent-identity variables** in
+   `INTERNAL_AGENT_ENVIRONMENT_VARIABLES`
+   (`src/tim/agent_messaging/environment.ts`): `TIM_AGENT_MESSAGING_DIR`,
+   `TIM_AGENT_ID`, `TIM_AGENT_NAME`, `TIM_AGENT_TYPE`, `TIM_AGENT_ROLE`. These
+   are spawn-time identity overrides with no placeholder. Keep them out of
+   `TIM_ENVIRONMENT_CONTEXT_DEFINITIONS` and out of the rendered built-in map —
+   reserving a name and publishing it as a template are separate concerns, and
+   mixing them would expose private identity values as documented project
+   templates. See [agent-messaging.md](agent-messaging.md).
+
+These are the only names the `environment` config block forbids users from
+redefining.
 
 The schema does not require project-defined variables to use a `TIM_` prefix.
 It accepts shell-friendly uppercase names such as `DATABASE_URL` and
