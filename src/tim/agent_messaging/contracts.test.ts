@@ -29,10 +29,12 @@ import {
   listAgentsArgumentsSchema,
   listAgentsResultSchema,
   sendAgentMessageArgumentsSchema,
+  sendAgentMessageAcknowledgementSchema,
   sendAgentMessageResultSchema,
   startAgentArgumentsSchema,
   startAgentResultSchema,
   stopAgentArgumentsSchema,
+  stopAgentAcknowledgementSchema,
   stopAgentResultSchema,
   utf8ByteLength,
 } from './contracts.js';
@@ -65,6 +67,17 @@ describe('agent messaging enum contracts', () => {
       'forced',
       'already-stopping',
     ]);
+
+    for (const acknowledgement of SEND_AGENT_MESSAGE_ACKNOWLEDGEMENTS) {
+      expect(sendAgentMessageAcknowledgementSchema.parse(acknowledgement)).toBe(acknowledgement);
+    }
+    for (const acknowledgement of STOP_AGENT_ACKNOWLEDGEMENTS) {
+      expect(stopAgentAcknowledgementSchema.parse(acknowledgement)).toBe(acknowledgement);
+    }
+    for (const value of ['immediate', '', null, 1]) {
+      expect(sendAgentMessageAcknowledgementSchema.safeParse(value).success).toBe(false);
+      expect(stopAgentAcknowledgementSchema.safeParse(value).success).toBe(false);
+    }
   });
 
   test('exposes the exact limits and classifies lifecycle states', () => {
@@ -135,24 +148,30 @@ describe('agent messaging names and messages', () => {
   test('counts UTF-8 bytes and accepts the exact message boundary', () => {
     const asciiAtLimit = 'a'.repeat(MAX_AGENT_MESSAGE_BYTES);
     const emojiAtLimit = '🚀'.repeat(MAX_AGENT_MESSAGE_BYTES / 4);
+    const twoByteAtLimit = 'é'.repeat(MAX_AGENT_MESSAGE_BYTES / 2);
     const threeByteAtLimit = '€'.repeat(MAX_AGENT_MESSAGE_BYTES / 3);
 
     expect(utf8ByteLength(asciiAtLimit)).toBe(MAX_AGENT_MESSAGE_BYTES);
     expect(utf8ByteLength(emojiAtLimit)).toBe(MAX_AGENT_MESSAGE_BYTES);
+    expect(utf8ByteLength(twoByteAtLimit)).toBe(MAX_AGENT_MESSAGE_BYTES);
     expect(utf8ByteLength(threeByteAtLimit)).toBe(65_535);
     expect(agentMessageContentSchema.safeParse(asciiAtLimit).success).toBe(true);
     expect(agentMessageContentSchema.safeParse(emojiAtLimit).success).toBe(true);
+    expect(agentMessageContentSchema.safeParse(twoByteAtLimit).success).toBe(true);
     expect(agentMessageContentSchema.safeParse(`${threeByteAtLimit}a`).success).toBe(true);
   });
 
   test('rejects one byte above the UTF-8 message boundary without truncation', () => {
     const oversizedAscii = 'a'.repeat(MAX_AGENT_MESSAGE_BYTES + 1);
     const oversizedEmoji = `${'🚀'.repeat(MAX_AGENT_MESSAGE_BYTES / 4)}a`;
+    const oversizedTwoByte = `${'é'.repeat(MAX_AGENT_MESSAGE_BYTES / 2)}a`;
 
     expect(utf8ByteLength(oversizedAscii)).toBe(MAX_AGENT_MESSAGE_BYTES + 1);
     expect(utf8ByteLength(oversizedEmoji)).toBe(MAX_AGENT_MESSAGE_BYTES + 1);
+    expect(utf8ByteLength(oversizedTwoByte)).toBe(MAX_AGENT_MESSAGE_BYTES + 1);
     expect(agentMessageContentSchema.safeParse(oversizedAscii).success).toBe(false);
     expect(agentMessageContentSchema.safeParse(oversizedEmoji).success).toBe(false);
+    expect(agentMessageContentSchema.safeParse(oversizedTwoByte).success).toBe(false);
     expect(() => agentMessageContentSchema.parse(oversizedAscii)).toThrow(
       `${MAX_AGENT_MESSAGE_BYTES} UTF-8 bytes`
     );
@@ -180,6 +199,17 @@ describe('agent messaging tool argument contracts', () => {
     expect(startAgentArgumentsSchema.safeParse({ ...args, type: 'orchestrator' }).success).toBe(
       false
     );
+    expect(
+      startAgentArgumentsSchema.parse({
+        type: 'tester',
+        executor: 'codex-cli',
+        initialMessage: 'Use the existing test fixtures.',
+      })
+    ).toEqual({
+      type: 'tester',
+      executor: 'codex-cli',
+      initialMessage: 'Use the existing test fixtures.',
+    });
   });
 
   test('requires an empty strict ListAgents argument object', () => {
@@ -203,6 +233,7 @@ describe('agent messaging tool argument contracts', () => {
     expect(stopAgentArgumentsSchema.safeParse({ name: ORCHESTRATOR_AGENT_NAME }).success).toBe(
       false
     );
+    expect(stopAgentArgumentsSchema.parse({ name: 'api-worker' })).toEqual({ name: 'api-worker' });
     for (const field of ['source', 'sourceName', 'caller', 'role']) {
       expect(stopAgentArgumentsSchema.safeParse({ ...args, [field]: 'spoofed' }).success).toBe(
         false
@@ -215,6 +246,30 @@ describe('agent messaging tool argument contracts', () => {
     expect(finishAgentArgumentsSchema.parse({ message: 'Done.' })).toEqual({ message: 'Done.' });
     for (const field of ['target', 'name', 'source', 'sourceName', 'caller', 'role']) {
       expect(finishAgentArgumentsSchema.safeParse({ [field]: 'spoofed' }).success).toBe(false);
+    }
+  });
+
+  test('rejects unknown properties on every strict argument schema', () => {
+    const validArguments = [
+      {
+        schema: startAgentArgumentsSchema,
+        value: {
+          type: 'implementer',
+          executor: 'claude-code',
+          initialMessage: 'Start work.',
+        },
+      },
+      { schema: listAgentsArgumentsSchema, value: {} },
+      {
+        schema: sendAgentMessageArgumentsSchema,
+        value: { name: ORCHESTRATOR_AGENT_NAME, message: 'Status.' },
+      },
+      { schema: stopAgentArgumentsSchema, value: { name: 'api-worker' } },
+      { schema: finishAgentArgumentsSchema, value: {} },
+    ] as const;
+
+    for (const { schema, value } of validArguments) {
+      expect(schema.safeParse({ ...value, unexpected: true }).success).toBe(false);
     }
   });
 });
@@ -300,6 +355,25 @@ describe('agent messaging tool result contracts', () => {
         state: 'running-idle',
       }).success
     ).toBe(false);
+    expect(
+      agentSummarySchema.safeParse({
+        name: 'api-worker',
+        id: 'worker-id',
+        role: 'orchestrator',
+        executor: 'codex-cli',
+        state: 'running-idle',
+      }).success
+    ).toBe(false);
+    expect(
+      agentSummarySchema.safeParse({
+        name: ORCHESTRATOR_AGENT_NAME,
+        id: 'worker-id',
+        role: 'subagent',
+        type: 'tester',
+        executor: 'codex-cli',
+        state: 'running-idle',
+      }).success
+    ).toBe(false);
     expect(listAgentsResultSchema.safeParse({ agents: [], extra: true }).success).toBe(false);
   });
 
@@ -322,5 +396,40 @@ describe('agent messaging tool result contracts', () => {
     expect(
       finishAgentResultSchema.safeParse({ state: 'finishing', name: 'api-worker' }).success
     ).toBe(false);
+  });
+
+  test('rejects unknown properties on every strict result schema', () => {
+    const validResults = [
+      {
+        schema: startAgentResultSchema,
+        value: {
+          name: 'api-worker',
+          id: 'opaque-id',
+          type: 'tester',
+          executor: 'codex-cli',
+          state: 'starting',
+        },
+      },
+      {
+        schema: listAgentsResultSchema,
+        value: { agents: [] },
+      },
+      {
+        schema: sendAgentMessageResultSchema,
+        value: { name: ORCHESTRATOR_AGENT_NAME, delivery: 'queued' },
+      },
+      {
+        schema: stopAgentResultSchema,
+        value: { name: 'api-worker', mode: 'forced', state: 'stopping' },
+      },
+      {
+        schema: finishAgentResultSchema,
+        value: { state: 'finishing' },
+      },
+    ] as const;
+
+    for (const { schema, value } of validResults) {
+      expect(schema.safeParse({ ...value, unexpected: true }).success).toBe(false);
+    }
   });
 });
