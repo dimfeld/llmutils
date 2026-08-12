@@ -1393,6 +1393,93 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     expect(options.agentMessagingEnabled).toBe(true);
   });
 
+  test('dormant agentMessagingEnabled does not change Claude prompt input or provider arguments', async () => {
+    const recordedArgs: string[][] = [];
+    const promptWrites: string[] = [];
+    const wrapNormalSpy = vi.fn(
+      (_content: string, _planId: string, _options: any) => 'WRAPPED_NORMAL'
+    );
+
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
+    }));
+
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (args: string[], opts: any) => {
+        recordedArgs.push([...args]);
+        if (opts && typeof opts.formatStdout === 'function') {
+          opts.formatStdout('{}\n');
+        }
+        return createStreamingProcessMock({
+          stdin: {
+            write: vi.fn((value: string) => {
+              promptWrites.push(value);
+            }),
+            end: vi.fn(async () => {}),
+          },
+        });
+      }),
+      createLineSplitter: () => (s: string) => (s ? s.split('\n') : []),
+      debug: false,
+    }));
+
+    vi.doMock('./claude_code/format.ts', () => ({
+      formatJsonMessage: vi.fn(() => ({
+        type: 'assistant',
+        message: 'Output',
+        rawMessage: 'Output',
+      })),
+      extractStructuredMessages: vi.fn(() => []),
+      resetToolUseCache: vi.fn(() => {}),
+    }));
+
+    vi.doMock('./shared/orchestrator_prompt.ts', () => ({
+      wrapWithOrchestration: wrapNormalSpy,
+      wrapWithOrchestrationSimple: vi.fn((_content: string) => 'WRAPPED'),
+      wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED'),
+    }));
+
+    vi.doMock('./claude_code/agent_generator.ts', () => ({
+      buildAgentsArgument: vi.fn(() => '{}'),
+    }));
+
+    const { ClaudeCodeExecutor } = await import('./claude_code.js');
+
+    for (const agentMessagingEnabled of [false, true]) {
+      const exec = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        {
+          baseDir: tempDir,
+          agentMessagingEnabled,
+        },
+        {} as any
+      );
+
+      await exec.execute('CTX', {
+        planId: 'p1',
+        planTitle: 'Plan',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'normal',
+      });
+    }
+
+    expect(recordedArgs).toHaveLength(2);
+    expect(recordedArgs[1]).toEqual(recordedArgs[0]);
+    expect(recordedArgs[0]).not.toContain('--agents');
+    expect(promptWrites).toHaveLength(2);
+    expect(promptWrites[1]).toBe(promptWrites[0]);
+
+    expect(wrapNormalSpy).toHaveBeenCalledTimes(2);
+    const firstOptions = wrapNormalSpy.mock.calls[0]?.[2];
+    const secondOptions = wrapNormalSpy.mock.calls[1]?.[2];
+    expect(firstOptions).toMatchObject({ agentMessagingEnabled: false });
+    expect(secondOptions).toMatchObject({ agentMessagingEnabled: true });
+    const { agentMessagingEnabled: _firstEnabled, ...firstWithoutFlag } = firstOptions;
+    const { agentMessagingEnabled: _secondEnabled, ...secondWithoutFlag } = secondOptions;
+    expect(secondWithoutFlag).toEqual(firstWithoutFlag);
+  });
+
   test('passes subagentExecutor and dynamicSubagentInstructions to orchestration wrapper in simple mode', async () => {
     const wrapSimpleSpy = vi.fn(
       (_content: string, _planId: string, _options: any) => 'WRAPPED_SIMPLE'
