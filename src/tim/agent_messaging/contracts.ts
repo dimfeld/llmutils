@@ -12,18 +12,6 @@ export const AGENT_RUNTIME_ROLES = ['orchestrator', 'subagent'] as const;
 export type AgentRuntimeRole = (typeof AGENT_RUNTIME_ROLES)[number];
 export const agentRuntimeRoleSchema = z.enum(AGENT_RUNTIME_ROLES);
 
-export const AGENT_LIFECYCLE_STATES = [
-  'starting',
-  'running-active',
-  'running-idle',
-  'finishing',
-  'stopping',
-  'exited',
-  'failed',
-] as const;
-export type AgentLifecycleState = (typeof AGENT_LIFECYCLE_STATES)[number];
-export const agentLifecycleStateSchema = z.enum(AGENT_LIFECYCLE_STATES);
-
 export const NONTERMINAL_AGENT_LIFECYCLE_STATES = [
   'starting',
   'running-active',
@@ -37,6 +25,13 @@ export const nonterminalAgentLifecycleStateSchema = z.enum(NONTERMINAL_AGENT_LIF
 export const TERMINAL_AGENT_LIFECYCLE_STATES = ['exited', 'failed'] as const;
 export type TerminalAgentLifecycleState = (typeof TERMINAL_AGENT_LIFECYCLE_STATES)[number];
 export const terminalAgentLifecycleStateSchema = z.enum(TERMINAL_AGENT_LIFECYCLE_STATES);
+
+export const AGENT_LIFECYCLE_STATES = [
+  ...NONTERMINAL_AGENT_LIFECYCLE_STATES,
+  ...TERMINAL_AGENT_LIFECYCLE_STATES,
+] as const;
+export type AgentLifecycleState = (typeof AGENT_LIFECYCLE_STATES)[number];
+export const agentLifecycleStateSchema = z.enum(AGENT_LIFECYCLE_STATES);
 
 const NONTERMINAL_AGENT_LIFECYCLE_STATE_SET: ReadonlySet<string> = new Set(
   NONTERMINAL_AGENT_LIFECYCLE_STATES
