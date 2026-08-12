@@ -151,24 +151,33 @@ describe('InboxIndicator browser behavior', () => {
     await expect.element(page.getByText('Removed from merge queue', { exact: true })).toBeVisible();
     await expect.element(page.getByText(/minutes? ago|just now/).first()).toBeVisible();
     await expect
-      .element(
-        page.getByRole('button', { name: /Fix the widget/ }).getByRole('img', { name: 'Unread' })
-      )
+      .element(page.getByRole('button', { name: 'Mark notification as read' }).first())
       .toBeInTheDocument();
 
     expect(mocks.markInboxItemsRead).not.toHaveBeenCalled();
   });
 
-  test('applies unread row styling with a valid Tailwind class regardless of read_at', async () => {
+  test('renders a separate mark-read control regardless of read_at', async () => {
     const readItem = makeItem({ read_at: '2026-08-01T00:00:00.000Z' });
 
     renderIndicator(makeResponse({ items: [readItem], unreadCount: 1 }));
     await openPopover();
 
     const row = page.getByRole('button', { name: /Fix the widget/ });
-    await expect.element(row).toHaveClass(/bg-gray-700\/30/);
     await expect.element(row).not.toHaveClass(/bg-gray-750/);
-    await expect.element(row.getByRole('img', { name: 'Unread' })).toBeInTheDocument();
+    await expect
+      .element(page.getByRole('button', { name: 'Mark notification as read' }))
+      .toBeVisible();
+  });
+
+  test('marks an item read when its check button is clicked without opening the item', async () => {
+    renderIndicator(makeResponse({ items: [makeItem()], unreadCount: 1 }));
+    await openPopover();
+
+    await page.getByRole('button', { name: 'Mark notification as read' }).click();
+
+    expect(mocks.markInboxItemsRead).toHaveBeenCalledWith({ ids: [1] });
+    expect(mocks.goto).not.toHaveBeenCalled();
   });
 
   test('marks all visible inbox items read from the popup', async () => {

@@ -175,7 +175,21 @@
       <span class="shrink-0">{formatRelativeTime(item.last_event_at)}</span>
     </div>
   </div>
-  <div class="mt-1.5 size-2 shrink-0 rounded-full bg-blue-400" role="img" aria-label="Unread"></div>
+{/snippet}
+
+{#snippet markReadButton(item: EnrichedInboxItem)}
+  <button
+    type="button"
+    class="mt-1 shrink-0 rounded p-1 text-blue-300 transition-colors hover:bg-gray-600 hover:text-blue-200"
+    aria-label="Mark notification as read"
+    title="Mark as read"
+    onclick={(event) => {
+      event.stopPropagation();
+      void markInboxItemRead(item.id);
+    }}
+  >
+    <Check class="size-4" />
+  </button>
 {/snippet}
 
 <Popover bind:open={popoverOpen}>
@@ -238,23 +252,33 @@
       <div class="max-h-80 overflow-y-auto">
         {#each displayItems as item (item.id)}
           {#if item.viewHref?.external}
-            <a
-              href={item.viewHref.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="flex items-start gap-2.5 border-b border-gray-700/50 bg-gray-700/30 px-3 py-2 transition-colors last:border-b-0 hover:bg-gray-700/50"
-              onclick={() => void markInboxItemRead(item.id)}
+            <div
+              class="flex items-start gap-1 border-b border-gray-700/50 bg-gray-700/30 px-2 py-2 transition-colors last:border-b-0 hover:bg-gray-700/50"
             >
-              {@render rowContent(item)}
-            </a>
+              <a
+                href={item.viewHref.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex min-w-0 flex-1 items-start gap-2.5 px-1 text-left"
+                onclick={() => void markInboxItemRead(item.id)}
+              >
+                {@render rowContent(item)}
+              </a>
+              {@render markReadButton(item)}
+            </div>
           {:else}
-            <button
-              type="button"
-              class="flex w-full items-start gap-2.5 border-b border-gray-700/50 bg-gray-700/30 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-gray-700/50"
-              onclick={() => handleRowClick(item)}
+            <div
+              class="flex items-start gap-1 border-b border-gray-700/50 bg-gray-700/30 px-2 py-2 transition-colors last:border-b-0 hover:bg-gray-700/50"
             >
-              {@render rowContent(item)}
-            </button>
+              <button
+                type="button"
+                class="flex min-w-0 flex-1 items-start gap-2.5 px-1 text-left"
+                onclick={() => handleRowClick(item)}
+              >
+                {@render rowContent(item)}
+              </button>
+              {@render markReadButton(item)}
+            </div>
           {/if}
         {/each}
       </div>

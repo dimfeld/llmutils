@@ -4,13 +4,12 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { toast } from 'svelte-sonner';
-  import X from '@lucide/svelte/icons/x';
+  import Check from '@lucide/svelte/icons/check';
   import { Popover, PopoverContent, PopoverTrigger } from '$lib/components/ui/popover/index.js';
   import {
     getInboxItems,
     markInboxItemsRead,
     markAllInboxItemsRead,
-    dismissInboxItem,
     type EnrichedInboxItem,
   } from '$lib/remote/inbox.remote.js';
   import {
@@ -33,8 +32,14 @@
   const sessionManager = useSessionManager();
 
   let projectId = $derived(page.params.projectId ?? 'all');
+  let showReadNotifications = $state(false);
 
-  let inboxQuery = $derived(getInboxItems({ projectId, includeRead: true }));
+  let inboxQuery = $derived(
+    getInboxItems({
+      projectId,
+      ...(showReadNotifications ? { includeRead: true } : {}),
+    })
+  );
   let data = $derived(inboxQuery.current);
   let queryLoading = $derived(inboxQuery.loading);
   let queryError = $derived(inboxQuery.error);
@@ -188,11 +193,9 @@
     });
   }
 
-  function handleDismiss(event: MouseEvent, id: number): void {
+  function handleMarkRead(event: MouseEvent, id: number): void {
     event.stopPropagation();
-    dismissInboxItem({ id }).catch((error: unknown) => {
-      toast.error(`Failed to dismiss item: ${extractRemoteErrorMessage(error)}`);
-    });
+    markItemRead(id);
   }
 </script>
 
@@ -206,6 +209,14 @@
         </p>
       </div>
       <div class="flex items-center gap-3">
+        <label class="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            class="size-4 rounded border-border accent-primary"
+            bind:checked={showReadNotifications}
+          />
+          Show read notifications
+        </label>
         <span class="text-sm text-muted-foreground tabular-nums">
           {unreadCount} unread · {totalCount} total
         </span>
@@ -427,10 +438,11 @@
                       <button
                         type="button"
                         class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        onclick={(e) => handleDismiss(e, item.id)}
-                        aria-label="Dismiss notification"
+                        onclick={(e) => handleMarkRead(e, item.id)}
+                        aria-label="Mark notification as read"
+                        title="Mark as read"
                       >
-                        <X class="size-4" />
+                        <Check class="size-4" />
                       </button>
                     </div>
                   </td>

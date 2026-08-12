@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => {
     getInboxItems: vi.fn(),
     markInboxItemsRead: vi.fn(async (): Promise<void> => undefined),
     markAllInboxItemsRead: vi.fn(async (): Promise<void> => undefined),
-    dismissInboxItem: vi.fn(async (): Promise<void> => undefined),
     startPrReviewGuide: vi.fn(),
     startFixPrThreads: vi.fn(),
     startFixThreads: vi.fn(),
@@ -52,7 +51,6 @@ vi.mock('$lib/remote/inbox.remote.js', () => ({
   getInboxItems: mocks.getInboxItems,
   markInboxItemsRead: mocks.markInboxItemsRead,
   markAllInboxItemsRead: mocks.markAllInboxItemsRead,
-  dismissInboxItem: mocks.dismissInboxItem,
 }));
 
 vi.mock('$lib/remote/review_thread_actions.remote.js', () => ({
@@ -122,8 +120,6 @@ beforeEach(() => {
   mocks.markInboxItemsRead.mockResolvedValue(undefined);
   mocks.markAllInboxItemsRead.mockReset();
   mocks.markAllInboxItemsRead.mockResolvedValue(undefined);
-  mocks.dismissInboxItem.mockReset();
-  mocks.dismissInboxItem.mockResolvedValue(undefined);
   mocks.startPrReviewGuide.mockReset();
   mocks.startFixPrThreads.mockReset();
   mocks.startFixThreads.mockReset();
@@ -140,7 +136,7 @@ afterEach(() => {
 });
 
 describe('inbox full page', () => {
-  test('requests items with includeRead for the current project and shows unread/total counts', async () => {
+  test('requests unread items for the current project and shows unread/total counts', async () => {
     renderPage(
       makeResponse({
         items: [makeItem({ id: 1 }), makeItem({ id: 2, read_at: '2026-08-07T12:00:00.000Z' })],
@@ -149,8 +145,16 @@ describe('inbox full page', () => {
       })
     );
 
-    expect(mocks.getInboxItems).toHaveBeenCalledWith({ projectId: '7', includeRead: true });
+    expect(mocks.getInboxItems).toHaveBeenCalledWith({ projectId: '7' });
     await expect.element(page.getByText('1 unread · 2 total')).toBeVisible();
+  });
+
+  test('includes read items when Show read notifications is selected', async () => {
+    renderPage(makeResponse());
+
+    await page.getByRole('checkbox', { name: 'Show read notifications' }).click();
+
+    expect(mocks.getInboxItems).toHaveBeenLastCalledWith({ projectId: '7', includeRead: true });
   });
 
   test('renders kind badges and sorted rows without marking anything read on load', async () => {
@@ -436,12 +440,12 @@ describe('inbox full page', () => {
       .not.toBeInTheDocument();
   });
 
-  test('dismissing a row calls dismissInboxItem with its id', async () => {
+  test('marking a row read calls markInboxItemsRead with its id', async () => {
     renderPage(makeResponse({ items: [makeItem({ id: 21 })], unreadCount: 1 }));
 
-    await page.getByRole('button', { name: 'Dismiss notification' }).click();
+    await page.getByRole('button', { name: 'Mark notification as read' }).click();
 
-    expect(mocks.dismissInboxItem).toHaveBeenCalledWith({ id: 21 });
+    expect(mocks.markInboxItemsRead).toHaveBeenCalledWith({ ids: [21] });
   });
 
   test('shows an empty state box when there are no items', async () => {
