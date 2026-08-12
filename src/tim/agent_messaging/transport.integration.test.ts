@@ -326,8 +326,22 @@ describe('agent messaging transport integration', () => {
     );
 
     expect(acknowledgement).toBeUndefined();
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
     expect(callbackCount).toBe(0);
     expect(targetHandle.receiver.pendingCount).toBe(0);
+
+    const retryAcknowledgement = await session.sendMessage(
+      identity(source),
+      target(targetHandle.registration.name),
+      {
+        requestId: request.requestId,
+        content: request.content,
+        timestamp: request.timestamp,
+      }
+    );
+    expect(retryAcknowledgement).toMatchObject({ success: true, delivery: 'queued' });
+    expect(callbackCount).toBe(1);
+    expect(targetHandle.receiver.pendingCount).toBe(1);
   });
 
   test('keeps a normal mailbox client connection open until the acknowledgement', async () => {

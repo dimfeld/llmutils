@@ -422,8 +422,11 @@ export class MailboxReceiver {
     }
 
     state.frameReceived = true;
-    state.socket.pause();
-    void this.processLine(state, lines[0] as string);
+    // Let a peer FIN that arrived with the request become observable before
+    // delivery starts. Bun emits `end` only after the data handler returns.
+    setImmediate(() => {
+      void this.processLine(state, lines[0] as string);
+    });
   }
 
   private handleEnd(state: ConnectionState): void {
@@ -503,6 +506,12 @@ export class MailboxReceiver {
     this.trimRecentRequests();
 
     const acknowledgement = await completion;
+    if (acknowledgement === undefined) {
+      if (this.recentRequests.get(request.requestId) === recentRequest) {
+        this.recentRequests.delete(request.requestId);
+      }
+      return undefined;
+    }
     recentRequest.completed = true;
     this.trimRecentRequests();
     return acknowledgement;
@@ -588,10 +597,6 @@ export class MailboxReceiver {
         'runtime_closed',
         'Mailbox receiver is closed'
       );
-    }
-
-    if (state.peerEnded) {
-      return undefined;
     }
 
     const trustedRequest = parseMailboxMessageRequest({
