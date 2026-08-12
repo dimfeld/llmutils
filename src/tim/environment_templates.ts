@@ -1,3 +1,8 @@
+import {
+  INTERNAL_AGENT_ENVIRONMENT_VARIABLES,
+  type InternalAgentEnvironmentVariable,
+} from './agent_messaging/environment.js';
+
 export const TIM_ENVIRONMENT_CONTEXT_DEFINITIONS = {
   workspaceId: 'TIM_WORKSPACE_ID',
   workspaceName: 'TIM_WORKSPACE_NAME',
@@ -12,6 +17,10 @@ export const TIM_ENVIRONMENT_CONTEXT_DEFINITIONS = {
 export type TimEnvironmentPlaceholder = keyof typeof TIM_ENVIRONMENT_CONTEXT_DEFINITIONS;
 export type TimEnvironmentBuiltInName =
   (typeof TIM_ENVIRONMENT_CONTEXT_DEFINITIONS)[TimEnvironmentPlaceholder];
+
+export type TimReservedEnvironmentVariableName =
+  | TimEnvironmentBuiltInName
+  | InternalAgentEnvironmentVariable;
 
 export type TimEnvironmentTemplateContext = Partial<
   Record<TimEnvironmentPlaceholder, string | null | undefined>
@@ -33,9 +42,10 @@ export const TIM_ENVIRONMENT_PLACEHOLDERS = Object.keys(
   TIM_ENVIRONMENT_CONTEXT_DEFINITIONS
 ) as TimEnvironmentPlaceholder[];
 
-export const RESERVED_TIM_ENVIRONMENT_VARIABLES = Object.values(
-  TIM_ENVIRONMENT_CONTEXT_DEFINITIONS
-) as TimEnvironmentBuiltInName[];
+export const RESERVED_TIM_ENVIRONMENT_VARIABLES: TimReservedEnvironmentVariableName[] = [
+  ...Object.values(TIM_ENVIRONMENT_CONTEXT_DEFINITIONS),
+  ...INTERNAL_AGENT_ENVIRONMENT_VARIABLES,
+];
 
 export const RESERVED_TIM_ENVIRONMENT_VARIABLE_SET = new Set<string>(
   RESERVED_TIM_ENVIRONMENT_VARIABLES

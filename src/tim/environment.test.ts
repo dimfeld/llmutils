@@ -191,11 +191,16 @@ describe('tim environment templates', () => {
     });
   });
 
-  test('keeps placeholder and built-in definitions in one-to-one parity', () => {
+  test('keeps public placeholders separate from internal reserved names', () => {
     expect(TIM_ENVIRONMENT_PLACEHOLDERS).toEqual(Object.keys(TIM_ENVIRONMENT_CONTEXT_DEFINITIONS));
-    expect(RESERVED_TIM_ENVIRONMENT_VARIABLES).toEqual(
-      Object.values(TIM_ENVIRONMENT_CONTEXT_DEFINITIONS)
-    );
+    expect(RESERVED_TIM_ENVIRONMENT_VARIABLES).toEqual([
+      ...Object.values(TIM_ENVIRONMENT_CONTEXT_DEFINITIONS),
+      'TIM_AGENT_MESSAGING_DIR',
+      'TIM_AGENT_ID',
+      'TIM_AGENT_NAME',
+      'TIM_AGENT_TYPE',
+      'TIM_AGENT_ROLE',
+    ]);
   });
 });
 
