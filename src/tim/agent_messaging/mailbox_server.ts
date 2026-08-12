@@ -270,6 +270,7 @@ export class MailboxReceiver {
   private readonly maxConnections: number;
   private readonly recentRequestIdLimit: number;
   private readonly connections = new Set<net.Socket>();
+  private readonly activeConnections = new Set<net.Socket>();
   private readonly pending: MailboxPendingMessage[] = [];
   private readonly recentRequests = new Map<string, RecentRequest>();
   private server: net.Server | undefined;
@@ -333,7 +334,6 @@ export class MailboxReceiver {
       this.acceptConnection(socket);
     });
     this.server = server;
-    server.maxConnections = this.maxConnections;
     server.on('error', (error: Error) => {
       if (this.listening) {
         debugLog('[agent mailbox] receiver server error:', error);
@@ -371,8 +371,8 @@ export class MailboxReceiver {
   }
 
   private acceptConnection(socket: net.Socket): void {
-    if (this.closed || this.connections.size >= this.maxConnections) {
-      socket.destroy();
+    if (this.closed || this.activeConnections.size >= this.maxConnections) {
+      socket.end();
       return;
     }
 
@@ -384,6 +384,7 @@ export class MailboxReceiver {
       responseSent: false,
     };
     this.connections.add(socket);
+    this.activeConnections.add(socket);
     socket.setNoDelay(true);
     socket.on('data', (chunk: Buffer) => {
       this.handleData(state, chunk);
@@ -396,6 +397,7 @@ export class MailboxReceiver {
     });
     socket.on('close', () => {
       this.connections.delete(socket);
+      this.activeConnections.delete(socket);
     });
   }
 
@@ -519,6 +521,13 @@ export class MailboxReceiver {
     } catch (error) {
       debugLog('[agent mailbox] source registration resolver failed:', error);
     }
+    if (this.closed) {
+      return buildMailboxFailureAcknowledgement(
+        request.requestId,
+        'runtime_closed',
+        'Mailbox receiver is closed'
+      );
+    }
     if (sourceRegistration === undefined) {
       return buildMailboxFailureAcknowledgement(
         request.requestId,
@@ -544,6 +553,13 @@ export class MailboxReceiver {
         request.requestId,
         'unknown_source',
         'Mailbox source identity does not match its active registration'
+      );
+    }
+    if (this.closed) {
+      return buildMailboxFailureAcknowledgement(
+        request.requestId,
+        'runtime_closed',
+        'Mailbox receiver is closed'
       );
     }
 
@@ -653,6 +669,7 @@ export class MailboxReceiver {
     }
     if (!state.socket.destroyed) {
       state.socket.write(encoded, () => {
+        this.activeConnections.delete(state.socket);
         if (!state.socket.destroyed) {
           state.socket.end();
         }
@@ -664,6 +681,7 @@ export class MailboxReceiver {
     for (const socket of this.connections) {
       socket.destroy();
     }
+    this.activeConnections.clear();
     this.pending.length = 0;
     this.recentRequests.clear();
     await this.closeServerAndSocket();
