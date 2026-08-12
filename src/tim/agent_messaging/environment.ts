@@ -5,8 +5,6 @@ import {
   agentNameSchema,
   agentRuntimeRoleSchema,
   agentTypeSchema,
-  type AgentRuntimeRole,
-  type AgentType,
 } from './contracts.js';
 
 export const TIM_AGENT_MESSAGING_DIR = 'TIM_AGENT_MESSAGING_DIR' as const;
@@ -55,20 +53,11 @@ export const agentEnvironmentIdentitySchema = z.discriminatedUnion('role', [
 
 export type AgentEnvironmentIdentity = z.infer<typeof agentEnvironmentIdentitySchema>;
 
-export interface OrchestratorEnvironmentIdentity {
-  messagingDirectory: string;
-  id: string;
-  name: typeof ORCHESTRATOR_AGENT_NAME;
-  role: Extract<AgentRuntimeRole, 'orchestrator'>;
-}
-
-export interface SubagentEnvironmentIdentity {
-  messagingDirectory: string;
-  id: string;
-  name: string;
-  type: AgentType;
-  role: Extract<AgentRuntimeRole, 'subagent'>;
-}
+export type OrchestratorEnvironmentIdentity = Extract<
+  AgentEnvironmentIdentity,
+  { role: 'orchestrator' }
+>;
+export type SubagentEnvironmentIdentity = Extract<AgentEnvironmentIdentity, { role: 'subagent' }>;
 
 export function readAgentEnvironmentIdentity(
   env: Record<string, string | undefined> = process.env
