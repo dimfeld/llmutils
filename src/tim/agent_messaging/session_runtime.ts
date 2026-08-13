@@ -19,6 +19,7 @@ import {
   MailboxReceiver,
   normalizeMailboxReceiverOptions,
   type MailboxDeliveryCallback,
+  type MailboxMessageQueuedCallback,
   type NormalizedMailboxReceiverOptions,
 } from './mailbox_server.js';
 import {
@@ -40,6 +41,7 @@ export interface AgentMessagingSessionRuntimeOptions extends MailboxClientTiming
 export interface RegisterMailboxOptions {
   readonly registration: AgentRegistrationDraft;
   readonly deliver: MailboxDeliveryCallback;
+  readonly onMessageQueued?: MailboxMessageQueuedCallback;
   readonly maxConnections?: number;
   readonly recentRequestIdLimit?: number;
 }

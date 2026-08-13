@@ -50,6 +50,7 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
       }
     | undefined;
   private nextDeliveryRejection: Error | undefined;
+  private persistentDeliveryRefusal: 'temporarily-unavailable' | Error | undefined;
 
   public get ready(): Promise<void> {
     return this.readyDeferred.promise;
@@ -121,6 +122,23 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
     this.nextDeliveryRejection = error;
   }
 
+  /** Keep reporting delivery availability while refusing every provider call. */
+  public setPersistentTemporarilyUnavailable(): void {
+    this.persistentDeliveryRefusal = 'temporarily-unavailable';
+  }
+
+  /** Keep reporting delivery availability while rejecting every provider call. */
+  public setPersistentDeliveryRejection(
+    error: Error = new Error('fake persistent delivery failure')
+  ): void {
+    this.persistentDeliveryRefusal = error;
+  }
+
+  /** Stop the persistent refusal; tests should emit a real availability change after this. */
+  public clearPersistentDeliveryRefusal(): void {
+    this.persistentDeliveryRefusal = undefined;
+  }
+
   /** Hold the next accepted delivery until the test explicitly resolves it. */
   public deferNextDelivery(): Promise<void> {
     if (this.nextDelivery !== undefined) {
@@ -152,6 +170,12 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
     }
     if (!this.readyState || this.inputActivity === 'temporarily-unavailable') {
       return 'temporarily-unavailable';
+    }
+    if (this.persistentDeliveryRefusal === 'temporarily-unavailable') {
+      return 'temporarily-unavailable';
+    }
+    if (this.persistentDeliveryRefusal instanceof Error) {
+      return Promise.reject(this.persistentDeliveryRefusal);
     }
     const rejection = this.nextDeliveryRejection;
     if (rejection !== undefined) {

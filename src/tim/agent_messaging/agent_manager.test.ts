@@ -24,6 +24,7 @@ import type {
   AgentPreparationRequest,
   PreparedAgentExecution,
 } from './agent_manager_types.js';
+import type { AgentMailboxBinding } from './agent_mailbox_binding.js';
 import type { PreparedSubagentExecution } from '../subagents/types.js';
 import type { AgentManager } from './agent_manager.js';
 
@@ -1636,6 +1637,90 @@ describe('AgentManager SendAgentMessage routing', () => {
     ]);
   });
 
+  test('bounds retries when a ready provider persistently reports temporary refusal', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'persistent-temporary-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+    const queued = await Promise.all(
+      ['first', 'second', 'third'].map((message) =>
+        manager.sendAgentMessage(manager.orchestratorIdentity, {
+          name: 'persistent-temporary-target',
+          message,
+        })
+      )
+    );
+    expect(queued.map((result) => result.delivery)).toEqual(['queued', 'queued', 'queued']);
+
+    target.handle.input.setPersistentTemporarilyUnavailable();
+    target.handle.input.setActiveAccepting();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const callsAfterRetry = target.handle.input.deliveryCalls;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(target.handle.input.deliveryCalls).toBe(callsAfterRetry);
+    expect(callsAfterRetry).toBe(2);
+    expect(target.handle.input.receivedMessages).toHaveLength(0);
+
+    target.handle.input.clearPersistentDeliveryRefusal();
+    target.handle.input.setIdle();
+    await waitFor(() => target.handle.input.receivedMessages.length === queued.length);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'first',
+      'second',
+      'third',
+    ]);
+  });
+
+  test('bounds retries when a ready provider persistently rejects delivery', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'persistent-rejection-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+    const queued = await Promise.all(
+      ['first', 'second', 'third'].map((message) =>
+        manager.sendAgentMessage(manager.orchestratorIdentity, {
+          name: 'persistent-rejection-target',
+          message,
+        })
+      )
+    );
+    expect(queued.map((result) => result.delivery)).toEqual(['queued', 'queued', 'queued']);
+
+    target.handle.input.setPersistentDeliveryRejection();
+    target.handle.input.setActiveAccepting();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const callsAfterRetry = target.handle.input.deliveryCalls;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(target.handle.input.deliveryCalls).toBe(callsAfterRetry);
+    expect(callsAfterRetry).toBe(2);
+    expect(target.handle.input.receivedMessages).toHaveLength(0);
+
+    target.handle.input.clearPersistentDeliveryRefusal();
+    target.handle.input.setIdle();
+    await waitFor(() => target.handle.input.receivedMessages.length === queued.length);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'first',
+      'second',
+      'third',
+    ]);
+  });
+
   test('drains queued messages from a removed sender without blocking later FIFO work', async () => {
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({
@@ -1748,6 +1833,66 @@ describe('AgentManager SendAgentMessage routing', () => {
       'two',
       'three',
       'four',
+    ]);
+  });
+
+  test('rechecks a mailbox fallback queued as a drain observes an empty lease', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'empty-lease-race-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'empty-lease-race-target',
+        message: 'first',
+      })
+    ).resolves.toMatchObject({ delivery: 'queued' });
+
+    const firstDeliveryStarted = target.handle.input.deferNextDelivery();
+    target.handle.input.setActiveAccepting();
+    await firstDeliveryStarted;
+
+    const bindings = (
+      manager as unknown as {
+        readonly mailboxBindings: Map<string, AgentMailboxBinding>;
+      }
+    ).mailboxBindings;
+    const binding = bindings.get(target.request.identity.id);
+    if (binding === undefined) {
+      throw new Error('Target mailbox binding was not found');
+    }
+    const originalDeliver = binding.deliver.bind(binding);
+    const fallbackStarted = deferred<void>();
+    const fallbackResult = deferred<'temporarily-unavailable'>();
+    vi.spyOn(binding, 'deliver').mockImplementation((message, sourceRegistration) => {
+      const result = originalDeliver(message, sourceRegistration);
+      return result.then((delivery) => {
+        expect(delivery).toBe('temporarily-unavailable');
+        fallbackStarted.resolve(undefined);
+        return fallbackResult.promise;
+      });
+    });
+
+    const secondSend = manager.sendAgentMessage(manager.orchestratorIdentity, {
+      name: 'empty-lease-race-target',
+      message: 'second',
+    });
+    await fallbackStarted.promise;
+    target.handle.input.resolveNextDelivery('steered');
+    fallbackResult.resolve('temporarily-unavailable');
+
+    await expect(secondSend).resolves.toMatchObject({ delivery: 'queued' });
+    await waitFor(() => target.handle.input.receivedMessages.length === 2);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'first',
+      'second',
     ]);
   });
 

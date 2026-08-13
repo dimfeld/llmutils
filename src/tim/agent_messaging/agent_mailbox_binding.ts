@@ -7,6 +7,8 @@ import type { AgentRegistration } from './runtime_dir.js';
 import type { SessionRegistrationHandle } from './session_runtime.js';
 import type { AgentDirectory, DirectoryRecord } from './agent_directory.js';
 
+type DrainExit = 'empty' | 'provider-refused' | 'unavailable' | 'failed';
+
 /** Owns one agent's provider input and the mailbox-to-provider drain. */
 export class AgentMailboxBinding {
   private input: AgentInputAdapter | undefined;
@@ -14,6 +16,7 @@ export class AgentMailboxBinding {
   private unsubscribe: (() => void) | undefined;
   private availabilityVersion = 0;
   private retryVersion: number | undefined;
+  private drainAfterEnqueue = false;
   private drainPromise: Promise<void> | undefined;
   private disposed = false;
 
@@ -68,6 +71,21 @@ export class AgentMailboxBinding {
     return this.deliverNow(message, sourceRegistration);
   }
 
+  /**
+   * Recheck a fallback only after the mailbox has appended it to its FIFO.
+   * This is separate from the provider-refusal retry gate: a drain can observe
+   * an empty mailbox just before a concurrent fallback is appended.
+   */
+  public notifyMailboxMessageQueued(): void {
+    if (!this.isCurrent() || this.pendingCount === 0) return;
+    if (this.drainPromise !== undefined) {
+      this.drainAfterEnqueue = true;
+      return;
+    }
+    if (this.retryVersion === this.availabilityVersion) return;
+    this.scheduleDrain();
+  }
+
   public scheduleDrain(): void {
     if (this.disposed || this.pendingCount === 0) return;
     if (!this.canDeliverNow()) return;
@@ -79,11 +97,19 @@ export class AgentMailboxBinding {
     this.drainPromise = Promise.resolve();
     let drainPromise: Promise<void>;
     drainPromise = this.drainPending()
-      .catch(() => undefined)
-      .finally(() => {
+      .catch((): DrainExit => 'failed')
+      .then((exit): void => {
         if (this.drainPromise === drainPromise) {
           this.drainPromise = undefined;
+          const shouldCheckAfterEnqueue = this.drainAfterEnqueue;
+          this.drainAfterEnqueue = false;
           if (this.availabilityVersion !== version && this.isCurrent()) {
+            this.scheduleDrain();
+          } else if (
+            exit === 'empty' &&
+            shouldCheckAfterEnqueue &&
+            this.retryVersion !== this.availabilityVersion
+          ) {
             this.scheduleDrain();
           }
         }
@@ -99,6 +125,7 @@ export class AgentMailboxBinding {
     this.input = undefined;
     this.receiver = undefined;
     this.retryVersion = undefined;
+    this.drainAfterEnqueue = false;
   }
 
   private isCurrent(): boolean {
@@ -190,26 +217,23 @@ export class AgentMailboxBinding {
     this.retryVersion = version;
     setImmediate(() => {
       if (!this.isCurrent() || this.retryVersion !== version) return;
-      if (this.pendingCount === 0) {
-        this.retryVersion = undefined;
-        return;
-      }
-      this.retryVersion = undefined;
+      // At most one provider-refusal retry is allowed per availability
+      // version. Further progress requires a real availability notification.
       this.scheduleDrain();
     });
   }
 
-  private async drainPending(): Promise<void> {
+  private async drainPending(): Promise<DrainExit> {
     while (this.canDeliverNow()) {
       const receiver = this.receiver;
       const input = this.input;
-      if (receiver === undefined || input === undefined) return;
+      if (receiver === undefined || input === undefined) return 'unavailable';
       const lease = receiver.leasePending(1);
-      if (lease === undefined) return;
+      if (lease === undefined) return 'empty';
       const entry = lease.messages[0];
       if (entry === undefined) {
         lease.acknowledge();
-        return;
+        return 'empty';
       }
       const source: AgentIdentity = this.directory.identityFromRegistration(
         entry.sourceRegistration
@@ -223,16 +247,16 @@ export class AgentMailboxBinding {
         if (delivery === 'temporarily-unavailable') {
           lease.requeue();
           this.scheduleRetry();
-          return;
+          return 'provider-refused';
         }
         lease.acknowledge();
-        this.retryVersion = undefined;
         this.updateRecordInputState(input);
       } catch {
         lease.requeue();
         this.scheduleRetry();
-        return;
+        return 'provider-refused';
       }
     }
+    return 'unavailable';
   }
 }

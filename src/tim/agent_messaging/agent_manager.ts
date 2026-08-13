@@ -174,6 +174,7 @@ export class AgentManager {
       sourceRegistration: AgentRegistration
     ) => Promise<MailboxDeliveryResult> = async (): Promise<MailboxDeliveryResult> =>
       'temporarily-unavailable';
+    let rootBinding: AgentMailboxBinding | undefined;
     try {
       const rootId = createRootAgentId(normalizedOptions);
       const rootRegistrationDraft = {
@@ -187,6 +188,9 @@ export class AgentManager {
         registration: rootRegistrationDraft,
         deliver: async (message, sourceRegistration): Promise<MailboxDeliveryResult> =>
           rootDelivery(message, sourceRegistration),
+        onMessageQueued: (): void => {
+          rootBinding?.notifyMailboxMessageQueued();
+        },
       });
       await rootRegistration.ready;
       const rootName = rootRegistration.registration.name as AgentName;
@@ -210,15 +214,16 @@ export class AgentManager {
         ownsSessionRuntime,
         rootRegistration
       );
-      const rootBinding = manager.mailboxBindings.get(rootId);
+      rootBinding = manager.mailboxBindings.get(rootId);
       if (rootBinding === undefined) {
         throw new AgentManagerError(
           'root_registration_failed',
           'The root mailbox binding is missing'
         );
       }
+      const registeredRootBinding = rootBinding;
       rootDelivery = (message, sourceRegistration): Promise<MailboxDeliveryResult> =>
-        rootBinding.deliver(message, sourceRegistration);
+        registeredRootBinding.deliver(message, sourceRegistration);
       return manager;
     } catch (error) {
       await rootRegistration?.deregister().catch(() => undefined);
@@ -280,6 +285,7 @@ export class AgentManager {
           registration: record.registrationDraft,
           deliver: (message, sourceRegistration): Promise<MailboxDeliveryResult> =>
             binding.deliver(message, sourceRegistration),
+          onMessageQueued: (): void => binding.notifyMailboxMessageQueued(),
         }),
         (value): void => {
           operation.attachMailbox(value);

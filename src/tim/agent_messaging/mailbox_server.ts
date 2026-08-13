@@ -44,6 +44,9 @@ export type MailboxDeliveryCallback = (
   sourceRegistration: AgentRegistration
 ) => MailboxDeliveryResult | Promise<MailboxDeliveryResult>;
 
+/** Called after a temporarily unavailable message is appended to the FIFO. */
+export type MailboxMessageQueuedCallback = () => void;
+
 export interface MailboxPendingMessage {
   readonly request: MailboxMessageRequest;
   readonly sourceRegistration: AgentRegistration;
@@ -62,6 +65,7 @@ export interface MailboxReceiverOptions {
   readonly registration: AgentRegistration;
   readonly resolveSourceRegistration: MailboxSourceRegistrationResolver;
   readonly deliver: MailboxDeliveryCallback;
+  readonly onMessageQueued?: MailboxMessageQueuedCallback;
   readonly maxConnections?: number;
   readonly recentRequestIdLimit?: number;
 }
@@ -71,6 +75,7 @@ export interface NormalizedMailboxReceiverOptions {
   readonly registration: AgentRegistration;
   readonly resolveSourceRegistration: MailboxSourceRegistrationResolver;
   readonly deliver: MailboxDeliveryCallback;
+  readonly onMessageQueued: MailboxMessageQueuedCallback | undefined;
   readonly maxConnections: number;
   readonly recentRequestIdLimit: number;
 }
@@ -132,6 +137,7 @@ const MAILBOX_RECEIVER_OPTION_KEYS = new Set([
   'registration',
   'resolveSourceRegistration',
   'deliver',
+  'onMessageQueued',
   'maxConnections',
   'recentRequestIdLimit',
 ]);
@@ -171,6 +177,12 @@ export function normalizeMailboxReceiverOptions(
     throw new MailboxReceiverError(
       'invalid_options',
       'Mailbox receiver delivery callback must be a function'
+    );
+  }
+  if (options.onMessageQueued !== undefined && typeof options.onMessageQueued !== 'function') {
+    throw new MailboxReceiverError(
+      'invalid_options',
+      'Mailbox receiver onMessageQueued callback must be a function when provided'
     );
   }
 
@@ -219,6 +231,7 @@ export function normalizeMailboxReceiverOptions(
     registration,
     resolveSourceRegistration: options.resolveSourceRegistration,
     deliver: options.deliver,
+    onMessageQueued: options.onMessageQueued,
     maxConnections,
     recentRequestIdLimit,
   };
@@ -260,6 +273,7 @@ export class MailboxReceiver {
   private readonly runtime: AgentMessagingRuntimeDirectory;
   private readonly resolveSourceRegistration: MailboxSourceRegistrationResolver;
   private readonly deliver: MailboxDeliveryCallback;
+  private readonly onMessageQueued: MailboxMessageQueuedCallback | undefined;
   private readonly maxConnections: number;
   private readonly recentRequestIdLimit: number;
   private readonly connections = new Set<net.Socket>();
@@ -281,6 +295,7 @@ export class MailboxReceiver {
     this.runtime = options.runtime;
     this.resolveSourceRegistration = options.resolveSourceRegistration;
     this.deliver = options.deliver;
+    this.onMessageQueued = options.onMessageQueued;
     this.maxConnections = options.maxConnections;
     this.recentRequestIdLimit = options.recentRequestIdLimit;
     this.ready = this.start();
@@ -621,6 +636,7 @@ export class MailboxReceiver {
         sourceRegistration: trustedSourceRegistration,
       })
     );
+    this.onMessageQueued?.();
     return buildMailboxSuccessAcknowledgement(request.requestId, 'queued');
   }
 
@@ -660,10 +676,9 @@ export class MailboxReceiver {
   private requeueLease(state: PendingDeliveryLeaseState): void {
     if (state.status !== 'active') return;
     if (this.closed) return;
+    // The active lease remains in pendingDeliveryLeasesSize() until requeue.
     if (
-      this.pending.length +
-        (this.pendingDeliveryLeasesSize() - state.messages.length) +
-        state.messages.length >
+      this.pending.length + this.pendingDeliveryLeasesSize() >
       MAX_PENDING_MESSAGES_PER_RECIPIENT
     ) {
       throw new MailboxReceiverError(
