@@ -374,8 +374,7 @@ export class MailboxReceiver {
     for (const message of toRequeue) {
       this.pendingDeliveryReservations.delete(message);
     }
-    // splice preserves the batch order at the front of the FIFO. `unshift`
-    // with a spread argument would reverse the batch.
+    // splice restores the batch at the front of the FIFO in its original order.
     this.pending.splice(0, 0, ...toRequeue);
   }
 

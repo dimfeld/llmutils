@@ -47,7 +47,11 @@ export interface AgentInputAdapter {
   readonly isReady: boolean;
   readonly activity: AgentInputActivity;
   deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery>;
-  /** Notify the manager when temporary input backpressure changes. */
+  /**
+   * Notify the manager when input availability changes. Providers must emit a
+   * notification after transient unavailability if it lasts beyond the
+   * manager's one safe retry.
+   */
   onAvailabilityChange(listener: () => void): () => void;
   release?(): Promise<void>;
 }

@@ -87,6 +87,20 @@ async function waitFor(condition: () => boolean): Promise<void> {
   throw new Error('Condition did not become true');
 }
 
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolvePromise: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve: (value: T): void => resolvePromise?.(value),
+  };
+}
+
 async function createManager(
   options: Parameters<typeof createAgentManager>[0] = {}
 ): Promise<AgentManager> {
@@ -179,6 +193,153 @@ describe('AgentManager root registration and snapshots', () => {
     });
     expect(session.isClosed).toBe(false);
     expect(session.runtime.rootPath).toBeTruthy();
+  });
+
+  test('aborts a start paused in preparation when an injected runtime manager closes', async () => {
+    const session = await createAgentMessagingSessionRuntime();
+    const preparationStarted = deferred<void>();
+    const preparation = deferred<PreparedAgentExecution>();
+    let preparationRequest: AgentPreparationRequest | undefined;
+    const preparer = {
+      prepare: async (request: AgentPreparationRequest): Promise<PreparedAgentExecution> => {
+        preparationRequest = request;
+        preparationStarted.resolve(undefined);
+        return preparation.promise;
+      },
+    };
+    let manager: AgentManager | undefined;
+    let foreign: Awaited<ReturnType<typeof session.register>> | undefined;
+    try {
+      manager = await createManager({
+        sessionRuntime: session,
+        agentPreparer: preparer,
+        agentLauncher: new FakeAgentLauncher(),
+      });
+      const startPromise = manager
+        .startAgent(manager.orchestratorIdentity, reservationRequest('close-during-preparation'))
+        .then(
+          (): undefined => undefined,
+          (error: unknown): unknown => error
+        );
+      await preparationStarted.promise;
+
+      await manager.close();
+      expect(manager.listAgents().agents).toEqual([]);
+      expect(manager.subagentCount).toBe(0);
+      expect(await session.runtime.listRegistrations()).toEqual([]);
+      expect(session.isClosed).toBe(false);
+
+      await expect(startPromise).resolves.toMatchObject({ code: 'manager_closed' });
+      preparation.resolve(preparedExecutionFor(preparationRequest as AgentPreparationRequest));
+      expect(manager.listAgents().agents).toEqual([]);
+      expect(await session.runtime.listRegistrations()).toEqual([]);
+
+      foreign = await session.register({
+        registration: {
+          id: 'foreign-after-close',
+          name: 'foreign-after-close',
+          role: 'subagent',
+          type: 'tester',
+          executor: 'codex-cli',
+          state: 'running-idle',
+        },
+        deliver: async (): Promise<'temporarily-unavailable'> => 'temporarily-unavailable',
+      });
+      expect(await session.runtime.listRegistrations()).toEqual([
+        expect.objectContaining({ id: 'foreign-after-close', name: 'foreign-after-close' }),
+      ]);
+    } finally {
+      await foreign?.deregister().catch(() => undefined);
+      await manager?.close().catch(() => undefined);
+      await session.close();
+    }
+  });
+
+  test('cleans an in-flight mailbox and handle when an injected runtime manager closes', async () => {
+    const session = await createAgentMessagingSessionRuntime();
+    const launcher = new FakeAgentLauncher();
+    let manager: AgentManager | undefined;
+    let foreign: Awaited<ReturnType<typeof session.register>> | undefined;
+    try {
+      manager = await createManager({
+        sessionRuntime: session,
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+      });
+      const launchPromise = launcher.waitForNextLaunch();
+      const startPromise = manager
+        .startAgent(manager.orchestratorIdentity, reservationRequest('close-during-readiness'))
+        .then(
+          (): undefined => undefined,
+          (error: unknown): unknown => error
+        );
+      const launch = await launchPromise;
+      await waitFor(
+        () => manager?.getAgentSnapshot(launch.request.identity.id)?.processControlId !== undefined
+      );
+
+      await manager.close();
+      expect(launch.handle.isReleased).toBe(true);
+      expect(launch.handle.releaseCount).toBe(1);
+      expect(manager.listAgents().agents).toEqual([]);
+      expect(manager.subagentCount).toBe(0);
+      expect(await session.runtime.listRegistrations()).toEqual([]);
+      expect(session.isClosed).toBe(false);
+
+      await expect(startPromise).resolves.toMatchObject({ code: 'manager_closed' });
+      launch.handle.markReady();
+      expect(manager.listAgents().agents).toEqual([]);
+      expect(await session.runtime.listRegistrations()).toEqual([]);
+
+      foreign = await session.register({
+        registration: {
+          id: 'foreign-after-readiness-close',
+          name: 'foreign-after-readiness-close',
+          role: 'subagent',
+          type: 'tester',
+          executor: 'codex-cli',
+          state: 'running-idle',
+        },
+        deliver: async (): Promise<'temporarily-unavailable'> => 'temporarily-unavailable',
+      });
+      expect(await session.runtime.listRegistrations()).toEqual([
+        expect.objectContaining({
+          id: 'foreign-after-readiness-close',
+          name: 'foreign-after-readiness-close',
+        }),
+      ]);
+    } finally {
+      await foreign?.deregister().catch(() => undefined);
+      await manager?.close().catch(() => undefined);
+      await session.close();
+    }
+  });
+
+  test('releases an in-flight handle when an owned runtime manager closes', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager
+      .startAgent(manager.orchestratorIdentity, reservationRequest('close-owned-runtime'))
+      .then(
+        (): undefined => undefined,
+        (error: unknown): unknown => error
+      );
+    const launch = await launchPromise;
+
+    await manager.close();
+    expect(launch.handle.isReleased).toBe(true);
+    expect(launch.handle.releaseCount).toBe(1);
+    expect(manager.listAgents().agents).toEqual([]);
+    expect(manager.subagentCount).toBe(0);
+    expect(manager.sessionRuntime.isClosed).toBe(true);
+
+    await expect(startPromise).resolves.toMatchObject({ code: 'manager_closed' });
+    launch.handle.markReady();
+    expect(manager.listAgents().agents).toEqual([]);
   });
 
   test('cleans up an owned runtime when root registration fails', async () => {

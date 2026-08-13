@@ -37,6 +37,7 @@ import {
   type AgentPreparationRequest,
   type AgentManagerOptions,
   type AgentInputAdapter,
+  type AgentLaunchHandle,
   type AgentRecord,
   type AgentRecordSnapshot,
   type AgentReservation,
@@ -69,6 +70,42 @@ interface NormalizedManagerOptions {
   readonly agentPreparer: AgentManagerOptions['agentPreparer'];
   readonly agentLauncher: AgentManagerOptions['agentLauncher'];
   readonly orchestratorInputAdapter: AgentInputAdapter | undefined;
+}
+
+interface InFlightStart {
+  readonly record: SubagentAgentRecord;
+  readonly reservation: AgentReservation;
+  readonly cancellation: {
+    readonly promise: Promise<void>;
+    cancel(): void;
+  };
+  mailbox?: SessionRegistrationHandle;
+  handle?: AgentLaunchHandle;
+  cleanupRequested: boolean;
+  pendingMailboxRegistration?: Promise<SessionRegistrationHandle>;
+  pendingHandleLaunch?: Promise<AgentLaunchHandle>;
+  mailboxDeregisterPromise?: Promise<void>;
+  handleReleasePromise?: Promise<void>;
+}
+
+function createCancellation(): {
+  readonly promise: Promise<void>;
+  cancel(): void;
+} {
+  let resolveCancellation: (() => void) | undefined;
+  let cancelled = false;
+  const promise = new Promise<void>((resolve) => {
+    resolveCancellation = resolve;
+  });
+  return {
+    promise,
+    cancel: (): void => {
+      if (!cancelled) {
+        cancelled = true;
+        resolveCancellation?.();
+      }
+    },
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -289,6 +326,7 @@ export class AgentManager {
   /** One retry is allowed at a later safe point for each unchanged activity version. */
   private readonly pendingDrainRetryVersions = new Map<AgentId, number>();
   private readonly pendingDrainPromises = new Map<AgentId, Promise<void>>();
+  private readonly inFlightStarts = new Map<AgentId, InFlightStart>();
   private closed = false;
   private closePromise: Promise<void> | undefined;
 
@@ -465,45 +503,61 @@ export class AgentManager {
       );
     }
 
-    let mailbox: SessionRegistrationHandle | undefined;
-    let handle: import('./agent_manager_types.js').AgentLaunchHandle | undefined;
+    const start = this.createInFlightStart(record, reservation);
     try {
       const preparationRequest: AgentPreparationRequest = {
         identity: reservation.identity,
         initialMessage: validated.initialMessage,
       };
-      const prepared = await this.options.agentPreparer.prepare(preparationRequest);
+      const prepared = await this.awaitStartBoundary(
+        start,
+        this.options.agentPreparer.prepare(preparationRequest)
+      );
+      this.ensureStartActive(start);
       if (prepared.agentType !== record.type || prepared.executor !== record.executor) {
         throw new Error('Agent preparation did not preserve the requested type and executor');
       }
 
-      mailbox = await this.sessionRuntime.register({
-        registration: record.registrationDraft,
-        deliver: (
-          message,
-          sourceRegistration
-        ): Promise<import('./mailbox_server.js').MailboxDeliveryResult> =>
-          this.deliverToAgent(record, message, sourceRegistration),
-      });
-      record.registration = mailbox.registration;
-      record.mailbox = mailbox;
-      await mailbox.ready;
+      const mailbox = await this.awaitStartResource(
+        start,
+        this.sessionRuntime.register({
+          registration: record.registrationDraft,
+          deliver: (
+            message,
+            sourceRegistration
+          ): Promise<import('./mailbox_server.js').MailboxDeliveryResult> =>
+            this.deliverToAgent(record, message, sourceRegistration),
+        }),
+        (value: SessionRegistrationHandle): void => this.attachStartMailbox(start, value),
+        (value: Promise<SessionRegistrationHandle> | undefined): void => {
+          start.pendingMailboxRegistration = value;
+        }
+      );
+      this.ensureStartActive(start);
+      await this.awaitStartBoundary(start, mailbox.ready);
+      this.ensureStartActive(start);
 
-      handle = await this.options.agentLauncher.launch({
-        identity: reservation.identity,
-        initialMessage: validated.initialMessage,
-        preparedExecution: prepared,
-        processLabel: formatAgentProcessLabel(record.executor, record.name),
-      });
-      record.launchHandle = handle;
-      record.processControlId = handle.processControlId;
-      record.providerThreadId = handle.providerThreadId;
+      const handle = await this.awaitStartResource(
+        start,
+        this.options.agentLauncher.launch({
+          identity: reservation.identity,
+          initialMessage: validated.initialMessage,
+          preparedExecution: prepared,
+          processLabel: formatAgentProcessLabel(record.executor, record.name),
+        }),
+        (value: AgentLaunchHandle): void => this.attachStartHandle(start, value),
+        (value: Promise<AgentLaunchHandle> | undefined): void => {
+          start.pendingHandleLaunch = value;
+        }
+      );
+      this.ensureStartActive(start);
       this.bindInputAdapter(record, handle.input);
 
       // A launch handle's readiness is the provider-neutral establishment
       // boundary. It is separate from the input adapter's readiness and from
       // the completion promise.
-      await handle.ready;
+      await this.awaitStartBoundary(start, handle.ready);
+      this.ensureStartActive(start);
       record.launchReady = true;
       this.updateRecordInputState(record, handle.input);
       this.schedulePendingDrain(record);
@@ -516,12 +570,19 @@ export class AgentManager {
         state: record.state,
       });
     } catch (error) {
-      await this.rollbackStart(record, reservation, mailbox, handle);
+      await this.rollbackStart(start);
+      if (error instanceof AgentManagerError && error.code === 'manager_closed') {
+        throw error;
+      }
       throw new AgentManagerError(
         'launch_failed',
         `Could not start agent ${record.name}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error }
       );
+    } finally {
+      if (this.inFlightStarts.get(record.id) === start) {
+        this.inFlightStarts.delete(record.id);
+      }
     }
   }
 
@@ -722,19 +783,25 @@ export class AgentManager {
       return this.closePromise;
     }
     this.closed = true;
+    const inFlightStarts = [...this.inFlightStarts.values()];
+    const inFlightStartIds = new Set(inFlightStarts.map((start) => start.record.id));
     const managerMailboxes = [
       this.rootRegistration,
       ...[...this.byId.values()]
-        .filter((record): record is SubagentAgentRecord => record.role === 'subagent')
+        .filter(
+          (record): record is SubagentAgentRecord =>
+            record.role === 'subagent' && !inFlightStartIds.has(record.id)
+        )
         .map((record) => record.mailbox)
         .filter((mailbox): mailbox is SessionRegistrationHandle => mailbox !== undefined),
     ];
     this.closePromise = (async (): Promise<void> => {
       let firstError: unknown;
-      const mailboxResults = await Promise.allSettled(
-        managerMailboxes.map((mailbox) => mailbox.deregister())
-      );
-      for (const result of mailboxResults) {
+      const cleanupResults = await Promise.allSettled([
+        ...managerMailboxes.map((mailbox) => mailbox.deregister()),
+        ...inFlightStarts.map((start) => this.cleanupInFlightStart(start)),
+      ]);
+      for (const result of cleanupResults) {
         if (result.status === 'rejected' && firstError === undefined) {
           firstError = result.reason;
         }
@@ -762,6 +829,154 @@ export class AgentManager {
       }
     })();
     return this.closePromise;
+  }
+
+  private createInFlightStart(
+    record: SubagentAgentRecord,
+    reservation: AgentReservation
+  ): InFlightStart {
+    const start: InFlightStart = {
+      record,
+      reservation,
+      cancellation: createCancellation(),
+      cleanupRequested: false,
+    };
+    this.inFlightStarts.set(record.id, start);
+    return start;
+  }
+
+  private ensureStartActive(start: InFlightStart): void {
+    if (
+      this.closed ||
+      this.inFlightStarts.get(start.record.id) !== start ||
+      this.byId.get(start.record.id) !== start.record
+    ) {
+      throw new AgentManagerError(
+        'manager_closed',
+        'The agent manager was closed while the agent was starting'
+      );
+    }
+  }
+
+  private async awaitStartResource<T>(
+    start: InFlightStart,
+    operation: Promise<T>,
+    attach: (value: T) => void,
+    track: (operation: Promise<T> | undefined) => void
+  ): Promise<T> {
+    let attached = false;
+    const tracked = operation.then((value: T): T => {
+      if (!attached) {
+        attached = true;
+        attach(value);
+      }
+      return value;
+    });
+    track(tracked);
+    void tracked.then(
+      (): void => {
+        track(undefined);
+      },
+      (): void => {
+        track(undefined);
+      }
+    );
+    return this.raceStartOperation(start, tracked);
+  }
+
+  private awaitStartBoundary<T>(start: InFlightStart, operation: Promise<T>): Promise<T> {
+    return this.raceStartOperation(start, operation);
+  }
+
+  private async raceStartOperation<T>(start: InFlightStart, operation: Promise<T>): Promise<T> {
+    const result = await Promise.race([
+      operation.then((value: T) => ({ kind: 'value' as const, value })),
+      start.cancellation.promise.then(() => ({ kind: 'cancelled' as const })),
+    ]);
+    if (result.kind === 'cancelled') {
+      throw new AgentManagerError(
+        'manager_closed',
+        'The agent manager was closed while the agent was starting'
+      );
+    }
+    return result.value;
+  }
+
+  private attachStartMailbox(start: InFlightStart, mailbox: SessionRegistrationHandle): void {
+    start.mailbox = mailbox;
+    start.record.registration = mailbox.registration;
+    start.record.mailbox = mailbox;
+    if (start.cleanupRequested) {
+      void this.deregisterStartMailbox(start).catch(() => undefined);
+    }
+  }
+
+  private attachStartHandle(start: InFlightStart, handle: AgentLaunchHandle): void {
+    start.handle = handle;
+    start.record.launchHandle = handle;
+    start.record.processControlId = handle.processControlId;
+    start.record.providerThreadId = handle.providerThreadId;
+    if (start.cleanupRequested) {
+      void this.releaseStartHandle(start).catch(() => undefined);
+    }
+  }
+
+  private deregisterStartMailbox(start: InFlightStart): Promise<void> {
+    if (start.mailboxDeregisterPromise !== undefined) {
+      return start.mailboxDeregisterPromise;
+    }
+    if (start.mailbox === undefined) {
+      return Promise.resolve();
+    }
+    start.mailboxDeregisterPromise = start.mailbox.deregister();
+    return start.mailboxDeregisterPromise;
+  }
+
+  private releaseStartHandle(start: InFlightStart): Promise<void> {
+    if (start.handleReleasePromise !== undefined) {
+      return start.handleReleasePromise;
+    }
+    if (start.handle?.release === undefined) {
+      return Promise.resolve();
+    }
+    const handle = start.handle;
+    start.handleReleasePromise = Promise.resolve().then(() => handle.release?.());
+    return start.handleReleasePromise;
+  }
+
+  private async cleanupInFlightStart(start: InFlightStart): Promise<void> {
+    start.cleanupRequested = true;
+    start.cancellation.cancel();
+    let firstError: unknown;
+    const pendingResources = [start.pendingMailboxRegistration, start.pendingHandleLaunch].filter(
+      (operation): operation is Promise<SessionRegistrationHandle> | Promise<AgentLaunchHandle> =>
+        operation !== undefined
+    );
+    const pendingResults = await Promise.allSettled(pendingResources);
+    for (const result of pendingResults) {
+      if (result.status === 'rejected') {
+        firstError ??= result.reason;
+      }
+    }
+    const mailboxCleanup = this.deregisterStartMailbox(start);
+    const handleRelease = this.releaseStartHandle(start);
+    try {
+      await mailboxCleanup;
+    } catch (error) {
+      firstError ??= error;
+    }
+
+    // Release the reservation only after mailbox deregistration has completed,
+    // so a later same-name startup cannot race the old registration.
+    start.reservation.release();
+    try {
+      await handleRelease;
+    } catch (error) {
+      firstError ??= error;
+    }
+    if (firstError !== undefined) {
+      throw firstError;
+    }
   }
 
   private validateReservationRequest(request: unknown): AgentReservationRequest {
@@ -1096,12 +1311,9 @@ export class AgentManager {
     );
   }
 
-  private async rollbackStart(
-    record: SubagentAgentRecord,
-    reservation: AgentReservation,
-    mailbox: SessionRegistrationHandle | undefined,
-    handle: import('./agent_manager_types.js').AgentLaunchHandle | undefined
-  ): Promise<void> {
+  private async rollbackStart(start: InFlightStart): Promise<void> {
+    const { record } = start;
+    start.cleanupRequested = true;
     record.launchHandle = undefined;
     record.launchReady = false;
     record.mailbox = undefined;
@@ -1110,15 +1322,12 @@ export class AgentManager {
     // Start provider cleanup without making reservation reuse wait for it. The
     // mailbox must finish deregistering first, because its registration file
     // can otherwise race a later same-name startup in the shared runtime.
-    if (handle?.release !== undefined) {
-      void Promise.resolve()
-        .then(() => handle.release?.())
-        .catch(() => undefined);
-    }
-    if (mailbox !== undefined) {
-      await mailbox.deregister().catch(() => undefined);
-    }
-    reservation.release();
+    // Start provider cleanup before mailbox cleanup. Both are independent, but
+    // this lets a release begin before a potentially slow mailbox deregister.
+    void this.releaseStartHandle(start).catch(() => undefined);
+    const mailboxCleanup = this.deregisterStartMailbox(start);
+    await mailboxCleanup.catch(() => undefined);
+    start.reservation.release();
   }
 
   private selectSubagentName(
