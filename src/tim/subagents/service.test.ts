@@ -409,16 +409,24 @@ describe('reusable subagent service', () => {
   });
 
   test('uses resolved input without reading input files or stdin', async () => {
-    const prepared = await prepareSubagentExecution({
-      agentType: 'implementer',
-      planId: 42,
-      executor: 'codex-cli',
-      inputPolicy: resolvedInput('Already resolved in-process input'),
-    });
+    const restoreIsTTY = mockIsTTY(false);
+    const restoreStdin = mockBunStdinText('resolved-input-stdin-sentinel');
 
-    expect(prepared.prompt).toContain('Already resolved in-process input');
-    expect(prepared.prompt).not.toContain('CLI input that must be ignored');
-    expect(mocks.executeCodexStep).not.toHaveBeenCalled();
+    try {
+      const prepared = await prepareSubagentExecution({
+        agentType: 'implementer',
+        planId: 42,
+        executor: 'codex-cli',
+        inputPolicy: resolvedInput('Already resolved in-process input'),
+      });
+
+      expect(prepared.prompt).toContain('Already resolved in-process input');
+      expect(prepared.prompt).not.toContain('resolved-input-stdin-sentinel');
+      expect(mocks.executeCodexStep).not.toHaveBeenCalled();
+    } finally {
+      restoreStdin();
+      restoreIsTTY();
+    }
   });
 
   test('passes materialized reference artifacts and plan environment to the prompt builder', async () => {

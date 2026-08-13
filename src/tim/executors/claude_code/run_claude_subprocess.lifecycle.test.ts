@@ -91,7 +91,7 @@ const FAILED_RESULT_LINE = JSON.stringify({
   total_cost_usd: 0,
 });
 
-function makeSubprocessOptions(processFormattedMessages: (messages: unknown[]) => void = () => {}) {
+function makeSubprocessOptions() {
   return {
     prompt: 'test prompt',
     cwd: process.cwd(),
@@ -99,13 +99,12 @@ function makeSubprocessOptions(processFormattedMessages: (messages: unknown[]) =
     noninteractive: true,
     terminalInput: false,
     claudeCodeOptions: { includeDefaultTools: false },
-    processFormattedMessages,
+    processFormattedMessages: () => {},
   };
 }
 
 async function setupRunClaudeSubprocess(
-  stdinWriteSpy: ReturnType<typeof vi.fn>,
-  options = makeSubprocessOptions()
+  stdinWriteSpy: ReturnType<typeof vi.fn>
 ) {
   const stdinEndSpy = vi.fn(async () => {});
   let formatStdout: ((output: string) => unknown) | undefined;
@@ -123,7 +122,7 @@ async function setupRunClaudeSubprocess(
     };
   });
 
-  const executePromise = runClaudeSubprocess(options);
+  const executePromise = runClaudeSubprocess(makeSubprocessOptions());
 
   const setupStart = Date.now();
   while (
