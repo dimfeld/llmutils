@@ -418,7 +418,7 @@ async function maybeClearStaleLock(
     console.log(`  Lock age: ${lockAgeHours} hours`);
 
     const shouldClear = await promptConfirm({
-      message: 'Clear this stale lock and use the workspace?',
+      message: `Clear this stale lock and use the "${workspace.name ?? workspace.taskId}" workspace?`,
       default: true,
     });
 

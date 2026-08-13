@@ -2,6 +2,7 @@ import { test, expect, describe, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { confirm } from '@inquirer/prompts';
 
 import { claimAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
@@ -242,6 +243,37 @@ describe('WorkspaceAutoSelector', () => {
     expect(result?.workspace.taskId).toBe('task-stale');
     expect(result?.isNew).toBe(false);
     expect(result?.clearedStaleLock).toBe(true);
+  });
+
+  test('includes the workspace name when confirming stale lock cleanup', async () => {
+    const workspacePath = path.join(testDir, 'workspace-named');
+    await fs.mkdir(workspacePath, { recursive: true });
+    await seedWorkspace('github.com/test/repo', workspacePath, 'task-named', 'task-named');
+
+    const db = getDatabase();
+    db.prepare('UPDATE workspace SET name = ? WHERE workspace_path = ?').run(
+      'Named Workspace',
+      workspacePath
+    );
+    await WorkspaceLock.acquireLock(workspacePath, 'tim agent', { type: 'pid' });
+    const workspace = db
+      .prepare('SELECT id FROM workspace WHERE workspace_path = ?')
+      .get(workspacePath) as { id: number };
+    db.prepare(
+      "UPDATE workspace_lock SET started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-25 hours') WHERE workspace_id = ?"
+    ).run(workspace.id);
+
+    await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
+      interactive: true,
+    });
+
+    expect(confirm).toHaveBeenCalledWith(
+      {
+        message: 'Clear this stale lock and use the "Named Workspace" workspace?',
+        default: true,
+      },
+      undefined
+    );
   });
 
   test('selectWorkspace does not clear stale lock when unlocked workspace exists', async () => {
