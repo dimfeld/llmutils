@@ -59,9 +59,9 @@ export interface AgentProviderLifecycleObserver {
 /**
  * Provider-neutral controls and events for one launched agent.
  *
- * The handle is already bound to one opaque agent identity. Events repeat that
- * identity so the manager can reject callbacks from stale or mis-bound
- * providers without inspecting provider transport details.
+ * The handle is bound to one opaque agent identity. The manager captures the
+ * matching directory record when it subscribes, so stale callbacks cannot
+ * affect a later agent that reuses the same name.
  */
 export interface AgentProviderLifecycleControls {
   requestGracefulShutdown(instruction: string): Promise<AgentProviderControlResult>;
