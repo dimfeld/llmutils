@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
+import * as path from 'node:path';
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
@@ -16,6 +17,7 @@ import { FakeAgentInputAdapter, FakeAgentLauncher, FakeAgentPreparer } from './f
 import { formatAgentProcessLabel } from './agent_process_labels.js';
 import { createAgentMessagingSessionRuntime } from './session_runtime.js';
 import { getDefaultConfig } from '../configSchema.js';
+import { writePlanFile } from '../plans.js';
 import type {
   AgentLaunchRequest,
   AgentPreparationRequest,
@@ -1780,6 +1782,81 @@ describe('AgentManager SendAgentMessage routing', () => {
 });
 
 describe('provider-neutral launch contracts and test fakes', () => {
+  test('forwards non-reviewer preparation through the real subagent preparation service', async () => {
+    const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-agent-preparation-test-'));
+    const repoRoot = path.join(tempDirectory, 'repository');
+    const configDirectory = path.join(repoRoot, '.tim', 'config');
+    const plansDirectory = path.join(repoRoot, '.tim', 'plans');
+    const planId = 915;
+    const configPath = path.join(configDirectory, 'tim.yml');
+    const planPath = path.join(plansDirectory, `${planId}-preparation-test.plan.md`);
+    const initialMessage = 'Prepare the second task with the requested provider settings.';
+
+    try {
+      await fs.mkdir(repoRoot, { recursive: true });
+      await Bun.$`git init`.cwd(repoRoot).quiet();
+      await Bun.$`git remote add origin ${`https://example.com/${path.basename(tempDirectory)}.git`}`
+        .cwd(repoRoot)
+        .quiet();
+      await fs.mkdir(configDirectory, { recursive: true });
+      await fs.mkdir(plansDirectory, { recursive: true });
+      await fs.writeFile(configPath, 'defaultExecutor: claude-code\n', 'utf8');
+      await writePlanFile(
+        planPath,
+        {
+          id: planId,
+          title: 'Preparation forwarding plan',
+          goal: 'Verify preparation forwarding',
+          details: 'A real plan fixture for AgentManager preparation.',
+          status: 'pending',
+          tasks: [
+            { title: 'Ignore the first task', description: 'This task must be out of scope.' },
+            { title: 'Prepare the second task', description: 'This task must be in scope.' },
+          ],
+        },
+        { cwdForIdentity: repoRoot }
+      );
+
+      const manager = await createManager();
+      const reservation = manager.reserveSubagent(
+        reservationRequest('real-prepared-agent', 'implementer')
+      );
+      try {
+        const preparation = createAgentPreparation({
+          planId,
+          model: 'gpt-5-codex',
+          taskIndex: '2',
+          configPath,
+          repositoryRoot: repoRoot,
+        });
+
+        const prepared = await preparation.prepare({
+          identity: reservation.identity,
+          initialMessage,
+        });
+
+        expect(prepared).toMatchObject({
+          agentType: 'implementer',
+          executor: 'codex-cli',
+          model: 'gpt-5-codex',
+          planId,
+          gitRoot: repoRoot,
+          planPath,
+        });
+        expect(prepared.plan.id).toBe(planId);
+        expect(prepared.config.resolvedConfigPath).toBe(configPath);
+        expect(prepared.prompt).toContain('Task 2: Prepare the second task');
+        expect(prepared.prompt).toContain('This task must be in scope.');
+        expect(prepared.prompt).toContain(initialMessage);
+        expect(prepared.prompt).not.toContain('Task 1: Ignore the first task');
+      } finally {
+        reservation.release();
+      }
+    } finally {
+      await fs.rm(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
   test('keeps collaborative reviewer preparation behind a narrow injected seam', async () => {
     const manager = await createManager();
     const reservation = manager.reserveSubagent(
@@ -1799,6 +1876,26 @@ describe('provider-neutral launch contracts and test fakes', () => {
     expect(prepared.agentType).toBe('reviewer');
     expect(prepared.executor).toBe('codex-cli');
     reservation.release();
+  });
+
+  test('rejects reviewer preparation when no collaborative preparer is configured', async () => {
+    const manager = await createManager();
+    const reservation = manager.reserveSubagent(
+      reservationRequest('reviewer-without-preparer', 'reviewer')
+    );
+
+    try {
+      const preparation = createAgentPreparation({ planId: 1 });
+
+      await expect(
+        preparation.prepare({
+          identity: reservation.identity,
+          initialMessage: 'Review the current changes.',
+        })
+      ).rejects.toThrow('Collaborative reviewer preparation is not configured');
+    } finally {
+      reservation.release();
+    }
   });
 
   test('accepts reviewer prepared executions in launch requests', async () => {

@@ -1319,9 +1319,6 @@ export class AgentManager {
     record.mailbox = undefined;
     record.registration = undefined;
 
-    // Start provider cleanup without making reservation reuse wait for it. The
-    // mailbox must finish deregistering first, because its registration file
-    // can otherwise race a later same-name startup in the shared runtime.
     // Start provider cleanup before mailbox cleanup. Both are independent, but
     // this lets a release begin before a potentially slow mailbox deregister.
     void this.releaseStartHandle(start).catch(() => undefined);
