@@ -26,13 +26,13 @@ The manager owns:
 - `listAgents()` lifecycle visibility.
 - `sendAgentMessage()` trusted routing and delivery acknowledgements.
 - The mailbox-to-provider drain for each agent.
+- `FinishAgent` and `StopAgent` lifecycle transitions.
+- Provider exit convergence, terminal notifications, final-message
+  deduplication, and live-subagent teardown.
 
-The manager does **not** own `FinishAgent`, `StopAgent` execution, provider exit
-convergence, terminal notifications, final-message deduplication, teardown of
-live subagents, provider tool installation, orchestration prompts, or any
-persistent Claude or Codex provider loop. Those belong to the successor
-lifecycle plan. Only the two narrow seams described in
-[Successor seams](#successor-seams) exist here.
+The manager does **not** own provider tool installation, orchestration prompts,
+or any persistent Claude or Codex provider loop. Provider adapters translate
+those provider-specific operations into the lifecycle controls described here.
 
 ## Module layout
 
