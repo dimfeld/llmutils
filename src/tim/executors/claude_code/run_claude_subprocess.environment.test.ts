@@ -65,6 +65,9 @@ vi.mock('./terminal_input_lifecycle.js', () => ({
 vi.mock('./format.js', () => ({
   extractStructuredMessages: vi.fn(() => []),
   formatJsonMessage: vi.fn(() => ({ type: 'result', resultText: 'done' })),
+  createClaudeMessageFormatter: vi.fn(() => ({
+    formatJsonMessage: vi.fn(() => ({ type: 'result', resultText: 'done' })),
+  })),
   resetToolUseCache: vi.fn(),
 }));
 

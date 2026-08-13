@@ -25,6 +25,9 @@ const mocks = vi.hoisted(() => ({
   resetToolUseCache: vi.fn(),
   createLineSplitter: vi.fn(),
   formatJsonMessage: vi.fn(),
+  createClaudeMessageFormatter: vi.fn(() => ({
+    formatJsonMessage: mocks.formatJsonMessage,
+  })),
   extractStructuredMessages: vi.fn(),
   log: vi.fn(),
   error: vi.fn(),
@@ -86,6 +89,7 @@ describe('Batch Mode Integration Tests', () => {
     }));
     vi.doMock('./executors/claude_code/format.ts', () => ({
       formatJsonMessage: mocks.formatJsonMessage,
+      createClaudeMessageFormatter: mocks.createClaudeMessageFormatter,
       extractStructuredMessages: mocks.extractStructuredMessages,
       resetToolUseCache: mocks.resetToolUseCache,
     }));

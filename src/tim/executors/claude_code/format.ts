@@ -201,9 +201,6 @@ export interface FormattedClaudeMessage {
   backgroundActivity?: BackgroundActivitySignal;
 }
 
-// Cache for tool use IDs mapped to their names.
-const toolUseCache = new Map<string, string>();
-
 interface ClaudeTaskItem {
   subject: string;
   description?: string;
@@ -214,25 +211,6 @@ interface PendingTaskCreate {
   sessionId: string;
   subject: string;
   description?: string;
-}
-
-const sessionTaskLists: Map<string, Map<string, ClaudeTaskItem>> = new Map();
-const pendingTaskCreates: Map<string, PendingTaskCreate> = new Map();
-const appliedTaskUpdates: Map<
-  string,
-  {
-    sessionId: string;
-    taskId: string;
-    previousStatus: TodoUpdateStatus;
-    appliedStatus: TodoUpdateStatus;
-  }
-> = new Map();
-
-export function resetToolUseCache(): void {
-  toolUseCache.clear();
-  sessionTaskLists.clear();
-  pendingTaskCreates.clear();
-  appliedTaskUpdates.clear();
 }
 
 export function applyTaskUpdateToList(
@@ -345,8 +323,11 @@ export function extractStructuredMessages(
   return formattedResults.flatMap((result) => toArray(result.structured));
 }
 
-export function extractStructuredMessagesFromLines(lines: string[]): StructuredMessage[] {
-  return extractStructuredMessages(lines.map((line) => formatJsonMessage(line)));
+export function extractStructuredMessagesFromLines(
+  lines: string[],
+  formatter: ClaudeMessageFormatter = createClaudeMessageFormatter()
+): StructuredMessage[] {
+  return extractStructuredMessages(lines.map((line) => formatter.formatJsonMessage(line)));
 }
 
 function withMessage(result: Omit<FormattedClaudeMessage, 'message'>): FormattedClaudeMessage {
@@ -364,554 +345,590 @@ function withMessage(result: Omit<FormattedClaudeMessage, 'message'>): Formatted
   };
 }
 
-export function formatJsonMessage(input: string, model?: string): FormattedClaudeMessage {
-  debugLog(input);
-
-  if (input.startsWith('[DEBUG]')) {
-    return { type: '' };
-  }
-
-  const filePaths: string[] = [];
-  let message: Message;
-  try {
-    message = JSON.parse(input) as Message;
-  } catch (err) {
-    debugLog('Failed to parse Claude JSON line:', input, err);
-    return withMessage({
-      type: 'parse_error',
-      structured: buildParseErrorStatus('claude', timestamp(), input),
-    });
-  }
-
-  if (message.type === 'result') {
-    if (message.subtype === 'success' || message.subtype === 'error_max_turns') {
-      return withMessage({
-        type: message.type,
-        resultText:
-          message.subtype === 'success' && typeof message.result === 'string'
-            ? message.result
-            : undefined,
-        resultInfo: {
-          durationMs: message.duration_ms,
-          turns: message.num_turns,
-          success: message.subtype === 'success' && !message.is_error,
-        },
-        structured: {
-          type: 'agent_session_end',
-          timestamp: timestamp(),
-          success: message.subtype === 'success' && !message.is_error,
-          sessionId: message.session_id,
-          durationMs: message.duration_ms,
-          costUsd: message.total_cost_usd,
-          turns: message.num_turns,
-          summary: message.subtype === 'error_max_turns' ? 'Maximum turns reached' : undefined,
-        },
-        structuredOutput: 'structured_output' in message ? message.structured_output : undefined,
-      });
+export class ClaudeMessageFormatter {
+  // Cache for tool use IDs mapped to their names.
+  private readonly toolUseCache = new Map<string, string>();
+  private readonly sessionTaskLists: Map<string, Map<string, ClaudeTaskItem>> = new Map();
+  private readonly pendingTaskCreates: Map<string, PendingTaskCreate> = new Map();
+  private readonly appliedTaskUpdates: Map<
+    string,
+    {
+      sessionId: string;
+      taskId: string;
+      previousStatus: TodoUpdateStatus;
+      appliedStatus: TodoUpdateStatus;
     }
-  } else if (message.type === 'system' && message.subtype === 'init') {
-    return withMessage({
-      type: message.type,
-      structured: buildSessionStart(timestamp(), 'claude', {
-        sessionId: message.session_id,
-        model,
-        tools: message.tools,
-        mcpServers: message.mcp_servers.map((server) => `${server.name} (${server.status})`),
-      }),
-    });
-  } else if (message.type === 'system' && message.subtype === 'task_notification') {
-    return withMessage({
-      type: message.type,
-      structured: {
-        type: 'workflow_progress',
-        timestamp: timestamp(),
-        phase: 'task_notification',
-        message: `Task ${message.task_id}: ${message.status}\n${message.summary}`,
-      },
-    });
-  } else if (message.type === 'system' && message.subtype === 'task_started') {
-    return withMessage({
-      type: message.type,
-      structured: {
-        type: 'workflow_progress',
-        timestamp: timestamp(),
-        phase: 'task_started',
-        message: `Task ${message.task_id} (${message.task_type}): ${message.description}`,
-      },
-    });
-  } else if (message.type === 'system' && message.subtype === 'task_updated') {
-    const isTerminalUpdate = message.patch?.end_time != null;
-    const updateMessage =
-      message.patch?.is_backgrounded === true && !isTerminalUpdate
-        ? `Task ${message.task_id}: moved to background`
-        : `Task ${message.task_id}: ${message.patch?.status ?? 'updated'}`;
+  > = new Map();
 
-    return withMessage({
-      type: message.type,
-      structured: {
-        type: 'workflow_progress',
-        timestamp: timestamp(),
-        phase: 'task_updated',
-        message: updateMessage,
-      },
-    });
-  } else if (message.type === 'system' && message.subtype === 'task_progress') {
-    const durationSuffix =
-      message.usage?.duration_ms != null ? ` (${message.usage.duration_ms}ms)` : '';
+  /** Clears only this execution's formatter state. */
+  public reset(): void {
+    this.toolUseCache.clear();
+    this.sessionTaskLists.clear();
+    this.pendingTaskCreates.clear();
+    this.appliedTaskUpdates.clear();
+  }
 
-    return withMessage({
-      type: message.type,
-      structured: {
-        type: 'workflow_progress',
-        timestamp: timestamp(),
-        phase: 'task_progress',
-        message: `Task In Progress: ${message.description}${durationSuffix}`,
-      },
-    });
-  } else if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
-    return {
-      type: message.type,
-      backgroundActivity: {
-        kind: 'background_tasks_changed',
-        hasRunningTasks: message.tasks.length > 0,
-      },
-    };
-  } else if (message.type === 'system' && message.subtype === 'status') {
-    // Ignore status messages with null status
-    if (message.status === null) {
+  public formatJsonMessage(input: string, model?: string): FormattedClaudeMessage {
+    debugLog(input);
+
+    if (input.startsWith('[DEBUG]')) {
       return { type: '' };
     }
 
-    return withMessage({
-      type: message.type,
-      structured: {
-        type: 'llm_status',
-        timestamp: timestamp(),
-        status: message.status,
-      },
-    });
-  } else if (message.type === 'system' && message.subtype === 'thinking_tokens') {
-    const tokens = message.estimated_tokens;
-    return withMessage({
-      type: message.type,
-      structured: {
-        type: 'llm_status',
-        timestamp: timestamp(),
-        status: tokens != null ? `Thinking... (${tokens} tokens)` : 'Thinking...',
-      },
-    });
-  } else if (message.type === 'system' && message.subtype === 'compact_boundary') {
-    return withMessage({
-      type: message.type,
-      structured: {
-        type: 'llm_status',
-        timestamp: timestamp(),
-        status: `Compacting (${message.compact_metadata.trigger})`,
-        detail: `${message.compact_metadata.pre_tokens} tokens before compact`,
-      },
-    });
-  } else if (message.type === 'rate_limit_event') {
-    const info = message.rate_limit_info;
-    const statusPrefix = info.status === 'allowed_warning' ? 'Rate limit warning' : 'Rate limit';
-    const status = info.rateLimitType
-      ? `${statusPrefix} (${info.rateLimitType})`
-      : `${statusPrefix}: ${info.status}`;
-    const resetAt = info.resetsAt != null ? formatResetAtUnix(info.resetsAt) : undefined;
-    const detailLines = [
-      info.utilization != null ? `Utilization: ${formatPercent(info.utilization)}` : undefined,
-      info.surpassedThreshold != null
-        ? `Threshold: ${formatPercent(info.surpassedThreshold)}`
-        : undefined,
-      info.isUsingOverage != null
-        ? `Using overage: ${info.isUsingOverage ? 'yes' : 'no'}`
-        : undefined,
-      resetAt ? `Resets at: ${resetAt}` : undefined,
-    ].filter((line): line is string => line !== undefined);
+    const filePaths: string[] = [];
+    let message: Message;
+    try {
+      message = JSON.parse(input) as Message;
+    } catch (err) {
+      debugLog('Failed to parse Claude JSON line:', input, err);
+      return withMessage({
+        type: 'parse_error',
+        structured: buildParseErrorStatus('claude', timestamp(), input),
+      });
+    }
 
-    return withMessage({
-      type: message.type,
-      structured: {
-        type: 'llm_status',
-        timestamp: timestamp(),
-        source: 'claude',
-        status,
-        detail: detailLines.length > 0 ? detailLines.join('\n') : undefined,
-        rateLimitInfo: {
-          utilization: info.utilization,
-          rateLimitType: info.rateLimitType,
-          resetsAt: info.resetsAt,
-          isUsingOverage: info.isUsingOverage,
-          surpassedThreshold: info.surpassedThreshold,
-        },
-      },
-    });
-  } else if (message.type === 'assistant' || message.type === 'user') {
-    const m = message.message;
-
-    const structuredMessages: StructuredMessage[] = [];
-    const rawMessage: string[] = [];
-
-    for (const content of m.content) {
-      const ts = timestamp();
-
-      if (typeof content === 'string') {
-        rawMessage.push(content);
-        structuredMessages.push({
-          type: 'llm_response',
-          timestamp: ts,
-          text: content,
-          isUserRequest: message.type === 'user',
-        });
-        continue;
-      }
-
-      if (content.type === 'thinking') {
-        structuredMessages.push({
-          type: 'llm_thinking',
-          timestamp: ts,
-          text: content.thinking,
-        });
-        continue;
-      }
-
-      if (content.type === 'text') {
-        rawMessage.push(content.text);
-        structuredMessages.push({
-          type: 'llm_response',
-          timestamp: ts,
-          text: content.text,
-          isUserRequest: message.type === 'user',
-        });
-        continue;
-      }
-
-      if (content.type === 'tool_use') {
-        // Store tool use ID mapping
-        if ('id' in content) {
-          toolUseCache.set(content.id, content.name);
-        }
-
-        // Special handling for Write tool to show file_path and line count
-        if (
-          content.name === 'Write' &&
-          content.input &&
-          typeof content.input === 'object' &&
-          'file_path' in content.input &&
-          'content' in content.input
-        ) {
-          const filePath = content.input.file_path as string;
-          filePaths.push(filePath);
-          const fileContent = content.input.content as string;
-          const lineCount = fileContent.split('\n').length;
-          structuredMessages.push({
-            type: 'file_write',
-            timestamp: ts,
-            path: filePath,
-            lineCount,
-          });
-          continue;
-        }
-
-        if (
-          content.name === 'Edit' &&
-          content.input &&
-          typeof content.input === 'object' &&
-          'file_path' in content.input &&
-          'old_string' in content.input &&
-          'new_string' in content.input
-        ) {
-          const { old_string, new_string, file_path } = content.input as {
-            old_string: string;
-            new_string: string;
-            file_path: string;
-          };
-
-          filePaths.push(file_path);
-
-          // Create a diff between the old and new strings
-          const diffText = diff.createTwoFilesPatch('old', 'new', old_string, new_string);
-
-          structuredMessages.push({
-            type: 'file_edit',
-            timestamp: ts,
-            path: file_path,
-            diff: diffText,
-          });
-          continue;
-        }
-
-        if (
-          content.name === 'MultiEdit' &&
-          content.input &&
-          typeof content.input === 'object' &&
-          'file_path' in content.input
-        ) {
-          const filePath = content.input.file_path as string;
-          filePaths.push(filePath);
-        }
-
-        if (
-          content.name === 'TodoWrite' &&
-          content.input &&
-          typeof content.input === 'object' &&
-          'todos' in content.input
-        ) {
-          const todos = content.input.todos;
-          if (!Array.isArray(todos)) {
-            structuredMessages.push({
-              type: 'llm_tool_use',
-              timestamp: ts,
-              toolName: content.name,
-              inputSummary: formatValue(content.input ?? {}),
-              input: content.input,
-            });
-            continue;
-          }
-
-          structuredMessages.push(
-            buildTodoUpdate(
-              'claude',
-              ts,
-              todos.map((todo) => ({
-                label:
-                  todo &&
-                  typeof todo === 'object' &&
-                  'content' in todo &&
-                  typeof todo.content === 'string'
-                    ? todo.content
-                    : '',
-                status:
-                  todo &&
-                  typeof todo === 'object' &&
-                  'status' in todo &&
-                  typeof todo.status === 'string'
-                    ? todo.status
-                    : undefined,
-              }))
-            )
-          );
-          continue;
-        }
-
-        if (
-          content.name === 'TaskCreate' &&
-          content.input &&
-          typeof content.input === 'object' &&
-          'subject' in content.input &&
-          typeof content.input.subject === 'string' &&
-          typeof content.id === 'string'
-        ) {
-          pendingTaskCreates.set(content.id, {
+    if (message.type === 'result') {
+      if (message.subtype === 'success' || message.subtype === 'error_max_turns') {
+        return withMessage({
+          type: message.type,
+          resultText:
+            message.subtype === 'success' && typeof message.result === 'string'
+              ? message.result
+              : undefined,
+          resultInfo: {
+            durationMs: message.duration_ms,
+            turns: message.num_turns,
+            success: message.subtype === 'success' && !message.is_error,
+          },
+          structured: {
+            type: 'agent_session_end',
+            timestamp: timestamp(),
+            success: message.subtype === 'success' && !message.is_error,
             sessionId: message.session_id,
-            subject: content.input.subject,
-            ...('description' in content.input && typeof content.input.description === 'string'
-              ? { description: content.input.description }
-              : {}),
+            durationMs: message.duration_ms,
+            costUsd: message.total_cost_usd,
+            turns: message.num_turns,
+            summary: message.subtype === 'error_max_turns' ? 'Maximum turns reached' : undefined,
+          },
+          structuredOutput: 'structured_output' in message ? message.structured_output : undefined,
+        });
+      }
+    } else if (message.type === 'system' && message.subtype === 'init') {
+      return withMessage({
+        type: message.type,
+        structured: buildSessionStart(timestamp(), 'claude', {
+          sessionId: message.session_id,
+          model,
+          tools: message.tools,
+          mcpServers: message.mcp_servers.map((server) => `${server.name} (${server.status})`),
+        }),
+      });
+    } else if (message.type === 'system' && message.subtype === 'task_notification') {
+      return withMessage({
+        type: message.type,
+        structured: {
+          type: 'workflow_progress',
+          timestamp: timestamp(),
+          phase: 'task_notification',
+          message: `Task ${message.task_id}: ${message.status}\n${message.summary}`,
+        },
+      });
+    } else if (message.type === 'system' && message.subtype === 'task_started') {
+      return withMessage({
+        type: message.type,
+        structured: {
+          type: 'workflow_progress',
+          timestamp: timestamp(),
+          phase: 'task_started',
+          message: `Task ${message.task_id} (${message.task_type}): ${message.description}`,
+        },
+      });
+    } else if (message.type === 'system' && message.subtype === 'task_updated') {
+      const isTerminalUpdate = message.patch?.end_time != null;
+      const updateMessage =
+        message.patch?.is_backgrounded === true && !isTerminalUpdate
+          ? `Task ${message.task_id}: moved to background`
+          : `Task ${message.task_id}: ${message.patch?.status ?? 'updated'}`;
+
+      return withMessage({
+        type: message.type,
+        structured: {
+          type: 'workflow_progress',
+          timestamp: timestamp(),
+          phase: 'task_updated',
+          message: updateMessage,
+        },
+      });
+    } else if (message.type === 'system' && message.subtype === 'task_progress') {
+      const durationSuffix =
+        message.usage?.duration_ms != null ? ` (${message.usage.duration_ms}ms)` : '';
+
+      return withMessage({
+        type: message.type,
+        structured: {
+          type: 'workflow_progress',
+          timestamp: timestamp(),
+          phase: 'task_progress',
+          message: `Task In Progress: ${message.description}${durationSuffix}`,
+        },
+      });
+    } else if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
+      return {
+        type: message.type,
+        backgroundActivity: {
+          kind: 'background_tasks_changed',
+          hasRunningTasks: message.tasks.length > 0,
+        },
+      };
+    } else if (message.type === 'system' && message.subtype === 'status') {
+      // Ignore status messages with null status
+      if (message.status === null) {
+        return { type: '' };
+      }
+
+      return withMessage({
+        type: message.type,
+        structured: {
+          type: 'llm_status',
+          timestamp: timestamp(),
+          status: message.status,
+        },
+      });
+    } else if (message.type === 'system' && message.subtype === 'thinking_tokens') {
+      const tokens = message.estimated_tokens;
+      return withMessage({
+        type: message.type,
+        structured: {
+          type: 'llm_status',
+          timestamp: timestamp(),
+          status: tokens != null ? `Thinking... (${tokens} tokens)` : 'Thinking...',
+        },
+      });
+    } else if (message.type === 'system' && message.subtype === 'compact_boundary') {
+      return withMessage({
+        type: message.type,
+        structured: {
+          type: 'llm_status',
+          timestamp: timestamp(),
+          status: `Compacting (${message.compact_metadata.trigger})`,
+          detail: `${message.compact_metadata.pre_tokens} tokens before compact`,
+        },
+      });
+    } else if (message.type === 'rate_limit_event') {
+      const info = message.rate_limit_info;
+      const statusPrefix = info.status === 'allowed_warning' ? 'Rate limit warning' : 'Rate limit';
+      const status = info.rateLimitType
+        ? `${statusPrefix} (${info.rateLimitType})`
+        : `${statusPrefix}: ${info.status}`;
+      const resetAt = info.resetsAt != null ? formatResetAtUnix(info.resetsAt) : undefined;
+      const detailLines = [
+        info.utilization != null ? `Utilization: ${formatPercent(info.utilization)}` : undefined,
+        info.surpassedThreshold != null
+          ? `Threshold: ${formatPercent(info.surpassedThreshold)}`
+          : undefined,
+        info.isUsingOverage != null
+          ? `Using overage: ${info.isUsingOverage ? 'yes' : 'no'}`
+          : undefined,
+        resetAt ? `Resets at: ${resetAt}` : undefined,
+      ].filter((line): line is string => line !== undefined);
+
+      return withMessage({
+        type: message.type,
+        structured: {
+          type: 'llm_status',
+          timestamp: timestamp(),
+          source: 'claude',
+          status,
+          detail: detailLines.length > 0 ? detailLines.join('\n') : undefined,
+          rateLimitInfo: {
+            utilization: info.utilization,
+            rateLimitType: info.rateLimitType,
+            resetsAt: info.resetsAt,
+            isUsingOverage: info.isUsingOverage,
+            surpassedThreshold: info.surpassedThreshold,
+          },
+        },
+      });
+    } else if (message.type === 'assistant' || message.type === 'user') {
+      const m = message.message;
+
+      const structuredMessages: StructuredMessage[] = [];
+      const rawMessage: string[] = [];
+
+      for (const content of m.content) {
+        const ts = timestamp();
+
+        if (typeof content === 'string') {
+          rawMessage.push(content);
+          structuredMessages.push({
+            type: 'llm_response',
+            timestamp: ts,
+            text: content,
+            isUserRequest: message.type === 'user',
           });
           continue;
         }
 
-        if (
-          content.name === 'TaskUpdate' &&
-          content.input &&
-          typeof content.input === 'object' &&
-          'taskId' in content.input &&
-          typeof content.input.taskId === 'string' &&
-          'status' in content.input &&
-          typeof content.input.status === 'string'
-        ) {
-          const taskList = sessionTaskLists.get(message.session_id);
-          if (!taskList) {
-            debugLog(`TaskUpdate for unknown session: ${message.session_id}`);
-          } else {
-            const task = taskList.get(content.input.taskId);
-            if (!task) {
-              debugLog(`TaskUpdate for unknown task: ${content.input.taskId}`);
-            } else {
-              const previousStatus = task.status;
-              applyTaskUpdateToList(taskList, content.input.taskId, content.input.status);
-              appliedTaskUpdates.set(content.id, {
-                sessionId: message.session_id,
-                taskId: content.input.taskId,
-                previousStatus,
-                appliedStatus: task.status,
-              });
-              structuredMessages.push(buildTaskListUpdate(ts, taskList));
-              continue;
-            }
+        if (content.type === 'thinking') {
+          structuredMessages.push({
+            type: 'llm_thinking',
+            timestamp: ts,
+            text: content.thinking,
+          });
+          continue;
+        }
+
+        if (content.type === 'text') {
+          rawMessage.push(content.text);
+          structuredMessages.push({
+            type: 'llm_response',
+            timestamp: ts,
+            text: content.text,
+            isUserRequest: message.type === 'user',
+          });
+          continue;
+        }
+
+        if (content.type === 'tool_use') {
+          // Store tool use ID mapping
+          if ('id' in content) {
+            this.toolUseCache.set(content.id, content.name);
           }
-        }
 
-        structuredMessages.push({
-          type: 'llm_tool_use',
-          timestamp: ts,
-          toolName: content.name,
-          inputSummary: formatValue(content.input ?? {}),
-          input: content.input,
-        });
-        continue;
-      }
-
-      if (content.type === 'tool_result') {
-        // Get the tool name if we have it cached
-        let toolName = '';
-        if (toolUseCache.has(content.tool_use_id)) {
-          toolName = toolUseCache.get(content.tool_use_id) ?? '';
-        }
-
-        // Check if this is a file operation (read/write) and simplify output
-        const result = content.content;
-        const isError = 'is_error' in content && content.is_error === true;
-
-        if (toolName === 'TaskCreate') {
-          const resultText = extractToolResultText(result);
-          const taskId = resultText?.match(/Task #(\d+) created successfully/)?.[1];
-          const pendingCreate = pendingTaskCreates.get(content.tool_use_id);
-
-          if (isError) {
-            debugLog('TaskCreate returned an error result');
-          } else if (!taskId) {
-            debugLog('TaskCreate result did not include a parseable task id:', resultText);
-          } else if (!pendingCreate) {
-            debugLog('TaskCreate result did not match a pending create:', content.tool_use_id);
-          } else {
-            let taskList = sessionTaskLists.get(pendingCreate.sessionId);
-            if (!taskList) {
-              taskList = new Map<string, ClaudeTaskItem>();
-              sessionTaskLists.set(pendingCreate.sessionId, taskList);
-            }
-
-            taskList.set(taskId, {
-              subject: pendingCreate.subject,
-              description: pendingCreate.description,
-              status: 'pending',
+          // Special handling for Write tool to show file_path and line count
+          if (
+            content.name === 'Write' &&
+            content.input &&
+            typeof content.input === 'object' &&
+            'file_path' in content.input &&
+            'content' in content.input
+          ) {
+            const filePath = content.input.file_path as string;
+            filePaths.push(filePath);
+            const fileContent = content.input.content as string;
+            const lineCount = fileContent.split('\n').length;
+            structuredMessages.push({
+              type: 'file_write',
+              timestamp: ts,
+              path: filePath,
+              lineCount,
             });
-            pendingTaskCreates.delete(content.tool_use_id);
-            structuredMessages.push(buildTaskListUpdate(ts, taskList));
             continue;
           }
-        }
 
-        if (toolName === 'TaskUpdate') {
-          const appliedUpdate = appliedTaskUpdates.get(content.tool_use_id);
-          if (appliedUpdate) {
-            appliedTaskUpdates.delete(content.tool_use_id);
+          if (
+            content.name === 'Edit' &&
+            content.input &&
+            typeof content.input === 'object' &&
+            'file_path' in content.input &&
+            'old_string' in content.input &&
+            'new_string' in content.input
+          ) {
+            const { old_string, new_string, file_path } = content.input as {
+              old_string: string;
+              new_string: string;
+              file_path: string;
+            };
 
-            if (!isError) {
+            filePaths.push(file_path);
+
+            // Create a diff between the old and new strings
+            const diffText = diff.createTwoFilesPatch('old', 'new', old_string, new_string);
+
+            structuredMessages.push({
+              type: 'file_edit',
+              timestamp: ts,
+              path: file_path,
+              diff: diffText,
+            });
+            continue;
+          }
+
+          if (
+            content.name === 'MultiEdit' &&
+            content.input &&
+            typeof content.input === 'object' &&
+            'file_path' in content.input
+          ) {
+            const filePath = content.input.file_path as string;
+            filePaths.push(filePath);
+          }
+
+          if (
+            content.name === 'TodoWrite' &&
+            content.input &&
+            typeof content.input === 'object' &&
+            'todos' in content.input
+          ) {
+            const todos = content.input.todos;
+            if (!Array.isArray(todos)) {
+              structuredMessages.push({
+                type: 'llm_tool_use',
+                timestamp: ts,
+                toolName: content.name,
+                inputSummary: formatValue(content.input ?? {}),
+                input: content.input,
+              });
               continue;
             }
 
-            const taskList = sessionTaskLists.get(appliedUpdate.sessionId);
-            const task = taskList?.get(appliedUpdate.taskId);
-            if (taskList && task && task.status === appliedUpdate.appliedStatus) {
-              task.status = appliedUpdate.previousStatus;
-              structuredMessages.push(buildTaskListUpdate(ts, taskList));
+            structuredMessages.push(
+              buildTodoUpdate(
+                'claude',
+                ts,
+                todos.map((todo) => ({
+                  label:
+                    todo &&
+                    typeof todo === 'object' &&
+                    'content' in todo &&
+                    typeof todo.content === 'string'
+                      ? todo.content
+                      : '',
+                  status:
+                    todo &&
+                    typeof todo === 'object' &&
+                    'status' in todo &&
+                    typeof todo.status === 'string'
+                      ? todo.status
+                      : undefined,
+                }))
+              )
+            );
+            continue;
+          }
+
+          if (
+            content.name === 'TaskCreate' &&
+            content.input &&
+            typeof content.input === 'object' &&
+            'subject' in content.input &&
+            typeof content.input.subject === 'string' &&
+            typeof content.id === 'string'
+          ) {
+            this.pendingTaskCreates.set(content.id, {
+              sessionId: message.session_id,
+              subject: content.input.subject,
+              ...('description' in content.input && typeof content.input.description === 'string'
+                ? { description: content.input.description }
+                : {}),
+            });
+            continue;
+          }
+
+          if (
+            content.name === 'TaskUpdate' &&
+            content.input &&
+            typeof content.input === 'object' &&
+            'taskId' in content.input &&
+            typeof content.input.taskId === 'string' &&
+            'status' in content.input &&
+            typeof content.input.status === 'string'
+          ) {
+            const taskList = this.sessionTaskLists.get(message.session_id);
+            if (!taskList) {
+              debugLog(`TaskUpdate for unknown session: ${message.session_id}`);
+            } else {
+              const task = taskList.get(content.input.taskId);
+              if (!task) {
+                debugLog(`TaskUpdate for unknown task: ${content.input.taskId}`);
+              } else {
+                const previousStatus = task.status;
+                applyTaskUpdateToList(taskList, content.input.taskId, content.input.status);
+                this.appliedTaskUpdates.set(content.id, {
+                  sessionId: message.session_id,
+                  taskId: content.input.taskId,
+                  previousStatus,
+                  appliedStatus: task.status,
+                });
+                structuredMessages.push(buildTaskListUpdate(ts, taskList));
+                continue;
+              }
             }
           }
+
+          structuredMessages.push({
+            type: 'llm_tool_use',
+            timestamp: ts,
+            toolName: content.name,
+            inputSummary: formatValue(content.input ?? {}),
+            input: content.input,
+          });
+          continue;
         }
 
-        if (toolName === 'Read' && typeof result === 'string') {
+        if (content.type === 'tool_result') {
+          // Get the tool name if we have it cached
+          let toolName = '';
+          if (this.toolUseCache.has(content.tool_use_id)) {
+            toolName = this.toolUseCache.get(content.tool_use_id) ?? '';
+          }
+
+          // Check if this is a file operation (read/write) and simplify output
+          const result = content.content;
+          const isError = 'is_error' in content && content.is_error === true;
+
+          if (toolName === 'TaskCreate') {
+            const resultText = extractToolResultText(result);
+            const taskId = resultText?.match(/Task #(\d+) created successfully/)?.[1];
+            const pendingCreate = this.pendingTaskCreates.get(content.tool_use_id);
+
+            if (isError) {
+              debugLog('TaskCreate returned an error result');
+            } else if (!taskId) {
+              debugLog('TaskCreate result did not include a parseable task id:', resultText);
+            } else if (!pendingCreate) {
+              debugLog('TaskCreate result did not match a pending create:', content.tool_use_id);
+            } else {
+              let taskList = this.sessionTaskLists.get(pendingCreate.sessionId);
+              if (!taskList) {
+                taskList = new Map<string, ClaudeTaskItem>();
+                this.sessionTaskLists.set(pendingCreate.sessionId, taskList);
+              }
+
+              taskList.set(taskId, {
+                subject: pendingCreate.subject,
+                description: pendingCreate.description,
+                status: 'pending',
+              });
+              this.pendingTaskCreates.delete(content.tool_use_id);
+              structuredMessages.push(buildTaskListUpdate(ts, taskList));
+              continue;
+            }
+          }
+
+          if (toolName === 'TaskUpdate') {
+            const appliedUpdate = this.appliedTaskUpdates.get(content.tool_use_id);
+            if (appliedUpdate) {
+              this.appliedTaskUpdates.delete(content.tool_use_id);
+
+              if (!isError) {
+                continue;
+              }
+
+              const taskList = this.sessionTaskLists.get(appliedUpdate.sessionId);
+              const task = taskList?.get(appliedUpdate.taskId);
+              if (taskList && task && task.status === appliedUpdate.appliedStatus) {
+                task.status = appliedUpdate.previousStatus;
+                structuredMessages.push(buildTaskListUpdate(ts, taskList));
+              }
+            }
+          }
+
+          if (toolName === 'Read' && typeof result === 'string') {
+            structuredMessages.push({
+              type: 'llm_tool_result',
+              timestamp: ts,
+              toolName,
+              resultSummary: `Lines: ${result.split('\n').length}`,
+              result,
+            });
+            continue;
+          }
+
+          if (
+            toolName === 'Bash' &&
+            typeof result === 'object' &&
+            result !== null &&
+            ('stdout' in result || 'stderr' in result)
+          ) {
+            const stdout = typeof (result as any).stdout === 'string' ? (result as any).stdout : '';
+            const stderr = typeof (result as any).stderr === 'string' ? (result as any).stderr : '';
+            const exitCode =
+              typeof (result as any).exit_code === 'number'
+                ? (result as any).exit_code
+                : typeof (result as any).exitCode === 'number'
+                  ? (result as any).exitCode
+                  : stderr
+                    ? 1
+                    : 0;
+
+            structuredMessages.push(
+              buildCommandResult(ts, {
+                command: typeof (result as any).command === 'string' ? (result as any).command : '',
+                exitCode,
+                stdout,
+                stderr,
+              })
+            );
+            continue;
+          }
+
+          let formattedResult: string;
+          if (
+            toolName === 'Edit' &&
+            typeof result === 'string' &&
+            result.includes('has been updated.')
+          ) {
+            formattedResult = truncateString(result);
+          } else if ((toolName === 'LS' || toolName === 'Glob') && typeof result === 'string') {
+            // This tends to have a lot of files listed and isn't useful to the user.
+            formattedResult = truncateString(result, 10);
+          } else if (
+            typeof result === 'object' &&
+            result !== null &&
+            'file_path' in result &&
+            'content' in result
+          ) {
+            const filePath = (result as any).file_path;
+            const fileContent = (result as any).content as string;
+            const lineCount = fileContent.split('\n').length;
+            formattedResult = `File: ${filePath}\nLines: ${lineCount}`;
+          } else {
+            formattedResult = formatValue(result);
+          }
+
           structuredMessages.push({
             type: 'llm_tool_result',
             timestamp: ts,
             toolName,
-            resultSummary: `Lines: ${result.split('\n').length}`,
+            resultSummary: formattedResult,
             result,
           });
           continue;
         }
 
-        if (
-          toolName === 'Bash' &&
-          typeof result === 'object' &&
-          result !== null &&
-          ('stdout' in result || 'stderr' in result)
-        ) {
-          const stdout = typeof (result as any).stdout === 'string' ? (result as any).stdout : '';
-          const stderr = typeof (result as any).stderr === 'string' ? (result as any).stderr : '';
-          const exitCode =
-            typeof (result as any).exit_code === 'number'
-              ? (result as any).exit_code
-              : typeof (result as any).exitCode === 'number'
-                ? (result as any).exitCode
-                : stderr
-                  ? 1
-                  : 0;
-
-          structuredMessages.push(
-            buildCommandResult(ts, {
-              command: typeof (result as any).command === 'string' ? (result as any).command : '',
-              exitCode,
-              stdout,
-              stderr,
-            })
-          );
-          continue;
-        }
-
-        let formattedResult: string;
-        if (
-          toolName === 'Edit' &&
-          typeof result === 'string' &&
-          result.includes('has been updated.')
-        ) {
-          formattedResult = truncateString(result);
-        } else if ((toolName === 'LS' || toolName === 'Glob') && typeof result === 'string') {
-          // This tends to have a lot of files listed and isn't useful to the user.
-          formattedResult = truncateString(result, 10);
-        } else if (
-          typeof result === 'object' &&
-          result !== null &&
-          'file_path' in result &&
-          'content' in result
-        ) {
-          const filePath = (result as any).file_path;
-          const fileContent = (result as any).content as string;
-          const lineCount = fileContent.split('\n').length;
-          formattedResult = `File: ${filePath}\nLines: ${lineCount}`;
-        } else {
-          formattedResult = formatValue(result);
-        }
-
-        structuredMessages.push({
-          type: 'llm_tool_result',
-          timestamp: ts,
-          toolName,
-          resultSummary: formattedResult,
-          result,
-        });
-        continue;
+        debugLog('Unknown message type:', content.type);
+        structuredMessages.push(
+          buildUnknownStatus('claude', ts, formatValue(content), 'unknown_content')
+        );
       }
 
-      debugLog('Unknown message type:', content.type);
-      structuredMessages.push(
-        buildUnknownStatus('claude', ts, formatValue(content), 'unknown_content')
-      );
+      const rawCombined = rawMessage.filter(Boolean).join('\n');
+      // Detect FAILED anywhere in the assistant message (not only first non-empty line)
+      const failure =
+        message.type === 'assistant' ? detectFailedLineAnywhere(rawCombined) : { failed: false };
+
+      return withMessage({
+        type: message.type,
+        structured: structuredMessages,
+        rawMessage: rawCombined,
+        structuredOutput: 'structured_output' in message ? message.structured_output : undefined,
+        filePaths: filePaths.length > 0 ? filePaths : undefined,
+        failed: failure.failed || undefined,
+        failedSummary: failure.failed ? failure.summary : undefined,
+      });
     }
 
-    const rawCombined = rawMessage.filter(Boolean).join('\n');
-    // Detect FAILED anywhere in the assistant message (not only first non-empty line)
-    const failure =
-      message.type === 'assistant' ? detectFailedLineAnywhere(rawCombined) : { failed: false };
-
     return withMessage({
-      type: message.type,
-      structured: structuredMessages,
-      rawMessage: rawCombined,
-      structuredOutput: 'structured_output' in message ? message.structured_output : undefined,
-      filePaths: filePaths.length > 0 ? filePaths : undefined,
-      failed: failure.failed || undefined,
-      failedSummary: failure.failed ? failure.summary : undefined,
+      type: (message as Record<string, unknown>)?.type as string,
+      structured: buildUnknownStatus(
+        'claude',
+        timestamp(),
+        `Unknown message: ${JSON.stringify(message)}`,
+        'unknown_message'
+      ),
     });
   }
+}
 
-  return withMessage({
-    type: (message as Record<string, unknown>)?.type as string,
-    structured: buildUnknownStatus(
-      'claude',
-      timestamp(),
-      `Unknown message: ${JSON.stringify(message)}`,
-      'unknown_message'
-    ),
-  });
+export function createClaudeMessageFormatter(): ClaudeMessageFormatter {
+  return new ClaudeMessageFormatter();
+}
+
+/**
+ * Formats one line with a fresh formatter. Callers that process a stream must
+ * create one ClaudeMessageFormatter and reuse it for every line.
+ */
+export function formatJsonMessage(input: string, model?: string): FormattedClaudeMessage {
+  return createClaudeMessageFormatter().formatJsonMessage(input, model);
 }
