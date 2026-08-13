@@ -561,7 +561,7 @@ describe('AgentManager root registration and snapshots', () => {
     });
   });
 
-  test('removes terminal subagents from authoritative list state without stopping them', async () => {
+  test('releases reservation-only test records through the explicit test support handle', async () => {
     const manager = await createManager();
     const reservation = reserveSubagentForTest(manager, reservationRequest('terminal-later'));
     manager.setAgentLifecycleState(reservation.id, 'finishing');
@@ -571,16 +571,13 @@ describe('AgentManager root registration and snapshots', () => {
     ]);
     expect(manager.subagentCount).toBe(1);
 
-    manager.removeTerminalAgent(reservation.id);
-    manager.removeTerminalAgent(reservation.id);
+    reservation.release();
+    reservation.release();
     expect(manager.listAgents().agents.map((agent) => agent.name)).toEqual([
       ORCHESTRATOR_AGENT_NAME,
     ]);
     expect(manager.subagentCount).toBe(0);
     expect(manager.getIdentityByName('terminal-later')).toBeUndefined();
-    expect(() => manager.removeTerminalAgent(manager.orchestratorIdentity.id)).toThrowError(
-      expect.objectContaining({ code: 'invalid_request' })
-    );
   });
 });
 
@@ -1364,15 +1361,15 @@ describe('AgentManager StartAgent startup and rollback', () => {
     await external.deregister();
   });
 
-  test('does not let a removed identity release a later reused name or slot', async () => {
+  test('does not let an old reservation release a later reused name or slot', async () => {
     const manager = await createManager();
     const first = reserveSubagentForTest(manager, reservationRequest('reused-name'));
     const oldId = first.id;
-    manager.removeTerminalAgent(oldId);
+    first.release();
 
     const second = reserveSubagentForTest(manager, reservationRequest('reused-name', 'reviewer'));
     expect(second.id).not.toBe(oldId);
-    manager.removeTerminalAgent(oldId);
+    first.release();
     expect(manager.getIdentityByName('reused-name')).toMatchObject({
       id: second.id,
       type: 'reviewer',
@@ -1560,18 +1557,15 @@ describe('AgentManager SendAgentMessage routing', () => {
       name: source.request.identity.name,
     };
 
-    manager.removeTerminalAgent(source.request.identity.id);
-    const acknowledgement = await manager.sessionRuntime.sendMessage(
-      sourceIdentity,
-      { id: target.request.identity.id, name: target.request.identity.name },
-      { requestId: 'vanished-source-request', content: 'must not deliver' }
-    );
-
-    expect(acknowledgement).toMatchObject({
-      requestId: 'vanished-source-request',
-      success: false,
-      error: { code: 'unknown_source' },
-    });
+    source.handle.lifecycle.emitExit('natural');
+    await manager.waitForAgentTerminal(source.request.identity.id);
+    await expect(
+      manager.sessionRuntime.sendMessage(
+        sourceIdentity,
+        { id: target.request.identity.id, name: target.request.identity.name },
+        { requestId: 'vanished-source-request', content: 'must not deliver' }
+      )
+    ).rejects.toMatchObject({ code: 'unknown_source' });
     expect(target.handle.input.receivedMessages).toHaveLength(0);
   });
 
@@ -1872,8 +1866,8 @@ describe('AgentManager SendAgentMessage routing', () => {
       })
     ).resolves.toMatchObject({ delivery: 'queued' });
 
-    manager.removeTerminalAgent(sender.request.identity.id);
-    await manager.sessionRuntime.deregister(sender.request.identity.id);
+    sender.handle.lifecycle.emitExit('natural');
+    await manager.waitForAgentTerminal(sender.request.identity.id);
 
     await expect(
       manager.sendAgentMessage(manager.orchestratorIdentity, {
@@ -2226,7 +2220,8 @@ describe('AgentManager SendAgentMessage routing', () => {
     ).rejects.toMatchObject({ code: 'unknown_target' });
 
     const staleSender = manager.getIdentityByName('stopping-target');
-    manager.removeTerminalAgent(stopping.request.identity.id);
+    stopping.handle.lifecycle.emitExit('natural');
+    await manager.waitForAgentTerminal(stopping.request.identity.id);
     await expect(
       manager.sendAgentMessage(staleSender as never, {
         name: 'orchestrator',
@@ -2461,13 +2456,12 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
       providerExit: { classification: 'natural' },
     });
 
-    manager.removeTerminalAgent(launch.request.identity.id);
+    await manager.waitForAgentTerminal(launch.request.identity.id);
     lifecycle.emitOutputActivity();
     lifecycle.emitCompletedAssistantMessage('late completed message');
     lifecycle.emitTurnComplete();
     lifecycle.emitExit('forced');
     expect(manager.getAgentSnapshot(launch.request.identity.id)).toBeUndefined();
-    await launch.handle.release();
   });
 
   test('does not let late events from a removed provider update a reused name', async () => {
@@ -2481,8 +2475,8 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     const firstId = first.request.identity.id;
 
     firstLifecycle.emitOutputActivity();
-    await manager.sessionRuntime.deregister(firstId);
-    manager.removeTerminalAgent(firstId);
+    firstLifecycle.emitExit('natural');
+    await manager.waitForAgentTerminal(firstId);
 
     const second = await startFakeAgent(manager, launcher, 'reused-lifecycle-name');
     second.handle.input.markReady();
@@ -2503,7 +2497,6 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
       'lastCompletedAssistantMessage'
     );
     expect(manager.getAgentSnapshot(second.request.identity.id)).not.toHaveProperty('providerExit');
-    await first.handle.release();
   });
 
   test('detaches lifecycle listeners when the manager closes', async () => {
@@ -2698,8 +2691,7 @@ describe('AgentManager FinishAgent lifecycle', () => {
     const staleIdentity = first.request.identity;
 
     first.handle.lifecycle.emitExit('natural');
-    await manager.sessionRuntime.deregister(first.request.identity.id);
-    manager.removeTerminalAgent(first.request.identity.id);
+    await manager.waitForAgentTerminal(first.request.identity.id);
     await expect(manager.finishAgent(staleIdentity, {})).rejects.toMatchObject({
       code: 'unknown_sender',
     });
@@ -2926,7 +2918,7 @@ describe('AgentManager FinishAgent lifecycle', () => {
         expect.objectContaining({ name: 'finish-removal', state: 'finishing' }),
       ])
     );
-    manager.removeTerminalAgent(staleIdentity.id);
+    await manager.waitForAgentTerminal(staleIdentity.id);
     expect(manager.listAgents().agents).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ name: 'finish-removal' })])
     );
@@ -3492,7 +3484,7 @@ describe('AgentManager StopAgent lifecycle', () => {
     expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
   });
 
-  test('clears inactivity timers when an agent exits, is removed, or the manager closes', async () => {
+  test('clears inactivity timers when an agent exits or the manager closes', async () => {
     const launcher = new FakeAgentLauncher();
     const scheduler = new FakeAgentManagerScheduler();
     const manager = await createManager({
@@ -3514,7 +3506,8 @@ describe('AgentManager StopAgent lifecycle', () => {
     await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-timer-remove' });
     await flushLifecyclePromises();
     expect(scheduler.pendingTimerCount).toBe(1);
-    manager.removeTerminalAgent(removed.request.identity.id);
+    removed.handle.lifecycle.emitExit('natural');
+    await manager.waitForAgentTerminal(removed.request.identity.id);
     expect(scheduler.pendingTimerCount).toBe(0);
     scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS * 2);
     expect(removed.handle.lifecycle.forcedShutdownCalls).toBe(0);

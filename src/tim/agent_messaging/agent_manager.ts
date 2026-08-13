@@ -696,27 +696,6 @@ export class AgentManager {
     this.directory.setLifecycleState(parsedId, state);
   }
 
-  /** Idempotent compatibility hook for records that have no provider resources. */
-  public removeTerminalAgent(agentId: string): void {
-    this.ensureOpen();
-    const parsedId = parseAgentId(agentId);
-    if (parsedId === undefined) return;
-    const record = this.directory.getRecord(parsedId);
-    if (record === undefined) return;
-    if (record.role !== 'subagent') {
-      throw new AgentManagerError(
-        'invalid_request',
-        'Terminal removal is only available for subagent identities'
-      );
-    }
-    this.disposeStopLifecycle(parsedId);
-    this.terminalLifecycles.delete(parsedId);
-    this.unbindProviderLifecycle(parsedId);
-    this.mailboxBindings.get(parsedId)?.dispose();
-    this.mailboxBindings.delete(parsedId);
-    this.directory.removeTerminal(parsedId);
-  }
-
   public close(): Promise<void> {
     if (this.closePromise !== undefined) return this.closePromise;
     this.closed = true;

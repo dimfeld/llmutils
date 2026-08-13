@@ -281,15 +281,15 @@ an injected `prepareReviewer` hook for collaborative, read-only review context;
 this path never calls the formal review handler. `PreparedAgentExecution` is the
 prepared subagent execution widened to allow the shared `reviewer` type.
 
-## Successor seams
+## Lifecycle ownership
 
-Two narrow methods exist for the successor lifecycle plan and perform no
-completion, notification, or provider work:
+The manager owns the complete terminal lifecycle. Provider exit events, finish
+requests, stop requests, and provider failures converge through one shared
+terminal promise and cleanup path. Callers that need to observe completion use
+`waitForAgentTerminal(id)`; they must not remove agent records directly.
 
-- `setAgentLifecycleState(id, state)` — subagent-only nonterminal transition,
-  used to reach `finishing` and `stopping`.
-- `removeTerminalAgent(id)` — subagent-only removal of authoritative state after
-  the lifecycle owner has cleaned the resources.
+`setAgentLifecycleState(id, state)` remains a narrow nonterminal test seam for
+the provider-neutral lifecycle tests. It does not perform terminal cleanup.
 
 ## Testing
 
