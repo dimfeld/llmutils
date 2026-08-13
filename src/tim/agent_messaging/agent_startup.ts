@@ -44,8 +44,12 @@ class AgentStartOperation {
   public cleanupRequested = false;
 
   private readonly cancellation = createCancellation();
+  private cancellationError: AgentManagerError | undefined;
   private mailboxDeregisterPromise: Promise<void> | undefined;
   private handleReleasePromise: Promise<void> | undefined;
+  private readonly lateCleanupPromises = new Set<Promise<void>>();
+  private lateCleanupErrors: unknown[] = [];
+  private lateCleanupGeneration = 0;
   private closeCleanupRequested = false;
 
   public constructor(
@@ -55,6 +59,9 @@ class AgentStartOperation {
   ) {}
 
   public ensureActive(): void {
+    if (this.cancellationError !== undefined) {
+      throw this.cancellationError;
+    }
     if (this.cleanupRequested || this.directory.getRecord(this.record.id) !== this.record) {
       throw managerClosedError();
     }
@@ -63,16 +70,26 @@ class AgentStartOperation {
   /** Abort the active startup boundary with a classified manager error. */
   public cancel(error: AgentManagerError): void {
     this.cleanupRequested = true;
+    this.cancellationError ??= error;
     this.cancellation.cancel(error);
   }
 
   public async awaitBoundary<T>(operation: Promise<T>): Promise<T> {
+    if (this.cancellationError !== undefined) {
+      throw this.cancellationError;
+    }
     const result = await Promise.race([
       operation.then((value: T) => ({ kind: 'value' as const, value })),
       this.cancellation.promise.then((error) => ({ kind: 'cancelled' as const, error })),
     ]);
     if (result.kind === 'cancelled') {
       throw result.error;
+    }
+    // A provider exit can cancel the operation in the same microtask turn as
+    // readiness. Preserve that classified startup error instead of converting
+    // it to the generic manager-closed error in the next boundary check.
+    if (this.cancellationError !== undefined) {
+      throw this.cancellationError;
     }
     return result.value;
   }
@@ -103,7 +120,7 @@ class AgentStartOperation {
     this.record.registration = mailbox.registration;
     this.record.mailbox = mailbox;
     if (this.cleanupRequested) {
-      void this.deregisterMailbox().catch(() => undefined);
+      this.trackLateCleanup(this.deregisterMailbox());
     }
   }
 
@@ -113,7 +130,7 @@ class AgentStartOperation {
     this.record.processControlId = handle.processControlId;
     this.record.providerThreadId = handle.providerThreadId;
     if (this.cleanupRequested) {
-      void this.releaseHandle().catch(() => undefined);
+      this.trackLateCleanup(this.releaseHandle());
     }
   }
 
@@ -166,7 +183,57 @@ class AgentStartOperation {
     } catch (error) {
       firstError ??= error;
     }
+    try {
+      await this.waitForLateCleanup();
+    } catch (error) {
+      firstError ??= error;
+    }
     if (firstError !== undefined) throw firstError;
+  }
+
+  /**
+   * Wait for cleanup of resources that resolved after cancellation.
+   *
+   * This does not await the original preparation or launch boundary. It only
+   * waits for cleanup promises for resources that have actually attached,
+   * with one event-loop drain to collect a resource that resolves during
+   * teardown.
+   */
+  public async waitForLateCleanup(): Promise<void> {
+    let observedGeneration = this.lateCleanupGeneration;
+    for (;;) {
+      const pending = [...this.lateCleanupPromises];
+      if (pending.length > 0) {
+        await Promise.allSettled(pending);
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      if (
+        pending.length === 0 &&
+        this.lateCleanupPromises.size === 0 &&
+        observedGeneration === this.lateCleanupGeneration
+      ) {
+        break;
+      }
+      observedGeneration = this.lateCleanupGeneration;
+    }
+    const firstError = this.lateCleanupErrors[0];
+    this.lateCleanupErrors = [];
+    if (firstError !== undefined) throw firstError;
+  }
+
+  private trackLateCleanup(cleanup: Promise<void>): void {
+    const tracked = cleanup.then(
+      (): void => undefined,
+      (error: unknown): void => {
+        this.lateCleanupErrors.push(error);
+      }
+    );
+    this.lateCleanupPromises.add(tracked);
+    this.lateCleanupGeneration += 1;
+    void tracked.then(() => {
+      this.lateCleanupPromises.delete(tracked);
+      this.lateCleanupGeneration += 1;
+    });
   }
 
   private deregisterMailbox(): Promise<void> {

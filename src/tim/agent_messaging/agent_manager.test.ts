@@ -32,12 +32,16 @@ import { createAgentMessagingSessionRuntime } from './session_runtime.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { writePlanFile } from '../plans.js';
 import type {
+  AgentLaunchHandle,
+  AgentLauncher,
   AgentLaunchRequest,
   AgentPreparationRequest,
   PreparedAgentExecution,
 } from './agent_manager_types.js';
 import type { AgentMailboxBinding } from './agent_mailbox_binding.js';
 import type { AgentManager } from './agent_manager.js';
+import type { MailboxReceiver } from './mailbox_server.js';
+import type { SessionRegistrationHandle } from './session_runtime.js';
 import {
   FORCE_STOP_STALE_CONTEXT_WARNING,
   NO_COMPLETED_ASSISTANT_MESSAGE,
@@ -1311,12 +1315,139 @@ describe('AgentManager StartAgent startup and rollback', () => {
       () => manager.getAgentSnapshot(launch.request.identity.id)?.providerThreadId !== undefined
     );
 
-    launch.handle.lifecycle.emitExit('natural');
+    launch.handle.markReady();
+    queueMicrotask(() => launch.handle.lifecycle.emitExit('natural'));
     await expect(startPromise).rejects.toMatchObject({ code: 'launch_failed' });
     expect(rootInput.receivedMessages).toHaveLength(0);
     expect(launch.handle.releaseCount).toBe(1);
     expect(manager.getIdentityByName('exit-before-ready')).toBeUndefined();
     expect(manager.subagentCount).toBe(0);
+  });
+
+  test('waits for a late launch handle release without waiting for the launch promise itself', async () => {
+    const launchDeferred = deferred<AgentLaunchHandle>();
+    let launchRequest: AgentLaunchRequest | undefined;
+    const launcher: AgentLauncher = {
+      launch: async (request: AgentLaunchRequest): Promise<AgentLaunchHandle> => {
+        launchRequest = request;
+        return launchDeferred.promise;
+      },
+    };
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const start = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('late-launch-resource')
+    );
+    await waitFor(() => launchRequest !== undefined);
+
+    const releaseStarted = deferred<void>();
+    const releaseGate = deferred<void>();
+    let releaseCalls = 0;
+    const request = launchRequest as AgentLaunchRequest;
+    const handle: AgentLaunchHandle = {
+      executor: request.identity.executor,
+      processLabel: request.processLabel,
+      input: new FakeAgentInputAdapter(),
+      ready: Promise.resolve(),
+      completion: new Promise<never>(() => undefined),
+      lifecycle: new FakeAgentProviderLifecycleControls(request.identity.id),
+      release: async (): Promise<void> => {
+        releaseCalls += 1;
+        releaseStarted.resolve(undefined);
+        await releaseGate.promise;
+      },
+    };
+
+    const close = manager.close();
+    launchDeferred.resolve(handle);
+    await releaseStarted.promise;
+    let closeSettled = false;
+    void close.then(
+      (): void => {
+        closeSettled = true;
+      },
+      (): void => {
+        closeSettled = true;
+      }
+    );
+    await Promise.resolve();
+    expect(closeSettled).toBe(false);
+
+    releaseGate.resolve(undefined);
+    await expect(start).rejects.toMatchObject({ code: 'manager_closed' });
+    await close;
+    expect(releaseCalls).toBe(1);
+    expect(manager.sessionRuntime.isClosed).toBe(true);
+  });
+
+  test('waits for a late mailbox deregistration before manager close finishes', async () => {
+    const session = await createAgentMessagingSessionRuntime();
+    const lateMailbox = deferred<SessionRegistrationHandle>();
+    const deregisterStarted = deferred<void>();
+    const deregisterGate = deferred<void>();
+    let lateMailboxOptions: Parameters<typeof session.register>[0] | undefined;
+    let deregisterCalls = 0;
+    const originalRegister = session.register.bind(session);
+    vi.spyOn(session, 'register').mockImplementation(async (options) => {
+      if (options.registration.name === 'late-mailbox-resource') {
+        lateMailboxOptions = options;
+        return lateMailbox.promise;
+      }
+      return originalRegister(options);
+    });
+
+    let manager: AgentManager | undefined;
+    try {
+      manager = await createManager({
+        sessionRuntime: session,
+        agentPreparer: createPreparer(),
+        agentLauncher: new FakeAgentLauncher(),
+      });
+      const start = manager.startAgent(
+        manager.orchestratorIdentity,
+        reservationRequest('late-mailbox-resource')
+      );
+      await waitFor(() => lateMailboxOptions !== undefined);
+
+      const options = lateMailboxOptions as Parameters<typeof session.register>[0];
+      const registration = session.runtime.createRegistration(options.registration);
+      lateMailbox.resolve({
+        registration,
+        receiver: { pendingCount: 0 } as MailboxReceiver,
+        ready: Promise.resolve(),
+        deregister: async (): Promise<void> => {
+          deregisterCalls += 1;
+          deregisterStarted.resolve(undefined);
+          await deregisterGate.promise;
+        },
+      });
+
+      const close = manager.close();
+      await deregisterStarted.promise;
+      let closeSettled = false;
+      void close.then(
+        (): void => {
+          closeSettled = true;
+        },
+        (): void => {
+          closeSettled = true;
+        }
+      );
+      await Promise.resolve();
+      expect(closeSettled).toBe(false);
+
+      deregisterGate.resolve(undefined);
+      await expect(start).rejects.toMatchObject({ code: 'manager_closed' });
+      await close;
+      expect(deregisterCalls).toBe(1);
+      expect(await session.runtime.listRegistrations()).toEqual([]);
+    } finally {
+      await manager?.close().catch(() => undefined);
+      await session.close().catch(() => undefined);
+    }
   });
 
   test('rolls back a real mailbox socket readiness failure and reuses the slot and name', async () => {
@@ -3385,17 +3516,22 @@ describe('AgentManager StopAgent lifecycle', () => {
     expect(lifecycle.forcedShutdownCalls).toBe(1);
   });
 
-  test('does not arm a timer when graceful control reports an already-exited provider', async () => {
+  test('synthesizes natural exit and cleans up when graceful control reports already-exited', async () => {
     const launcher = new FakeAgentLauncher();
     const scheduler = new FakeAgentManagerScheduler();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
     const manager = await createManager({
       agentPreparer: createPreparer(),
       agentLauncher: launcher,
       scheduler,
+      orchestratorInputAdapter: rootInput,
     });
     const launch = await startActiveFakeAgent(manager, launcher, 'stop-graceful-exited');
     const lifecycle = launch.handle.lifecycle;
     const gracefulStarted = lifecycle.deferNextGracefulShutdown();
+    const notificationStarted = rootInput.deferNextDelivery();
 
     await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-graceful-exited' });
     lifecycle.resolveGracefulShutdown({ accepted: false, alreadyExited: true });
@@ -3403,8 +3539,20 @@ describe('AgentManager StopAgent lifecycle', () => {
     await flushLifecyclePromises();
 
     expect(scheduler.pendingTimerCount).toBe(0);
-    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS * 2);
-    expect(lifecycle.forcedShutdownCalls).toBe(0);
+    await notificationStarted;
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      providerExit: { classification: 'natural' },
+    });
+    expect(rootInput.receivedMessages).toHaveLength(0);
+
+    rootInput.resolveNextDelivery();
+    await manager.waitForAgentTerminal(launch.request.identity.id);
+    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages[0]?.content).toContain('stop-graceful-exited');
+    expect(manager.listAgents().agents).toHaveLength(1);
+    expect(manager.getIdentityByName('stop-graceful-exited')).toBeUndefined();
+    expect(manager.subagentCount).toBe(0);
+    expect(await manager.sessionRuntime.runtime.listRegistrations()).toHaveLength(1);
   });
 
   test('forces immediately, upgrades graceful stopping, and accepts force only once', async () => {

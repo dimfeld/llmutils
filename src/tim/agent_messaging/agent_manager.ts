@@ -731,9 +731,15 @@ export class AgentManager {
   public close(): Promise<void> {
     if (this.closePromise !== undefined) return this.closePromise;
     this.closed = true;
-    const startupCleanupPromises = this.startupTracker
-      .values()
-      .map((operation) => operation.cleanupForClose());
+    const startupOperations = [...this.startupTracker.values()];
+    const startupCleanupPromises = startupOperations.map((operation) => {
+      const cleanupPromise = operation.cleanupForClose();
+      // Keep the original promise for allSettled diagnostics, but attach a
+      // rejection handler in this same turn. Terminal teardown can take long
+      // enough that a rejected startup cleanup must not become unhandled first.
+      void cleanupPromise.catch(() => undefined);
+      return cleanupPromise;
+    });
     const snapshot = this.directory.records.filter(
       (
         record
@@ -751,6 +757,12 @@ export class AgentManager {
       }
       const startupResults = await Promise.allSettled(startupCleanupPromises);
       for (const result of startupResults) {
+        if (result.status === 'rejected') firstError ??= result.reason;
+      }
+      const lateCleanupResults = await Promise.allSettled(
+        startupOperations.map((operation) => operation.waitForLateCleanup())
+      );
+      for (const result of lateCleanupResults) {
         if (result.status === 'rejected') firstError ??= result.reason;
       }
 

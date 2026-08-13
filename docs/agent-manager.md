@@ -308,10 +308,12 @@ Every nonterminal agent has an independent output-inactivity path:
 - `finishing` agents receive the same independent deadline during root
   teardown, but never receive a second graceful instruction. Provider output
   resets only that agent's timer.
-- A provider `alreadyExited` control result is a convergence event. The manager
-  synthesizes a classified exit when the provider does not send a separate
-  callback. An exit before launch readiness is instead a `launch_failed`
-  startup result and never creates a normal terminal notification.
+- A provider `alreadyExited` control result is a non-failure assertion that the
+  provider has already exited. It is a convergence event: the manager
+  synthesizes a classified natural exit when the provider does not send a
+  separate callback. A failed provider must emit the classified `failed` exit
+  event instead. An exit before launch readiness is a `launch_failed` startup
+  result and never creates a normal terminal notification.
 - A force rejection that does not prove non-acceptance has an unknown outcome.
   The manager reports that error on later explicit force calls and never retries
   the provider control automatically. Root teardown does not issue another
