@@ -28,9 +28,11 @@ vi.mock('../../common/git.ts', async (importOriginal) => {
 
 vi.mock('./claude_code/format.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./claude_code/format.ts')>();
+  const formatJsonMessage = vi.fn();
   return {
     ...actual,
-    formatJsonMessage: vi.fn(),
+    formatJsonMessage,
+    createClaudeMessageFormatter: vi.fn(() => ({ formatJsonMessage })),
   };
 });
 

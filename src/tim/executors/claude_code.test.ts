@@ -40,6 +40,25 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+function doMockClaudeFormat(factory: () => Record<string, unknown>): void {
+  vi.doMock('./claude_code/format.ts', () => {
+    const formatModule = factory();
+    if (typeof formatModule.createClaudeMessageFormatter === 'function') {
+      return formatModule;
+    }
+
+    const formatJsonMessage = formatModule.formatJsonMessage;
+    if (typeof formatJsonMessage !== 'function') {
+      throw new Error('Claude format test mock must provide formatJsonMessage');
+    }
+
+    return {
+      ...formatModule,
+      createClaudeMessageFormatter: vi.fn(() => ({ formatJsonMessage })),
+    };
+  });
+}
+
 describe('ClaudeCodeExecutor - failure detection integration', () => {
   let tempDir = '/tmp/claude-failure-test';
 
@@ -69,7 +88,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     // Mock formatter to produce an assistant message with FAILED
     const failureRaw = `FAILED: Cannot proceed due to conflicting requirements\n\nRequirements:\n- A\nProblems:\n- B\nPossible solutions:\n- C`;
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
@@ -130,7 +149,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     // Mock formatter to produce an assistant message with an agent-tagged FAILED summary
     const failureRaw = `FAILED: Reviewer reported a failure — Blocked by policy\n\nRequirements:\n- A\nProblems:\n- B\nPossible solutions:\n- C`;
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
@@ -182,7 +201,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
 
     const failureRaw =
       'FAILED: Reviewer detected blocking issues\n\nRequirements:\n- Ensure tests pass\nProblems:\n- bun run test failed\nPossible solutions:\n- Investigate test logs';
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
@@ -233,7 +252,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     const failureRaw = `PREFACE\nSome lines first\n\nFAILED: Could not proceed due to constraints\nProblems:\n- X`;
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'assistant',
         message: 'Model output...',
@@ -284,7 +303,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
     }));
 
     let callIndex = 0;
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn((_line: string) => {
         if (callIndex++ === 0) {
           return {
@@ -356,7 +375,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
         wrapWithOrchestrationTdd: vi.fn((_content: string) => 'WRAPPED_TDD'),
       }));
 
-      vi.doMock('./claude_code/format.ts', () => ({
+      doMockClaudeFormat(() => ({
         formatJsonMessage: vi.fn(() => ({
           type: 'assistant',
           message: 'Model output...',
@@ -429,7 +448,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({})),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
 
@@ -480,7 +499,7 @@ describe('ClaudeCodeExecutor - failure detection integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({})),
       extractStructuredMessages: vi.fn((_messages: any[]) => []),
 
@@ -824,7 +843,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
     };
 
     // Mock formatJsonMessage to return structured output
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Review completed',
@@ -1043,7 +1062,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: '',
@@ -1091,7 +1110,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: '',
@@ -1152,7 +1171,7 @@ describe('ClaudeCodeExecutor - review mode execution', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: '',
@@ -1219,7 +1238,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
@@ -1282,7 +1301,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
@@ -1346,7 +1365,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
@@ -1424,7 +1443,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
@@ -1501,7 +1520,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
@@ -1565,7 +1584,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
@@ -1635,7 +1654,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         debug: false,
       }));
 
-      vi.doMock('./claude_code/format.ts', () => ({
+      doMockClaudeFormat(() => ({
         formatJsonMessage: vi.fn(() => ({
           type: 'assistant',
           message: 'Output',
@@ -1703,7 +1722,7 @@ describe('ClaudeCodeExecutor - tunnel prompt handler wiring', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn(() => ({
         type: 'assistant',
         message: 'Output',
@@ -2072,7 +2091,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     });
     const createClaudeMessageFormatter = vi.fn(() => ({ formatJsonMessage }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage,
       createClaudeMessageFormatter,
       extractStructuredMessages: vi.fn(() => []),
@@ -2185,7 +2204,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'result',
         message: 'done',
@@ -2277,7 +2296,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'result',
         message: 'maximum turns reached',
@@ -2365,7 +2384,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'result',
         message: 'done',
@@ -2469,7 +2488,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       debug: false,
     }));
 
-    vi.doMock('./claude_code/format.ts', () => ({
+    doMockClaudeFormat(() => ({
       formatJsonMessage: vi.fn((_line: string) => ({
         type: 'result',
         message: 'done',

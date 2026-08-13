@@ -12,7 +12,10 @@ import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tun
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import { codexReasoningLevelSchema, type CodexReasoningLevel } from '../executors/schemas.js';
-import * as claudeFormat from '../executors/claude_code/format.js';
+import {
+  createClaudeMessageFormatter,
+  extractStructuredMessages,
+} from '../executors/claude_code/format.js';
 import { createCodexStdoutFormatter } from '../executors/codex_cli/format.js';
 import {
   buildOutputSchemaConversionPrompt,
@@ -331,15 +334,7 @@ export async function executeClaudePrompt(
   let capturedResult: string | undefined;
   let capturedStructuredOutput: unknown;
   let killedByTimeout = false;
-  const legacyFormatJsonMessage = claudeFormat.formatJsonMessage;
-  const formatter = Object.prototype.hasOwnProperty.call(
-    claudeFormat,
-    'createClaudeMessageFormatter'
-  )
-    ? claudeFormat.createClaudeMessageFormatter()
-    : {
-        formatJsonMessage: (input: string, model?: string) => legacyFormatJsonMessage(input, model),
-      };
+  const formatter = createClaudeMessageFormatter();
 
   try {
     const result = await spawnAndLogOutput(args, {
@@ -365,7 +360,7 @@ export async function executeClaudePrompt(
       formatStdout: (chunk) => {
         const lines = split(chunk);
         const formattedResults = lines.map((line) => formatter.formatJsonMessage(line));
-        const structuredMessages = claudeFormat.extractStructuredMessages(formattedResults);
+        const structuredMessages = extractStructuredMessages(formattedResults);
 
         for (const formatted of formattedResults) {
           if (formatted.type !== 'result') {

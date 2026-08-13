@@ -20,7 +20,7 @@ import {
   startSubprocessMonitor,
   type SubprocessMonitorHandle,
 } from '../../../common/subprocess_monitor.js';
-import * as claudeFormat from './format.js';
+import { createClaudeMessageFormatter, extractStructuredMessages } from './format.js';
 import type { FormattedClaudeMessage } from './format.js';
 import { executeWithTerminalInput } from './terminal_input_lifecycle.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
@@ -403,16 +403,7 @@ export async function runClaudeSubprocess(
     }
 
     const splitter = createLineSplitter();
-    const legacyFormatJsonMessage = claudeFormat.formatJsonMessage;
-    const formatter = Object.prototype.hasOwnProperty.call(
-      claudeFormat,
-      'createClaudeMessageFormatter'
-    )
-      ? claudeFormat.createClaudeMessageFormatter()
-      : {
-          formatJsonMessage: (input: string, model?: string) =>
-            legacyFormatJsonMessage(input, model),
-        };
+    const formatter = createClaudeMessageFormatter();
 
     if (logModelSelection) {
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
@@ -446,7 +437,7 @@ export async function runClaudeSubprocess(
       formatStdout: (output) => {
         const lines = splitter(output);
         const formattedResults = lines.map((line) => formatter.formatJsonMessage(line, modelToUse));
-        const structuredMessages = claudeFormat.extractStructuredMessages(formattedResults);
+        const structuredMessages = extractStructuredMessages(formattedResults);
 
         // Track result messages and file paths
         for (const formatted of formattedResults) {

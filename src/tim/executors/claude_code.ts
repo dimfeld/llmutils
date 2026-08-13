@@ -12,7 +12,7 @@ import {
 } from '../../common/subprocess_monitor.js';
 import type { TimConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
-import * as claudeFormat from './claude_code/format.ts';
+import { createClaudeMessageFormatter, extractStructuredMessages } from './claude_code/format.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
 import { promptPrefixSelect } from '../../common/input.ts';
@@ -773,16 +773,7 @@ export class ClaudeCodeExecutor implements Executor {
       const disableInactivityTimeout = this.sharedOptions.disableInactivityTimeout !== false;
       const executionTimeoutMs = 60 * 60 * 1000; // 60 minutes
       let killedByTimeout = false;
-      const legacyFormatJsonMessage = claudeFormat.formatJsonMessage;
-      const formatter = Object.prototype.hasOwnProperty.call(
-        claudeFormat,
-        'createClaudeMessageFormatter'
-      )
-        ? claudeFormat.createClaudeMessageFormatter()
-        : {
-            formatJsonMessage: (input: string, model?: string) =>
-              legacyFormatJsonMessage(input, model),
-          };
+      const formatter = createClaudeMessageFormatter();
       const streaming = await spawnWithStreamingIO(args, {
         sessionProcessLabel: 'Claude execution',
         sessionProcessControl: 'both',
@@ -811,7 +802,7 @@ export class ClaudeCodeExecutor implements Executor {
         formatStdout: (output) => {
           let lines = splitter(output);
           const formattedResults = lines.map((line) => formatter.formatJsonMessage(line));
-          const structuredMessages = claudeFormat.extractStructuredMessages(formattedResults);
+          const structuredMessages = extractStructuredMessages(formattedResults);
           // Capture output based on the specified mode
           const captureMode = planInfo?.captureOutput;
 
