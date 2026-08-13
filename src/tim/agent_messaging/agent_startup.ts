@@ -190,8 +190,10 @@ class AgentStartOperation {
       `Mailbox deregistration for ${this.record.name}`
     ).catch(() => undefined);
     this.reservation.release();
-    // Provider cleanup can outlive the failed StartAgent operation. The name
-    // and capacity become reusable once the mailbox generation is gone.
+    // Provider cleanup can outlive the failed StartAgent operation. Release
+    // the reservation after the bounded mailbox cleanup attempt. A timed-out
+    // deregistration can leave a stale mailbox generation that a later start
+    // reports as a registration conflict.
   }
 
   public async cleanupForClose(): Promise<void> {
