@@ -27,7 +27,6 @@ const mocks = vi.hoisted(() => ({
   createClaudeMessageFormatter: vi.fn(() => ({
     formatJsonMessage: mocks.formatJsonMessage,
   })),
-  resetToolUseCache: vi.fn(),
   executeWithTerminalInput: vi.fn(),
 }));
 
@@ -54,9 +53,7 @@ vi.mock('../../common/process.js', () => ({
 }));
 vi.mock('../executors/claude_code/format.js', () => ({
   extractStructuredMessages: mocks.extractStructuredMessages,
-  formatJsonMessage: mocks.formatJsonMessage,
   createClaudeMessageFormatter: mocks.createClaudeMessageFormatter,
-  resetToolUseCache: mocks.resetToolUseCache,
 }));
 vi.mock('../executors/claude_code/terminal_input_lifecycle.js', () => ({
   executeWithTerminalInput: mocks.executeWithTerminalInput,
@@ -173,7 +170,6 @@ describe('subagent claude permissions MCP integration', () => {
         return { type: 'unknown' };
       }
     });
-    mocks.resetToolUseCache.mockImplementation(() => {});
     mocks.spawnWithStreamingIO.mockImplementation(async (args: string[], opts: any) => {
       capturedClaudeSpawnArgs = args;
       if (opts?.formatStdout) {

@@ -4,8 +4,9 @@ import type { ExecutePlanInfo, ExecutorCommonOptions } from './types';
 import type { TimConfig } from '../configSchema';
 import * as processModule from '../../common/process.ts';
 import * as gitModule from '../../common/git.ts';
-import * as formatModule from './claude_code/format.ts';
 import * as orchestratorPromptModule from './shared/orchestrator_prompt.ts';
+
+const formatJsonMessage = vi.fn();
 
 vi.mock('../../common/process.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../common/process.ts')>();
@@ -28,10 +29,8 @@ vi.mock('../../common/git.ts', async (importOriginal) => {
 
 vi.mock('./claude_code/format.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./claude_code/format.ts')>();
-  const formatJsonMessage = vi.fn();
   return {
     ...actual,
-    formatJsonMessage,
     createClaudeMessageFormatter: vi.fn(() => ({ formatJsonMessage })),
   };
 });
@@ -89,7 +88,7 @@ describe('ClaudeCodeExecutor model selection', () => {
       (output: string) => output.split('\n') as any
     );
     vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
-    vi.mocked(formatModule.formatJsonMessage).mockImplementation(
+    formatJsonMessage.mockImplementation(
       (line: string) =>
         ({
           message: line,
@@ -134,7 +133,7 @@ describe('ClaudeCodeExecutor model selection', () => {
       (output: string) => output.split('\n') as any
     );
     vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
-    vi.mocked(formatModule.formatJsonMessage).mockImplementation(
+    formatJsonMessage.mockImplementation(
       (line: string) =>
         ({
           message: line,
@@ -178,7 +177,7 @@ describe('ClaudeCodeExecutor model selection', () => {
       (output: string) => output.split('\n') as any
     );
     vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
-    vi.mocked(formatModule.formatJsonMessage).mockImplementation(
+    formatJsonMessage.mockImplementation(
       (line: string) =>
         ({
           message: line,
@@ -225,7 +224,7 @@ describe('ClaudeCodeExecutor model selection', () => {
       (output: string) => output.split('\n') as any
     );
     vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
-    vi.mocked(formatModule.formatJsonMessage).mockImplementation(
+    formatJsonMessage.mockImplementation(
       (line: string) =>
         ({
           message: line,

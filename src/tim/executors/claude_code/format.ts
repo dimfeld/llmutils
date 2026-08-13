@@ -924,11 +924,3 @@ export class ClaudeMessageFormatter {
 export function createClaudeMessageFormatter(): ClaudeMessageFormatter {
   return new ClaudeMessageFormatter();
 }
-
-/**
- * Formats one line with a fresh formatter. Callers that process a stream must
- * create one ClaudeMessageFormatter and reuse it for every line.
- */
-export function formatJsonMessage(input: string, model?: string): FormattedClaudeMessage {
-  return createClaudeMessageFormatter().formatJsonMessage(input, model);
-}

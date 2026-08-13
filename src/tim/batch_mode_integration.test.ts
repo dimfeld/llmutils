@@ -22,7 +22,6 @@ const mocks = vi.hoisted(() => ({
   createTunnelServer: vi.fn(),
   createExecutorTunnelServer: vi.fn(),
   createPromptRequestHandler: vi.fn(),
-  resetToolUseCache: vi.fn(),
   createLineSplitter: vi.fn(),
   formatJsonMessage: vi.fn(),
   createClaudeMessageFormatter: vi.fn(() => ({
@@ -88,10 +87,8 @@ describe('Batch Mode Integration Tests', () => {
       wrapWithOrchestrationTdd: mocks.wrapWithOrchestrationTdd,
     }));
     vi.doMock('./executors/claude_code/format.ts', () => ({
-      formatJsonMessage: mocks.formatJsonMessage,
       createClaudeMessageFormatter: mocks.createClaudeMessageFormatter,
       extractStructuredMessages: mocks.extractStructuredMessages,
-      resetToolUseCache: mocks.resetToolUseCache,
     }));
     vi.doMock('./executors/claude_code/terminal_input_lifecycle.ts', () => ({
       executeWithTerminalInput: mocks.executeWithTerminalInput,
@@ -177,7 +174,6 @@ describe('Batch Mode Integration Tests', () => {
       message: line,
     }));
     mocks.extractStructuredMessages.mockImplementation(() => []);
-    mocks.resetToolUseCache.mockImplementation(() => {});
     mocks.getRepositoryIdentity.mockResolvedValue({
       cwd: tempDir,
       gitRoot: tempDir,

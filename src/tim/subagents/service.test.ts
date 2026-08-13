@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { makeSubagentPlanFixture } from '../commands/subagent.test-helpers.js';
+import {
+  makeSubagentPlanFixture,
+  mockBunStdinText,
+  mockIsTTY,
+} from '../commands/subagent.test-helpers.js';
 import type { PlanSchema } from '../planSchema.js';
 import { launchPreparedSubagent, prepareSubagentExecution } from './service.js';
 
@@ -183,6 +188,180 @@ describe('reusable subagent service', () => {
     );
     expect(mocks.executeCodexStep).not.toHaveBeenCalled();
     expect(mocks.runClaudeSubprocess).not.toHaveBeenCalled();
+  });
+
+  test('uses the configured supported executor when the request omits one', async () => {
+    mocks.loadEffectiveConfig.mockResolvedValue({
+      defaultExecutor: 'claude-code',
+      executors: {},
+      agents: {},
+    });
+
+    const prepared = await prepareSubagentExecution({
+      agentType: 'tester',
+      planId: 42,
+      initialMessage: 'Use the configured executor.',
+    });
+
+    expect(prepared.executor).toBe('claude-code');
+  });
+
+  test('falls back to Claude when the configured default is unsupported', async () => {
+    mocks.loadEffectiveConfig.mockResolvedValue({
+      defaultExecutor: 'dynamic',
+      executors: {},
+      agents: {},
+    });
+
+    const prepared = await prepareSubagentExecution({
+      agentType: 'tester',
+      planId: 42,
+      initialMessage: 'Use the fallback executor.',
+    });
+
+    expect(prepared.executor).toBe('claude-code');
+  });
+
+  test('rejects an unsupported requested executor', async () => {
+    await expect(
+      prepareSubagentExecution({
+        agentType: 'implementer',
+        planId: 42,
+        executor: 'unsupported-provider',
+        initialMessage: 'This must fail before launch.',
+      })
+    ).rejects.toThrow('Unsupported subagent executor: unsupported-provider');
+
+    expect(mocks.executeCodexStep).not.toHaveBeenCalled();
+    expect(mocks.runClaudeSubprocess).not.toHaveBeenCalled();
+  });
+
+  test('applies CLI, subagent, and legacy Claude model precedence', async () => {
+    const legacyConfig = {
+      defaultExecutor: 'claude-code',
+      executors: {
+        'claude-code': {
+          agents: { implementer: { model: 'legacy-claude-model' } },
+        },
+      },
+      subagents: {
+        implementer: { model: { claude: 'configured-claude-model' } },
+      },
+      agents: {},
+    };
+    mocks.loadEffectiveConfig.mockResolvedValue(legacyConfig);
+
+    const configured = await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'claude-code',
+      initialMessage: 'Use the configured model.',
+    });
+    expect(configured.model).toBe('configured-claude-model');
+
+    const cliSelected = await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'claude-code',
+      model: 'cli-claude-model',
+      initialMessage: 'Use the CLI model.',
+    });
+    expect(cliSelected.model).toBe('cli-claude-model');
+
+    mocks.loadEffectiveConfig.mockResolvedValue({
+      ...legacyConfig,
+      subagents: {},
+    });
+    const legacySelected = await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'claude-code',
+      initialMessage: 'Use the legacy model.',
+    });
+    expect(legacySelected.model).toBe('legacy-claude-model');
+
+    mocks.loadEffectiveConfig.mockResolvedValue({
+      defaultExecutor: 'claude-code',
+      executors: {},
+      subagents: {},
+      agents: {},
+    });
+    const providerDefault = await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'claude-code',
+      initialMessage: 'Use the provider default.',
+    });
+    expect(providerDefault.model).toBeUndefined();
+  });
+
+  test('passes Codex model and reasoning effort separately to the provider', async () => {
+    const prepared = await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'codex-cli',
+      model: 'gpt-5.6-sol:high',
+      initialMessage: 'Run with high reasoning.',
+    });
+
+    await launchPreparedSubagent(prepared).completion;
+
+    expect(mocks.executeCodexStep).toHaveBeenCalledWith(
+      prepared.prompt,
+      gitRoot,
+      prepared.config,
+      expect.objectContaining({
+        model: 'gpt-5.6-sol',
+        reasoningLevel: 'high',
+      })
+    );
+  });
+
+  test('preserves input-file order, then inline input, in the reusable service', async () => {
+    const inputDirectory = '/tmp/tim-subagent-service-input-order';
+    const firstInputPath = path.join(inputDirectory, 'first.txt');
+    const secondInputPath = path.join(inputDirectory, 'second.txt');
+    await fs.mkdir(inputDirectory, { recursive: true });
+    await Bun.write(firstInputPath, 'first file input');
+    await Bun.write(secondInputPath, 'second file input');
+
+    const prepared = await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'codex-cli',
+      inputFile: [firstInputPath, secondInputPath],
+      input: 'inline input',
+    });
+
+    expect(prepared.prompt).toContain(
+      'role instructions\n\nfirst file input\n\nsecond file input\n\ninline input'
+    );
+  });
+
+  test('uses stdin fallback after preparation enables it explicitly', async () => {
+    const restoreIsTTY = mockIsTTY(false);
+    const restoreStdin = mockBunStdinText('stdin fallback input');
+
+    try {
+      const prepared = await prepareSubagentExecution({
+        agentType: 'tester',
+        planId: 42,
+        executor: 'codex-cli',
+        fallbackToStdin: true,
+      });
+
+      expect(prepared.prompt).toBe('tester prompt');
+      expect(mocks.getTesterPrompt).toHaveBeenLastCalledWith(
+        'prepared context',
+        '42',
+        'role instructions\n\nstdin fallback input',
+        undefined,
+        { mode: 'report', useJj: true }
+      );
+    } finally {
+      restoreStdin();
+      restoreIsTTY();
+    }
   });
 
   test('uses initialMessage without reading input files or stdin', async () => {

@@ -16,7 +16,12 @@ import type { SubagentPreparationRequest, SubagentType } from '../subagents/inde
 export type { SubagentType } from '../subagents/index.js';
 export { buildSubagentTaskContext } from '../subagents/index.js';
 
-interface SubagentOptions extends Omit<SubagentPreparationRequest, 'agentType' | 'planId'> {
+interface SubagentOptions {
+  executor?: string;
+  model?: string;
+  input?: string;
+  inputFile?: string | string[];
+  taskIndex?: string | string[];
   outputFile?: string;
 }
 
