@@ -17,8 +17,11 @@ import {
   type AgentIdentity,
   type AgentInputAdapter,
   type AgentManagerOptions,
+  type AgentOutboundMessageSnapshot,
+  type AgentProviderLifecycleControls,
   type AgentRecordSnapshot,
   type OrchestratorIdentity,
+  validateAgentProviderLifecycleControls,
   validateAgentInputAdapter,
 } from './agent_manager_types.js';
 import {
@@ -134,6 +137,8 @@ export class AgentManager {
   private readonly ownsSessionRuntime: boolean;
   private readonly rootRegistration: SessionRegistrationHandle;
   private readonly options: NormalizedManagerOptions;
+  private readonly lifecycleUnsubscribers = new Map<string, readonly (() => void)[]>();
+  private nextOutboundSequence = 0;
   private closed = false;
   private closePromise: Promise<void> | undefined;
 
@@ -202,6 +207,8 @@ export class AgentManager {
         state: 'running-idle' as const,
         inputActivity: 'idle' as const,
         creationSequence: 0,
+        providerOutputActivityCount: 0,
+        providerTurnCompletionCount: 0,
         registrationDraft: rootRegistrationDraft,
         registration: rootRegistration.registration,
         mailbox: rootRegistration,
@@ -312,6 +319,8 @@ export class AgentManager {
         }
       );
       operation.ensureActive();
+      validateAgentProviderLifecycleControls(handle.lifecycle);
+      this.bindProviderLifecycle(record, handle.lifecycle);
       binding.bindInputAdapter(handle.input);
       await operation.awaitBoundary(handle.ready);
       operation.ensureActive();
@@ -325,6 +334,7 @@ export class AgentManager {
         state: record.state,
       });
     } catch (error) {
+      this.unbindProviderLifecycle(record.id);
       binding.dispose();
       this.mailboxBindings.delete(record.id);
       await operation.rollback();
@@ -383,6 +393,7 @@ export class AgentManager {
             : new MailboxProtocolError(acknowledgement.error.code, acknowledgement.error.message)
         );
       }
+      this.recordSuccessfulOutbound(sourceRecord, targetRecord.name, validated.message);
       return Object.freeze({
         name: targetRecord.name,
         messageId: acknowledgement.requestId,
@@ -419,6 +430,7 @@ export class AgentManager {
     this.ensureOpen();
     const parsedId = parseAgentId(agentId);
     if (parsedId === undefined) return;
+    this.unbindProviderLifecycle(parsedId);
     this.mailboxBindings.get(parsedId)?.dispose();
     this.mailboxBindings.delete(parsedId);
     this.directory.removeTerminal(parsedId);
@@ -449,6 +461,9 @@ export class AgentManager {
       } catch (error) {
         firstError ??= error;
       } finally {
+        for (const agentId of this.lifecycleUnsubscribers.keys()) {
+          this.unbindProviderLifecycle(agentId);
+        }
         for (const binding of this.mailboxBindings.values()) binding.dispose();
         this.mailboxBindings.clear();
         this.directory.clear();
@@ -491,6 +506,54 @@ export class AgentManager {
     if (parsed === undefined)
       throw new AgentManagerError('invalid_name', `Invalid target agent name: ${name}`);
     return parsed;
+  }
+
+  private bindProviderLifecycle(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    lifecycle: AgentProviderLifecycleControls
+  ): void {
+    this.unbindProviderLifecycle(record.id);
+    const isCurrentEvent = (agentId: string): boolean =>
+      !this.closed && agentId === record.id && this.directory.getRecord(record.id) === record;
+    const unsubscribers = [
+      lifecycle.onOutputActivity((event): void => {
+        if (!isCurrentEvent(event.agentId)) return;
+        record.providerOutputActivityCount += 1;
+      }),
+      lifecycle.onCompletedAssistantMessage((event): void => {
+        if (!isCurrentEvent(event.agentId)) return;
+        record.lastCompletedAssistantMessage = event.message;
+      }),
+      lifecycle.onTurnComplete((event): void => {
+        if (!isCurrentEvent(event.agentId)) return;
+        record.providerTurnCompletionCount += 1;
+      }),
+      lifecycle.onExit((event): void => {
+        if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
+        record.providerExit = Object.freeze({ ...event });
+      }),
+    ];
+    this.lifecycleUnsubscribers.set(record.id, unsubscribers);
+  }
+
+  private unbindProviderLifecycle(agentId: string): void {
+    const unsubscribers = this.lifecycleUnsubscribers.get(agentId);
+    if (unsubscribers === undefined) return;
+    this.lifecycleUnsubscribers.delete(agentId);
+    for (const unsubscribe of unsubscribers) unsubscribe();
+  }
+
+  private recordSuccessfulOutbound(
+    sourceRecord: import('./agent_directory.js').DirectoryRecord,
+    target: AgentName,
+    content: string
+  ): void {
+    const snapshot: AgentOutboundMessageSnapshot = Object.freeze({
+      sequence: ++this.nextOutboundSequence,
+      target,
+      content,
+    });
+    sourceRecord.lastSuccessfulOutbound = snapshot;
   }
 
   private mapMailboxTransportError(error: unknown): AgentManagerError {

@@ -31,6 +31,20 @@ export type {
   AgentLauncher,
   AgentLaunchRequest,
   AgentManagerOptions,
+  AgentOutboundMessageSnapshot,
+  AgentProviderCompletedAssistantMessageEvent,
+  AgentProviderCompletedAssistantMessageListener,
+  AgentProviderControlAcceptedResult,
+  AgentProviderControlAlreadyExitedResult,
+  AgentProviderControlResult,
+  AgentProviderExitClassification,
+  AgentProviderExitEvent,
+  AgentProviderExitListener,
+  AgentProviderLifecycleControls,
+  AgentProviderOutputActivityEvent,
+  AgentProviderOutputActivityListener,
+  AgentProviderTurnCompleteEvent,
+  AgentProviderTurnCompleteListener,
   AgentRecordSnapshot,
   OrchestratorIdentity,
   PreparedAgentExecution,
@@ -39,5 +53,9 @@ export type {
   SubagentIdentity,
 } from './agent_manager_types.js';
 export { validateAgentInputAdapter } from './agent_manager_types.js';
-export { AgentManagerError } from './agent_manager_types.js';
+export {
+  AgentManagerError,
+  AgentProviderControlError,
+  validateAgentProviderLifecycleControls,
+} from './agent_manager_types.js';
 export type { AgentManagerErrorCode } from './agent_manager_types.js';

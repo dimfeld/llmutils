@@ -12,7 +12,12 @@ import {
   ORCHESTRATOR_AGENT_NAME,
 } from './contracts.js';
 import { AgentManagerError, createAgentManager, createAgentPreparation } from './index.js';
-import { FakeAgentInputAdapter, FakeAgentLauncher, FakeAgentPreparer } from './fake_provider.js';
+import {
+  FakeAgentInputAdapter,
+  FakeAgentLauncher,
+  FakeAgentPreparer,
+  FakeAgentProviderLifecycleControls,
+} from './fake_provider.js';
 import { formatAgentProcessLabel } from './agent_process_labels.js';
 import { reserveSubagentForTest } from './agent_manager.test-support.js';
 import { createAgentMessagingSessionRuntime } from './session_runtime.js';
@@ -2334,5 +2339,177 @@ describe('provider-neutral launch contracts and test fakes', () => {
   test('formats named labels without conflating names and provider identities', () => {
     expect(formatAgentProcessLabel('claude-code', 'worker-one')).toBe('Claude agent (worker-one)');
     expect(formatAgentProcessLabel('codex-cli', 'worker-one')).toBe('Codex thread (worker-one)');
+  });
+});
+
+describe('provider-neutral lifecycle controls and result tracking', () => {
+  test('supports deferred controls, typed failures, and classified events', async () => {
+    const lifecycle = new FakeAgentProviderLifecycleControls('opaque-agent-id' as never);
+    const outputEvents = [];
+    const completedEvents = [];
+    const turnEvents = [];
+    const exitEvents = [];
+    lifecycle.onOutputActivity((event) => outputEvents.push(event));
+    lifecycle.onCompletedAssistantMessage((event) => completedEvents.push(event));
+    lifecycle.onTurnComplete((event) => turnEvents.push(event));
+    lifecycle.onExit((event) => exitEvents.push(event));
+
+    const gracefulStarted = lifecycle.deferNextGracefulShutdown();
+    const gracefulRequest = lifecycle.requestGracefulShutdown('final status instruction');
+    await gracefulStarted;
+    expect(lifecycle.gracefulShutdownCalls).toBe(1);
+    expect(lifecycle.gracefulShutdownInstructions).toEqual(['final status instruction']);
+    lifecycle.resolveGracefulShutdown();
+    await expect(gracefulRequest).resolves.toEqual({ accepted: true, alreadyExited: false });
+
+    const closeStarted = lifecycle.deferNextCloseAfterCurrentTurn();
+    const closeRequest = lifecycle.requestCloseAfterCurrentTurn();
+    await closeStarted;
+    lifecycle.resolveCloseAfterCurrentTurn();
+    await expect(closeRequest).resolves.toEqual({ accepted: true, alreadyExited: false });
+
+    const forcedError = new Error('force was not accepted');
+    lifecycle.failNextForcedShutdown(forcedError);
+    await expect(lifecycle.requestForcedShutdown()).rejects.toBe(forcedError);
+    expect(lifecycle.forcedShutdownCalls).toBe(1);
+
+    lifecycle.emitOutputActivity();
+    lifecycle.emitCompletedAssistantMessage('  completed result  ');
+    lifecycle.emitTurnComplete();
+    lifecycle.emitExit('failed', new Error('provider failure'));
+    expect(outputEvents).toHaveLength(1);
+    expect(completedEvents[0]).toMatchObject({
+      agentId: 'opaque-agent-id',
+      message: '  completed result  ',
+    });
+    expect(turnEvents).toHaveLength(1);
+    expect(exitEvents[0]).toMatchObject({
+      agentId: 'opaque-agent-id',
+      classification: 'failed',
+    });
+    await expect(lifecycle.requestForcedShutdown()).resolves.toEqual({
+      accepted: false,
+      alreadyExited: true,
+    });
+  });
+
+  test('binds events to the launched opaque identity and ignores late callbacks', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launch = await startFakeAgent(manager, launcher, 'lifecycle-target');
+    const lifecycle = launch.handle.lifecycle;
+
+    lifecycle.emitOutputActivity();
+    lifecycle.emitCompletedAssistantMessage('  exact completed message  ');
+    lifecycle.emitTurnComplete();
+    lifecycle.emitOutputActivity();
+    lifecycle.emitExit('natural');
+    lifecycle.emitExit('failed', new Error('late failure'));
+    lifecycle.emitOutputActivity('different-agent-id' as never);
+    lifecycle.emitCompletedAssistantMessage('wrong identity', 'different-agent-id' as never);
+    lifecycle.emitTurnComplete('different-agent-id' as never);
+
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      providerOutputActivityCount: 2,
+      providerTurnCompletionCount: 1,
+      lastCompletedAssistantMessage: '  exact completed message  ',
+      providerExit: { classification: 'natural' },
+    });
+
+    manager.removeTerminalAgent(launch.request.identity.id);
+    lifecycle.emitOutputActivity();
+    lifecycle.emitCompletedAssistantMessage('late completed message');
+    lifecycle.emitTurnComplete();
+    lifecycle.emitExit('forced');
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toBeUndefined();
+    await launch.handle.release();
+  });
+
+  test('records successful outbound delivery only after acknowledgement', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+    const first = await startFakeAgent(manager, launcher, 'outbound-first');
+    const second = await startFakeAgent(manager, launcher, 'outbound-second');
+    first.handle.input.markReady();
+    second.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(first.request.identity.id)?.state === 'running-idle'
+    );
+    await waitFor(
+      () => manager.getAgentSnapshot(second.request.identity.id)?.state === 'running-idle'
+    );
+
+    const pause = first.handle.input.pauseAfterNextAcceptedDelivery();
+    const pendingRootSend = manager.sendAgentMessage(manager.orchestratorIdentity, {
+      name: 'outbound-first',
+      message: 'first successful result',
+    });
+    await pause.accepted;
+    expect(manager.getAgentSnapshot(manager.orchestratorIdentity.id)?.lastSuccessfulOutbound).toBe(
+      undefined
+    );
+    pause.release();
+    await expect(pendingRootSend).resolves.toMatchObject({ delivery: 'started-idle-turn' });
+    expect(
+      manager.getAgentSnapshot(manager.orchestratorIdentity.id)?.lastSuccessfulOutbound
+    ).toMatchObject({
+      sequence: 1,
+      target: 'outbound-first',
+      content: 'first successful result',
+    });
+
+    const firstIdentity = manager.getIdentityByName('outbound-first');
+    await expect(
+      manager.sendAgentMessage(firstIdentity as never, {
+        name: 'outbound-second',
+        message: 'peer result',
+      })
+    ).resolves.toMatchObject({ delivery: 'started-idle-turn' });
+    expect(
+      manager.getAgentSnapshot(first.request.identity.id)?.lastSuccessfulOutbound
+    ).toMatchObject({
+      sequence: 2,
+      target: 'outbound-second',
+      content: 'peer result',
+    });
+
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'outbound-first',
+        message: 'invalid source snapshot update',
+        source: 'forged',
+      })
+    ).rejects.toMatchObject({ code: 'invalid_request' });
+    expect(
+      manager.getAgentSnapshot(manager.orchestratorIdentity.id)?.lastSuccessfulOutbound
+    ).toMatchObject({
+      sequence: 1,
+      target: 'outbound-first',
+      content: 'first successful result',
+    });
+
+    await manager.sessionRuntime.deregister(second.request.identity.id);
+    await expect(
+      manager.sendAgentMessage(firstIdentity as never, {
+        name: 'outbound-second',
+        message: 'failed transport must not replace snapshot',
+      })
+    ).rejects.toMatchObject({ code: 'unknown_target' });
+    expect(
+      manager.getAgentSnapshot(first.request.identity.id)?.lastSuccessfulOutbound
+    ).toMatchObject({
+      sequence: 2,
+      target: 'outbound-second',
+      content: 'peer result',
+    });
   });
 });

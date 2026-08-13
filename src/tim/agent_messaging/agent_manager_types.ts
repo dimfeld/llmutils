@@ -29,6 +29,82 @@ export interface AgentInputMessage {
   readonly content: string;
 }
 
+export type AgentProviderExitClassification = 'natural' | 'graceful' | 'forced' | 'failed';
+
+export interface AgentProviderControlAcceptedResult {
+  readonly accepted: true;
+  readonly alreadyExited: false;
+}
+
+export interface AgentProviderControlAlreadyExitedResult {
+  readonly accepted: false;
+  readonly alreadyExited: true;
+}
+
+export type AgentProviderControlResult =
+  | AgentProviderControlAcceptedResult
+  | AgentProviderControlAlreadyExitedResult;
+
+export interface AgentProviderOutputActivityEvent {
+  readonly agentId: AgentId;
+}
+
+export interface AgentProviderCompletedAssistantMessageEvent {
+  readonly agentId: AgentId;
+  /** The exact complete assistant message, including any boundary whitespace. */
+  readonly message: string;
+}
+
+export interface AgentProviderTurnCompleteEvent {
+  readonly agentId: AgentId;
+}
+
+export interface AgentProviderExitEvent {
+  readonly agentId: AgentId;
+  readonly classification: AgentProviderExitClassification;
+  readonly error?: Error;
+}
+
+export type AgentProviderOutputActivityListener = (event: AgentProviderOutputActivityEvent) => void;
+export type AgentProviderCompletedAssistantMessageListener = (
+  event: AgentProviderCompletedAssistantMessageEvent
+) => void;
+export type AgentProviderTurnCompleteListener = (event: AgentProviderTurnCompleteEvent) => void;
+export type AgentProviderExitListener = (event: AgentProviderExitEvent) => void;
+
+/**
+ * Provider-neutral controls and events for one launched agent.
+ *
+ * The handle is already bound to one opaque agent identity. Events repeat that
+ * identity so the manager can reject callbacks from stale or mis-bound
+ * providers without inspecting provider transport details.
+ */
+export interface AgentProviderLifecycleControls {
+  requestGracefulShutdown(instruction: string): Promise<AgentProviderControlResult>;
+  requestCloseAfterCurrentTurn(): Promise<AgentProviderControlResult>;
+  requestForcedShutdown(): Promise<AgentProviderControlResult>;
+  onOutputActivity(listener: AgentProviderOutputActivityListener): () => void;
+  onCompletedAssistantMessage(listener: AgentProviderCompletedAssistantMessageListener): () => void;
+  onTurnComplete(listener: AgentProviderTurnCompleteListener): () => void;
+  onExit(listener: AgentProviderExitListener): () => void;
+}
+
+/** A typed failure means the provider guarantees that forced shutdown was not accepted. */
+export class AgentProviderControlError extends Error {
+  public readonly operation: 'graceful-shutdown' | 'close-after-current-turn' | 'forced-shutdown';
+  public readonly accepted = false;
+
+  public constructor(
+    operation: 'graceful-shutdown' | 'close-after-current-turn' | 'forced-shutdown',
+    message: string,
+    options?: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = 'AgentProviderControlError';
+    this.operation = operation;
+  }
+}
+
 /**
  * The provider-neutral input boundary used by a future manager launch path.
  * It describes input capability only; it does not own a persistent provider
@@ -91,6 +167,28 @@ export function validateAgentInputAdapter(value: unknown): asserts value is Agen
   }
 }
 
+export function validateAgentProviderLifecycleControls(
+  value: unknown
+): asserts value is AgentProviderLifecycleControls {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Agent provider lifecycle controls must be an object');
+  }
+  const controls = value as Record<string, unknown>;
+  for (const method of [
+    'requestGracefulShutdown',
+    'requestCloseAfterCurrentTurn',
+    'requestForcedShutdown',
+    'onOutputActivity',
+    'onCompletedAssistantMessage',
+    'onTurnComplete',
+    'onExit',
+  ]) {
+    if (typeof controls[method] !== 'function') {
+      throw new TypeError(`Agent provider lifecycle control ${method} must be a function`);
+    }
+  }
+}
+
 export interface AgentLaunchCompletion {
   readonly finalMessage?: string;
   readonly error?: Error;
@@ -106,6 +204,7 @@ export interface AgentLaunchHandle {
   readonly input: AgentInputAdapter;
   readonly ready: Promise<void>;
   readonly completion: Promise<AgentLaunchCompletion>;
+  readonly lifecycle: AgentProviderLifecycleControls;
   readonly processControlId?: ProcessControlId;
   readonly providerThreadId?: ProviderThreadId;
   release?(): Promise<void>;
@@ -177,8 +276,19 @@ export interface AgentRecordSnapshot {
   readonly state: AgentLifecycleState;
   readonly inputActivity: AgentInputActivity;
   readonly creationSequence: number;
+  readonly providerOutputActivityCount: number;
+  readonly providerTurnCompletionCount: number;
+  readonly lastCompletedAssistantMessage?: string;
+  readonly lastSuccessfulOutbound?: AgentOutboundMessageSnapshot;
+  readonly providerExit?: AgentProviderExitEvent;
   readonly processControlId?: ProcessControlId;
   readonly providerThreadId?: ProviderThreadId;
+}
+
+export interface AgentOutboundMessageSnapshot {
+  readonly sequence: number;
+  readonly target: AgentName;
+  readonly content: string;
 }
 
 export type AgentManagerErrorCode =

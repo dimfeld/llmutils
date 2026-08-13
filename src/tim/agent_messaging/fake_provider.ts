@@ -10,10 +10,22 @@ import type {
   AgentLaunchRequest,
   AgentPreparation,
   AgentPreparationRequest,
+  AgentProviderCompletedAssistantMessageEvent,
+  AgentProviderCompletedAssistantMessageListener,
+  AgentProviderControlResult,
+  AgentProviderExitClassification,
+  AgentProviderExitEvent,
+  AgentProviderExitListener,
+  AgentProviderLifecycleControls,
+  AgentProviderOutputActivityEvent,
+  AgentProviderOutputActivityListener,
+  AgentProviderTurnCompleteEvent,
+  AgentProviderTurnCompleteListener,
   PreparedAgentExecution,
   ProcessControlId,
   ProviderThreadId,
 } from './agent_manager_types.js';
+import { AgentProviderControlError } from './agent_manager_types.js';
 
 function deferred<T>(): {
   readonly promise: Promise<T>;
@@ -31,6 +43,272 @@ function deferred<T>(): {
     resolve: (value: T): void => resolvePromise?.(value),
     reject: (error: unknown): void => rejectPromise?.(error),
   };
+}
+
+function acceptedControlResult(): AgentProviderControlResult {
+  return { accepted: true, alreadyExited: false };
+}
+
+function alreadyExitedControlResult(): AgentProviderControlResult {
+  return { accepted: false, alreadyExited: true };
+}
+
+type PendingProviderOperation = {
+  readonly started: ReturnType<typeof deferred<void>>;
+  readonly result: ReturnType<typeof deferred<AgentProviderControlResult>>;
+};
+
+/**
+ * Deterministic provider lifecycle boundary. It exposes only provider-neutral
+ * operations and events; tests control every resolution explicitly.
+ */
+export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycleControls {
+  private readonly outputActivityListeners = new Set<AgentProviderOutputActivityListener>();
+  private readonly completedMessageListeners =
+    new Set<AgentProviderCompletedAssistantMessageListener>();
+  private readonly turnCompleteListeners = new Set<AgentProviderTurnCompleteListener>();
+  private readonly exitListeners = new Set<AgentProviderExitListener>();
+  private nextGracefulOperation: PendingProviderOperation | undefined;
+  private nextCloseAfterTurnOperation: PendingProviderOperation | undefined;
+  private nextForcedOperation: PendingProviderOperation | undefined;
+  private nextGracefulFailure: Error | undefined;
+  private nextCloseAfterTurnFailure: Error | undefined;
+  private nextForcedFailure: Error | undefined;
+  private providerExited = false;
+
+  public readonly gracefulShutdownInstructions: string[] = [];
+  public gracefulShutdownCalls = 0;
+  public closeAfterCurrentTurnCalls = 0;
+  public forcedShutdownCalls = 0;
+
+  public constructor(public readonly agentId: AgentProviderOutputActivityEvent['agentId']) {}
+
+  public onOutputActivity(listener: AgentProviderOutputActivityListener): () => void {
+    this.outputActivityListeners.add(listener);
+    return (): void => {
+      this.outputActivityListeners.delete(listener);
+    };
+  }
+
+  public onCompletedAssistantMessage(
+    listener: AgentProviderCompletedAssistantMessageListener
+  ): () => void {
+    this.completedMessageListeners.add(listener);
+    return (): void => {
+      this.completedMessageListeners.delete(listener);
+    };
+  }
+
+  public onTurnComplete(listener: AgentProviderTurnCompleteListener): () => void {
+    this.turnCompleteListeners.add(listener);
+    return (): void => {
+      this.turnCompleteListeners.delete(listener);
+    };
+  }
+
+  public onExit(listener: AgentProviderExitListener): () => void {
+    this.exitListeners.add(listener);
+    return (): void => {
+      this.exitListeners.delete(listener);
+    };
+  }
+
+  public async requestGracefulShutdown(instruction: string): Promise<AgentProviderControlResult> {
+    this.gracefulShutdownCalls += 1;
+    this.gracefulShutdownInstructions.push(instruction);
+    return this.resolveOperation(this.nextGracefulOperation, this.nextGracefulFailure, (): void => {
+      this.nextGracefulFailure = undefined;
+    });
+  }
+
+  public async requestCloseAfterCurrentTurn(): Promise<AgentProviderControlResult> {
+    this.closeAfterCurrentTurnCalls += 1;
+    return this.resolveOperation(
+      this.nextCloseAfterTurnOperation,
+      this.nextCloseAfterTurnFailure,
+      (): void => {
+        this.nextCloseAfterTurnFailure = undefined;
+      }
+    );
+  }
+
+  public async requestForcedShutdown(): Promise<AgentProviderControlResult> {
+    this.forcedShutdownCalls += 1;
+    return this.resolveOperation(this.nextForcedOperation, this.nextForcedFailure, (): void => {
+      this.nextForcedFailure = undefined;
+    });
+  }
+
+  public deferNextGracefulShutdown(): Promise<void> {
+    if (this.nextGracefulOperation !== undefined) {
+      throw new Error('A fake graceful shutdown operation is already pending');
+    }
+    this.nextGracefulOperation = this.createPendingOperation();
+    return this.nextGracefulOperation.started.promise;
+  }
+
+  public resolveGracefulShutdown(
+    result: AgentProviderControlResult = acceptedControlResult()
+  ): void {
+    this.resolvePendingOperation(this.nextGracefulOperation, result, 'graceful-shutdown');
+  }
+
+  public rejectGracefulShutdown(error: Error = new Error('fake graceful shutdown failure')): void {
+    this.rejectPendingOperation(this.nextGracefulOperation, error, 'graceful-shutdown');
+  }
+
+  public deferNextCloseAfterCurrentTurn(): Promise<void> {
+    if (this.nextCloseAfterTurnOperation !== undefined) {
+      throw new Error('A fake close-after-turn operation is already pending');
+    }
+    this.nextCloseAfterTurnOperation = this.createPendingOperation();
+    return this.nextCloseAfterTurnOperation.started.promise;
+  }
+
+  public resolveCloseAfterCurrentTurn(
+    result: AgentProviderControlResult = acceptedControlResult()
+  ): void {
+    this.resolvePendingOperation(
+      this.nextCloseAfterTurnOperation,
+      result,
+      'close-after-current-turn'
+    );
+  }
+
+  public rejectCloseAfterCurrentTurn(
+    error: Error = new Error('fake close-after-turn failure')
+  ): void {
+    this.rejectPendingOperation(
+      this.nextCloseAfterTurnOperation,
+      error,
+      'close-after-current-turn'
+    );
+  }
+
+  public deferNextForcedShutdown(): Promise<void> {
+    if (this.nextForcedOperation !== undefined) {
+      throw new Error('A fake forced shutdown operation is already pending');
+    }
+    this.nextForcedOperation = this.createPendingOperation();
+    return this.nextForcedOperation.started.promise;
+  }
+
+  public resolveForcedShutdown(result: AgentProviderControlResult = acceptedControlResult()): void {
+    this.resolvePendingOperation(this.nextForcedOperation, result, 'forced-shutdown');
+  }
+
+  public rejectForcedShutdown(
+    error: Error = new AgentProviderControlError(
+      'forced-shutdown',
+      'The fake provider did not accept forced shutdown'
+    )
+  ): void {
+    this.rejectPendingOperation(this.nextForcedOperation, error, 'forced-shutdown');
+  }
+
+  public failNextGracefulShutdown(
+    error: Error = new Error('fake graceful shutdown failure')
+  ): void {
+    this.nextGracefulFailure = error;
+  }
+
+  public failNextCloseAfterCurrentTurn(
+    error: Error = new Error('fake close-after-turn failure')
+  ): void {
+    this.nextCloseAfterTurnFailure = error;
+  }
+
+  public failNextForcedShutdown(
+    error: Error = new AgentProviderControlError(
+      'forced-shutdown',
+      'The fake provider did not accept forced shutdown'
+    )
+  ): void {
+    this.nextForcedFailure = error;
+  }
+
+  public emitOutputActivity(
+    agentId: AgentProviderOutputActivityEvent['agentId'] = this.agentId
+  ): void {
+    const event: AgentProviderOutputActivityEvent = Object.freeze({ agentId });
+    for (const listener of this.outputActivityListeners) listener(event);
+  }
+
+  public emitCompletedAssistantMessage(
+    message: string,
+    agentId: AgentProviderCompletedAssistantMessageEvent['agentId'] = this.agentId
+  ): void {
+    const event: AgentProviderCompletedAssistantMessageEvent = Object.freeze({ agentId, message });
+    for (const listener of this.completedMessageListeners) listener(event);
+  }
+
+  public emitTurnComplete(agentId: AgentProviderTurnCompleteEvent['agentId'] = this.agentId): void {
+    const event: AgentProviderTurnCompleteEvent = Object.freeze({ agentId });
+    for (const listener of this.turnCompleteListeners) listener(event);
+  }
+
+  public emitExit(
+    classification: AgentProviderExitClassification = 'natural',
+    error?: Error,
+    agentId: AgentProviderExitEvent['agentId'] = this.agentId
+  ): void {
+    if (agentId === this.agentId) this.providerExited = true;
+    const event: AgentProviderExitEvent = Object.freeze({
+      agentId,
+      classification,
+      ...(error === undefined ? {} : { error }),
+    });
+    for (const listener of this.exitListeners) listener(event);
+  }
+
+  private createPendingOperation(): PendingProviderOperation {
+    return { started: deferred<void>(), result: deferred<AgentProviderControlResult>() };
+  }
+
+  private resolveOperation(
+    pendingOperation: PendingProviderOperation | undefined,
+    failure: Error | undefined,
+    clearFailure: () => void
+  ): Promise<AgentProviderControlResult> {
+    if (this.providerExited) return Promise.resolve(alreadyExitedControlResult());
+    if (pendingOperation !== undefined) {
+      pendingOperation.started.resolve(undefined);
+      return pendingOperation.result.promise;
+    }
+    if (failure !== undefined) {
+      clearFailure();
+      return Promise.reject(failure);
+    }
+    return Promise.resolve(acceptedControlResult());
+  }
+
+  private resolvePendingOperation(
+    operation: PendingProviderOperation | undefined,
+    result: AgentProviderControlResult,
+    operationName: 'graceful-shutdown' | 'close-after-current-turn' | 'forced-shutdown'
+  ): void {
+    if (operation === undefined) {
+      throw new Error(`No fake ${operationName} operation is pending`);
+    }
+    operation.result.resolve(result);
+    if (operationName === 'graceful-shutdown') this.nextGracefulOperation = undefined;
+    if (operationName === 'close-after-current-turn') this.nextCloseAfterTurnOperation = undefined;
+    if (operationName === 'forced-shutdown') this.nextForcedOperation = undefined;
+  }
+
+  private rejectPendingOperation(
+    operation: PendingProviderOperation | undefined,
+    error: Error,
+    operationName: 'graceful-shutdown' | 'close-after-current-turn' | 'forced-shutdown'
+  ): void {
+    if (operation === undefined) {
+      throw new Error(`No fake ${operationName} operation is pending`);
+    }
+    operation.result.reject(error);
+    if (operationName === 'graceful-shutdown') this.nextGracefulOperation = undefined;
+    if (operationName === 'close-after-current-turn') this.nextCloseAfterTurnOperation = undefined;
+    if (operationName === 'forced-shutdown') this.nextForcedOperation = undefined;
+  }
 }
 
 /** Deterministic input adapter for manager tests. It uses no timers. */
@@ -282,14 +560,18 @@ export class FakeAgentLaunchHandle implements AgentLaunchHandle {
   private releaseError: Error | undefined;
   private releaseCalls = 0;
   private releaseGate: ReturnType<typeof deferred<void>> | undefined;
+  public readonly lifecycle: FakeAgentProviderLifecycleControls;
 
   public constructor(
+    agentId: AgentProviderOutputActivityEvent['agentId'],
     public readonly executor: AgentExecutor,
     public readonly processLabel: AgentLaunchRequest['processLabel'],
     public readonly input: FakeAgentInputAdapter,
     public readonly processControlId: ProcessControlId,
     public readonly providerThreadId: ProviderThreadId
-  ) {}
+  ) {
+    this.lifecycle = new FakeAgentProviderLifecycleControls(agentId);
+  }
 
   public get ready(): Promise<void> {
     return this.readyDeferred.promise;
@@ -394,6 +676,7 @@ export class FakeAgentLauncher implements AgentLauncher {
     const sequence = this.nextId++;
     const input = new FakeAgentInputAdapter();
     const handle = new FakeAgentLaunchHandle(
+      request.identity.id,
       request.identity.executor,
       request.processLabel,
       input,
