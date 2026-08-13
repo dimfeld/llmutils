@@ -204,7 +204,7 @@ export interface AgentLaunchCompletion {
 
 /**
  * A provider-neutral launch handle. `completion` is intentionally passive;
- * lifecycle and shutdown policy belong to the successor plan.
+ * lifecycle and shutdown policy belong to AgentManager.
  */
 export interface AgentLaunchHandle {
   readonly executor: AgentExecutor;
