@@ -52,8 +52,10 @@ const minimalExecutor: Pick<Executor, 'filePathPrefix' | 'todoDirections' | 'exe
  * With no task-index filter, every incomplete plan task is listed under the
  * standard intro. With a filter, only the named tasks are listed and the intro
  * states that other plan work is out of scope. Both branches number tasks with
- * their plan-absolute 1-based index. Invalid, out-of-range, and completed task
- * indexes are rejected by the task-scope resolver before any provider work.
+ * their plan-absolute 1-based index, so the numbering an orchestrator reads
+ * from a review matches the numbering it passes back in `--task-index`.
+ *
+ * Throws when a supplied index is invalid, out of range, or already done.
  */
 export function buildSubagentTaskContext(
   planData: PlanSchema,

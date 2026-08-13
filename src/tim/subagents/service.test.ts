@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import {
   makeSubagentPlanFixture,
@@ -245,7 +246,9 @@ describe('reusable subagent service', () => {
         },
       },
       subagents: {
-        implementer: { model: { claude: 'configured-claude-model' } },
+        implementer: {
+          model: { claude: 'configured-claude-model', codex: 'configured-codex-model' },
+        },
       },
       agents: {},
     };
@@ -258,6 +261,14 @@ describe('reusable subagent service', () => {
       initialMessage: 'Use the configured model.',
     });
     expect(configured.model).toBe('configured-claude-model');
+
+    const configuredCodex = await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'codex-cli',
+      initialMessage: 'Use the configured Codex model.',
+    });
+    expect(configuredCodex.model).toBe('configured-codex-model');
 
     const cliSelected = await prepareSubagentExecution({
       agentType: 'implementer',
@@ -318,24 +329,28 @@ describe('reusable subagent service', () => {
   });
 
   test('preserves input-file order, then inline input, in the reusable service', async () => {
-    const inputDirectory = '/tmp/tim-subagent-service-input-order';
-    const firstInputPath = path.join(inputDirectory, 'first.txt');
-    const secondInputPath = path.join(inputDirectory, 'second.txt');
-    await fs.mkdir(inputDirectory, { recursive: true });
-    await Bun.write(firstInputPath, 'first file input');
-    await Bun.write(secondInputPath, 'second file input');
+    const inputDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-input-order-'));
 
-    const prepared = await prepareSubagentExecution({
-      agentType: 'implementer',
-      planId: 42,
-      executor: 'codex-cli',
-      inputFile: [firstInputPath, secondInputPath],
-      input: 'inline input',
-    });
+    try {
+      const firstInputPath = path.join(inputDirectory, 'first.txt');
+      const secondInputPath = path.join(inputDirectory, 'second.txt');
+      await Bun.write(firstInputPath, 'first file input');
+      await Bun.write(secondInputPath, 'second file input');
 
-    expect(prepared.prompt).toContain(
-      'role instructions\n\nfirst file input\n\nsecond file input\n\ninline input'
-    );
+      const prepared = await prepareSubagentExecution({
+        agentType: 'implementer',
+        planId: 42,
+        executor: 'codex-cli',
+        inputFile: [firstInputPath, secondInputPath],
+        input: 'inline input',
+      });
+
+      expect(prepared.prompt).toContain(
+        'role instructions\n\nfirst file input\n\nsecond file input\n\ninline input'
+      );
+    } finally {
+      await fs.rm(inputDirectory, { recursive: true, force: true });
+    }
   });
 
   test('uses stdin fallback after preparation enables it explicitly', async () => {
