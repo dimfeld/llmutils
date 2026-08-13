@@ -37,6 +37,7 @@ Read the relevant doc before working in these areas:
 - **Multi-workspace workflow** → `docs/multi-workspace-workflow.md`
 - **Project environment foundation** (`TIM_*` vars, reserved built-ins, renderer conventions) → `docs/project-environment.md`
 - **Agent messaging** (`experimental.agentMessaging`, contracts, identity vars, mailbox transport) → `docs/agent-messaging.md`
+- **Agent manager** (orchestrator authorization, naming, capacity, StartAgent/ListAgents/SendAgentMessage) → `docs/agent-manager.md`
 - **Subagent launch service** (reusable preparation/launch contracts, execution-scoped Claude formatters) → `docs/subagent-launch-service.md`
 - **Parent-child plan relationships** → `docs/parent-child-relationships.md`
 - **Planning workflow** → `docs/planning.md`

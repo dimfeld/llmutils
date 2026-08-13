@@ -2,9 +2,10 @@
 
 This document describes the provider-neutral agent-messaging contracts and the
 session storage and Unix-socket mailbox transport in
-`src/tim/agent_messaging/`. It does not describe provider sessions, provider
-adapters, or lifecycle-manager behavior. The reusable one-shot preparation and
-launch service a later lifecycle manager will build on is documented in
+`src/tim/agent_messaging/`. It does not describe provider sessions or provider
+adapters. The Start/List/Send manager core built on this transport is documented
+in [agent-manager.md](agent-manager.md), and the reusable one-shot preparation
+and launch service it uses is documented in
 [subagent-launch-service.md](subagent-launch-service.md).
 
 The shared contracts let an orchestrator address, message, and later stop its
@@ -85,7 +86,8 @@ Two schemas share the grammar:
   name is required.
 
 Default `<type>-<short-slug>` name generation and collision reservation belong
-to the lifecycle layer. Filesystem objects use opaque IDs, not these names.
+to the manager layer ([agent-manager.md](agent-manager.md)). Filesystem objects
+use opaque IDs, not these names.
 
 ### Limits
 
@@ -189,7 +191,8 @@ operation. When an adapter reports that input is available but refuses a
 delivery, `AgentMailboxBinding` makes at most one immediate retry for that
 availability version. Further progress requires the adapter to call its
 `onAvailabilityChange` listeners. Claude and Codex persistent-session adapters
-must emit that notification whenever delivery can make progress again.
+must emit that notification whenever delivery can make progress again. The full
+drain rules are in [agent-manager.md](agent-manager.md).
 
 ## Public API surface
 
@@ -204,12 +207,22 @@ the private root and returns a runtime with these operations:
 | `deregister(reference)`                     | Closes and removes one active generation                         |
 | `close()`                                   | Closes all receivers, then removes the exact root                |
 
-`register()` also accepts `maxConnections` and `recentRequestIdLimit`. The
-returned `SessionRegistrationHandle` exposes the published `registration`, its
-`receiver`, a `ready` promise, and a generation-bound `deregister()`.
+`register()` also accepts `onMessageQueued`, `maxConnections`, and
+`recentRequestIdLimit`. `onMessageQueued` fires after a temporarily unavailable
+message has been appended to the FIFO, so a consumer can recheck a queue it just
+observed as empty. The returned `SessionRegistrationHandle` exposes the published
+`registration`, its `receiver`, a `ready` promise, and a generation-bound
+`deregister()`.
 
 Each `MailboxReceiver` exposes `registration`, `socketPath`, `ready`,
-`isClosed`, `pendingCount`, `drainPending(limit?)`, and `close()`.
+`isClosed`, `pendingCount`, `leasePending(limit?)`, and `close()`.
+
+`leasePending()` removes one FIFO batch for provider delivery and returns a
+`MailboxPendingDeliveryLease` with the messages plus idempotent `acknowledge()`
+and `requeue()`. A lease keeps reserving queue capacity until it is resolved, so
+in-flight messages still count against the 100-message limit. `requeue()`
+restores the batch at the FIFO head in its original order, which keeps message
+identity with the lease rather than with the consumer.
 
 `sendMessage()` takes the caller-bound trusted identity as its **first**
 argument, not as part of the message input. The target reference is a name or
@@ -316,8 +329,8 @@ The delivery callback returns one of these results:
 For `temporarily-unavailable`, the receiver stores the validated message in its
 per-recipient FIFO and returns `queued` only after the entry is retained. The
 FIFO holds at most 100 messages. The 101st message returns `queue_full`; no
-older message is evicted or truncated. `drainPending()` removes messages in
-send order and releases their queue slots.
+older message is evicted or truncated. `leasePending()` removes messages in send
+order, and their queue slots are released only when the lease is acknowledged.
 
 Message content is measured with UTF-8 byte length. Exactly 65,536 bytes is
 accepted. Larger content is rejected before socket transport or queue
