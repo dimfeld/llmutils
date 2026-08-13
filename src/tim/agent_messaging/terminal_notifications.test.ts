@@ -21,9 +21,7 @@ describe('terminal notification policy', () => {
     ['case difference', 'Done.', 'done.', false],
     ['punctuation difference', 'Done.', 'Done!', false],
     ['internal whitespace difference', 'two words', 'two  words', false],
-    ['peer target', 'Done.', 'Done.', false, 'peer'],
-    ['later successful peer message', 'Done.', 'different peer result', false, 'peer'],
-    ['later failed peer send leaves delivered snapshot', 'Done.', 'Done.', true],
+    ['peer target as the latest successful message', 'Done.', 'Done.', false, 'peer'],
     ['blank completed result', '   ', '   ', false],
     ['blank outbound result', 'Done.', '   ', false],
   ])(
@@ -44,6 +42,19 @@ describe('terminal notification policy', () => {
       ).toBe(expected);
     }
   );
+
+  test('keeps forced and provider-failure causes outside duplicate suppression', () => {
+    for (const cause of ['forced-stop', 'provider-failure'] as const) {
+      expect(
+        shouldSuppressTerminalNotification({
+          ...baseInput,
+          cause,
+          lastCompletedAssistantMessage: 'Done.',
+          lastSuccessfulOutbound: { target: 'orchestrator', content: 'Done.' },
+        })
+      ).toBe(false);
+    }
+  });
 
   test.each([
     ['self-finish fallback', 'self-finish', 'fallback', 'fallback'],

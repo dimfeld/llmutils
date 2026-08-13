@@ -1063,7 +1063,10 @@ export class AgentManager {
       return 'natural';
     }
     if (event.classification === 'forced') return 'forced-stop';
-    if (stopState?.forceAccepted === true || stopState?.forceInFlight === true) {
+    // An in-flight force request has not yet proved that the provider accepted
+    // the control. A classified graceful exit therefore remains graceful; a
+    // later already-exited control result must not rewrite the terminal cause.
+    if (stopState?.forceAccepted === true) {
       return 'forced-stop';
     }
     if (terminalLifecycle.finishRequested) {

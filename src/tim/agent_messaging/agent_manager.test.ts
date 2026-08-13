@@ -3718,6 +3718,238 @@ describe('AgentManager terminal convergence', () => {
     expect(launch.handle.releaseCount).toBe(1);
   });
 
+  test.each([
+    {
+      name: 'matrix-exact',
+      outboundTarget: 'orchestrator',
+      outbound: 'Done.',
+      completed: 'Done.',
+      expectedTerminal: false,
+    },
+    {
+      name: 'matrix-boundary-whitespace',
+      outboundTarget: 'orchestrator',
+      outbound: 'Done.\n',
+      completed: '  Done.  ',
+      expectedTerminal: false,
+    },
+    {
+      name: 'matrix-case',
+      outboundTarget: 'orchestrator',
+      outbound: 'Done.',
+      completed: 'done.',
+      expectedTerminal: true,
+    },
+    {
+      name: 'matrix-punctuation',
+      outboundTarget: 'orchestrator',
+      outbound: 'Done.',
+      completed: 'Done!',
+      expectedTerminal: true,
+    },
+    {
+      name: 'matrix-internal-whitespace',
+      outboundTarget: 'orchestrator',
+      outbound: 'two words',
+      completed: 'two  words',
+      expectedTerminal: true,
+    },
+    {
+      name: 'matrix-peer-target',
+      outboundTarget: 'matrix-peer',
+      outbound: 'Done.',
+      completed: 'Done.',
+      expectedTerminal: true,
+    },
+    {
+      name: 'matrix-later-successful-peer',
+      outboundTarget: 'orchestrator',
+      outbound: 'Done.',
+      laterPeerMessage: 'A later peer handoff.',
+      completed: 'Done.',
+      expectedTerminal: true,
+    },
+    {
+      name: 'matrix-later-failed-peer',
+      outboundTarget: 'orchestrator',
+      outbound: 'Done.',
+      failedPeerMessage: 'This delivery is rejected.',
+      completed: 'Done.',
+      expectedTerminal: false,
+    },
+    {
+      name: 'matrix-blank-content',
+      outboundTarget: 'orchestrator',
+      outbound: '   ',
+      completed: '   ',
+      expectedTerminal: true,
+    },
+    {
+      name: 'matrix-fallback-only',
+      outboundTarget: 'orchestrator',
+      outbound: 'fallback result',
+      fallback: 'fallback result',
+      expectedTerminal: true,
+    },
+    {
+      name: 'matrix-forced',
+      outboundTarget: 'orchestrator',
+      outbound: 'Done.',
+      completed: 'Done.',
+      exitClassification: 'forced' as const,
+      force: true,
+      expectedTerminal: true,
+    },
+    {
+      name: 'matrix-provider-failure',
+      outboundTarget: 'orchestrator',
+      outbound: 'Done.',
+      completed: 'Done.',
+      exitClassification: 'failed' as const,
+      expectedTerminal: true,
+    },
+  ])(
+    'applies the complete duplicate matrix through real mailboxes: $name',
+    async ({
+      name,
+      outboundTarget,
+      outbound,
+      laterPeerMessage,
+      failedPeerMessage,
+      completed,
+      fallback,
+      exitClassification = 'natural',
+      force = false,
+      expectedTerminal,
+    }) => {
+      const launcher = new FakeAgentLauncher();
+      const rootInput = new FakeAgentInputAdapter();
+      rootInput.markReady();
+      rootInput.setActiveAccepting();
+      const manager = await createManager({
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+        orchestratorInputAdapter: rootInput,
+      });
+      const peer =
+        outboundTarget === 'matrix-peer' ||
+        laterPeerMessage !== undefined ||
+        failedPeerMessage !== undefined
+          ? await startActiveFakeAgent(manager, launcher, 'matrix-peer')
+          : undefined;
+      const launch = await startActiveFakeAgent(manager, launcher, name);
+      const beforeMessages = rootInput.receivedMessages.length;
+
+      const source = launch.request.identity;
+      await expect(
+        manager.sendAgentMessage(source, { name: outboundTarget, message: outbound })
+      ).resolves.toMatchObject({ name: outboundTarget });
+
+      if (laterPeerMessage !== undefined) {
+        await expect(
+          manager.sendAgentMessage(source, { name: 'matrix-peer', message: laterPeerMessage })
+        ).resolves.toMatchObject({ name: 'matrix-peer' });
+      }
+      if (failedPeerMessage !== undefined) {
+        peer?.handle.input.rejectNextDelivery(new Error('intentional peer delivery failure'));
+        await expect(
+          manager.sendAgentMessage(source, { name: 'matrix-peer', message: failedPeerMessage })
+        ).rejects.toMatchObject({ code: 'transport_error' });
+      }
+
+      if (fallback !== undefined) {
+        await manager.finishAgent(source, { message: fallback });
+      }
+      if (completed !== undefined) {
+        launch.handle.lifecycle.emitCompletedAssistantMessage(completed);
+      }
+      if (fallback !== undefined) {
+        launch.handle.lifecycle.emitTurnComplete();
+      }
+      if (force) {
+        await expect(
+          manager.stopAgent(manager.orchestratorIdentity, { name, force: true })
+        ).resolves.toMatchObject({ mode: 'forced' });
+      }
+      launch.handle.lifecycle.emitExit(exitClassification);
+      await manager.waitForAgentTerminal(launch.request.identity.id);
+
+      const delivered = rootInput.receivedMessages.slice(beforeMessages);
+      const expectedOutboundToRoot = outboundTarget === 'orchestrator' ? 1 : 0;
+      expect(delivered).toHaveLength(expectedOutboundToRoot + (expectedTerminal ? 1 : 0));
+      if (expectedTerminal) {
+        expect(delivered.at(-1)?.source).toMatchObject({ id: launch.request.identity.id, name });
+      }
+      if (force) {
+        expect(delivered.at(-1)?.content).toContain(FORCE_STOP_STALE_CONTEXT_WARNING);
+      }
+      if (exitClassification === 'failed') {
+        expect(delivered.at(-1)?.content).toBe(`Agent ${name} failed before completing.`);
+      }
+    }
+  );
+
+  test('shares one terminal promise and keeps mailbox, slot, and name until cleanup finishes', async () => {
+    const session = await createAgentMessagingSessionRuntime();
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    let manager: AgentManager | undefined;
+    try {
+      manager = await createManager({
+        sessionRuntime: session,
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+        orchestratorInputAdapter: rootInput,
+      });
+      const launch = await startActiveFakeAgent(manager, launcher, 'terminal-cleanup-order');
+      const registrationBefore = await session.runtime.listRegistrations();
+      expect(registrationBefore.map((entry) => entry.name)).toContain('terminal-cleanup-order');
+
+      launch.handle.deferRelease();
+      const deliveryStarted = rootInput.deferNextDelivery();
+      const firstTerminalPromise = manager.waitForAgentTerminal(launch.request.identity.id);
+      const secondTerminalPromise = manager.waitForAgentTerminal(launch.request.identity.id);
+      expect(secondTerminalPromise).toBe(firstTerminalPromise);
+
+      launch.handle.lifecycle.emitExit('natural');
+      await deliveryStarted;
+      expect(launch.handle.releaseCount).toBe(0);
+      expect(manager.getIdentityByName('terminal-cleanup-order')).toBeDefined();
+
+      rootInput.resolveNextDelivery();
+      await waitFor(() => launch.handle.releaseCount === 1);
+      expect(manager.getIdentityByName('terminal-cleanup-order')).toBeDefined();
+      expect(manager.listAgents().agents).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: 'terminal-cleanup-order' })])
+      );
+      expect((await session.runtime.listRegistrations()).map((entry) => entry.name)).toContain(
+        'terminal-cleanup-order'
+      );
+
+      launch.handle.resolveRelease();
+      await firstTerminalPromise;
+      expect(manager.getIdentityByName('terminal-cleanup-order')).toBeUndefined();
+      expect(manager.subagentCount).toBe(0);
+      expect(manager.listAgents().agents).toHaveLength(1);
+      expect((await session.runtime.listRegistrations()).map((entry) => entry.name)).toEqual([
+        'orchestrator',
+      ]);
+
+      launch.handle.lifecycle.emitCompletedAssistantMessage('late result');
+      launch.handle.lifecycle.emitTurnComplete();
+      launch.handle.lifecycle.emitExit('failed', new Error('late failure'));
+      await manager.sessionRuntime.deregister(launch.request.identity.id);
+      await launch.handle.release();
+      expect(rootInput.receivedMessages).toHaveLength(1);
+      expect(launch.handle.releaseCount).toBe(1);
+    } finally {
+      await manager?.close().catch(() => undefined);
+      await session.close().catch(() => undefined);
+    }
+  });
+
   test('self-finish prefers the completed result and uses fallback only when needed', async () => {
     const launcher = new FakeAgentLauncher();
     const rootInput = new FakeAgentInputAdapter();
@@ -3825,6 +4057,70 @@ describe('AgentManager terminal convergence', () => {
     expect(rootInput.receivedMessages[0]?.content).not.toContain('final context');
   });
 
+  test('uses a graceful provider classification when an unaccepted force races provider exit', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'terminal-graceful-force-race');
+    await manager.stopAgent(manager.orchestratorIdentity, {
+      name: 'terminal-graceful-force-race',
+    });
+    await flushLifecyclePromises();
+
+    const forceStarted = launch.handle.lifecycle.deferNextForcedShutdown();
+    const force = manager.stopAgent(manager.orchestratorIdentity, {
+      name: 'terminal-graceful-force-race',
+      force: true,
+    });
+    await forceStarted;
+    launch.handle.lifecycle.emitCompletedAssistantMessage('gracefully completed result');
+    launch.handle.lifecycle.emitExit('graceful');
+    launch.handle.lifecycle.resolveForcedShutdown({ accepted: false, alreadyExited: true });
+
+    await expect(force).resolves.toMatchObject({ mode: 'forced' });
+    await manager.waitForAgentTerminal(launch.request.identity.id);
+    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages[0]?.content).toContain('gracefully completed result');
+    expect(rootInput.receivedMessages[0]?.content).not.toContain(FORCE_STOP_STALE_CONTEXT_WARNING);
+  });
+
+  test('reports a natural and graceful no-result status without exposing intermediate output', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+
+    const natural = await startActiveFakeAgent(manager, launcher, 'terminal-no-result-natural');
+    natural.handle.lifecycle.emitOutputActivity();
+    natural.handle.lifecycle.emitExit('natural');
+    await manager.waitForAgentTerminal(natural.request.identity.id);
+
+    const graceful = await startActiveFakeAgent(manager, launcher, 'terminal-no-result-graceful');
+    await manager.stopAgent(manager.orchestratorIdentity, {
+      name: 'terminal-no-result-graceful',
+      message: 'shutdown instruction must not become a result',
+    });
+    graceful.handle.lifecycle.emitOutputActivity();
+    graceful.handle.lifecycle.emitExit('graceful');
+    await manager.waitForAgentTerminal(graceful.request.identity.id);
+
+    expect(rootInput.receivedMessages).toHaveLength(2);
+    expect(rootInput.receivedMessages[0]?.content).toContain(NO_COMPLETED_ASSISTANT_MESSAGE);
+    expect(rootInput.receivedMessages[1]?.content).toContain(NO_COMPLETED_ASSISTANT_MESSAGE);
+    expect(rootInput.receivedMessages[1]?.content).not.toContain('shutdown instruction');
+  });
+
   test('natural exit wins a force race when the provider proves it exited naturally', async () => {
     const launcher = new FakeAgentLauncher();
     const rootInput = new FakeAgentInputAdapter();
@@ -3875,5 +4171,58 @@ describe('AgentManager terminal convergence', () => {
     expect(launch.handle.releaseCount).toBe(1);
     expect(rootInput.receivedMessages).toHaveLength(0);
     expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(0);
+  });
+
+  test('resolves the terminal promise when mailbox deregistration reports cleanup failure', async () => {
+    const session = await createAgentMessagingSessionRuntime();
+    const originalRegister = session.register.bind(session);
+    let deregisterCalls = 0;
+    vi.spyOn(session, 'register').mockImplementation(async (options) => {
+      const registration = await originalRegister(options);
+      if (options.registration.name === 'terminal-mailbox-cleanup-failure') {
+        const originalDeregister = registration.deregister.bind(registration);
+        registration.deregister = async (): Promise<void> => {
+          deregisterCalls += 1;
+          await originalDeregister();
+          throw new Error('reported mailbox cleanup failure');
+        };
+      }
+      return registration;
+    });
+
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    let manager: AgentManager | undefined;
+    try {
+      manager = await createManager({
+        sessionRuntime: session,
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+        orchestratorInputAdapter: rootInput,
+      });
+      const launch = await startActiveFakeAgent(
+        manager,
+        launcher,
+        'terminal-mailbox-cleanup-failure'
+      );
+      launch.handle.lifecycle.emitExit('natural');
+
+      await manager.waitForAgentTerminal(launch.request.identity.id);
+      expect(deregisterCalls).toBe(1);
+      expect(manager.getIdentityByName('terminal-mailbox-cleanup-failure')).toBeUndefined();
+      expect(manager.subagentCount).toBe(0);
+      expect((await session.runtime.listRegistrations()).map((entry) => entry.name)).toEqual([
+        'orchestrator',
+      ]);
+
+      await manager.waitForAgentTerminal(launch.request.identity.id);
+      expect(deregisterCalls).toBe(1);
+      expect(launch.handle.releaseCount).toBe(1);
+    } finally {
+      await manager?.close().catch(() => undefined);
+      await session.close().catch(() => undefined);
+    }
   });
 });
