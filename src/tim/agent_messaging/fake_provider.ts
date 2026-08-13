@@ -36,6 +36,7 @@ export class FakeAgentManagerScheduler implements AgentManagerScheduler {
     number,
     { readonly dueAt: number; readonly callback: () => void }
   >();
+  private readonly cancelledTimerCallbacks: Array<() => void> = [];
 
   public now(): number {
     return this.currentTime;
@@ -51,11 +52,27 @@ export class FakeAgentManagerScheduler implements AgentManagerScheduler {
   }
 
   public clearTimeout(handle: unknown): void {
-    if (typeof handle === 'number') this.timers.delete(handle);
+    if (typeof handle !== 'number') return;
+    const timer = this.timers.get(handle);
+    if (timer === undefined) return;
+    this.timers.delete(handle);
+    this.cancelledTimerCallbacks.push(timer.callback);
   }
 
   public get pendingTimerCount(): number {
     return this.timers.size;
+  }
+
+  /**
+   * Run callbacks that were cancelled after being scheduled.
+   *
+   * Real timer callbacks can already be queued when clearTimeout runs. This
+   * test-only seam lets lifecycle tests prove that generation checks reject
+   * those stale callbacks.
+   */
+  public runCancelledTimerCallbacks(): void {
+    const callbacks = this.cancelledTimerCallbacks.splice(0);
+    for (const callback of callbacks) callback();
   }
 
   public advanceBy(milliseconds: number): void {

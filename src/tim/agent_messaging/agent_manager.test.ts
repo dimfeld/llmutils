@@ -2991,6 +2991,46 @@ describe('AgentManager StopAgent lifecycle', () => {
     await gracefulStarted;
   });
 
+  test('records a force intent while startup is pending and controls the provider when ready', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(manager.orchestratorIdentity, {
+      name: 'force-during-startup',
+      type: 'tester',
+      executor: 'codex-cli',
+      initialMessage: 'Start the provider.',
+    });
+    const launch = await launchPromise;
+    const forceStarted = launch.handle.lifecycle.deferNextForcedShutdown();
+
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, {
+        name: 'force-during-startup',
+        force: true,
+      })
+    ).resolves.toEqual({
+      name: 'force-during-startup',
+      mode: 'forced',
+      state: 'stopping',
+    });
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(0);
+
+    launch.handle.markReady();
+    await expect(startPromise).resolves.toMatchObject({
+      name: 'force-during-startup',
+      state: 'stopping',
+    });
+    await forceStarted;
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
+    launch.handle.lifecycle.resolveForcedShutdown();
+    await flushLifecyclePromises();
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
+  });
+
   test('is orchestrator-only, protects the reserved target, and sends one graceful instruction', async () => {
     const launcher = new FakeAgentLauncher();
     const scheduler = new FakeAgentManagerScheduler();
@@ -3047,6 +3087,88 @@ describe('AgentManager StopAgent lifecycle', () => {
     expect(scheduler.pendingTimerCount).toBe(1);
   });
 
+  test('validates the target strictly before starting provider shutdown', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'stop-target-validation');
+
+    await expect(
+      manager.stopAgent(launch.request.identity, { name: 'stop-target-validation' })
+    ).rejects.toMatchObject({ code: 'not_authorized' });
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, { name: '' })
+    ).rejects.toMatchObject({ code: 'invalid_name' });
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, { name: 'UpperCase' })
+    ).rejects.toMatchObject({ code: 'invalid_name' });
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, { name: 'not/a-name' })
+    ).rejects.toMatchObject({ code: 'invalid_name' });
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, { name: 'missing-target' })
+    ).rejects.toMatchObject({ code: 'unknown_target' });
+
+    expect(launch.handle.lifecycle.gracefulShutdownCalls).toBe(0);
+  });
+
+  test('keeps the standard instruction exact and does not shift a duplicate timer', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'stop-instruction-boundary');
+    const lifecycle = launch.handle.lifecycle;
+    const gracefulStarted = lifecycle.deferNextGracefulShutdown();
+
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, {
+        name: 'stop-instruction-boundary',
+        message: 'Keep this context separate from the required instruction.',
+      })
+    ).resolves.toEqual({
+      name: 'stop-instruction-boundary',
+      mode: 'graceful-requested',
+      state: 'stopping',
+    });
+    expect(lifecycle.gracefulShutdownInstructions).toEqual([
+      'The orchestrator has requested a graceful shutdown. Complete your current work, then provide your final status update or result before ending your session.\n\nAdditional shutdown context:\n---\nKeep this context separate from the required instruction.\n---',
+    ]);
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'stop-instruction-boundary',
+        message: 'ordinary messages must be rejected immediately',
+      })
+    ).rejects.toMatchObject({ code: 'target_not_accepting_messages' });
+
+    lifecycle.resolveGracefulShutdown();
+    await gracefulStarted;
+    await flushLifecyclePromises();
+    expect(scheduler.pendingTimerCount).toBe(1);
+
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, {
+        name: 'stop-instruction-boundary',
+        message: 'This duplicate must not shift the deadline.',
+      })
+    ).resolves.toEqual({
+      name: 'stop-instruction-boundary',
+      mode: 'already-stopping',
+      state: 'stopping',
+    });
+    expect(lifecycle.gracefulShutdownCalls).toBe(1);
+    expect(scheduler.pendingTimerCount).toBe(1);
+
+    scheduler.advanceBy(1);
+    expect(lifecycle.forcedShutdownCalls).toBe(1);
+  });
+
   test('uses output inactivity, resets only the affected agent, and honors the exact deadline', async () => {
     const launcher = new FakeAgentLauncher();
     const scheduler = new FakeAgentManagerScheduler();
@@ -3074,6 +3196,35 @@ describe('AgentManager StopAgent lifecycle', () => {
     scheduler.advanceBy(1);
     expect(first.handle.lifecycle.forcedShutdownCalls).toBe(1);
     expect(second.handle.lifecycle.forcedShutdownCalls).toBe(1);
+  });
+
+  test('ignores repeated stale timer callbacks after activity resets', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'stop-stale-timers');
+    const lifecycle = launch.handle.lifecycle;
+
+    await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-stale-timers' });
+    await flushLifecyclePromises();
+    scheduler.advanceBy(30_000);
+    lifecycle.emitOutputActivity();
+    scheduler.advanceBy(30_000);
+    lifecycle.emitOutputActivity();
+    expect(scheduler.pendingTimerCount).toBe(1);
+
+    scheduler.runCancelledTimerCallbacks();
+    expect(lifecycle.forcedShutdownCalls).toBe(0);
+    expect(scheduler.pendingTimerCount).toBe(1);
+
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+    expect(lifecycle.forcedShutdownCalls).toBe(0);
+    scheduler.advanceBy(1);
+    expect(lifecycle.forcedShutdownCalls).toBe(1);
   });
 
   test('arms from the latest activity after slow graceful acceptance', async () => {
@@ -3126,6 +3277,28 @@ describe('AgentManager StopAgent lifecycle', () => {
     expect(lifecycle.forcedShutdownCalls).toBe(0);
     scheduler.advanceBy(1);
     expect(lifecycle.forcedShutdownCalls).toBe(1);
+  });
+
+  test('does not arm a timer when graceful control reports an already-exited provider', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'stop-graceful-exited');
+    const lifecycle = launch.handle.lifecycle;
+    const gracefulStarted = lifecycle.deferNextGracefulShutdown();
+
+    await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-graceful-exited' });
+    lifecycle.resolveGracefulShutdown({ accepted: false, alreadyExited: true });
+    await gracefulStarted;
+    await flushLifecyclePromises();
+
+    expect(scheduler.pendingTimerCount).toBe(0);
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS * 2);
+    expect(lifecycle.forcedShutdownCalls).toBe(0);
   });
 
   test('forces immediately, upgrades graceful stopping, and accepts force only once', async () => {
@@ -3190,6 +3363,43 @@ describe('AgentManager StopAgent lifecycle', () => {
     expect(second.handle.lifecycle.forcedShutdownCalls).toBe(1);
   });
 
+  test('does not arm graceful inactivity after a force upgrade during acceptance', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'stop-force-while-accepting');
+    const lifecycle = launch.handle.lifecycle;
+    const gracefulStarted = lifecycle.deferNextGracefulShutdown();
+
+    await manager.stopAgent(manager.orchestratorIdentity, {
+      name: 'stop-force-while-accepting',
+    });
+    const forceStarted = lifecycle.deferNextForcedShutdown();
+    const force = manager.stopAgent(manager.orchestratorIdentity, {
+      name: 'stop-force-while-accepting',
+      force: true,
+    });
+    expect(scheduler.pendingTimerCount).toBe(0);
+    expect(lifecycle.gracefulShutdownCalls).toBe(1);
+    expect(lifecycle.forcedShutdownCalls).toBe(1);
+
+    lifecycle.resolveGracefulShutdown();
+    lifecycle.resolveForcedShutdown();
+    await gracefulStarted;
+    await forceStarted;
+    await expect(force).resolves.toEqual({
+      name: 'stop-force-while-accepting',
+      mode: 'forced',
+      state: 'stopping',
+    });
+    await flushLifecyclePromises();
+    expect(scheduler.pendingTimerCount).toBe(0);
+  });
+
   test('does not close a finishing turn when force upgrades it', async () => {
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({
@@ -3245,6 +3455,74 @@ describe('AgentManager StopAgent lifecycle', () => {
       state: 'stopping',
     });
     expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(2);
+  });
+
+  test('retains an unknown force outcome without issuing an unsafe retry', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'stop-force-unknown');
+    launch.handle.lifecycle.failNextForcedShutdown(new Error('provider outcome is unknown'));
+
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, {
+        name: 'stop-force-unknown',
+        force: true,
+      })
+    ).rejects.toMatchObject({
+      code: 'force_failed',
+      message: expect.stringContaining('status is unknown'),
+    });
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      state: 'stopping',
+    });
+
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, {
+        name: 'stop-force-unknown',
+        force: true,
+      })
+    ).resolves.toEqual({ name: 'stop-force-unknown', mode: 'forced', state: 'stopping' });
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
+  });
+
+  test('clears inactivity timers when an agent exits, is removed, or the manager closes', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+
+    const exited = await startActiveFakeAgent(manager, launcher, 'stop-timer-exit');
+    await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-timer-exit' });
+    await flushLifecyclePromises();
+    expect(scheduler.pendingTimerCount).toBe(1);
+    exited.handle.lifecycle.emitExit('natural');
+    expect(scheduler.pendingTimerCount).toBe(0);
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS * 2);
+    expect(exited.handle.lifecycle.forcedShutdownCalls).toBe(0);
+
+    const removed = await startActiveFakeAgent(manager, launcher, 'stop-timer-remove');
+    await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-timer-remove' });
+    await flushLifecyclePromises();
+    expect(scheduler.pendingTimerCount).toBe(1);
+    manager.removeTerminalAgent(removed.request.identity.id);
+    expect(scheduler.pendingTimerCount).toBe(0);
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS * 2);
+    expect(removed.handle.lifecycle.forcedShutdownCalls).toBe(0);
+
+    const closed = await startActiveFakeAgent(manager, launcher, 'stop-timer-close');
+    await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-timer-close' });
+    await flushLifecyclePromises();
+    expect(scheduler.pendingTimerCount).toBe(1);
+    await manager.close();
+    expect(scheduler.pendingTimerCount).toBe(0);
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS * 2);
+    expect(closed.handle.lifecycle.forcedShutdownCalls).toBe(0);
   });
 
   test('automatic force failure is recorded without cleanup and remains explicitly retryable', async () => {
