@@ -1,24 +1,11 @@
 import { isNonterminalAgentLifecycleState } from './contracts.js';
+import { AgentManagerError, validateAgentInputAdapter } from './agent_manager_types.js';
 import type { AgentIdentity, AgentInputAdapter } from './agent_manager_types.js';
-import type { MailboxMessageRequest } from './mailbox_protocol.js';
+import { MailboxProtocolError, type MailboxMessageRequest } from './mailbox_protocol.js';
 import type { MailboxDeliveryResult } from './mailbox_server.js';
 import type { AgentRegistration } from './runtime_dir.js';
 import type { SessionRegistrationHandle } from './session_runtime.js';
 import type { AgentDirectory, DirectoryRecord } from './agent_directory.js';
-
-function validateInputAdapter(value: AgentInputAdapter): void {
-  if (
-    typeof value !== 'object' ||
-    value === null ||
-    typeof value.ready?.then !== 'function' ||
-    typeof value.isReady !== 'boolean' ||
-    !['not-ready', 'active', 'temporarily-unavailable', 'idle'].includes(value.activity) ||
-    typeof value.deliver !== 'function' ||
-    typeof value.onAvailabilityChange !== 'function'
-  ) {
-    throw new TypeError('Agent input adapter does not implement the provider-neutral contract');
-  }
-}
 
 /** Owns one agent's provider input and the mailbox-to-provider drain. */
 export class AgentMailboxBinding {
@@ -46,7 +33,7 @@ export class AgentMailboxBinding {
   }
 
   public bindInputAdapter(input: AgentInputAdapter): void {
-    validateInputAdapter(input);
+    validateAgentInputAdapter(input);
     this.unsubscribe?.();
     this.input = input;
     this.availabilityVersion += 1;
@@ -164,7 +151,18 @@ export class AgentMailboxBinding {
     if (this.record.state === 'finishing' || this.record.state === 'stopping') {
       return 'temporarily-unavailable';
     }
-    const source = this.directory.resolveTrustedSource(sourceRegistration);
+    let source: AgentIdentity;
+    try {
+      source = this.directory.resolveTrustedSource(sourceRegistration);
+    } catch (error) {
+      if (error instanceof AgentManagerError && error.code === 'unknown_sender') {
+        throw new MailboxProtocolError(
+          'unknown_source',
+          'Mailbox source is no longer an active registered identity'
+        );
+      }
+      throw error;
+    }
     const input = this.input;
     const receiver = this.receiver;
     if (

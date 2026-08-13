@@ -19,8 +19,8 @@ import {
   type AgentManagerOptions,
   type AgentRecordSnapshot,
   type OrchestratorIdentity,
+  validateAgentInputAdapter,
 } from './agent_manager_types.js';
-import type { AgentInputActivity } from './agent_manager_types.js';
 import {
   AgentDirectory,
   createRootAgentId,
@@ -55,39 +55,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isAgentInputActivity(value: unknown): value is AgentInputActivity {
-  return (
-    value === 'not-ready' ||
-    value === 'active' ||
-    value === 'temporarily-unavailable' ||
-    value === 'idle'
-  );
-}
-
 function validateInputAdapter(value: unknown, label: string): asserts value is AgentInputAdapter {
-  if (!isRecord(value)) {
-    throw new AgentManagerError('invalid_options', `${label} must be an input adapter object`);
-  }
-  const ready = value.ready as { readonly then?: unknown };
-  if (typeof ready !== 'object' || ready === null || typeof ready.then !== 'function') {
-    throw new AgentManagerError('invalid_options', `${label}.ready must be a promise`);
-  }
-  if (typeof value.isReady !== 'boolean' || !isAgentInputActivity(value.activity)) {
+  try {
+    validateAgentInputAdapter(value);
+  } catch (error) {
     throw new AgentManagerError(
       'invalid_options',
-      `${label} must provide boolean isReady and a valid activity`
-    );
-  }
-  if (typeof value.deliver !== 'function' || typeof value.onAvailabilityChange !== 'function') {
-    throw new AgentManagerError(
-      'invalid_options',
-      `${label} must provide deliver and onAvailabilityChange functions`
-    );
-  }
-  if (value.release !== undefined && typeof value.release !== 'function') {
-    throw new AgentManagerError(
-      'invalid_options',
-      `${label}.release must be a function when provided`
+      `${label} is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
     );
   }
 }

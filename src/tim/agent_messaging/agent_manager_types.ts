@@ -48,6 +48,49 @@ export interface AgentInputAdapter {
   release?(): Promise<void>;
 }
 
+/**
+ * Validate the provider-neutral input boundary before it is bound to a
+ * manager or launch handle.
+ *
+ * Keep this check in one place. Orchestrator adapters and provider launch
+ * handles must have identical runtime validation, including optional release
+ * cleanup.
+ */
+export function validateAgentInputAdapter(value: unknown): asserts value is AgentInputAdapter {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('Agent input adapter must be an object');
+  }
+  const adapter = value as Record<string, unknown>;
+  const ready = adapter.ready;
+  if (
+    typeof ready !== 'object' ||
+    ready === null ||
+    typeof (ready as { readonly then?: unknown }).then !== 'function'
+  ) {
+    throw new TypeError('Agent input adapter ready must be a promise');
+  }
+  if (typeof adapter.isReady !== 'boolean') {
+    throw new TypeError('Agent input adapter isReady must be boolean');
+  }
+  if (
+    adapter.activity !== 'not-ready' &&
+    adapter.activity !== 'active' &&
+    adapter.activity !== 'temporarily-unavailable' &&
+    adapter.activity !== 'idle'
+  ) {
+    throw new TypeError('Agent input adapter activity is invalid');
+  }
+  if (typeof adapter.deliver !== 'function') {
+    throw new TypeError('Agent input adapter deliver must be a function');
+  }
+  if (typeof adapter.onAvailabilityChange !== 'function') {
+    throw new TypeError('Agent input adapter onAvailabilityChange must be a function');
+  }
+  if (adapter.release !== undefined && typeof adapter.release !== 'function') {
+    throw new TypeError('Agent input adapter release must be a function when provided');
+  }
+}
+
 export interface AgentLaunchCompletion {
   readonly finalMessage?: string;
   readonly error?: Error;

@@ -13,6 +13,7 @@ import {
   type MailboxAcknowledgement,
   type MailboxMessageRequest,
 } from './mailbox_protocol.js';
+import { MailboxProtocolError } from './mailbox_protocol.js';
 import {
   AgentMessagingRuntimeDirectory,
   AgentMessagingRuntimeDirectoryError,
@@ -575,6 +576,9 @@ export class MailboxReceiver {
     try {
       delivery = await this.deliver(trustedRequest, sourceRegistration);
     } catch (error) {
+      if (error instanceof MailboxProtocolError && error.code === 'unknown_source') {
+        return buildMailboxFailureAcknowledgement(request.requestId, error.code, error.message);
+      }
       return buildMailboxFailureAcknowledgement(
         request.requestId,
         'connection_failed',
@@ -655,19 +659,20 @@ export class MailboxReceiver {
 
   private requeueLease(state: PendingDeliveryLeaseState): void {
     if (state.status !== 'active') return;
-    state.status = 'requeued';
-    this.pendingDeliveryLeases.delete(state);
     if (this.closed) return;
     if (
-      this.pending.length + this.pendingDeliveryLeasesSize() + state.messages.length >
+      this.pending.length +
+        (this.pendingDeliveryLeasesSize() - state.messages.length) +
+        state.messages.length >
       MAX_PENDING_MESSAGES_PER_RECIPIENT
     ) {
-      state.status = 'acknowledged';
       throw new MailboxReceiverError(
         'receiver_not_ready',
         'Mailbox pending queue cannot accept the requeued messages'
       );
     }
+    state.status = 'requeued';
+    this.pendingDeliveryLeases.delete(state);
     // Restore the lease as one batch so its original FIFO order is preserved.
     this.pending.splice(0, 0, ...state.messages);
   }

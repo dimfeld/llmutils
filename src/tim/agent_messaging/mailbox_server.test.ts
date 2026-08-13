@@ -12,6 +12,7 @@ import {
   encodeMailboxFrame,
   parseMailboxFrame,
   parseMailboxMessageRequest,
+  MailboxProtocolError,
   type MailboxAcknowledgement,
   type MailboxMessageRequest,
 } from './mailbox_protocol.js';
@@ -562,6 +563,26 @@ describe('agent mailbox receiver', () => {
     expect(mailbox.receiver.pendingCount).toBe(0);
   });
 
+  test('preserves an explicit unknown-source delivery failure', async () => {
+    const mailbox = await createMailbox(() => {
+      throw new MailboxProtocolError(
+        'unknown_source',
+        'Mailbox source is no longer an active registered identity'
+      );
+    });
+
+    const acknowledgement = await sendRequest(
+      mailbox,
+      requestFor(mailbox, 'vanished-source', 'message')
+    );
+    expect(acknowledgement).toMatchObject({
+      requestId: 'vanished-source',
+      success: false,
+      error: { code: 'unknown_source' },
+    });
+    expect(mailbox.receiver.pendingCount).toBe(0);
+  });
+
   test('reconstructs split UTF-8 requests and returns validation failures with a recoverable ID', async () => {
     const delivered: MailboxMessageRequest[] = [];
     const mailbox = await createMailbox((request: MailboxMessageRequest): 'steered' => {
@@ -719,6 +740,27 @@ describe('agent mailbox receiver', () => {
     ]);
     all?.acknowledge();
     all?.acknowledge();
+  });
+
+  test('keeps a lease active when its requeue capacity guard fails', async () => {
+    const mailbox = await createMailbox((): 'temporarily-unavailable' => 'temporarily-unavailable');
+    for (let index = 1; index <= MAX_PENDING_MESSAGES_PER_RECIPIENT; index += 1) {
+      await sendRequest(mailbox, requestFor(mailbox, `capacity-${index}`, `message-${index}`));
+    }
+
+    const lease = mailbox.receiver.leasePending(1);
+    expect(lease).toBeDefined();
+    const pending = (mailbox.receiver as unknown as { readonly pending: unknown[] }).pending;
+    pending.push(lease?.messages[0]);
+
+    expect(() => lease?.requeue()).toThrowError(/cannot accept the requeued messages/);
+    const freed = mailbox.receiver.leasePending(1);
+    freed?.acknowledge();
+    expect(() => lease?.requeue()).not.toThrow();
+
+    const restored = mailbox.receiver.leasePending();
+    expect(restored?.messages[0]?.request.content).toBe('message-1');
+    restored?.acknowledge();
   });
 
   test('replays duplicate acknowledgements without invoking delivery twice', async () => {

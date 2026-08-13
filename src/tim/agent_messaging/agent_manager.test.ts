@@ -184,6 +184,29 @@ describe('AgentManager root registration and snapshots', () => {
     second.release();
   });
 
+  test('resolves the orchestrator from its stored root identity after map order changes', async () => {
+    const manager = await createManager();
+    reserveSubagentForTest(manager, reservationRequest('map-order-worker'));
+    const internalDirectory = (manager as unknown as { readonly directory: object }).directory as {
+      readonly byId: Map<string, unknown>;
+      readonly orchestratorIdentity: { readonly id: string };
+    };
+    const rootEntry = [...internalDirectory.byId.entries()].find(
+      ([id]) => id === manager.orchestratorIdentity.id
+    );
+    expect(rootEntry).toBeDefined();
+    const nonRootEntries = [...internalDirectory.byId.entries()].filter(
+      ([id]) => id !== manager.orchestratorIdentity.id
+    );
+    internalDirectory.byId.clear();
+    for (const entry of nonRootEntries) {
+      internalDirectory.byId.set(...entry);
+    }
+    internalDirectory.byId.set(...(rootEntry as [string, unknown]));
+
+    expect(internalDirectory.orchestratorIdentity.id).toBe(manager.orchestratorIdentity.id);
+  });
+
   test('does not close an existing session when duplicate manager initialization fails', async () => {
     const first = await createManager({ agentIdGenerator: () => 'root-id' });
     const session = first.sessionRuntime;
@@ -821,62 +844,79 @@ describe('AgentManager StartAgent startup and rollback', () => {
     expect(manager.getIdentityByName('invalid-input')).toBeUndefined();
   });
 
-  test('authorizes the registered orchestrator before validation, name generation, or allocation', async () => {
-    const launcher = new FakeAgentLauncher();
-    const preparer = createPreparer();
-    const slugGenerator = vi.fn((): string => 'unused');
+  test('applies the same release validation to orchestrator and launched input adapters', async () => {
+    const invalidReleaseInput = {
+      ready: Promise.resolve(),
+      isReady: true,
+      activity: 'idle',
+      deliver: (): 'started-idle-turn' => 'started-idle-turn',
+      onAvailabilityChange: (): (() => void) => (): void => undefined,
+      release: 'not-a-function',
+    };
+
+    await expect(
+      createAgentManager({ orchestratorInputAdapter: invalidReleaseInput as never })
+    ).rejects.toMatchObject({ code: 'invalid_options' });
+
+    const launcher = {
+      launch: async (request: AgentLaunchRequest) => ({
+        executor: request.identity.executor,
+        processLabel: request.processLabel,
+        input: invalidReleaseInput,
+        ready: Promise.resolve(),
+        completion: new Promise<never>(() => undefined),
+      }),
+    };
     const manager = await createManager({
-      agentPreparer: preparer,
-      agentLauncher: launcher,
-      slugGenerator,
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher as never,
     });
 
     await expect(
-      manager.startAgent({ ...manager.orchestratorIdentity, name: 'forged-root' } as never, {
-        type: 'implementer',
-        executor: 'codex-cli',
-        initialMessage: 42,
-      })
-    ).rejects.toMatchObject({ code: 'invalid_request' });
+      manager.startAgent(manager.orchestratorIdentity, reservationRequest('invalid-release'))
+    ).rejects.toMatchObject({ code: 'launch_failed' });
     expect(manager.subagentCount).toBe(0);
-    expect(manager.listAgents().agents).toHaveLength(1);
-    expect(slugGenerator).not.toHaveBeenCalled();
-    expect(preparer.requests).toHaveLength(0);
-    expect(launcher.launches).toHaveLength(0);
   });
 
-  test.each([
-    undefined,
-    {
-      id: 'stale-root',
-      name: ORCHESTRATOR_AGENT_NAME,
-      role: 'orchestrator',
-      executor: 'claude-code',
-    },
-    { id: 'agent-id-1', name: ORCHESTRATOR_AGENT_NAME, role: 'subagent', executor: 'claude-code' },
-    {
-      id: 'agent-id-1',
-      name: ORCHESTRATOR_AGENT_NAME,
-      role: 'orchestrator',
-      executor: 'codex-cli',
-    },
-    { id: 'agent-id-1', name: 'forged-root', role: 'orchestrator', executor: 'claude-code' },
-  ])('rejects a caller that is not the authoritative orchestrator identity: %j', async (caller) => {
+  test('ignores extra untrusted caller fields and validates the request normally', async () => {
+    const launcher = new FakeAgentLauncher();
+    const preparer = createPreparer();
+    const manager = await createManager({
+      agentPreparer: preparer,
+      agentLauncher: launcher,
+    });
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      {
+        ...manager.orchestratorIdentity,
+        name: 'forged-root',
+        executor: 'claude-code',
+      } as never,
+      reservationRequest('validated-after-extra-fields')
+    );
+    const launch = await launchPromise;
+    launch.handle.markReady();
+
+    await expect(startPromise).resolves.toMatchObject({ name: 'validated-after-extra-fields' });
+    expect(preparer.requests).toHaveLength(1);
+  });
+
+  test('rejects a stale caller ID before validating the StartAgent request', async () => {
     const launcher = new FakeAgentLauncher();
     const preparer = createPreparer();
     const manager = await createManager({ agentPreparer: preparer, agentLauncher: launcher });
 
-    const expectedCode =
-      caller?.id === manager.orchestratorIdentity.id && caller.role === 'orchestrator'
-        ? 'invalid_request'
-        : 'not_authorized';
     await expect(
-      manager.startAgent(caller as never, {
-        type: 'unsupported',
-        executor: 'invalid',
-        initialMessage: 42,
-      })
-    ).rejects.toMatchObject({ code: expectedCode });
+      manager.startAgent(
+        { id: 'stale-root', role: 'orchestrator' },
+        {
+          type: 'unsupported',
+          executor: 'invalid',
+          initialMessage: 42,
+        }
+      )
+    ).rejects.toMatchObject({ code: 'not_authorized' });
     expect(manager.listAgents().agents).toHaveLength(1);
     expect(preparer.requests).toHaveLength(0);
     expect(launcher.launches).toHaveLength(0);
@@ -1423,6 +1463,34 @@ describe('AgentManager SendAgentMessage routing', () => {
       id: manager.orchestratorIdentity.id,
       name: ORCHESTRATOR_AGENT_NAME,
     });
+  });
+
+  test('reports an immediately vanished source as unknown_source', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const source = await startFakeAgent(manager, launcher, 'vanished-source');
+    const target = await startFakeAgent(manager, launcher, 'vanished-source-target');
+    const sourceIdentity = {
+      id: source.request.identity.id,
+      name: source.request.identity.name,
+    };
+
+    manager.removeTerminalAgent(source.request.identity.id);
+    const acknowledgement = await manager.sessionRuntime.sendMessage(
+      sourceIdentity,
+      { id: target.request.identity.id, name: target.request.identity.name },
+      { requestId: 'vanished-source-request', content: 'must not deliver' }
+    );
+
+    expect(acknowledgement).toMatchObject({
+      requestId: 'vanished-source-request',
+      success: false,
+      error: { code: 'unknown_source' },
+    });
+    expect(target.handle.input.receivedMessages).toHaveLength(0);
   });
 
   test('queues temporary input and drains one mailbox FIFO when input becomes available', async () => {

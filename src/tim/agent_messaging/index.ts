@@ -38,5 +38,6 @@ export type {
   ProviderThreadId,
   SubagentIdentity,
 } from './agent_manager_types.js';
+export { validateAgentInputAdapter } from './agent_manager_types.js';
 export { AgentManagerError } from './agent_manager_types.js';
 export type { AgentManagerErrorCode } from './agent_manager_types.js';

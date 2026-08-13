@@ -192,12 +192,14 @@ export function createRootAgentId(options: AgentDirectoryOptions): AgentId {
 export class AgentDirectory {
   private readonly byId = new Map<AgentId, DirectoryRecord>();
   private readonly byName = new Map<AgentName, AgentId>();
+  private readonly rootId: AgentId;
   private nextCreationSequence = 1;
 
   public constructor(
     private readonly options: AgentDirectoryOptions,
     rootRecord: OrchestratorDirectoryRecord
   ) {
+    this.rootId = rootRecord.id;
     this.byId.set(rootRecord.id, rootRecord);
     this.byName.set(rootRecord.name, rootRecord.id);
   }
@@ -411,7 +413,7 @@ export class AgentDirectory {
   }
 
   private getRootRecord(): OrchestratorDirectoryRecord {
-    const record = [...this.byId.values()][0];
+    const record = this.byId.get(this.rootId);
     if (record === undefined || record.role !== 'orchestrator') {
       throw new AgentManagerError('root_registration_failed', 'The orchestrator record is missing');
     }
