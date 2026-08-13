@@ -1,7 +1,6 @@
 import type {
   AgentExecutor,
   AgentLifecycleState,
-  AgentSummary,
   AgentType,
   NonterminalAgentLifecycleState,
   StartAgentArguments,
@@ -49,7 +48,7 @@ export interface AgentInputAdapter {
   readonly activity: AgentInputActivity;
   deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery>;
   /** Notify the manager when temporary input backpressure changes. */
-  onAvailabilityChange?(listener: () => void): () => void;
+  onAvailabilityChange(listener: () => void): () => void;
   release?(): Promise<void>;
 }
 
@@ -224,8 +223,4 @@ export interface AgentManagerOptions {
   readonly agentLauncher?: AgentLauncher;
   /** Provider-neutral input boundary for messages addressed to orchestrator. */
   readonly orchestratorInputAdapter?: AgentInputAdapter;
-}
-
-export interface AgentManagerSnapshot {
-  readonly agents: readonly AgentSummary[];
 }

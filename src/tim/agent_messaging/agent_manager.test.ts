@@ -227,6 +227,36 @@ describe('AgentManager root registration and snapshots', () => {
     await session.close();
   });
 
+  test('closes only the manager-owned registrations when sharing a runtime', async () => {
+    const session = await createAgentMessagingSessionRuntime();
+    try {
+      const manager = await createManager({ sessionRuntime: session });
+      const peer = await session.register({
+        registration: {
+          id: 'shared-peer-id',
+          name: 'shared-peer',
+          role: 'subagent',
+          type: 'tester',
+          executor: 'codex-cli',
+          state: 'running-idle',
+        },
+        deliver: async (): Promise<'temporarily-unavailable'> => 'temporarily-unavailable',
+      });
+
+      await manager.close();
+
+      expect(manager.listAgents().agents).toEqual([]);
+      expect(session.isClosed).toBe(false);
+      expect(await session.runtime.listRegistrations()).toEqual([
+        expect.objectContaining({ id: peer.registration.id, name: 'shared-peer' }),
+      ]);
+
+      await peer.deregister();
+    } finally {
+      await session.close();
+    }
+  });
+
   test('isolates identities, names, registrations, and cleanup across managers', async () => {
     const first = await createManager({
       agentIdGenerator: (() => {
@@ -585,6 +615,39 @@ describe('AgentManager names and atomic reservations', () => {
 });
 
 describe('AgentManager StartAgent startup and rollback', () => {
+  test('requires availability notifications on orchestrator and launched input adapters', async () => {
+    const invalidInput = {
+      ready: Promise.resolve(),
+      isReady: true,
+      activity: 'idle',
+      deliver: (): 'steered' => 'steered',
+    };
+
+    await expect(
+      createAgentManager({ orchestratorInputAdapter: invalidInput as never })
+    ).rejects.toMatchObject({ code: 'invalid_options' });
+
+    const launcher = {
+      launch: async (request: AgentLaunchRequest) => ({
+        executor: request.identity.executor,
+        processLabel: request.processLabel,
+        input: invalidInput,
+        ready: Promise.resolve(),
+        completion: new Promise<never>(() => undefined),
+      }),
+    };
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher as never,
+    });
+
+    await expect(
+      manager.startAgent(manager.orchestratorIdentity, reservationRequest('invalid-input'))
+    ).rejects.toMatchObject({ code: 'launch_failed' });
+    expect(manager.subagentCount).toBe(0);
+    expect(manager.getIdentityByName('invalid-input')).toBeUndefined();
+  });
+
   test('authorizes the registered orchestrator before validation, name generation, or allocation', async () => {
     const launcher = new FakeAgentLauncher();
     const preparer = createPreparer();
@@ -1022,6 +1085,36 @@ describe('AgentManager StartAgent startup and rollback', () => {
     second.release();
     expect(manager.subagentCount).toBe(0);
   });
+
+  test('releases the name and slot before a hanging provider cleanup completes', async () => {
+    const launcher = new FakeAgentLauncher();
+    launcher.setNextReadinessFailure();
+    launcher.setNextReleasePending();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+
+    const failedStart = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('hanging-cleanup')
+    );
+    const failedLaunch = await launcher.waitForNextLaunch();
+    await waitFor(() => manager.subagentCount === 0);
+    expect(manager.getIdentityByName('hanging-cleanup')).toBeUndefined();
+
+    const retryLaunchPromise = launcher.waitForNextLaunch();
+    const retryStart = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('hanging-cleanup')
+    );
+    const retryLaunch = await retryLaunchPromise;
+    retryLaunch.handle.markReady();
+    await expect(retryStart).resolves.toMatchObject({ name: 'hanging-cleanup' });
+
+    failedLaunch.handle.resolveRelease();
+    await expect(failedStart).rejects.toMatchObject({ code: 'launch_failed' });
+  });
 });
 
 describe('AgentManager SendAgentMessage routing', () => {
@@ -1135,7 +1228,7 @@ describe('AgentManager SendAgentMessage routing', () => {
     }
     expect(queued.map((result) => result.delivery)).toEqual(['queued', 'queued', 'queued']);
     expect(target.handle.input.receivedMessages).toHaveLength(0);
-    expect(manager.sessionRuntime.runtime.listRegistrations()).resolves.toHaveLength(2);
+    await expect(manager.sessionRuntime.runtime.listRegistrations()).resolves.toHaveLength(2);
 
     target.handle.input.setActiveAccepting();
     await waitFor(() => target.handle.input.receivedMessages.length === 3);
@@ -1147,6 +1240,50 @@ describe('AgentManager SendAgentMessage routing', () => {
     expect(target.handle.input.receivedMessages.map((message) => message.messageId)).toEqual(
       queued.map((result) => result.messageId)
     );
+  });
+
+  test('drains queued messages from a removed sender without blocking later FIFO work', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const sender = await startFakeAgent(manager, launcher, 'removed-sender');
+    sender.handle.input.markReady();
+    const target = await startFakeAgent(manager, launcher, 'dead-sender-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+
+    await expect(
+      manager.sendAgentMessage(sender.request.identity, {
+        name: 'dead-sender-target',
+        message: 'from removed sender',
+      })
+    ).resolves.toMatchObject({ delivery: 'queued' });
+
+    manager.removeTerminalAgent(sender.request.identity.id);
+    await manager.sessionRuntime.deregister(sender.request.identity.id);
+
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'dead-sender-target',
+        message: 'from orchestrator after removal',
+      })
+    ).resolves.toMatchObject({ delivery: 'queued' });
+
+    target.handle.input.setActiveAccepting();
+    await waitFor(() => target.handle.input.receivedMessages.length === 2);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'from removed sender',
+      'from orchestrator after removal',
+    ]);
+    expect(target.handle.input.receivedMessages.map((message) => message.source.name)).toEqual([
+      'removed-sender',
+      'orchestrator',
+    ]);
   });
 
   test('preserves concurrent per-recipient order through the real mailbox', async () => {

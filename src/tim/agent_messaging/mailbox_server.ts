@@ -11,6 +11,7 @@ import {
   buildMailboxSuccessAcknowledgement,
   parseMailboxMessageRequest,
   type MailboxAcknowledgement,
+  type MailboxIdentity,
   type MailboxMessageRequest,
 } from './mailbox_protocol.js';
 import {
@@ -46,6 +47,8 @@ export type MailboxDeliveryCallback = (
 export interface MailboxPendingMessage {
   readonly request: MailboxMessageRequest;
   readonly sourceRegistration: AgentRegistration;
+  /** Immutable identity validated before this envelope entered the FIFO. */
+  readonly sourceIdentity: MailboxIdentity;
 }
 
 export interface MailboxReceiverOptions {
@@ -659,7 +662,18 @@ export class MailboxReceiver {
       );
     }
 
-    this.pending.push({ request: trustedRequest, sourceRegistration });
+    const trustedSourceRegistration = Object.freeze({ ...sourceRegistration });
+    const sourceIdentity = Object.freeze({
+      id: trustedRequest.sourceId,
+      name: trustedRequest.sourceName,
+    });
+    this.pending.push(
+      Object.freeze({
+        request: trustedRequest,
+        sourceRegistration: trustedSourceRegistration,
+        sourceIdentity,
+      })
+    );
     return buildMailboxSuccessAcknowledgement(request.requestId, 'queued');
   }
 

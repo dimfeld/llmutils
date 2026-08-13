@@ -11,12 +11,6 @@ export {
   parseSubagentName,
 } from './agent_names.js';
 export { formatAgentProcessLabel } from './agent_process_labels.js';
-export {
-  FakeAgentInputAdapter,
-  FakeAgentLaunchHandle,
-  FakeAgentPreparer,
-  FakeAgentLauncher,
-} from './fake_provider.js';
 export type { AgentId, AgentIdGenerator, AgentName, AgentSlugGenerator } from './agent_names.js';
 export type { AgentProcessLabel } from './agent_process_labels.js';
 export type {
@@ -41,7 +35,6 @@ export type {
   AgentRecordSnapshot,
   AgentReservation,
   AgentReservationRequest,
-  AgentManagerSnapshot,
   OrchestratorAgentRecord,
   OrchestratorIdentity,
   PreparedAgentExecution,

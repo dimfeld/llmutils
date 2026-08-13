@@ -193,6 +193,7 @@ export class FakeAgentLaunchHandle implements AgentLaunchHandle {
   private released = false;
   private releaseError: Error | undefined;
   private releaseCalls = 0;
+  private releaseGate: ReturnType<typeof deferred<void>> | undefined;
 
   public constructor(
     public readonly executor: AgentExecutor,
@@ -234,12 +235,29 @@ export class FakeAgentLaunchHandle implements AgentLaunchHandle {
     this.releaseError = error;
   }
 
+  public deferRelease(): void {
+    if (this.releaseGate !== undefined) {
+      throw new Error('Fake release is already deferred');
+    }
+    this.releaseGate = deferred<void>();
+  }
+
+  public resolveRelease(): void {
+    const releaseGate = this.releaseGate;
+    if (releaseGate === undefined) {
+      throw new Error('Fake release is not deferred');
+    }
+    this.releaseGate = undefined;
+    releaseGate.resolve(undefined);
+  }
+
   public async release(): Promise<void> {
     if (this.released) {
       return;
     }
     this.releaseCalls += 1;
     this.released = true;
+    await this.releaseGate?.promise;
     await this.input.release?.();
     if (this.releaseError !== undefined) {
       const error = this.releaseError;
@@ -256,6 +274,7 @@ export class FakeAgentLauncher implements AgentLauncher {
   private nextLaunchError: Error | undefined;
   private nextReadinessError: Error | undefined;
   private nextReleaseError: Error | undefined;
+  private nextReleasePending = false;
   private launchWaiter = deferred<FakeAgentLaunch>();
 
   public waitForNextLaunch(): Promise<FakeAgentLaunch> {
@@ -272,6 +291,10 @@ export class FakeAgentLauncher implements AgentLauncher {
 
   public setNextReleaseFailure(error: Error = new Error('fake release failure')): void {
     this.nextReleaseError = error;
+  }
+
+  public setNextReleasePending(): void {
+    this.nextReleasePending = true;
   }
 
   public async launch(request: AgentLaunchRequest): Promise<FakeAgentLaunchHandle> {
@@ -296,6 +319,10 @@ export class FakeAgentLauncher implements AgentLauncher {
     if (this.nextReleaseError !== undefined) {
       handle.setReleaseFailure(this.nextReleaseError);
       this.nextReleaseError = undefined;
+    }
+    if (this.nextReleasePending) {
+      handle.deferRelease();
+      this.nextReleasePending = false;
     }
     if (this.nextReadinessError !== undefined) {
       const error = this.nextReadinessError;
