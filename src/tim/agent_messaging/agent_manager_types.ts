@@ -1,0 +1,201 @@
+import type {
+  AgentExecutor,
+  AgentLifecycleState,
+  AgentSummary,
+  AgentType,
+  NonterminalAgentLifecycleState,
+  StartAgentArguments,
+} from './contracts.js';
+import type { AgentRegistration, AgentRegistrationDraft } from './runtime_dir.js';
+import type { SessionRegistrationHandle } from './session_runtime.js';
+import type { PreparedSubagentExecution } from '../subagents/types.js';
+import type { AgentId, AgentName } from './agent_names.js';
+import type { AgentProcessLabel } from './agent_process_labels.js';
+
+declare const processControlIdBrand: unique symbol;
+declare const providerThreadIdBrand: unique symbol;
+
+/** An OS process-registry identity, separate from the agent identity. */
+export type ProcessControlId = string & {
+  readonly [processControlIdBrand]: 'ProcessControlId';
+};
+
+/** A provider-level logical thread identity, separate from the agent identity. */
+export type ProviderThreadId = string & {
+  readonly [providerThreadIdBrand]: 'ProviderThreadId';
+};
+
+/** Provider input availability is distinct from lifecycle state. */
+export type AgentInputActivity = 'not-ready' | 'active' | 'temporarily-unavailable' | 'idle';
+
+export type AgentInputDelivery =
+  | Exclude<import('./contracts.js').SendAgentMessageAcknowledgement, 'queued'>
+  | 'temporarily-unavailable';
+
+export interface AgentInputMessage {
+  readonly messageId: string;
+  readonly source: AgentCallerIdentity;
+  readonly content: string;
+}
+
+/**
+ * The provider-neutral input boundary used by a future manager launch path.
+ * It describes input capability only; it does not own a persistent provider
+ * loop or expose lifecycle controls.
+ */
+export interface AgentInputAdapter {
+  readonly ready: Promise<void>;
+  readonly isReady: boolean;
+  readonly activity: AgentInputActivity;
+  deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery>;
+  release?(): Promise<void>;
+}
+
+export interface AgentLaunchCompletion {
+  readonly finalMessage?: string;
+  readonly error?: Error;
+}
+
+/**
+ * A provider-neutral launch handle. `completion` is intentionally passive;
+ * lifecycle and shutdown policy belong to the successor plan.
+ */
+export interface AgentLaunchHandle {
+  readonly executor: AgentExecutor;
+  readonly processLabel: AgentProcessLabel;
+  readonly input: AgentInputAdapter;
+  readonly ready: Promise<void>;
+  readonly completion: Promise<AgentLaunchCompletion>;
+  readonly processControlId?: ProcessControlId;
+  readonly providerThreadId?: ProviderThreadId;
+  release?(): Promise<void>;
+}
+
+/**
+ * Prepared provider input for any named agent.
+ *
+ * The reusable one-shot preparation service currently narrows `agentType` to
+ * its legacy roles. AgentManager launch requests also support collaborative
+ * reviewers, while preserving every other prepared-execution field.
+ */
+export type PreparedAgentExecution = Omit<PreparedSubagentExecution, 'agentType'> & {
+  readonly agentType: AgentType;
+};
+
+export interface AgentLaunchRequest {
+  readonly identity: SubagentIdentity;
+  readonly initialMessage: string;
+  readonly preparedExecution: PreparedAgentExecution;
+  readonly processLabel: AgentProcessLabel;
+}
+
+export interface AgentLauncher {
+  launch(request: AgentLaunchRequest): Promise<AgentLaunchHandle>;
+}
+
+export interface OrchestratorIdentity {
+  readonly id: AgentId;
+  readonly name: AgentName;
+  readonly role: 'orchestrator';
+  readonly executor: AgentExecutor;
+}
+
+export interface SubagentIdentity {
+  readonly id: AgentId;
+  readonly name: AgentName;
+  readonly role: 'subagent';
+  readonly type: AgentType;
+  readonly executor: AgentExecutor;
+}
+
+export type AgentIdentity = OrchestratorIdentity | SubagentIdentity;
+export type AgentCallerIdentity = AgentIdentity;
+
+export interface OrchestratorAgentRecord extends OrchestratorIdentity {
+  readonly role: 'orchestrator';
+  state: NonterminalAgentLifecycleState;
+  inputActivity: AgentInputActivity;
+  readonly creationSequence: number;
+  readonly registrationDraft: AgentRegistrationDraft;
+  registration?: AgentRegistration;
+  mailbox?: SessionRegistrationHandle;
+}
+
+export interface SubagentAgentRecord extends SubagentIdentity {
+  readonly role: 'subagent';
+  state: NonterminalAgentLifecycleState;
+  inputActivity: AgentInputActivity;
+  readonly creationSequence: number;
+  readonly registrationDraft: AgentRegistrationDraft;
+  registration?: AgentRegistration;
+  mailbox?: SessionRegistrationHandle;
+  launchHandle?: AgentLaunchHandle;
+  processControlId?: ProcessControlId;
+  providerThreadId?: ProviderThreadId;
+}
+
+export type AgentRecord = OrchestratorAgentRecord | SubagentAgentRecord;
+
+export interface AgentRecordSnapshot {
+  readonly identity: AgentIdentity;
+  readonly state: AgentLifecycleState;
+  readonly inputActivity: AgentInputActivity;
+  readonly creationSequence: number;
+  readonly processControlId?: ProcessControlId;
+  readonly providerThreadId?: ProviderThreadId;
+}
+
+/** Low-level reservation input used by the later StartAgent composition. */
+export type AgentReservationRequest = StartAgentArguments;
+
+export interface AgentReservation {
+  readonly id: AgentId;
+  readonly name: AgentName;
+  readonly identity: SubagentIdentity;
+  readonly snapshot: AgentRecordSnapshot;
+  /** Idempotently release this reservation if startup does not continue. */
+  release(): void;
+}
+
+export type AgentManagerErrorCode =
+  | 'invalid_options'
+  | 'invalid_request'
+  | 'manager_closed'
+  | 'not_authorized'
+  | 'invalid_name'
+  | 'reserved_name'
+  | 'name_in_use'
+  | 'name_generation_exhausted'
+  | 'identity_generation_exhausted'
+  | 'agent_limit_reached'
+  | 'launch_failed'
+  | 'unknown_sender'
+  | 'unknown_target'
+  | 'target_not_accepting_messages'
+  | 'transport_error'
+  | 'root_registration_failed'
+  | 'unknown_agent';
+
+export class AgentManagerError extends Error {
+  public readonly code: AgentManagerErrorCode;
+
+  public constructor(code: AgentManagerErrorCode, message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'AgentManagerError';
+    this.code = code;
+  }
+}
+
+export interface AgentManagerOptions {
+  readonly sessionRuntime?: import('./session_runtime.js').AgentMessagingSessionRuntime;
+  readonly orchestratorExecutor?: AgentExecutor;
+  readonly agentIdGenerator?: import('./agent_names.js').AgentIdGenerator;
+  readonly slugGenerator?: import('./agent_names.js').AgentSlugGenerator;
+  readonly maxAgentIdGenerationAttempts?: number;
+  readonly maxAgentNameGenerationAttempts?: number;
+  readonly agentLauncher?: AgentLauncher;
+}
+
+export interface AgentManagerSnapshot {
+  readonly agents: readonly AgentSummary[];
+}
