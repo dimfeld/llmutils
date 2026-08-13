@@ -207,7 +207,11 @@ export class AgentMailboxBinding {
       content: message.content,
     });
     this.updateRecordInputState(input);
-    if (delivery === 'temporarily-unavailable') this.scheduleRetry();
+    if (delivery === 'temporarily-unavailable') {
+      this.scheduleRetry();
+    } else {
+      this.retryVersion = undefined;
+    }
     return delivery;
   }
 
@@ -250,6 +254,7 @@ export class AgentMailboxBinding {
           return 'provider-refused';
         }
         lease.acknowledge();
+        this.retryVersion = undefined;
         this.updateRecordInputState(input);
       } catch {
         lease.requeue();

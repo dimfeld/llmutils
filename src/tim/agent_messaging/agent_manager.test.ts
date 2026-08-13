@@ -1721,6 +1721,54 @@ describe('AgentManager SendAgentMessage routing', () => {
     ]);
   });
 
+  test.each([
+    { activity: 'active' as const, refusal: 'temporary' as const },
+    { activity: 'active' as const, refusal: 'rejection' as const },
+    { activity: 'idle' as const, refusal: 'temporary' as const },
+    { activity: 'idle' as const, refusal: 'rejection' as const },
+  ])(
+    'does not spin for a persistent $activity provider $refusal on one availability version',
+    async ({ activity, refusal }) => {
+      const launcher = new FakeAgentLauncher();
+      const manager = await createManager({
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+      });
+      const name = `persistent-${activity}-${refusal}`;
+      const target = await startFakeAgent(manager, launcher, name);
+      target.handle.input.markReady();
+      await waitFor(
+        () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+      );
+      target.handle.input.setTemporarilyUnavailable();
+      const queued = await manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name,
+        message: 'persistent refusal',
+      });
+      expect(queued.delivery).toBe('queued');
+
+      if (refusal === 'temporary') {
+        target.handle.input.setPersistentTemporarilyUnavailable();
+      } else {
+        target.handle.input.setPersistentDeliveryRejection();
+      }
+      if (activity === 'active') {
+        target.handle.input.setActiveAccepting();
+      } else {
+        target.handle.input.setIdle();
+      }
+
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      const callsAfterRetry = target.handle.input.deliveryCalls;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(target.handle.input.deliveryCalls).toBe(callsAfterRetry);
+      expect(callsAfterRetry).toBe(2);
+      expect(target.handle.input.receivedMessages).toHaveLength(0);
+    }
+  );
+
   test('drains queued messages from a removed sender without blocking later FIFO work', async () => {
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({
@@ -1890,6 +1938,49 @@ describe('AgentManager SendAgentMessage routing', () => {
 
     await expect(secondSend).resolves.toMatchObject({ delivery: 'queued' });
     await waitFor(() => target.handle.input.receivedMessages.length === 2);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'first',
+      'second',
+    ]);
+  });
+
+  test('retries a real mailbox fallback after a successful retry without another availability notification', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'retry-gate-boundary-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'retry-gate-boundary-target',
+        message: 'first',
+      })
+    ).resolves.toMatchObject({ delivery: 'queued' });
+
+    target.handle.input.rejectNextDelivery();
+    const successfulRetryStarted = target.handle.input.deferNextDelivery();
+    target.handle.input.setActiveAccepting();
+    await successfulRetryStarted;
+    expect(target.handle.input.deliveryCalls).toBe(2);
+    const acceptedPause = target.handle.input.pauseAfterNextAcceptedDelivery();
+
+    target.handle.input.resolveNextDelivery('steered');
+    await acceptedPause.accepted;
+    target.handle.input.rejectNextDelivery();
+    const secondSend = manager.sendAgentMessage(manager.orchestratorIdentity, {
+      name: 'retry-gate-boundary-target',
+      message: 'second',
+    });
+    await expect(secondSend).resolves.toMatchObject({ delivery: 'queued' });
+    acceptedPause.release();
+    await waitFor(() => target.handle.input.receivedMessages.length === 2);
+    expect(target.handle.input.deliveryCalls).toBe(4);
     expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
       'first',
       'second',

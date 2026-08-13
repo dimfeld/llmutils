@@ -51,6 +51,12 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
     | undefined;
   private nextDeliveryRejection: Error | undefined;
   private persistentDeliveryRefusal: 'temporarily-unavailable' | Error | undefined;
+  private postAcceptedDeliveryPause:
+    | {
+        readonly accepted: ReturnType<typeof deferred<void>>;
+        readonly release: ReturnType<typeof deferred<void>>;
+      }
+    | undefined;
 
   public get ready(): Promise<void> {
     return this.readyDeferred.promise;
@@ -162,6 +168,23 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
     nextDelivery.resolve(delivery);
   }
 
+  /** Pause after the next successful delivery has been recorded. */
+  public pauseAfterNextAcceptedDelivery(): {
+    readonly accepted: Promise<void>;
+    release(): void;
+  } {
+    if (this.postAcceptedDeliveryPause !== undefined) {
+      throw new Error('A post-acceptance delivery pause is already configured');
+    }
+    const accepted = deferred<void>();
+    const release = deferred<void>();
+    this.postAcceptedDeliveryPause = { accepted, release };
+    return {
+      accepted: accepted.promise,
+      release: (): void => release.resolve(undefined),
+    };
+  }
+
   public deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery> {
     this.deliveryCallCount += 1;
     if (this.availabilityNotificationInsideNextDelivery) {
@@ -197,13 +220,19 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
   private finishDelivery(
     message: AgentInputMessage,
     delivery: AgentInputDelivery
-  ): AgentInputDelivery {
+  ): AgentInputDelivery | Promise<AgentInputDelivery> {
     if (delivery === 'temporarily-unavailable') {
       return delivery;
     }
     this.received.push(Object.freeze({ ...message }));
     if (delivery === 'started-idle-turn') {
       this.inputActivity = 'active';
+    }
+    const pause = this.postAcceptedDeliveryPause;
+    if (pause !== undefined) {
+      this.postAcceptedDeliveryPause = undefined;
+      pause.accepted.resolve(undefined);
+      return pause.release.promise.then(() => delivery);
     }
     return delivery;
   }
