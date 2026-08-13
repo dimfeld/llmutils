@@ -2061,18 +2061,21 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     vi.doMock('./claude_code/streaming_input.ts', () => ({}));
 
+    const formatJsonMessage = vi.fn((line: string) => {
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.type === 'result') {
+          return { type: 'result', message: parsed.result ?? '', resultInfo: parsed };
+        }
+      } catch {}
+      return { type: 'assistant', message: line, rawMessage: line };
+    });
+    const createClaudeMessageFormatter = vi.fn(() => ({ formatJsonMessage }));
+
     vi.doMock('./claude_code/format.ts', () => ({
-      formatJsonMessage: vi.fn((line: string) => {
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.type === 'result') {
-            return { type: 'result', message: parsed.result ?? '', resultInfo: parsed };
-          }
-        } catch {}
-        return { type: 'assistant', message: line, rawMessage: line };
-      }),
+      formatJsonMessage,
+      createClaudeMessageFormatter,
       extractStructuredMessages: vi.fn(() => []),
-      resetToolUseCache: vi.fn(() => {}),
     }));
 
     vi.doMock('./claude_code/terminal_input_lifecycle.ts', () => ({
@@ -2100,8 +2103,11 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       // Wait for executeWithTerminalInput to be called so terminalInputResult is set
       await executeWithTerminalInputCalledPromise;
 
-      // Send the result line to trigger onResultMessage via the formatStdout callback
+      // Send separate output chunks to verify that one formatter serves the whole execution.
+      formatStdout?.('{"type":"assistant"}\n');
       formatStdout?.(`${resultLine}\n`);
+      // A follow-up provider turn must use the same formatter instance.
+      formatStdout?.('{"type":"assistant","message":"continuation"}\n');
 
       // Now resolve the resultPromise so the executor can finish
       resolveStreamingResult?.({
@@ -2122,6 +2128,8 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
 
     // onResultMessage should be called from the formatStdout callback when result line is processed
     expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
+    expect(createClaudeMessageFormatter).toHaveBeenCalledTimes(1);
+    expect(formatJsonMessage).toHaveBeenCalledTimes(3);
   });
 
   test('does not force-close stdin when closeTerminalInputOnResult is false', async () => {
@@ -2832,7 +2840,7 @@ describe('ClaudeCodeExecutor - background activity integration (real formatJsonM
       });
 
       vi.doMock('../../logging/tunnel_client.js', () => ({
-        isTunnelActive: () => false,
+        isTunnelActive: () => true,
         TunnelAdapter: class {},
       }));
 

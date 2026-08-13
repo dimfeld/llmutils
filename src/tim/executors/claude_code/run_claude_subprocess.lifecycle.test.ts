@@ -91,7 +91,7 @@ const FAILED_RESULT_LINE = JSON.stringify({
   total_cost_usd: 0,
 });
 
-function makeSubprocessOptions() {
+function makeSubprocessOptions(processFormattedMessages: (messages: unknown[]) => void = () => {}) {
   return {
     prompt: 'test prompt',
     cwd: process.cwd(),
@@ -99,11 +99,14 @@ function makeSubprocessOptions() {
     noninteractive: true,
     terminalInput: false,
     claudeCodeOptions: { includeDefaultTools: false },
-    processFormattedMessages: () => {},
+    processFormattedMessages,
   };
 }
 
-async function setupRunClaudeSubprocess(stdinWriteSpy: ReturnType<typeof vi.fn>) {
+async function setupRunClaudeSubprocess(
+  stdinWriteSpy: ReturnType<typeof vi.fn>,
+  options = makeSubprocessOptions()
+) {
   const stdinEndSpy = vi.fn(async () => {});
   let formatStdout: ((output: string) => unknown) | undefined;
   let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
@@ -120,7 +123,7 @@ async function setupRunClaudeSubprocess(stdinWriteSpy: ReturnType<typeof vi.fn>)
     };
   });
 
-  const executePromise = runClaudeSubprocess(makeSubprocessOptions());
+  const executePromise = runClaudeSubprocess(options);
 
   const setupStart = Date.now();
   while (
@@ -150,6 +153,66 @@ describe('runClaudeSubprocess lifecycle', () => {
     formatStdout(`${RESULT_LINE}\n`);
 
     // stdin closed before streaming.result resolves
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    resolveStreamingResult?.({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+
+    await executePromise;
+  });
+
+  test('reuses one formatter across stdout callbacks for tool correlation', async () => {
+    const stdinWriteSpy = vi.fn((_value: string) => {});
+    const { stdinEndSpy, formatStdout, resolveStreamingResult, executePromise } =
+      await setupRunClaudeSubprocess(stdinWriteSpy);
+
+    const toolUseLine = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'cross-callback-tool',
+            name: 'Bash',
+            input: { command: 'printf hello' },
+          },
+        ],
+      },
+      session_id: SESSION_ID,
+    });
+    const toolResultLine = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'cross-callback-tool',
+            content: 'hello',
+          },
+        ],
+      },
+      session_id: SESSION_ID,
+    });
+
+    formatStdout(`${toolUseLine}\n`);
+    const toolResultOutput = formatStdout(`${toolResultLine}\n`);
+
+    expect(toolResultOutput).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'llm_tool_result',
+          toolName: 'Bash',
+        }),
+      ])
+    );
+
+    formatStdout(`${RESULT_LINE}\n`);
     expect(stdinEndSpy).toHaveBeenCalledTimes(1);
 
     resolveStreamingResult?.({

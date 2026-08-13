@@ -264,6 +264,22 @@ describe('reusable subagent service', () => {
     expect(mocks.executeCodexStep).not.toHaveBeenCalled();
   });
 
+  test('fails out-of-range task scope before materialization or provider work', async () => {
+    await expect(
+      prepareSubagentExecution({
+        agentType: 'implementer',
+        planId: 42,
+        executor: 'codex-cli',
+        taskIndex: '999',
+      })
+    ).rejects.toThrow('Unknown task indexes: 999');
+
+    expect(mocks.materializePlan).not.toHaveBeenCalled();
+    expect(mocks.tryMaterializeReferenceArtifactPathsForExecution).not.toHaveBeenCalled();
+    expect(mocks.executeCodexStep).not.toHaveBeenCalled();
+    expect(mocks.runClaudeSubprocess).not.toHaveBeenCalled();
+  });
+
   test('returns a provider-neutral one-shot completion handle', async () => {
     const prepared = await prepareSubagentExecution({
       agentType: 'implementer',
