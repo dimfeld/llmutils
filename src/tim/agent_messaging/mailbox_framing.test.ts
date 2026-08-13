@@ -1,12 +1,11 @@
 import { Buffer } from 'node:buffer';
 import { describe, expect, test } from 'vitest';
 import { ORCHESTRATOR_AGENT_NAME } from './contracts.js';
-import { MailboxConnectionFramePolicy, MailboxJsonlDecoder } from './mailbox_framing.js';
+import { MailboxJsonlDecoder } from './mailbox_framing.js';
 import {
   MAX_MAILBOX_FRAME_BYTES,
   MailboxProtocolError,
   buildMailboxMessageRequest,
-  buildMailboxSuccessAcknowledgement,
   encodeMailboxFrame,
   parseMailboxFrame,
 } from './mailbox_protocol.js';
@@ -161,32 +160,12 @@ describe('bounded mailbox JSONL framing', () => {
     expect(partialDecoder.pendingBytes).toBe(0);
   });
 
-  test('enforces one correctly directed frame with an explicit connection policy', () => {
-    const parsedRequest = parseMailboxFrame(requestLine.slice(0, -1));
-    const requestPolicy = new MailboxConnectionFramePolicy('message');
-    requestPolicy.accept(parsedRequest);
-    expect(requestPolicy.hasAcceptedFrame).toBe(true);
-    requestPolicy.complete();
-
-    expectMailboxError(() => requestPolicy.accept(parsedRequest), 'unexpected_frame');
-
-    const ackPolicy = new MailboxConnectionFramePolicy('ack');
-    expectMailboxError(() => ackPolicy.accept(parsedRequest), 'invalid_ack');
-    expectMailboxError(() => ackPolicy.complete(), 'incomplete_frame');
-
-    const acceptedAckPolicy = new MailboxConnectionFramePolicy('ack');
-    acceptedAckPolicy.accept(buildMailboxSuccessAcknowledgement('request-1', 'steered'));
-    expect(acceptedAckPolicy.hasAcceptedFrame).toBe(true);
-    acceptedAckPolicy.complete();
-  });
-
-  test('rejects invalid decoder options and frame-policy kinds', () => {
+  test('rejects invalid decoder options', () => {
     expect(() => new MailboxJsonlDecoder({ maxFrameBytes: 1 })).toThrow(RangeError);
     expect(() => new MailboxJsonlDecoder({ maxFrameBytes: MAX_MAILBOX_FRAME_BYTES + 1 })).toThrow(
       RangeError
     );
     expect(() => new MailboxJsonlDecoder({ maxFrames: 0 })).toThrow(RangeError);
     expect(() => new MailboxJsonlDecoder({ rejectEmptyLines: 'no' as never })).toThrow(TypeError);
-    expect(() => new MailboxConnectionFramePolicy('other' as never)).toThrow(TypeError);
   });
 });

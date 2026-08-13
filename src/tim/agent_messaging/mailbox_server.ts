@@ -3,14 +3,11 @@ import { promises as fs } from 'node:fs';
 import net from 'node:net';
 
 import { debugLog } from '../../logging.js';
-import { MailboxConnectionFramePolicy, MailboxJsonlDecoder } from './mailbox_framing.js';
+import { MailboxConnection } from './mailbox_connection.js';
 import {
   MAX_PENDING_MESSAGES_PER_RECIPIENT,
-  MailboxProtocolError,
   buildMailboxFailureAcknowledgement,
   buildMailboxSuccessAcknowledgement,
-  encodeMailboxFrame,
-  parseMailboxFrame,
   parseMailboxMessageRequest,
   type MailboxAcknowledgement,
   type MailboxMessageRequest,
@@ -25,6 +22,7 @@ import type { SendAgentMessageAcknowledgement } from './contracts.js';
 
 const DEFAULT_MAX_CONNECTIONS = 64;
 const DEFAULT_RECENT_REQUEST_ID_LIMIT = 256;
+const MAX_RECEIVER_CONNECTIONS = 1024;
 const MAX_RECENT_REQUEST_ID_LIMIT = 4096;
 
 /** A delivery result that lets the provider layer report temporary backpressure. */
@@ -58,6 +56,15 @@ export interface MailboxReceiverOptions {
   readonly recentRequestIdLimit?: number;
 }
 
+export interface NormalizedMailboxReceiverOptions {
+  readonly runtime: AgentMessagingRuntimeDirectory;
+  readonly registration: AgentRegistration;
+  readonly resolveSourceRegistration: MailboxSourceRegistrationResolver;
+  readonly deliver: MailboxDeliveryCallback;
+  readonly maxConnections: number;
+  readonly recentRequestIdLimit: number;
+}
+
 export type MailboxReceiverErrorCode =
   | 'invalid_options'
   | 'socket_in_use'
@@ -72,24 +79,6 @@ export class MailboxReceiverError extends Error {
     this.name = 'MailboxReceiverError';
     this.code = code;
   }
-}
-
-interface ValidatedMailboxReceiverOptions {
-  readonly runtime: AgentMessagingRuntimeDirectory;
-  readonly registration: AgentRegistration;
-  readonly resolveSourceRegistration: MailboxSourceRegistrationResolver;
-  readonly deliver: MailboxDeliveryCallback;
-  readonly maxConnections: number;
-  readonly recentRequestIdLimit: number;
-}
-
-interface ConnectionState {
-  readonly socket: net.Socket;
-  readonly decoder: MailboxJsonlDecoder;
-  readonly framePolicy: MailboxConnectionFramePolicy;
-  frameReceived: boolean;
-  peerEnded: boolean;
-  responseSent: boolean;
 }
 
 interface RecentRequest {
@@ -141,35 +130,34 @@ function requestFingerprint(request: MailboxMessageRequest): string {
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
-function recoverRequestId(line: string): string | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(line) as unknown;
-  } catch {
-    return undefined;
-  }
+const MAILBOX_RECEIVER_OPTION_KEYS = new Set([
+  'runtime',
+  'registration',
+  'resolveSourceRegistration',
+  'deliver',
+  'maxConnections',
+  'recentRequestIdLimit',
+]);
 
-  if (!isRecord(value) || typeof value.requestId !== 'string') {
-    return undefined;
-  }
-
-  try {
-    return buildMailboxFailureAcknowledgement(
-      value.requestId,
-      'invalid_message',
-      'Mailbox request failed validation'
-    ).requestId;
-  } catch {
-    return undefined;
+function assertKnownReceiverOptionKeys(options: Record<string, unknown>): void {
+  for (const key of Object.keys(options)) {
+    if (!MAILBOX_RECEIVER_OPTION_KEYS.has(key)) {
+      throw new MailboxReceiverError(
+        'invalid_options',
+        `Mailbox receiver options contain an unsupported field: ${key}`
+      );
+    }
   }
 }
 
-async function validateReceiverOptions(
+/** Normalize receiver options before any socket or filesystem allocation. */
+export function normalizeMailboxReceiverOptions(
   options: MailboxReceiverOptions
-): Promise<ValidatedMailboxReceiverOptions> {
+): NormalizedMailboxReceiverOptions {
   if (!isRecord(options)) {
     throw new MailboxReceiverError('invalid_options', 'Mailbox receiver options must be an object');
   }
+  assertKnownReceiverOptionKeys(options);
   if (!(options.runtime instanceof AgentMessagingRuntimeDirectory)) {
     throw new MailboxReceiverError(
       'invalid_options',
@@ -211,12 +199,14 @@ async function validateReceiverOptions(
   }
 
   const maxConnections = validateIntegerOption(
-    options.maxConnections ?? DEFAULT_MAX_CONNECTIONS,
+    options.maxConnections === undefined ? DEFAULT_MAX_CONNECTIONS : options.maxConnections,
     'maxConnections',
-    1024
+    MAX_RECEIVER_CONNECTIONS
   );
   const recentRequestIdLimit = validateIntegerOption(
-    options.recentRequestIdLimit ?? DEFAULT_RECENT_REQUEST_ID_LIMIT,
+    options.recentRequestIdLimit === undefined
+      ? DEFAULT_RECENT_REQUEST_ID_LIMIT
+      : options.recentRequestIdLimit,
     'recentRequestIdLimit',
     MAX_RECENT_REQUEST_ID_LIMIT
   );
@@ -227,22 +217,6 @@ async function validateReceiverOptions(
     );
   }
 
-  await options.runtime.validateSocketPath(expectedSocketPath, {
-    allowMissing: true,
-    requireSocket: true,
-  });
-  try {
-    await fs.lstat(expectedSocketPath);
-    throw new MailboxReceiverError(
-      'socket_in_use',
-      `Mailbox socket path already exists: ${expectedSocketPath}`
-    );
-  } catch (error) {
-    if (!isNotFoundError(error)) {
-      throw error;
-    }
-  }
-
   return {
     runtime: options.runtime,
     registration,
@@ -251,6 +225,27 @@ async function validateReceiverOptions(
     maxConnections,
     recentRequestIdLimit,
   };
+}
+
+async function validateMailboxReceiverStartup(
+  options: NormalizedMailboxReceiverOptions
+): Promise<void> {
+  const { runtime, registration } = options;
+  await runtime.validateSocketPath(registration.socketPath, {
+    allowMissing: true,
+    requireSocket: true,
+  });
+  try {
+    await fs.lstat(registration.socketPath);
+    throw new MailboxReceiverError(
+      'socket_in_use',
+      `Mailbox socket path already exists: ${registration.socketPath}`
+    );
+  } catch (error) {
+    if (!isNotFoundError(error)) {
+      throw error;
+    }
+  }
 }
 
 /**
@@ -280,7 +275,7 @@ export class MailboxReceiver {
   private closed = false;
   private closePromise: Promise<void> | undefined;
 
-  private constructor(options: ValidatedMailboxReceiverOptions) {
+  private constructor(options: NormalizedMailboxReceiverOptions) {
     this.registration = options.registration;
     this.socketPath = options.registration.socketPath;
     this.runtime = options.runtime;
@@ -293,8 +288,15 @@ export class MailboxReceiver {
 
   /** Bind and return a receiver only after the Unix socket is ready. */
   public static async create(options: MailboxReceiverOptions): Promise<MailboxReceiver> {
-    const validatedOptions = await validateReceiverOptions(options);
-    const receiver = new MailboxReceiver(validatedOptions);
+    const normalizedOptions = normalizeMailboxReceiverOptions(options);
+    return MailboxReceiver.createNormalized(normalizedOptions);
+  }
+
+  public static async createNormalized(
+    options: NormalizedMailboxReceiverOptions
+  ): Promise<MailboxReceiver> {
+    await validateMailboxReceiverStartup(options);
+    const receiver = new MailboxReceiver(options);
     await receiver.ready;
     return receiver;
   }
@@ -377,111 +379,27 @@ export class MailboxReceiver {
       return;
     }
 
-    const state: ConnectionState = {
-      socket,
-      decoder: new MailboxJsonlDecoder({ maxFrames: 1 }),
-      framePolicy: new MailboxConnectionFramePolicy('message'),
-      frameReceived: false,
-      peerEnded: false,
-      responseSent: false,
-    };
     this.connections.add(socket);
     this.activeConnections.add(socket);
-    socket.setNoDelay(true);
-    socket.on('data', (chunk: Buffer) => {
-      this.handleData(state, chunk);
+    const connection = new MailboxConnection(socket, {
+      onRequest: (request, isPeerEnded): Promise<MailboxAcknowledgement | undefined> =>
+        this.acceptRequest(request, isPeerEnded),
+      onInactive: (): void => {
+        this.activeConnections.delete(socket);
+      },
+      onClosed: (): void => {
+        this.connections.delete(socket);
+        this.activeConnections.delete(socket);
+      },
     });
-    socket.on('end', () => {
-      this.handleEnd(state);
-    });
-    socket.on('error', (error: Error) => {
-      debugLog('[agent mailbox] client socket error:', error);
-    });
-    socket.on('close', () => {
-      this.connections.delete(socket);
-      this.activeConnections.delete(socket);
-    });
-  }
-
-  private handleData(state: ConnectionState, chunk: Buffer): void {
-    if (state.peerEnded) {
-      state.socket.destroy();
-      return;
-    }
-    if (state.responseSent || state.frameReceived) {
-      // The first complete frame owns the connection. Ignore later chunks so
-      // they cannot cancel an acknowledgement for an accepted request.
-      return;
-    }
-
-    let lines: string[];
-    try {
-      lines = state.decoder.push(chunk);
-    } catch (error) {
-      state.frameReceived = true;
-      void this.sendProtocolFailure(state, error);
-      return;
-    }
-    if (lines.length === 0) {
-      return;
-    }
-
-    state.frameReceived = true;
-    // Let a peer FIN that arrived with the request become observable before
-    // delivery starts. Bun emits `end` only after the data handler returns.
-    setImmediate(() => {
-      void this.processLine(state, lines[0] as string);
-    });
-  }
-
-  private handleEnd(state: ConnectionState): void {
-    state.peerEnded = true;
-    this.activeConnections.delete(state.socket);
-    if (state.frameReceived || state.responseSent) {
-      if (!state.responseSent && !state.socket.destroyed) {
-        state.socket.destroy();
-      }
-      return;
-    }
-
-    let error: unknown;
-    try {
-      state.decoder.finish();
-      error = new MailboxProtocolError(
-        'incomplete_frame',
-        'Mailbox connection closed without one complete request frame'
-      );
-    } catch (finishError) {
-      error = finishError;
-    }
-    state.frameReceived = true;
-    void this.sendProtocolFailure(state, error);
-  }
-
-  private async processLine(state: ConnectionState, line: string): Promise<void> {
-    let request: MailboxMessageRequest;
-    try {
-      const frame = parseMailboxFrame(line);
-      state.framePolicy.accept(frame);
-      request = parseMailboxMessageRequest(frame);
-    } catch (error) {
-      await this.sendProtocolFailure(state, error, recoverRequestId(line));
-      return;
-    }
-
-    const acknowledgement = await this.acceptRequest(state, request);
-    if (acknowledgement !== undefined) {
-      await this.sendAcknowledgement(state, acknowledgement);
-    } else if (!state.peerEnded && !state.socket.destroyed) {
-      state.socket.destroy();
-    }
+    connection.start();
   }
 
   private async acceptRequest(
-    state: ConnectionState,
-    request: MailboxMessageRequest
+    request: MailboxMessageRequest,
+    isPeerEnded: () => boolean
   ): Promise<MailboxAcknowledgement | undefined> {
-    if (state.peerEnded) {
+    if (isPeerEnded()) {
       return undefined;
     }
     const fingerprint = requestFingerprint(request);
@@ -501,13 +419,13 @@ export class MailboxReceiver {
       if (this.recentRequests.get(request.requestId) === existing) {
         this.recentRequests.delete(request.requestId);
       }
-      if (state.peerEnded) {
+      if (isPeerEnded()) {
         return undefined;
       }
-      return this.acceptRequest(state, request);
+      return this.acceptRequest(request, isPeerEnded);
     }
 
-    const completion = this.deliverRequest(state, request).catch((error: unknown) =>
+    const completion = this.deliverRequest(request, isPeerEnded).catch((error: unknown) =>
       buildMailboxFailureAcknowledgement(
         request.requestId,
         'connection_failed',
@@ -535,8 +453,8 @@ export class MailboxReceiver {
   }
 
   private async deliverRequest(
-    state: ConnectionState,
-    request: MailboxMessageRequest
+    request: MailboxMessageRequest,
+    isPeerEnded: () => boolean
   ): Promise<MailboxAcknowledgement | undefined> {
     if (this.closed) {
       return buildMailboxFailureAcknowledgement(
@@ -578,6 +496,9 @@ export class MailboxReceiver {
         'Mailbox source is not an active registered identity'
       );
     }
+    if (isPeerEnded()) {
+      return undefined;
+    }
 
     try {
       sourceRegistration = parseAgentRegistration(sourceRegistration);
@@ -605,6 +526,9 @@ export class MailboxReceiver {
         'Mailbox receiver is closed'
       );
     }
+    if (isPeerEnded()) {
+      return undefined;
+    }
 
     const trustedRequest = parseMailboxMessageRequest({
       ...request,
@@ -621,7 +545,7 @@ export class MailboxReceiver {
         `Mailbox delivery failed: ${validationErrorMessage(error, 'delivery callback failed')}`
       );
     }
-    if (state.peerEnded) {
+    if (isPeerEnded()) {
       return undefined;
     }
 
@@ -635,7 +559,7 @@ export class MailboxReceiver {
         'Mailbox delivery callback returned an invalid result'
       );
     }
-    if (state.peerEnded) {
+    if (isPeerEnded()) {
       return undefined;
     }
     if (this.closed) {
@@ -671,82 +595,6 @@ export class MailboxReceiver {
         return;
       }
     }
-  }
-
-  private async processProtocolError(
-    state: ConnectionState,
-    error: unknown,
-    requestId: string | undefined
-  ): Promise<void> {
-    if (state.peerEnded) {
-      state.socket.destroy();
-      return;
-    }
-    if (requestId === undefined) {
-      state.socket.end();
-      return;
-    }
-
-    const code = error instanceof MailboxProtocolError ? error.code : 'invalid_message';
-    const acknowledgement = buildMailboxFailureAcknowledgement(
-      requestId,
-      code,
-      validationErrorMessage(error, 'Mailbox request failed')
-    );
-    await this.sendAcknowledgement(state, acknowledgement);
-  }
-
-  private async sendProtocolFailure(
-    state: ConnectionState,
-    error: unknown,
-    requestId?: string
-  ): Promise<void> {
-    await this.processProtocolError(state, error, requestId);
-  }
-
-  private async sendAcknowledgement(
-    state: ConnectionState,
-    acknowledgement: MailboxAcknowledgement
-  ): Promise<void> {
-    if (state.peerEnded || state.responseSent) {
-      if (state.peerEnded && !state.responseSent && !state.socket.destroyed) {
-        state.socket.destroy();
-      }
-      return;
-    }
-    state.responseSent = true;
-    let encoded: string;
-    try {
-      encoded = encodeMailboxFrame(acknowledgement);
-    } catch (error) {
-      debugLog('[agent mailbox] failed to encode acknowledgement:', error);
-      state.socket.destroy();
-      return;
-    }
-    if (state.socket.destroyed) {
-      this.activeConnections.delete(state.socket);
-      return;
-    }
-
-    await new Promise<void>((resolve) => {
-      let settled = false;
-      const finish = (): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        this.activeConnections.delete(state.socket);
-        resolve();
-      };
-      state.socket.once('error', (error: Error) => {
-        debugLog('[agent mailbox] acknowledgement write failed:', error);
-        if (!state.socket.destroyed) {
-          state.socket.destroy();
-        }
-        finish();
-      });
-      state.socket.end(encoded, finish);
-    });
   }
 
   private async closeInternal(): Promise<void> {

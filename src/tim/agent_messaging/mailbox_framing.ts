@@ -1,9 +1,5 @@
 import { Buffer } from 'node:buffer';
-import {
-  MAX_MAILBOX_FRAME_BYTES,
-  MailboxProtocolError,
-  type MailboxFrame,
-} from './mailbox_protocol.js';
+import { MAX_MAILBOX_FRAME_BYTES, MailboxProtocolError } from './mailbox_protocol.js';
 
 export interface MailboxJsonlDecoderOptions {
   /** Maximum encoded frame size, including the newline delimiter. */
@@ -204,50 +200,5 @@ export class MailboxJsonlDecoder {
     this.closed = true;
     this.pending = Buffer.alloc(0);
     return error;
-  }
-}
-
-export type MailboxConnectionFrameKind = 'message' | 'ack';
-
-/** Enforces exactly one correctly directed frame on one mailbox connection. */
-export class MailboxConnectionFramePolicy {
-  private readonly expectedKind: MailboxConnectionFrameKind;
-  private accepted: boolean = false;
-
-  public constructor(expectedKind: MailboxConnectionFrameKind) {
-    if (expectedKind !== 'message' && expectedKind !== 'ack') {
-      throw new TypeError('Mailbox connection frame kind must be message or ack');
-    }
-    this.expectedKind = expectedKind;
-  }
-
-  public accept(frame: MailboxFrame): void {
-    const invalidCode = this.expectedKind === 'ack' ? 'invalid_ack' : 'invalid_message';
-    if (this.accepted) {
-      throw new MailboxProtocolError(
-        'unexpected_frame',
-        'Mailbox connections accept exactly one request or acknowledgement'
-      );
-    }
-    if (frame.kind !== this.expectedKind) {
-      throw new MailboxProtocolError(
-        invalidCode,
-        `Mailbox connection expected a ${this.expectedKind} frame`
-      );
-    }
-    this.accepted = true;
-  }
-
-  public complete(): void {
-    if (!this.accepted) {
-      throw new MailboxProtocolError(
-        'incomplete_frame',
-        'Mailbox connection closed without one complete frame'
-      );
-    }
-  }
-
-  public get hasAcceptedFrame(): boolean {
-    return this.accepted;
   }
 }

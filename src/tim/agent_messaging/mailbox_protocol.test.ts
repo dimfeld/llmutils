@@ -21,6 +21,7 @@ import {
   parseMailboxAcknowledgement,
   parseMailboxFrame,
   parseMailboxMessageRequest,
+  parseMailboxSendMessageInput,
 } from './mailbox_protocol.js';
 
 const source = { id: 'source-id', name: ORCHESTRATOR_AGENT_NAME } as const;
@@ -69,6 +70,21 @@ describe('mailbox protocol schemas', () => {
   test('does not accept model-supplied source fields in the builder input', () => {
     const spoofedInput = { ...requestInput, sourceId: 'spoofed-id', sourceName: 'spoofed-name' };
     expectMailboxError(() => buildMailboxMessageRequest(source, spoofedInput), 'invalid_message');
+  });
+
+  test('parses strict public send input without sentinel identities', () => {
+    expect(parseMailboxSendMessageInput({ content: 'hello', requestId: 'request-1' })).toEqual({
+      content: 'hello',
+      requestId: 'request-1',
+    });
+    expectMailboxError(
+      () => parseMailboxSendMessageInput({ content: 'hello', unsupported: true }),
+      'invalid_message'
+    );
+    expectMailboxError(
+      () => parseMailboxSendMessageInput({ content: `${'a'.repeat(MAX_AGENT_MESSAGE_BYTES)}a` }),
+      'message_too_large'
+    );
   });
 
   test('rejects unknown request fields and unsupported versions', () => {

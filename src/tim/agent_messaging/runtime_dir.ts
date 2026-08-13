@@ -15,9 +15,6 @@ import {
   agentNameSchema,
   agentTypeSchema,
   nonterminalAgentLifecycleStateSchema,
-  type AgentExecutor,
-  type AgentType,
-  type NonterminalAgentLifecycleState,
   ORCHESTRATOR_AGENT_NAME,
 } from './contracts.js';
 import { MAILBOX_PROTOCOL_VERSION, MAX_MAILBOX_AGENT_ID_LENGTH } from './mailbox_protocol.js';
@@ -32,7 +29,6 @@ export const AGENT_MESSAGING_RUNTIME_PREFIX = 'tm-';
  * bytes plus the terminating NUL fits the commonly supported macOS limit.
  */
 export const MAX_UNIX_SOCKET_PATH_BYTES = 103;
-export const MAX_AGENT_SOCKET_PATH_BYTES = MAX_UNIX_SOCKET_PATH_BYTES;
 
 /** Registration records are bounded independently from the JSONL frame bound. */
 export const MAX_REGISTRATION_SOCKET_PATH_BYTES = 4096;
@@ -88,22 +84,21 @@ export const agentRegistrationSchema = z.discriminatedUnion('role', [
 ]);
 export type AgentRegistration = z.infer<typeof agentRegistrationSchema>;
 
-export interface OrchestratorRegistrationDraft {
-  id: string;
-  name: typeof ORCHESTRATOR_AGENT_NAME;
-  role: 'orchestrator';
-  executor: AgentExecutor;
-  state: NonterminalAgentLifecycleState;
-}
+export const orchestratorRegistrationDraftSchema = orchestratorRegistrationSchema.omit({
+  protocolVersion: true,
+  socketPath: true,
+});
+export const subagentRegistrationDraftSchema = subagentRegistrationSchema.omit({
+  protocolVersion: true,
+  socketPath: true,
+});
+export const agentRegistrationDraftSchema = z.discriminatedUnion('role', [
+  orchestratorRegistrationDraftSchema,
+  subagentRegistrationDraftSchema,
+]);
 
-export interface SubagentRegistrationDraft {
-  id: string;
-  name: string;
-  role: 'subagent';
-  type: AgentType;
-  executor: AgentExecutor;
-  state: NonterminalAgentLifecycleState;
-}
+export type OrchestratorRegistrationDraft = z.infer<typeof orchestratorRegistrationDraftSchema>;
+export type SubagentRegistrationDraft = z.infer<typeof subagentRegistrationDraftSchema>;
 
 export type AgentRegistrationDraft = OrchestratorRegistrationDraft | SubagentRegistrationDraft;
 
@@ -253,6 +248,22 @@ export function parseAgentRegistration(value: unknown): AgentRegistration {
   return parseRegistration(value);
 }
 
+/** Compare all published registration fields that identify one generation. */
+export function sameAgentRegistration(left: AgentRegistration, right: AgentRegistration): boolean {
+  if (
+    left.protocolVersion !== right.protocolVersion ||
+    left.id !== right.id ||
+    left.name !== right.name ||
+    left.role !== right.role ||
+    left.executor !== right.executor ||
+    left.state !== right.state ||
+    left.socketPath !== right.socketPath
+  ) {
+    return false;
+  }
+  return left.role === 'subagent' && right.role === 'subagent' ? left.type === right.type : true;
+}
+
 /**
  * Return true only for a strict descendant. In particular, `..foo` is a valid
  * child name while `..` and `../outside` are not.
@@ -339,10 +350,6 @@ export class AgentMessagingRuntimeDirectory {
   public readonly agentsDirectory: string;
   public readonly socketsDirectory: string;
 
-  /** Aliases used by callers that refer to these as directories rather than paths. */
-  public readonly agentsPath: string;
-  public readonly socketsPath: string;
-
   private readonly unregisterEmergencyCleanup: () => void;
   private closed = false;
   private closePromise: Promise<void> | undefined;
@@ -351,8 +358,6 @@ export class AgentMessagingRuntimeDirectory {
     this.rootPath = rootPath;
     this.agentsDirectory = path.join(rootPath, 'agents');
     this.socketsDirectory = path.join(rootPath, 'sockets');
-    this.agentsPath = this.agentsDirectory;
-    this.socketsPath = this.socketsDirectory;
     this.unregisterEmergencyCleanup = unregisterEmergencyCleanup;
   }
 
@@ -391,10 +396,6 @@ export class AgentMessagingRuntimeDirectory {
       }
       throw error;
     }
-  }
-
-  public static createRuntime(): Promise<AgentMessagingRuntimeDirectory> {
-    return AgentMessagingRuntimeDirectory.create();
   }
 
   private ensureOpen(): void {
@@ -437,14 +438,6 @@ export class AgentMessagingRuntimeDirectory {
   public socketPath(agentId: string): string {
     this.ensureOpen();
     return this.getContainedSocketPath(agentId);
-  }
-
-  public getRegistrationPath(agentId: string): string {
-    return this.registrationPath(agentId);
-  }
-
-  public getSocketPath(agentId: string): string {
-    return this.socketPath(agentId);
   }
 
   /** Build a validated record using this runtime's derived socket path. */
@@ -873,65 +866,20 @@ async function verifyDirectory(directoryPath: string, label: string): Promise<vo
 }
 
 function parseRegistrationDraft(value: unknown): AgentRegistrationDraft {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new AgentMessagingRuntimeDirectoryError(
-      'invalid_registration',
-      'Agent registration draft must be an object'
-    );
-  }
-
-  const data = value as Record<string, unknown>;
-  const common = {
-    id: data.id,
-    name: data.name,
-    role: data.role,
-    executor: data.executor,
-    state: data.state,
-  };
-  const schema =
-    data.role === 'orchestrator'
-      ? z
-          .object({
-            ...common,
-            id: boundedAgentIdSchema,
-            name: z.literal(ORCHESTRATOR_AGENT_NAME),
-            role: z.literal('orchestrator'),
-            executor: agentExecutorSchema,
-            state: nonterminalAgentLifecycleStateSchema,
-          })
-          .strict()
-      : z
-          .object({
-            ...common,
-            id: boundedAgentIdSchema,
-            name: agentNameSchema,
-            role: z.literal('subagent'),
-            type: agentTypeSchema,
-            executor: agentExecutorSchema,
-            state: nonterminalAgentLifecycleStateSchema,
-          })
-          .strict();
-
-  const result = schema.safeParse(value);
+  const result = agentRegistrationDraftSchema.safeParse(value);
   if (!result.success) {
     throw new AgentMessagingRuntimeDirectoryError(
       'invalid_registration',
       `Agent registration draft is invalid: ${validationMessage(result)}`
     );
   }
-  return result.data as AgentRegistrationDraft;
+  return result.data;
 }
 
 /** Create a private agent-messaging runtime directory. */
 export async function createAgentMessagingRuntimeDirectory(): Promise<AgentMessagingRuntimeDirectory> {
   return AgentMessagingRuntimeDirectory.create();
 }
-
-/** Short alias for callers that use the session-runtime terminology. */
-export const createAgentMessagingRuntime = createAgentMessagingRuntimeDirectory;
-
-/** Short alias for the class type used by session-runtime callers. */
-export type AgentMessagingRuntimeDir = AgentMessagingRuntimeDirectory;
 
 /** Export the canonical name grammar for consumers that validate before allocation. */
 export { AGENT_TYPES, MAX_AGENT_NAME_LENGTH, agentAddressSchema, agentNameSchema };

@@ -4,11 +4,7 @@ import net from 'node:net';
 
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import {
-  MailboxClient,
-  type MailboxSendMessageInput,
-  type MailboxTargetReference,
-} from './mailbox_client.js';
+import { MailboxClient, type MailboxTargetReference } from './mailbox_client.js';
 import {
   buildMailboxFailureAcknowledgement,
   buildMailboxSuccessAcknowledgement,
@@ -16,6 +12,7 @@ import {
   MailboxProtocolError,
   type MailboxAcknowledgement,
   type MailboxMessageRequest,
+  type MailboxSendMessageInput,
 } from './mailbox_protocol.js';
 import {
   createAgentMessagingSessionRuntime,

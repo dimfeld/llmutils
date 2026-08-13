@@ -1,18 +1,26 @@
 import { randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
 import net from 'node:net';
 
-import { MailboxConnectionFramePolicy, MailboxJsonlDecoder } from './mailbox_framing.js';
+import { MailboxJsonlDecoder } from './mailbox_framing.js';
 import {
   MailboxProtocolError,
   buildMailboxMessageRequest,
   encodeMailboxFrame,
   mailboxIdentitySchema,
+  parseMailboxSendMessageInput,
   parseMailboxAcknowledgement,
   parseMailboxFrame,
+  type MailboxSendMessageInput,
   type MailboxAcknowledgement,
   type MailboxIdentity,
 } from './mailbox_protocol.js';
+import {
+  createMailboxTargetSnapshot,
+  mapTargetSnapshotError,
+  validateMailboxSocketIdentity,
+  validateMailboxTargetSnapshot,
+  type MailboxTargetSnapshot,
+} from './mailbox_target.js';
 import {
   AgentMessagingRuntimeDirectory,
   AgentMessagingRuntimeDirectoryError,
@@ -26,15 +34,16 @@ export const DEFAULT_MAILBOX_CONNECTION_TIMEOUT_MS = 5_000;
 export const DEFAULT_MAILBOX_ACKNOWLEDGEMENT_TIMEOUT_MS = 5_000;
 const MAX_MAILBOX_TIMEOUT_MS = 120_000;
 
+export interface MailboxClientTiming {
+  readonly connectionTimeoutMs: number;
+  readonly acknowledgementTimeoutMs: number;
+}
+
+export type MailboxClientTimingOptions = Partial<MailboxClientTiming>;
+
 export interface MailboxTargetReference {
   readonly name: string;
   readonly id?: string;
-}
-
-export interface MailboxSendMessageInput {
-  readonly content: string;
-  readonly requestId?: string;
-  readonly timestamp?: string;
 }
 
 export type MailboxTargetRegistrationResolver = (
@@ -53,11 +62,6 @@ interface NodeSocketError extends Error {
   readonly code?: string;
 }
 
-interface SocketIdentity {
-  readonly dev: number;
-  readonly ino: number;
-}
-
 const MAILBOX_CLIENT_OPTION_KEYS = new Set([
   'runtime',
   'resolveSourceRegistration',
@@ -65,7 +69,6 @@ const MAILBOX_CLIENT_OPTION_KEYS = new Set([
   'connectionTimeoutMs',
   'acknowledgementTimeoutMs',
 ]);
-const MAILBOX_SEND_INPUT_KEYS = new Set(['content', 'requestId', 'timestamp']);
 const MAILBOX_TARGET_KEYS = new Set(['name', 'id']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -106,6 +109,32 @@ function validateTimeout(value: unknown, label: string): number {
     );
   }
   return value as number;
+}
+
+/** Parse the canonical client timing options once at the client boundary. */
+export function normalizeMailboxClientTiming(value: unknown): MailboxClientTiming {
+  if (!isRecord(value)) {
+    throw new TypeError('Mailbox client timing options must be an object');
+  }
+  for (const key of Object.keys(value)) {
+    if (key !== 'connectionTimeoutMs' && key !== 'acknowledgementTimeoutMs') {
+      throw new TypeError(`Mailbox client timing options contain an unsupported field: ${key}`);
+    }
+  }
+  return {
+    connectionTimeoutMs: validateTimeout(
+      value.connectionTimeoutMs === undefined
+        ? DEFAULT_MAILBOX_CONNECTION_TIMEOUT_MS
+        : value.connectionTimeoutMs,
+      'connectionTimeoutMs'
+    ),
+    acknowledgementTimeoutMs: validateTimeout(
+      value.acknowledgementTimeoutMs === undefined
+        ? DEFAULT_MAILBOX_ACKNOWLEDGEMENT_TIMEOUT_MS
+        : value.acknowledgementTimeoutMs,
+      'acknowledgementTimeoutMs'
+    ),
+  };
 }
 
 function mapRuntimeError(error: unknown, context: string): MailboxProtocolError {
@@ -157,23 +186,6 @@ function mapAcknowledgementError(error: unknown): MailboxProtocolError {
   );
 }
 
-function registrationMatches(left: AgentRegistration, right: AgentRegistration): boolean {
-  if (
-    left.id !== right.id ||
-    left.name !== right.name ||
-    left.role !== right.role ||
-    left.executor !== right.executor ||
-    left.state !== right.state ||
-    left.socketPath !== right.socketPath
-  ) {
-    return false;
-  }
-  if (left.role === 'subagent' && right.role === 'subagent') {
-    return left.type === right.type;
-  }
-  return left.role === right.role;
-}
-
 function validateTargetReference(target: MailboxTargetReference): MailboxTargetReference {
   if (!isRecord(target)) {
     throw new MailboxProtocolError('unknown_target', 'Mailbox target must be an object');
@@ -190,50 +202,6 @@ function validateTargetReference(target: MailboxTargetReference): MailboxTargetR
     name: nameResult.data,
     ...(target.id === undefined ? {} : { id: target.id }),
   };
-}
-
-function validateSendInput(input: MailboxSendMessageInput): MailboxSendMessageInput {
-  if (!isRecord(input)) {
-    throw new MailboxProtocolError('invalid_message', 'Mailbox send input must be an object');
-  }
-  assertKnownKeys(input, MAILBOX_SEND_INPUT_KEYS, 'Mailbox send input', 'invalid_message');
-
-  try {
-    // Use the canonical request builder to validate all public input fields
-    // before resolving identities or inspecting a target socket.
-    buildMailboxMessageRequest(
-      { id: 'input-validation', name: 'input-validation' },
-      {
-        requestId: input.requestId === undefined ? 'input-validation-request' : input.requestId,
-        targetId: 'input-validation-target',
-        targetName: 'input-validation-target',
-        content: input.content,
-        timestamp: input.timestamp === undefined ? undefined : input.timestamp,
-      }
-    );
-  } catch (error) {
-    if (error instanceof MailboxProtocolError) {
-      throw error;
-    }
-    throw new MailboxProtocolError(
-      'invalid_message',
-      `Mailbox send input is invalid: ${safeErrorMessage(error, 'invalid message')}`
-    );
-  }
-
-  return {
-    content: input.content,
-    ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
-    ...(input.timestamp === undefined ? {} : { timestamp: input.timestamp }),
-  };
-}
-
-function socketIdentity(stats: { dev: number; ino: number }): SocketIdentity {
-  return { dev: stats.dev, ino: stats.ino };
-}
-
-function sameSocketIdentity(left: SocketIdentity, right: SocketIdentity): boolean {
-  return left.dev === right.dev && left.ino === right.ino;
 }
 
 /** Sends one bounded mailbox request to one exact registration snapshot. */
@@ -267,18 +235,12 @@ export class MailboxClient {
     this.runtime = options.runtime;
     this.resolveSourceRegistration = options.resolveSourceRegistration;
     this.resolveTargetRegistration = options.resolveTargetRegistration;
-    this.connectionTimeoutMs = validateTimeout(
-      options.connectionTimeoutMs === undefined
-        ? DEFAULT_MAILBOX_CONNECTION_TIMEOUT_MS
-        : options.connectionTimeoutMs,
-      'connectionTimeoutMs'
-    );
-    this.acknowledgementTimeoutMs = validateTimeout(
-      options.acknowledgementTimeoutMs === undefined
-        ? DEFAULT_MAILBOX_ACKNOWLEDGEMENT_TIMEOUT_MS
-        : options.acknowledgementTimeoutMs,
-      'acknowledgementTimeoutMs'
-    );
+    const timing = normalizeMailboxClientTiming({
+      connectionTimeoutMs: options.connectionTimeoutMs,
+      acknowledgementTimeoutMs: options.acknowledgementTimeoutMs,
+    });
+    this.connectionTimeoutMs = timing.connectionTimeoutMs;
+    this.acknowledgementTimeoutMs = timing.acknowledgementTimeoutMs;
   }
 
   public async sendMessage(
@@ -286,7 +248,7 @@ export class MailboxClient {
     target: MailboxTargetReference,
     input: MailboxSendMessageInput
   ): Promise<MailboxAcknowledgement> {
-    const validatedInput = validateSendInput(input);
+    const validatedInput = parseMailboxSendMessageInput(input);
     const sourceResult = mailboxIdentitySchema.safeParse(trustedSource);
     if (!sourceResult.success) {
       throw new MailboxProtocolError('unknown_source', 'Mailbox source identity is invalid');
@@ -341,10 +303,7 @@ export class MailboxClient {
       );
     }
     try {
-      await this.runtime.validateSocketPath(expectedSourceSocketPath, {
-        allowMissing: false,
-        requireSocket: true,
-      });
+      await validateMailboxSocketIdentity(this.runtime, expectedSourceSocketPath);
     } catch (error) {
       const mapped = mapRuntimeError(error, 'Mailbox source socket is stale');
       if (mapped.code === 'runtime_closed') {
@@ -383,7 +342,12 @@ export class MailboxClient {
       );
     }
 
-    const targetSnapshot = await this.validateTargetSnapshot(targetRegistration);
+    let targetSnapshot: MailboxTargetSnapshot;
+    try {
+      targetSnapshot = await createMailboxTargetSnapshot(this.runtime, targetRegistration);
+    } catch (error) {
+      throw mapTargetSnapshotError(error, 'Mailbox target is stale');
+    }
     const request = buildMailboxMessageRequest(
       { id: sourceRegistration.id, name: sourceRegistration.name },
       {
@@ -395,92 +359,24 @@ export class MailboxClient {
       }
     );
     const encoded = encodeMailboxFrame(request);
-    return this.exchange(
-      targetSnapshot.registration,
-      targetSnapshot.socketIdentity,
-      targetSnapshot.registration.socketPath,
-      encoded,
-      request.requestId
-    );
-  }
-
-  public send(
-    trustedSource: MailboxIdentity,
-    target: MailboxTargetReference,
-    input: MailboxSendMessageInput
-  ): Promise<MailboxAcknowledgement> {
-    return this.sendMessage(trustedSource, target, input);
-  }
-
-  private async validateTargetSnapshot(
-    target: AgentRegistration
-  ): Promise<{ registration: AgentRegistration; socketIdentity: SocketIdentity }> {
-    let expectedSocketPath: string;
-    try {
-      expectedSocketPath = this.runtime.socketPath(target.id);
-    } catch (error) {
-      throw mapRuntimeError(error, 'Mailbox target socket is stale');
-    }
-    if (target.socketPath !== expectedSocketPath) {
-      throw new MailboxProtocolError(
-        'target_stale',
-        'Mailbox target socket path does not match its opaque ID'
-      );
-    }
-
-    let published: AgentRegistration;
-    try {
-      published = await this.runtime.readRegistration(target.id);
-    } catch (error) {
-      throw mapRuntimeError(error, 'Mailbox target registration is stale');
-    }
-    if (!registrationMatches(published, target)) {
-      throw new MailboxProtocolError(
-        'target_stale',
-        'Mailbox target registration changed before delivery'
-      );
-    }
-    try {
-      await this.runtime.validateSocketPath(expectedSocketPath, {
-        allowMissing: false,
-        requireSocket: true,
-      });
-    } catch (error) {
-      throw mapRuntimeError(error, 'Mailbox target socket is stale');
-    }
-    let stats;
-    try {
-      stats = await fs.lstat(expectedSocketPath);
-    } catch (error) {
-      throw mapRuntimeError(error, 'Mailbox target socket is stale');
-    }
-    if (stats.isSymbolicLink() || !stats.isSocket()) {
-      throw new MailboxProtocolError(
-        'target_stale',
-        'Mailbox target socket is missing or is not a Unix socket'
-      );
-    }
-    return { registration: target, socketIdentity: socketIdentity(stats) };
+    return this.exchange(targetSnapshot, encoded, request.requestId);
   }
 
   private exchange(
-    target: AgentRegistration,
-    expectedSocketIdentity: SocketIdentity,
-    socketPath: string,
+    target: MailboxTargetSnapshot,
     encodedRequest: string,
     requestId: string
   ): Promise<MailboxAcknowledgement> {
     return new Promise<MailboxAcknowledgement>((resolve, reject) => {
       let socket: net.Socket;
       try {
-        socket = net.createConnection(socketPath);
+        socket = net.createConnection(target.socketPath);
       } catch (error) {
         reject(mapSocketError(error, false));
         return;
       }
 
       const decoder = new MailboxJsonlDecoder({ maxFrames: 1 });
-      const framePolicy = new MailboxConnectionFramePolicy('ack');
       let connected = false;
       let receivedData = false;
       let settled = false;
@@ -534,43 +430,7 @@ export class MailboxClient {
         }
         void (async (): Promise<void> => {
           try {
-            await this.runtime.validateSocketPath(socketPath, {
-              allowMissing: false,
-              requireSocket: true,
-            });
-            const currentStats = await fs.lstat(socketPath);
-            if (
-              currentStats.isSymbolicLink() ||
-              !currentStats.isSocket() ||
-              !sameSocketIdentity(expectedSocketIdentity, socketIdentity(currentStats))
-            ) {
-              throw new MailboxProtocolError(
-                'target_stale',
-                'Mailbox target socket was replaced before delivery'
-              );
-            }
-            const published = await this.runtime.readRegistration(target.id);
-            if (!registrationMatches(published, target)) {
-              throw new MailboxProtocolError(
-                'target_stale',
-                'Mailbox target registration changed before delivery'
-              );
-            }
-            await this.runtime.validateSocketPath(socketPath, {
-              allowMissing: false,
-              requireSocket: true,
-            });
-            const finalStats = await fs.lstat(socketPath);
-            if (
-              finalStats.isSymbolicLink() ||
-              !finalStats.isSocket() ||
-              !sameSocketIdentity(expectedSocketIdentity, socketIdentity(finalStats))
-            ) {
-              throw new MailboxProtocolError(
-                'target_stale',
-                'Mailbox target socket was replaced before delivery'
-              );
-            }
+            await validateMailboxTargetSnapshot(this.runtime, target);
             if (settled) {
               return;
             }
@@ -608,7 +468,6 @@ export class MailboxClient {
           lines = decoder.push(chunk);
           for (const line of lines) {
             const frame = parseMailboxFrame(line);
-            framePolicy.accept(frame);
             const acknowledgement = parseMailboxAcknowledgement(frame);
             if (acknowledgement.requestId !== requestId) {
               throw new MailboxProtocolError(

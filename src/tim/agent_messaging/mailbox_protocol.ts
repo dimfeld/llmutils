@@ -26,7 +26,6 @@ export const MAILBOX_PROTOCOL_VERSION = 1 as const;
  * by the permissions MCP.
  */
 export const MAX_MAILBOX_FRAME_BYTES = 512 * 1024;
-export const MAX_MAILBOX_JSONL_FRAME_BYTES = MAX_MAILBOX_FRAME_BYTES;
 
 export const MAX_MAILBOX_AGENT_ID_LENGTH = 128;
 export const MAX_MAILBOX_REQUEST_ID_LENGTH = 128;
@@ -165,6 +164,16 @@ export const mailboxFrameSchema = z.discriminatedUnion('kind', [
 ]);
 export type MailboxFrame = z.infer<typeof mailboxFrameSchema>;
 
+/** The model-facing fields accepted by the mailbox client. */
+export const mailboxSendMessageInputSchema = z
+  .object({
+    content: agentMessageContentSchema,
+    requestId: mailboxRequestIdSchema.optional(),
+    timestamp: mailboxTimestampSchema.optional(),
+  })
+  .strict();
+export type MailboxSendMessageInput = z.infer<typeof mailboxSendMessageInputSchema>;
+
 export interface MailboxMessageRequestInput {
   requestId: string;
   targetId: string;
@@ -238,6 +247,20 @@ export function parseMailboxMessageRequest(value: unknown): MailboxMessageReques
   checkMessageContentSize(value);
 
   const result = mailboxMessageRequestSchema.safeParse(value);
+  if (!result.success) {
+    throwValidationError('invalid_message', result);
+  }
+  return result.data;
+}
+
+/** Parses and strictly validates the public mailbox send input. */
+export function parseMailboxSendMessageInput(value: unknown): MailboxSendMessageInput {
+  if (!isRecord(value)) {
+    throw new MailboxProtocolError('invalid_message', 'Mailbox send input must be an object');
+  }
+
+  checkMessageContentSize(value);
+  const result = mailboxSendMessageInputSchema.safeParse(value);
   if (!result.success) {
     throwValidationError('invalid_message', result);
   }
