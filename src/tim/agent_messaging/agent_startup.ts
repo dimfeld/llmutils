@@ -145,7 +145,6 @@ class AgentStartOperation {
 
   public attachHandle(handle: AgentLaunchHandle): void {
     this.handle = handle;
-    this.record.launchHandle = handle;
     this.record.processControlId = handle.processControlId;
     this.record.providerThreadId = handle.providerThreadId;
     if (this.cleanupRequested) {
@@ -161,7 +160,6 @@ class AgentStartOperation {
   public async rollback(): Promise<void> {
     this.cleanupRequested = true;
     this.cancellation.cancel(managerClosedError());
-    this.record.launchHandle = undefined;
     this.record.launchReady = false;
     this.record.mailbox = undefined;
     this.record.registration = undefined;

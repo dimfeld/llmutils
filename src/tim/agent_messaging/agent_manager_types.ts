@@ -39,46 +39,22 @@ export interface AgentInputMessage {
 
 export type AgentProviderExitClassification = 'natural' | 'graceful' | 'forced' | 'failed';
 
-export interface AgentProviderControlAcceptedResult {
-  readonly accepted: true;
-  readonly alreadyExited: false;
-}
+/** The result of one provider lifecycle control request. */
+export type AgentProviderControlResult = 'accepted' | 'already-exited';
 
-export interface AgentProviderControlAlreadyExitedResult {
-  readonly accepted: false;
-  readonly alreadyExited: true;
-}
-
-export type AgentProviderControlResult =
-  | AgentProviderControlAcceptedResult
-  | AgentProviderControlAlreadyExitedResult;
-
-export interface AgentProviderOutputActivityEvent {
-  readonly agentId: AgentId;
-}
-
-export interface AgentProviderCompletedAssistantMessageEvent {
-  readonly agentId: AgentId;
-  /** The exact complete assistant message, including any boundary whitespace. */
-  readonly message: string;
-}
-
-export interface AgentProviderTurnCompleteEvent {
-  readonly agentId: AgentId;
-}
-
-export interface AgentProviderExitEvent {
-  readonly agentId: AgentId;
+export interface AgentProviderExit {
   readonly classification: AgentProviderExitClassification;
   readonly error?: Error;
 }
 
-export type AgentProviderOutputActivityListener = (event: AgentProviderOutputActivityEvent) => void;
-export type AgentProviderCompletedAssistantMessageListener = (
-  event: AgentProviderCompletedAssistantMessageEvent
-) => void;
-export type AgentProviderTurnCompleteListener = (event: AgentProviderTurnCompleteEvent) => void;
-export type AgentProviderExitListener = (event: AgentProviderExitEvent) => void;
+/** Observer for one provider handle. The handle already owns agent identity. */
+export interface AgentProviderLifecycleObserver {
+  outputActivity(): void;
+  /** The exact complete assistant message, including boundary whitespace. */
+  completedAssistantMessage(message: string): void;
+  turnComplete(): void;
+  exit(classification: AgentProviderExitClassification, error?: Error): void;
+}
 
 /**
  * Provider-neutral controls and events for one launched agent.
@@ -91,17 +67,12 @@ export interface AgentProviderLifecycleControls {
   requestGracefulShutdown(instruction: string): Promise<AgentProviderControlResult>;
   requestCloseAfterCurrentTurn(): Promise<AgentProviderControlResult>;
   requestForcedShutdown(): Promise<AgentProviderControlResult>;
-  onOutputActivity(listener: AgentProviderOutputActivityListener): () => void;
-  onCompletedAssistantMessage(listener: AgentProviderCompletedAssistantMessageListener): () => void;
-  onTurnComplete(listener: AgentProviderTurnCompleteListener): () => void;
-  onExit(listener: AgentProviderExitListener): () => void;
+  subscribe(observer: AgentProviderLifecycleObserver): () => void;
 }
 
-/** A typed failure means the provider guarantees that forced shutdown was not accepted. */
+/** A typed provider lifecycle control failure with its operation attached. */
 export class AgentProviderControlError extends Error {
   public readonly operation: 'graceful-shutdown' | 'close-after-current-turn' | 'forced-shutdown';
-  public readonly accepted = false;
-
   public constructor(
     operation: 'graceful-shutdown' | 'close-after-current-turn' | 'forced-shutdown',
     message: string,
@@ -110,6 +81,16 @@ export class AgentProviderControlError extends Error {
     super(message, options);
     this.name = 'AgentProviderControlError';
     this.operation = operation;
+  }
+}
+
+/** A forced shutdown failure that guarantees the provider did not accept it. */
+export class AgentProviderForceNotAcceptedError extends AgentProviderControlError {
+  public readonly notAccepted = true;
+
+  public constructor(message: string, options?: ErrorOptions) {
+    super('forced-shutdown', message, options);
+    this.name = 'AgentProviderForceNotAcceptedError';
   }
 }
 
@@ -186,10 +167,7 @@ export function validateAgentProviderLifecycleControls(
     'requestGracefulShutdown',
     'requestCloseAfterCurrentTurn',
     'requestForcedShutdown',
-    'onOutputActivity',
-    'onCompletedAssistantMessage',
-    'onTurnComplete',
-    'onExit',
+    'subscribe',
   ]) {
     if (typeof controls[method] !== 'function') {
       throw new TypeError(`Agent provider lifecycle control ${method} must be a function`);
@@ -284,21 +262,8 @@ export interface AgentRecordSnapshot {
   readonly state: AgentLifecycleState;
   readonly inputActivity: AgentInputActivity;
   readonly creationSequence: number;
-  readonly providerOutputActivityCount: number;
-  readonly providerTurnCompletionCount: number;
-  readonly lastCompletedAssistantMessage?: string;
-  readonly finishFallbackMessage?: string;
-  readonly finishCloseAfterTurnRequested?: true;
-  readonly lastSuccessfulOutbound?: AgentOutboundMessageSnapshot;
-  readonly providerExit?: AgentProviderExitEvent;
   readonly processControlId?: ProcessControlId;
   readonly providerThreadId?: ProviderThreadId;
-}
-
-export interface AgentOutboundMessageSnapshot {
-  readonly sequence: number;
-  readonly target: AgentName;
-  readonly content: string;
 }
 
 export type AgentManagerErrorCode =

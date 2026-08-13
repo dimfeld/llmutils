@@ -31,17 +31,11 @@ import {
   type AgentCallerIdentity,
   type AgentIdentity,
   type AgentInputActivity,
-  type AgentOutboundMessageSnapshot,
-  type AgentProviderExitEvent,
   type AgentRecordSnapshot,
   type OrchestratorIdentity,
   type SubagentIdentity,
 } from './agent_manager_types.js';
-import type {
-  AgentLaunchHandle,
-  ProcessControlId,
-  ProviderThreadId,
-} from './agent_manager_types.js';
+import type { ProcessControlId, ProviderThreadId } from './agent_manager_types.js';
 import type { AgentRegistration, AgentRegistrationDraft } from './runtime_dir.js';
 import type { SessionRegistrationHandle } from './session_runtime.js';
 
@@ -59,11 +53,6 @@ export interface OrchestratorDirectoryRecord extends OrchestratorIdentity {
   inputActivity: AgentInputActivity;
   readonly creationSequence: number;
   readonly registrationDraft: AgentRegistrationDraft;
-  providerOutputActivityCount: number;
-  providerTurnCompletionCount: number;
-  lastCompletedAssistantMessage?: string;
-  lastSuccessfulOutbound?: AgentOutboundMessageSnapshot;
-  providerExit?: AgentProviderExitEvent;
   registration?: AgentRegistration;
   mailbox?: SessionRegistrationHandle;
 }
@@ -75,16 +64,8 @@ export interface SubagentDirectoryRecord extends SubagentIdentity {
   launchReady: boolean;
   readonly creationSequence: number;
   readonly registrationDraft: AgentRegistrationDraft;
-  providerOutputActivityCount: number;
-  providerTurnCompletionCount: number;
-  lastCompletedAssistantMessage?: string;
-  finishFallbackMessage?: string;
-  finishCloseAfterTurnRequested?: true;
-  lastSuccessfulOutbound?: AgentOutboundMessageSnapshot;
-  providerExit?: AgentProviderExitEvent;
   registration?: AgentRegistration;
   mailbox?: SessionRegistrationHandle;
-  launchHandle?: AgentLaunchHandle;
   processControlId?: ProcessControlId;
   providerThreadId?: ProviderThreadId;
 }
@@ -125,23 +106,6 @@ export function snapshotDirectoryRecord(record: DirectoryRecord): AgentRecordSna
     state: record.state,
     inputActivity: record.inputActivity,
     creationSequence: record.creationSequence,
-    providerOutputActivityCount: record.providerOutputActivityCount,
-    providerTurnCompletionCount: record.providerTurnCompletionCount,
-    ...(record.lastCompletedAssistantMessage !== undefined
-      ? { lastCompletedAssistantMessage: record.lastCompletedAssistantMessage }
-      : {}),
-    ...(record.role === 'subagent' && record.finishFallbackMessage !== undefined
-      ? { finishFallbackMessage: record.finishFallbackMessage }
-      : {}),
-    ...(record.role === 'subagent' && record.finishCloseAfterTurnRequested === true
-      ? { finishCloseAfterTurnRequested: true as const }
-      : {}),
-    ...(record.lastSuccessfulOutbound !== undefined
-      ? { lastSuccessfulOutbound: Object.freeze({ ...record.lastSuccessfulOutbound }) }
-      : {}),
-    ...(record.providerExit !== undefined
-      ? { providerExit: Object.freeze({ ...record.providerExit }) }
-      : {}),
     ...(record.role === 'subagent' && record.processControlId !== undefined
       ? { processControlId: record.processControlId }
       : {}),
@@ -382,8 +346,6 @@ export class AgentDirectory {
       inputActivity: 'not-ready',
       launchReady: false,
       creationSequence: this.nextCreationSequence,
-      providerOutputActivityCount: 0,
-      providerTurnCompletionCount: 0,
       registrationDraft: {
         id,
         name,

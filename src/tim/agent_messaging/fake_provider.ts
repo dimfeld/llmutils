@@ -10,23 +10,16 @@ import type {
   AgentLaunchRequest,
   AgentPreparation,
   AgentPreparationRequest,
-  AgentProviderCompletedAssistantMessageEvent,
-  AgentProviderCompletedAssistantMessageListener,
   AgentProviderControlResult,
   AgentProviderExitClassification,
-  AgentProviderExitEvent,
-  AgentProviderExitListener,
   AgentProviderLifecycleControls,
-  AgentProviderOutputActivityEvent,
-  AgentProviderOutputActivityListener,
-  AgentProviderTurnCompleteEvent,
-  AgentProviderTurnCompleteListener,
+  AgentProviderLifecycleObserver,
   AgentManagerScheduler,
   PreparedAgentExecution,
   ProcessControlId,
   ProviderThreadId,
 } from './agent_manager_types.js';
-import { AgentProviderControlError } from './agent_manager_types.js';
+import { AgentProviderForceNotAcceptedError } from './agent_manager_types.js';
 
 /** Deterministic clock and timer implementation for lifecycle tests. */
 export class FakeAgentManagerScheduler implements AgentManagerScheduler {
@@ -121,11 +114,11 @@ function deferred<T>(): {
 }
 
 function acceptedControlResult(): AgentProviderControlResult {
-  return { accepted: true, alreadyExited: false };
+  return 'accepted';
 }
 
 function alreadyExitedControlResult(): AgentProviderControlResult {
-  return { accepted: false, alreadyExited: true };
+  return 'already-exited';
 }
 
 type PendingProviderOperation = {
@@ -138,11 +131,7 @@ type PendingProviderOperation = {
  * operations and events; tests control every resolution explicitly.
  */
 export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycleControls {
-  private readonly outputActivityListeners = new Set<AgentProviderOutputActivityListener>();
-  private readonly completedMessageListeners =
-    new Set<AgentProviderCompletedAssistantMessageListener>();
-  private readonly turnCompleteListeners = new Set<AgentProviderTurnCompleteListener>();
-  private readonly exitListeners = new Set<AgentProviderExitListener>();
+  private readonly observers = new Set<AgentProviderLifecycleObserver>();
   private nextGracefulOperation: PendingProviderOperation | undefined;
   private nextCloseAfterTurnOperation: PendingProviderOperation | undefined;
   private nextForcedOperation: PendingProviderOperation | undefined;
@@ -162,35 +151,12 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
   public closeAfterCurrentTurnCalls = 0;
   public forcedShutdownCalls = 0;
 
-  public constructor(public readonly agentId: AgentProviderOutputActivityEvent['agentId']) {}
+  public constructor() {}
 
-  public onOutputActivity(listener: AgentProviderOutputActivityListener): () => void {
-    this.outputActivityListeners.add(listener);
+  public subscribe(observer: AgentProviderLifecycleObserver): () => void {
+    this.observers.add(observer);
     return (): void => {
-      this.outputActivityListeners.delete(listener);
-    };
-  }
-
-  public onCompletedAssistantMessage(
-    listener: AgentProviderCompletedAssistantMessageListener
-  ): () => void {
-    this.completedMessageListeners.add(listener);
-    return (): void => {
-      this.completedMessageListeners.delete(listener);
-    };
-  }
-
-  public onTurnComplete(listener: AgentProviderTurnCompleteListener): () => void {
-    this.turnCompleteListeners.add(listener);
-    return (): void => {
-      this.turnCompleteListeners.delete(listener);
-    };
-  }
-
-  public onExit(listener: AgentProviderExitListener): () => void {
-    this.exitListeners.add(listener);
-    return (): void => {
-      this.exitListeners.delete(listener);
+      this.observers.delete(observer);
     };
   }
 
@@ -295,46 +261,31 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
   }
 
   public failNextForcedShutdown(
-    error: Error = new AgentProviderControlError(
-      'forced-shutdown',
+    error: Error = new AgentProviderForceNotAcceptedError(
       'The fake provider did not accept forced shutdown'
     )
   ): void {
     this.nextForcedFailure = error;
   }
 
-  public emitOutputActivity(
-    agentId: AgentProviderOutputActivityEvent['agentId'] = this.agentId
-  ): void {
-    const event: AgentProviderOutputActivityEvent = Object.freeze({ agentId });
-    for (const listener of this.outputActivityListeners) listener(event);
+  public emitOutputActivity(): void {
+    for (const observer of this.observers) observer.outputActivity();
   }
 
-  public emitCompletedAssistantMessage(
-    message: string,
-    agentId: AgentProviderCompletedAssistantMessageEvent['agentId'] = this.agentId
-  ): void {
-    const event: AgentProviderCompletedAssistantMessageEvent = Object.freeze({ agentId, message });
-    for (const listener of this.completedMessageListeners) listener(event);
+  public emitCompletedAssistantMessage(message: string): void {
+    for (const observer of this.observers) observer.completedAssistantMessage(message);
   }
 
-  public emitTurnComplete(agentId: AgentProviderTurnCompleteEvent['agentId'] = this.agentId): void {
-    const event: AgentProviderTurnCompleteEvent = Object.freeze({ agentId });
-    for (const listener of this.turnCompleteListeners) listener(event);
+  public emitTurnComplete(): void {
+    for (const observer of this.observers) observer.turnComplete();
   }
 
   public emitExit(
     classification: AgentProviderExitClassification = 'natural',
-    error?: Error,
-    agentId: AgentProviderExitEvent['agentId'] = this.agentId
+    error?: Error
   ): void {
-    if (agentId === this.agentId) this.providerExited = true;
-    const event: AgentProviderExitEvent = Object.freeze({
-      agentId,
-      classification,
-      ...(error === undefined ? {} : { error }),
-    });
-    for (const listener of this.exitListeners) listener(event);
+    this.providerExited = true;
+    for (const observer of this.observers) observer.exit(classification, error);
   }
 
   private createPendingOperation(): PendingProviderOperation {
@@ -639,14 +590,14 @@ export class FakeAgentLaunchHandle implements AgentLaunchHandle {
   public readonly lifecycle: FakeAgentProviderLifecycleControls;
 
   public constructor(
-    agentId: AgentProviderOutputActivityEvent['agentId'],
+    _agentId: string,
     public readonly executor: AgentExecutor,
     public readonly processLabel: AgentLaunchRequest['processLabel'],
     public readonly input: FakeAgentInputAdapter,
     public readonly processControlId: ProcessControlId,
     public readonly providerThreadId: ProviderThreadId
   ) {
-    this.lifecycle = new FakeAgentProviderLifecycleControls(agentId);
+    this.lifecycle = new FakeAgentProviderLifecycleControls();
   }
 
   public get ready(): Promise<void> {

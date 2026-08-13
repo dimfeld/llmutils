@@ -26,9 +26,14 @@ The manager owns:
 - `listAgents()` lifecycle visibility.
 - `sendAgentMessage()` trusted routing and delivery acknowledgements.
 - The mailbox-to-provider drain for each agent.
-- `FinishAgent` and `StopAgent` lifecycle transitions.
-- Provider exit convergence, terminal notifications, final-message
-  deduplication, and live-subagent teardown.
+- Per-subagent lifecycle-controller fan-out for `FinishAgent` and `StopAgent`.
+- Parallel live-subagent teardown.
+
+Each subagent has one internal `AgentLifecycleController`. It owns provider
+subscriptions, finish/stop phases, inactivity timers, completed-result and
+outbound-delivery metadata, terminal notification policy, and terminal cleanup.
+The manager remains responsible for authorization, startup, directory lookup,
+ordinary routing, and parallel root fan-out.
 
 The manager does **not** own provider tool installation, orchestration prompts,
 or any persistent Claude or Codex provider loop. Provider adapters translate
@@ -36,17 +41,18 @@ those provider-specific operations into the lifecycle controls described here.
 
 ## Module layout
 
-| File                       | Contents                                                                            |
-| -------------------------- | ----------------------------------------------------------------------------------- |
-| `agent_manager.ts`         | The `AgentManager` facade: option validation, root creation, Start/List/Send, close |
-| `agent_manager_types.ts`   | Identity, launch, input-adapter, snapshot, option, and error contracts              |
-| `agent_directory.ts`       | Authoritative ID/name maps, capacity, naming, reservation, snapshots                |
-| `agent_startup.ts`         | Per-start cancellation, late-resource tracking, and rollback                        |
-| `agent_mailbox_binding.ts` | One agent's provider input adapter and its mailbox drain scheduling                 |
-| `agent_names.ts`           | Branded `AgentId` / `AgentName`, parsing, and generated-name construction           |
-| `agent_process_labels.ts`  | The single display-label formatter                                                  |
-| `agent_preparation.ts`     | The preparation dependency built on the subagent launch service                     |
-| `fake_provider.ts`         | Deterministic fake preparer, launcher, handle, and input adapter for tests          |
+| File                            | Contents                                                                            |
+| ------------------------------- | ----------------------------------------------------------------------------------- |
+| `agent_manager.ts`              | The `AgentManager` facade: option validation, root creation, Start/List/Send, close |
+| `agent_lifecycle_controller.ts` | Per-subagent lifecycle phases, timers, notifications, and cleanup                   |
+| `agent_manager_types.ts`        | Identity, launch, input-adapter, snapshot, option, and error contracts              |
+| `agent_directory.ts`            | Authoritative ID/name maps, capacity, naming, reservation, snapshots                |
+| `agent_startup.ts`              | Per-start cancellation, late-resource tracking, and rollback                        |
+| `agent_mailbox_binding.ts`      | One agent's provider input adapter and its mailbox drain scheduling                 |
+| `agent_names.ts`                | Branded `AgentId` / `AgentName`, parsing, and generated-name construction           |
+| `agent_process_labels.ts`       | The single display-label formatter                                                  |
+| `agent_preparation.ts`          | The preparation dependency built on the subagent launch service                     |
+| `fake_provider.ts`              | Deterministic fake preparer, launcher, handle, and input adapter for tests          |
 
 All files live in `src/tim/agent_messaging/`. `index.ts` exports immutable
 identities, snapshots, results, and the narrow lifecycle seams only. Mutable
@@ -287,10 +293,11 @@ prepared subagent execution widened to allow the shared `reviewer` type.
 
 ## Lifecycle ownership
 
-The manager owns the complete terminal lifecycle. Provider exit events, finish
-requests, stop requests, and provider failures converge through one shared
-terminal promise and cleanup path. Callers that need to observe completion use
-`waitForAgentTerminal(id)`; they must not remove agent records directly.
+The manager creates one lifecycle controller for each subagent. Provider exit
+events, finish requests, stop requests, and provider failures converge through
+that controller's shared terminal promise and cleanup path. Callers that need
+to observe completion use `waitForAgentTerminal(id)`; they must not remove agent
+records directly.
 
 `setAgentLifecycleState(id, state)` remains a narrow nonterminal test seam for
 the provider-neutral lifecycle tests. It does not perform terminal cleanup.
@@ -318,12 +325,12 @@ Every nonterminal agent has an independent output-inactivity path:
 - `finishing` agents receive the same independent deadline during root
   teardown, but never receive a second graceful instruction. Provider output
   resets only that agent's timer.
-- A provider `alreadyExited` control result is a non-failure assertion that the
+- A provider `'already-exited'` control result is a non-failure assertion that the
   provider has already exited. It is a convergence event: the manager
-  synthesizes a classified natural exit when the provider does not send a
-  separate callback. A failed provider must emit the classified `failed` exit
-  event instead. An exit before launch readiness is a `launch_failed` startup
-  result and never creates a normal terminal notification.
+  controller synthesizes a classified natural exit when the provider does not
+  send a separate callback. A failed provider must emit the classified `failed`
+  exit event instead. An exit before launch readiness is a `launch_failed`
+  startup result and never creates a normal terminal notification.
 - A force rejection that does not prove non-acceptance has an unknown outcome.
   The manager reports that error on later explicit force calls and never retries
   the provider control automatically. Root teardown does not issue another

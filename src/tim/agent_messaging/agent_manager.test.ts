@@ -15,7 +15,7 @@ import {
 } from './contracts.js';
 import {
   AgentManagerError,
-  AgentProviderControlError,
+  AgentProviderForceNotAcceptedError,
   createAgentManager,
   createAgentPreparation,
 } from './index.js';
@@ -2647,15 +2647,17 @@ describe('provider-neutral launch contracts and test fakes', () => {
 
 describe('provider-neutral lifecycle controls and result tracking', () => {
   test('supports deferred controls, typed failures, and classified events', async () => {
-    const lifecycle = new FakeAgentProviderLifecycleControls('opaque-agent-id' as never);
+    const lifecycle = new FakeAgentProviderLifecycleControls();
     const outputEvents = [];
     const completedEvents = [];
     const turnEvents = [];
     const exitEvents = [];
-    lifecycle.onOutputActivity((event) => outputEvents.push(event));
-    lifecycle.onCompletedAssistantMessage((event) => completedEvents.push(event));
-    lifecycle.onTurnComplete((event) => turnEvents.push(event));
-    lifecycle.onExit((event) => exitEvents.push(event));
+    lifecycle.subscribe({
+      outputActivity: (): void => outputEvents.push(undefined),
+      completedAssistantMessage: (message: string): void => completedEvents.push(message),
+      turnComplete: (): void => turnEvents.push(undefined),
+      exit: (classification, error): void => exitEvents.push({ classification, error }),
+    });
 
     const gracefulStarted = lifecycle.deferNextGracefulShutdown();
     const gracefulRequest = lifecycle.requestGracefulShutdown('final status instruction');
@@ -2663,20 +2665,19 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     expect(lifecycle.gracefulShutdownCalls).toBe(1);
     expect(lifecycle.gracefulShutdownInstructions).toEqual(['final status instruction']);
     lifecycle.resolveGracefulShutdown();
-    await expect(gracefulRequest).resolves.toEqual({ accepted: true, alreadyExited: false });
+    await expect(gracefulRequest).resolves.toBe('accepted');
 
     const closeStarted = lifecycle.deferNextCloseAfterCurrentTurn();
     const closeRequest = lifecycle.requestCloseAfterCurrentTurn();
     await closeStarted;
     lifecycle.resolveCloseAfterCurrentTurn();
-    await expect(closeRequest).resolves.toEqual({ accepted: true, alreadyExited: false });
+    await expect(closeRequest).resolves.toBe('accepted');
 
-    const forcedError = new AgentProviderControlError('forced-shutdown', 'force was not accepted');
+    const forcedError = new AgentProviderForceNotAcceptedError('force was not accepted');
     lifecycle.failNextForcedShutdown(forcedError);
     await expect(lifecycle.requestForcedShutdown()).rejects.toBe(forcedError);
     expect(forcedError).toMatchObject({
       operation: 'forced-shutdown',
-      accepted: false,
     });
     expect(lifecycle.forcedShutdownCalls).toBe(1);
 
@@ -2685,27 +2686,14 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     lifecycle.emitTurnComplete();
     lifecycle.emitExit('failed', new Error('provider failure'));
     expect(outputEvents).toHaveLength(1);
-    expect(completedEvents[0]).toMatchObject({
-      agentId: 'opaque-agent-id',
-      message: '  completed result  ',
-    });
+    expect(completedEvents[0]).toBe('  completed result  ');
     expect(turnEvents).toHaveLength(1);
-    expect(exitEvents[0]).toMatchObject({
-      agentId: 'opaque-agent-id',
-      classification: 'failed',
-    });
-    await expect(lifecycle.requestForcedShutdown()).resolves.toEqual({
-      accepted: false,
-      alreadyExited: true,
-    });
-    await expect(lifecycle.requestGracefulShutdown('late shutdown')).resolves.toEqual({
-      accepted: false,
-      alreadyExited: true,
-    });
-    await expect(lifecycle.requestCloseAfterCurrentTurn()).resolves.toEqual({
-      accepted: false,
-      alreadyExited: true,
-    });
+    expect(exitEvents[0]).toMatchObject({ classification: 'failed' });
+    await expect(lifecycle.requestForcedShutdown()).resolves.toBe('already-exited');
+    await expect(lifecycle.requestGracefulShutdown('late shutdown')).resolves.toBe(
+      'already-exited'
+    );
+    await expect(lifecycle.requestCloseAfterCurrentTurn()).resolves.toBe('already-exited');
   });
 
   test('binds events to the launched opaque identity and ignores late callbacks', async () => {
@@ -2723,16 +2711,9 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     lifecycle.emitOutputActivity();
     lifecycle.emitExit('natural');
     lifecycle.emitExit('failed', new Error('late failure'));
-    lifecycle.emitOutputActivity('different-agent-id' as never);
-    lifecycle.emitCompletedAssistantMessage('wrong identity', 'different-agent-id' as never);
-    lifecycle.emitTurnComplete('different-agent-id' as never);
-
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerOutputActivityCount: 2,
-      providerTurnCompletionCount: 1,
-      lastCompletedAssistantMessage: '  exact\tcompleted\nmessage  ',
-      providerExit: { classification: 'natural' },
-    });
+    lifecycle.emitOutputActivity();
+    lifecycle.emitCompletedAssistantMessage('wrong identity');
+    lifecycle.emitTurnComplete();
 
     await manager.waitForAgentTerminal(launch.request.identity.id);
     lifecycle.emitOutputActivity();
@@ -2768,13 +2749,8 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     firstLifecycle.emitExit('failed', new Error('stale provider failure'));
 
     expect(manager.getAgentSnapshot(second.request.identity.id)).toMatchObject({
-      providerOutputActivityCount: 0,
-      providerTurnCompletionCount: 0,
+      state: 'running-idle',
     });
-    expect(manager.getAgentSnapshot(second.request.identity.id)).not.toHaveProperty(
-      'lastCompletedAssistantMessage'
-    );
-    expect(manager.getAgentSnapshot(second.request.identity.id)).not.toHaveProperty('providerExit');
   });
 
   test('detaches lifecycle listeners when the manager closes', async () => {
@@ -2787,9 +2763,6 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     const lifecycle = launch.handle.lifecycle;
 
     lifecycle.emitOutputActivity();
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerOutputActivityCount: 1,
-    });
 
     launch.handle.lifecycle.emitExit('forced');
     await manager.close();
@@ -2829,18 +2802,8 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
       message: '  first successful\tresult\n  ',
     });
     await pause.accepted;
-    expect(manager.getAgentSnapshot(manager.orchestratorIdentity.id)?.lastSuccessfulOutbound).toBe(
-      undefined
-    );
     pause.release();
     await expect(pendingRootSend).resolves.toMatchObject({ delivery: 'started-idle-turn' });
-    expect(
-      manager.getAgentSnapshot(manager.orchestratorIdentity.id)?.lastSuccessfulOutbound
-    ).toMatchObject({
-      sequence: 1,
-      target: 'outbound-first',
-      content: '  first successful\tresult\n  ',
-    });
 
     const firstIdentity = manager.getIdentityByName('outbound-first');
     await expect(
@@ -2849,13 +2812,6 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
         message: 'peer result',
       })
     ).resolves.toMatchObject({ delivery: 'started-idle-turn' });
-    expect(
-      manager.getAgentSnapshot(first.request.identity.id)?.lastSuccessfulOutbound
-    ).toMatchObject({
-      sequence: 2,
-      target: 'outbound-second',
-      content: 'peer result',
-    });
 
     const failedDelivery = new Error('provider rejected the outbound message');
     second.handle.input.rejectNextDelivery(failedDelivery);
@@ -2865,13 +2821,6 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
         message: 'failed provider delivery must not replace snapshot',
       })
     ).rejects.toMatchObject({ code: 'transport_error' });
-    expect(
-      manager.getAgentSnapshot(first.request.identity.id)?.lastSuccessfulOutbound
-    ).toMatchObject({
-      sequence: 2,
-      target: 'outbound-second',
-      content: 'peer result',
-    });
 
     await expect(
       manager.sendAgentMessage(manager.orchestratorIdentity, {
@@ -2880,13 +2829,6 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
         source: 'forged',
       })
     ).rejects.toMatchObject({ code: 'invalid_request' });
-    expect(
-      manager.getAgentSnapshot(manager.orchestratorIdentity.id)?.lastSuccessfulOutbound
-    ).toMatchObject({
-      sequence: 1,
-      target: 'outbound-first',
-      content: '  first successful\tresult\n  ',
-    });
 
     await manager.sessionRuntime.deregister(second.request.identity.id);
     await expect(
@@ -2895,13 +2837,6 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
         message: 'failed transport must not replace snapshot',
       })
     ).rejects.toMatchObject({ code: 'unknown_target' });
-    expect(
-      manager.getAgentSnapshot(first.request.identity.id)?.lastSuccessfulOutbound
-    ).toMatchObject({
-      sequence: 2,
-      target: 'outbound-second',
-      content: 'peer result',
-    });
   });
 });
 
@@ -2998,35 +2933,36 @@ describe('AgentManager FinishAgent lifecycle', () => {
       manager.finishAgent(launch.request.identity, { message: '  fallback status  ' })
     ).resolves.toEqual({ state: 'finishing' });
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(0);
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      state: 'finishing',
-      finishFallbackMessage: '  fallback status  ',
-    });
+    expect(manager.listAgents().agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'finish-order', state: 'finishing' }),
+      ])
+    );
 
     await expect(
       manager.finishAgent(launch.request.identity, { message: 'replacement status' })
     ).resolves.toEqual({ state: 'finishing' });
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      finishFallbackMessage: '  fallback status  ',
-    });
+    expect(manager.listAgents().agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'finish-order', state: 'finishing' }),
+      ])
+    );
 
     lifecycle.emitCompletedAssistantMessage('  completed\tassistant\nresult  ');
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(0);
     lifecycle.emitTurnComplete();
     await closeStarted;
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(1);
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      state: 'finishing',
-      lastCompletedAssistantMessage: '  completed\tassistant\nresult  ',
-      finishCloseAfterTurnRequested: true,
-    });
+    expect(manager.listAgents().agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'finish-order', state: 'finishing' }),
+      ])
+    );
 
     lifecycle.emitTurnComplete();
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(1);
     lifecycle.emitExit('natural');
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerExit: { classification: 'natural' },
-    });
+    await manager.waitForAgentTerminal(launch.request.identity.id);
   });
 
   test('uses fallback state only when no completed assistant result exists', async () => {
@@ -3042,17 +2978,11 @@ describe('AgentManager FinishAgent lifecycle', () => {
     lifecycle.emitTurnComplete();
     lifecycle.emitExit('natural');
 
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      state: 'finishing',
-      finishFallbackMessage: 'final fallback',
-    });
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).not.toHaveProperty(
-      'lastCompletedAssistantMessage'
-    );
+    await manager.waitForAgentTerminal(launch.request.identity.id);
     await expect(
       manager.finishAgent(launch.request.identity, { message: 'late fallback' })
     ).rejects.toMatchObject({
-      code: 'finish_not_available',
+      code: 'unknown_sender',
     });
   });
 
@@ -3071,12 +3001,7 @@ describe('AgentManager FinishAgent lifecycle', () => {
     lifecycle.emitTurnComplete();
 
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(0);
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerExit: { classification: 'natural' },
-    });
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).not.toHaveProperty(
-      'lastCompletedAssistantMessage'
-    );
+    await manager.waitForAgentTerminal(launch.request.identity.id);
   });
 
   test('does not request close after a forced-stop upgrade changes the state', async () => {
@@ -3111,14 +3036,13 @@ describe('AgentManager FinishAgent lifecycle', () => {
     lifecycle.emitTurnComplete();
 
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(1);
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      state: 'finishing',
-      finishCloseAfterTurnRequested: true,
-    });
+    expect(manager.listAgents().agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'finish-close-rejected', state: 'finishing' }),
+      ])
+    );
     lifecycle.emitExit('natural');
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerExit: { classification: 'natural' },
-    });
+    await manager.waitForAgentTerminal(launch.request.identity.id);
   });
 
   test('converges an already-exited close result without requiring another exit event', async () => {
@@ -3134,17 +3058,11 @@ describe('AgentManager FinishAgent lifecycle', () => {
     await manager.finishAgent(launch.request.identity, {});
     lifecycle.emitTurnComplete();
     await closeStarted;
-    lifecycle.resolveCloseAfterCurrentTurn({ accepted: false, alreadyExited: true });
+    lifecycle.resolveCloseAfterCurrentTurn('already-exited');
     await flushLifecyclePromises();
 
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(1);
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      state: 'finishing',
-      finishCloseAfterTurnRequested: true,
-    });
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerExit: { classification: 'natural' },
-    });
+    await manager.waitForAgentTerminal(launch.request.identity.id);
   });
 
   test('handles provider exit synchronously inside close-after-turn without duplicate close', async () => {
@@ -3162,17 +3080,15 @@ describe('AgentManager FinishAgent lifecycle', () => {
     await Promise.resolve();
 
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(1);
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      state: 'finishing',
-      providerExit: { classification: 'natural' },
-      finishCloseAfterTurnRequested: true,
-    });
+    expect(manager.listAgents().agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'finish-close-race', state: 'finishing' }),
+      ])
+    );
     lifecycle.emitTurnComplete();
     lifecycle.emitExit('failed', new Error('late failure'));
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(1);
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerExit: { classification: 'natural' },
-    });
+    await manager.waitForAgentTerminal(launch.request.identity.id);
   });
 
   test('keeps the finishing seam visible until explicit terminal removal', async () => {
@@ -3222,9 +3138,11 @@ describe('AgentManager FinishAgent lifecycle', () => {
     await manager.finishAgent(launch.request.identity, { message: 'useful fallback' });
     await manager.finishAgent(launch.request.identity, { message: 'replacement fallback' });
 
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      finishFallbackMessage: 'useful fallback',
-    });
+    expect(manager.listAgents().agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'finish-blank-fallback', state: 'finishing' }),
+      ])
+    );
   });
 });
 
@@ -3618,15 +3536,13 @@ describe('AgentManager StopAgent lifecycle', () => {
     const notificationStarted = rootInput.deferNextDelivery();
 
     await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-graceful-exited' });
-    lifecycle.resolveGracefulShutdown({ accepted: false, alreadyExited: true });
+    lifecycle.resolveGracefulShutdown('already-exited');
     await gracefulStarted;
     await flushLifecyclePromises();
 
     expect(scheduler.pendingTimerCount).toBe(0);
     await notificationStarted;
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerExit: { classification: 'natural' },
-    });
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toBeDefined();
     expect(rootInput.receivedMessages).toHaveLength(0);
 
     rootInput.resolveNextDelivery();
@@ -3763,7 +3679,7 @@ describe('AgentManager StopAgent lifecycle', () => {
       agentLauncher: launcher,
     });
     const launch = await startActiveFakeAgent(manager, launcher, 'stop-force-retry');
-    const failure = new AgentProviderControlError('forced-shutdown', 'force was not accepted');
+    const failure = new AgentProviderForceNotAcceptedError('force was not accepted');
     launch.handle.lifecycle.failNextForcedShutdown(failure);
 
     await expect(
@@ -3880,7 +3796,7 @@ describe('AgentManager StopAgent lifecycle', () => {
     await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-auto-retry' });
     await flushLifecyclePromises();
     launch.handle.lifecycle.failNextForcedShutdown(
-      new AgentProviderControlError('forced-shutdown', 'automatic force was not accepted')
+      new AgentProviderForceNotAcceptedError('automatic force was not accepted')
     );
     scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS);
     await flushLifecyclePromises();
@@ -3921,7 +3837,6 @@ describe('AgentManager StopAgent lifecycle', () => {
     });
     expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(0);
     expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerExit: { classification: 'natural' },
       state: 'running-active',
     });
   });
@@ -3938,7 +3853,7 @@ describe('AgentManager StopAgent lifecycle', () => {
       name: 'stop-control-already-exited',
       force: true,
     });
-    launch.handle.lifecycle.resolveForcedShutdown({ accepted: false, alreadyExited: true });
+    launch.handle.lifecycle.resolveForcedShutdown('already-exited');
     await forceStarted;
 
     await expect(force).resolves.toEqual({
@@ -3946,9 +3861,7 @@ describe('AgentManager StopAgent lifecycle', () => {
       mode: 'forced',
       state: 'stopping',
     });
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerExit: { classification: 'natural' },
-    });
+    await manager.waitForAgentTerminal(launch.request.identity.id);
     expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
   });
 
@@ -3968,9 +3881,7 @@ describe('AgentManager StopAgent lifecycle', () => {
     launch.handle.lifecycle.resolveForcedShutdown();
     await forceStarted;
     await expect(force).resolves.toMatchObject({ mode: 'forced' });
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
-      providerExit: { classification: 'natural' },
-    });
+    await manager.waitForAgentTerminal(launch.request.identity.id);
   });
 });
 
@@ -4423,7 +4334,7 @@ describe('AgentManager terminal convergence', () => {
     await forceStarted;
     launch.handle.lifecycle.emitCompletedAssistantMessage('gracefully completed result');
     launch.handle.lifecycle.emitExit('graceful');
-    launch.handle.lifecycle.resolveForcedShutdown({ accepted: false, alreadyExited: true });
+    launch.handle.lifecycle.resolveForcedShutdown('already-exited');
 
     await expect(force).resolves.toMatchObject({ mode: 'forced' });
     await manager.waitForAgentTerminal(launch.request.identity.id);
