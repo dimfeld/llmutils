@@ -6,11 +6,25 @@ function monotonicNow(): number {
     : Date.now();
 }
 
+function unrefTimer(handle: unknown): void {
+  if ((typeof handle !== 'object' || handle === null) && typeof handle !== 'function') {
+    return;
+  }
+
+  const candidate = handle as { readonly unref?: unknown };
+  if (typeof candidate.unref === 'function') {
+    candidate.unref();
+  }
+}
+
 /** Production clock and timer implementation for AgentManager lifecycle work. */
 export const DEFAULT_AGENT_MANAGER_SCHEDULER: AgentManagerScheduler = Object.freeze({
   now: monotonicNow,
-  setTimeout: (callback: () => void, delayMs: number): unknown =>
-    setTimeout(callback, delayMs) as unknown,
+  setTimeout: (callback: () => void, delayMs: number): unknown => {
+    const handle = setTimeout(callback, delayMs) as unknown;
+    unrefTimer(handle);
+    return handle;
+  },
   clearTimeout: (handle: unknown): void => {
     clearTimeout(handle as ReturnType<typeof setTimeout>);
   },
