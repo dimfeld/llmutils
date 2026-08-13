@@ -18,7 +18,7 @@ Claude Code can end a turn (emit a `result` message) while work is still pending
 ### Two unrelated "task" concepts — do not conflate
 
 - **Background tasks** (this tracker's subject): Claude Code's own subprocess/subagent jobs, represented authoritatively by `type:"system", subtype:"background_tasks_changed"` messages.
-- **Agent todo tasks**: the `TaskCreate`/`TaskUpdate` tool calls Claude makes to manage its display todo list (`pendingTaskCreates`, `sessionTaskLists` in `format.ts`). These are display-only and out of scope for lifecycle decisions — never reuse their state maps for background-task tracking.
+- **Agent todo tasks**: the `TaskCreate`/`TaskUpdate` tool calls Claude makes to manage its display todo list (`pendingTaskCreates`, `sessionTaskLists`, owned by each `ClaudeMessageFormatter` instance in `format.ts`). These are display-only and out of scope for lifecycle decisions — never reuse their state maps for background-task tracking.
 
 ### Lifecycle signals from `format.ts`
 

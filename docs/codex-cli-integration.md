@@ -84,7 +84,7 @@ own the findings, while the first run of a batch passes no `--task-index`. See
 
 For the orchestration modes, the wrapped prompt is sent to Codex once via
 `executeCodexStep(...)` with `appServerMode: 'single-turn-with-steering'`,
-matching the Codex subagent path in `src/tim/commands/subagent.ts`. The runner
+matching the Codex subagent path in `src/tim/subagents/service.ts`. The runner
 behaves like a regular single-turn call when no interactive input source is
 available.
 

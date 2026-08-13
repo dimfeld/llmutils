@@ -3,7 +3,9 @@
 This document describes the provider-neutral agent-messaging contracts and the
 session storage and Unix-socket mailbox transport in
 `src/tim/agent_messaging/`. It does not describe provider sessions, provider
-adapters, or lifecycle-manager behavior.
+adapters, or lifecycle-manager behavior. The reusable one-shot preparation and
+launch service a later lifecycle manager will build on is documented in
+[subagent-launch-service.md](subagent-launch-service.md).
 
 The shared contracts let an orchestrator address, message, and later stop its
 subagents. The transport gives one trusted session runtime a private namespace
