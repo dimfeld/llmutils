@@ -87,6 +87,9 @@ export class AgentMailboxBinding {
     if (this.drainPromise !== undefined) return;
 
     const version = this.availabilityVersion;
+    // Arm the guard before drainPending can call provider code. A provider may
+    // synchronously notify availability from inside deliver().
+    this.drainPromise = Promise.resolve();
     let drainPromise: Promise<void>;
     drainPromise = this.drainPending()
       .catch(() => undefined)
@@ -193,6 +196,7 @@ export class AgentMailboxBinding {
         this.retryVersion = undefined;
         return;
       }
+      this.retryVersion = undefined;
       this.scheduleDrain();
     });
   }
@@ -228,6 +232,7 @@ export class AgentMailboxBinding {
         this.updateRecordInputState(input);
       } catch {
         lease.requeue();
+        this.scheduleRetry();
         return;
       }
     }

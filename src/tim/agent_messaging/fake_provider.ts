@@ -40,6 +40,8 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
   private inputActivity: AgentInputActivity = 'not-ready';
   private readonly received = new Array<AgentInputMessage>();
   private readonly availabilityListeners = new Set<() => void>();
+  private availabilityNotificationInsideNextDelivery = false;
+  private deliveryCallCount = 0;
   private deferredDeliveryStarted: ReturnType<typeof deferred<void>> | undefined;
   private nextDelivery:
     | {
@@ -47,6 +49,7 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
         readonly resolve: (delivery: AgentInputDelivery) => void;
       }
     | undefined;
+  private nextDeliveryRejection: Error | undefined;
 
   public get ready(): Promise<void> {
     return this.readyDeferred.promise;
@@ -62,6 +65,10 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
 
   public get receivedMessages(): readonly AgentInputMessage[] {
     return Object.freeze([...this.received]);
+  }
+
+  public get deliveryCalls(): number {
+    return this.deliveryCallCount;
   }
 
   public onAvailabilityChange(listener: () => void): () => void {
@@ -101,6 +108,19 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
     this.notifyAvailabilityChange();
   }
 
+  /** Make the next provider delivery emit an availability notification synchronously. */
+  public notifyAvailabilityChangeInsideNextDelivery(): void {
+    this.availabilityNotificationInsideNextDelivery = true;
+  }
+
+  /** Reject exactly one provider delivery, then return to normal delivery behavior. */
+  public rejectNextDelivery(error: Error = new Error('fake delivery failure')): void {
+    if (this.nextDeliveryRejection !== undefined) {
+      throw new Error('A fake delivery rejection is already configured');
+    }
+    this.nextDeliveryRejection = error;
+  }
+
   /** Hold the next accepted delivery until the test explicitly resolves it. */
   public deferNextDelivery(): Promise<void> {
     if (this.nextDelivery !== undefined) {
@@ -125,8 +145,18 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
   }
 
   public deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery> {
+    this.deliveryCallCount += 1;
+    if (this.availabilityNotificationInsideNextDelivery) {
+      this.availabilityNotificationInsideNextDelivery = false;
+      this.notifyAvailabilityChange();
+    }
     if (!this.readyState || this.inputActivity === 'temporarily-unavailable') {
       return 'temporarily-unavailable';
+    }
+    const rejection = this.nextDeliveryRejection;
+    if (rejection !== undefined) {
+      this.nextDeliveryRejection = undefined;
+      return Promise.reject(rejection);
     }
     const deferredDelivery = this.nextDelivery;
     if (deferredDelivery !== undefined) {

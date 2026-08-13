@@ -1500,6 +1500,70 @@ describe('AgentManager SendAgentMessage routing', () => {
     ]);
   });
 
+  test('does not re-enter the drain when delivery synchronously notifies availability', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'synchronous-notification-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+    for (const message of ['first', 'second', 'third']) {
+      await manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'synchronous-notification-target',
+        message,
+      });
+    }
+
+    const deliveryStarted = target.handle.input.deferNextDelivery();
+    target.handle.input.notifyAvailabilityChangeInsideNextDelivery();
+    target.handle.input.setActiveAccepting();
+    await deliveryStarted;
+
+    expect(target.handle.input.deliveryCalls).toBe(1);
+    target.handle.input.resolveNextDelivery('steered');
+    await waitFor(() => target.handle.input.receivedMessages.length === 3);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'first',
+      'second',
+      'third',
+    ]);
+  });
+
+  test('requeues one rejected provider delivery and retries it once safely', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'rejected-delivery-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'rejected-delivery-target',
+        message: 'retry me',
+      })
+    ).resolves.toMatchObject({ delivery: 'queued' });
+
+    const firstDeliveryStarted = target.handle.input.deferNextDelivery();
+    target.handle.input.setActiveAccepting();
+    await firstDeliveryStarted;
+    target.handle.input.resolveNextDelivery('temporarily-unavailable');
+    target.handle.input.rejectNextDelivery();
+    await waitFor(() => target.handle.input.receivedMessages.length === 1);
+
+    expect(target.handle.input.deliveryCalls).toBe(3);
+    expect(target.handle.input.receivedMessages[0]?.content).toBe('retry me');
+  });
+
   test('drains queued messages from a removed sender without blocking later FIFO work', async () => {
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({
