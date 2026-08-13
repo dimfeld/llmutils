@@ -323,6 +323,10 @@ export function extractStructuredMessages(
   return formattedResults.flatMap((result) => toArray(result.structured));
 }
 
+/**
+ * Incremental stream batches must pass and reuse one ClaudeMessageFormatter;
+ * the default formatter is intended only for one complete batch.
+ */
 export function extractStructuredMessagesFromLines(
   lines: string[],
   formatter: ClaudeMessageFormatter = createClaudeMessageFormatter()

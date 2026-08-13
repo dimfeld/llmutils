@@ -796,7 +796,7 @@ export function createAppServerFormatter(model?: string) {
       }
 
       if (
-        (lowerMethod === 'llm/guardianwarning' || lowerMethod === 'llm.guardianwarning') &&
+        lowerMethod === 'llm/guardianwarning' &&
         extractTextField(payload.message)?.startsWith('Automatic approval review ')
       ) {
         // The completed auto-approval review has the same rationale in a result message.

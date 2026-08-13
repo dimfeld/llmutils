@@ -132,6 +132,22 @@ describe('reusable subagent service', () => {
     consoleLog.mockRestore();
   });
 
+  test('uses the supplied repository root without performing an early repository lookup', async () => {
+    const suppliedRepositoryRoot = '/tmp/supplied-subagent-repository';
+
+    await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'codex-cli',
+      repositoryRoot: suppliedRepositoryRoot,
+      initialMessage: 'Use the supplied repository root.',
+    });
+
+    expect(mocks.resolveRepoRoot).not.toHaveBeenCalled();
+    expect(mocks.getGitRoot.mock.calls).toEqual([[path.dirname(planPath)]]);
+    expect(mocks.resolvePlanByNumericId).toHaveBeenCalledWith(42, suppliedRepositoryRoot);
+  });
+
   test('prepares every supported role with report-mode prompts and role instructions', async () => {
     mocks.getImplementerPrompt.mockReturnValue({
       name: 'implementer',
