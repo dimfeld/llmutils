@@ -1534,7 +1534,7 @@ describe('AgentManager SendAgentMessage routing', () => {
     ]);
   });
 
-  test('requeues one rejected provider delivery and retries it once safely', async () => {
+  test('requeues one rejected provider delivery and retries it once without losing FIFO work', async () => {
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({
       agentPreparer: createPreparer(),
@@ -1546,22 +1546,26 @@ describe('AgentManager SendAgentMessage routing', () => {
       () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
     );
     target.handle.input.setTemporarilyUnavailable();
-    await expect(
-      manager.sendAgentMessage(manager.orchestratorIdentity, {
-        name: 'rejected-delivery-target',
-        message: 'retry me',
-      })
-    ).resolves.toMatchObject({ delivery: 'queued' });
+    const queued = await Promise.all(
+      ['retry me', 'second message', 'third message'].map((message) =>
+        manager.sendAgentMessage(manager.orchestratorIdentity, {
+          name: 'rejected-delivery-target',
+          message,
+        })
+      )
+    );
+    expect(queued.map((result) => result.delivery)).toEqual(['queued', 'queued', 'queued']);
 
-    const firstDeliveryStarted = target.handle.input.deferNextDelivery();
-    target.handle.input.setActiveAccepting();
-    await firstDeliveryStarted;
-    target.handle.input.resolveNextDelivery('temporarily-unavailable');
     target.handle.input.rejectNextDelivery();
-    await waitFor(() => target.handle.input.receivedMessages.length === 1);
+    target.handle.input.setActiveAccepting();
+    await waitFor(() => target.handle.input.receivedMessages.length === queued.length);
 
-    expect(target.handle.input.deliveryCalls).toBe(3);
-    expect(target.handle.input.receivedMessages[0]?.content).toBe('retry me');
+    expect(target.handle.input.deliveryCalls).toBe(queued.length + 1);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'retry me',
+      'second message',
+      'third message',
+    ]);
   });
 
   test('drains queued messages from a removed sender without blocking later FIFO work', async () => {
