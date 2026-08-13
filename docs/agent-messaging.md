@@ -182,6 +182,41 @@ The shared identity, name, lifecycle, disposition, and environment contracts
 remain in `contracts.ts` and `environment.ts`. The mailbox modules consume
 those contracts and do not define provider-specific alternatives.
 
+## Public API surface
+
+`createAgentMessagingSessionRuntime(options?)` (or
+`AgentMessagingSessionRuntime.create()`) is the single entry point. It creates
+the private root and returns a runtime with these operations:
+
+| Operation                                   | Result                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------- |
+| `register({ registration, deliver, ... })`  | Starts a receiver, publishes the registration, returns a handle  |
+| `sendMessage(trustedSource, target, input)` | Sends one request and resolves with its `MailboxAcknowledgement` |
+| `deregister(reference)`                     | Closes and removes one active generation                         |
+| `close()`                                   | Closes all receivers, then removes the exact root                |
+
+`register()` also accepts `maxConnections` and `recentRequestIdLimit`. The
+returned `SessionRegistrationHandle` exposes the published `registration`, its
+`receiver`, a `ready` promise, and a generation-bound `deregister()`.
+
+Each `MailboxReceiver` exposes `registration`, `socketPath`, `ready`,
+`isClosed`, `pendingCount`, `drainPending(limit?)`, and `close()`.
+
+`sendMessage()` takes the caller-bound trusted identity as its **first**
+argument, not as part of the message input. The target reference is a name or
+ID; the message input carries content only.
+
+Connection and acknowledgement deadlines both default to 5,000 ms
+(`DEFAULT_MAILBOX_CONNECTION_TIMEOUT_MS`,
+`DEFAULT_MAILBOX_ACKNOWLEDGEMENT_TIMEOUT_MS`). Pass
+`connectionTimeoutMs` / `acknowledgementTimeoutMs` to
+`createAgentMessagingSessionRuntime()` for deterministic tests.
+
+Runtime-level failures throw `AgentMessagingSessionRuntimeError` with a stable
+code: `runtime_closed`, `identity_reserved`, `registration_conflict`,
+`registration_failed`, or `invalid_options`. Transport failures throw
+`MailboxProtocolError` with the protocol codes listed below.
+
 ## Private runtime and registrations
 
 `AgentMessagingRuntimeDirectory.create()` creates a short `fs.mkdtemp()` root

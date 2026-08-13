@@ -812,7 +812,7 @@ experimental:
   agentMessaging: true
 ```
 
-`agentMessaging` is the flag for direct messaging between the orchestrator and its subagents. The contracts and configuration exist, but no messaging behavior is active yet, so a run with the flag on currently behaves exactly like a run with it off. See [docs/agent-messaging.md](docs/agent-messaging.md).
+`agentMessaging` is the flag for direct messaging between the orchestrator and its subagents. The contracts, configuration, and the session storage and Unix-socket mailbox transport exist, but nothing starts them yet, so a run with the flag on currently behaves exactly like a run with it off. See [docs/agent-messaging.md](docs/agent-messaging.md).
 
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
 
@@ -1048,4 +1048,4 @@ Use a unique prefix per developer to prevent accidental PR-to-plan matching from
 - [`docs/web-interface.md`](docs/web-interface.md) - web architecture and UI workflow details
 - [`docs/database.md`](docs/database.md) - SQLite-backed plan storage and materialization
 - [`docs/proof-generation.md`](docs/proof-generation.md) - capturing demo artifacts for completed plans
-- [`docs/agent-messaging.md`](docs/agent-messaging.md) - the experimental agent-messaging flag and its contracts
+- [`docs/agent-messaging.md`](docs/agent-messaging.md) - the experimental agent-messaging flag, its contracts, and the mailbox transport
