@@ -78,6 +78,8 @@ export interface SubagentDirectoryRecord extends SubagentIdentity {
   providerOutputActivityCount: number;
   providerTurnCompletionCount: number;
   lastCompletedAssistantMessage?: string;
+  finishFallbackMessage?: string;
+  finishCloseAfterTurnRequested?: true;
   lastSuccessfulOutbound?: AgentOutboundMessageSnapshot;
   providerExit?: AgentProviderExitEvent;
   registration?: AgentRegistration;
@@ -127,6 +129,12 @@ export function snapshotDirectoryRecord(record: DirectoryRecord): AgentRecordSna
     providerTurnCompletionCount: record.providerTurnCompletionCount,
     ...(record.lastCompletedAssistantMessage !== undefined
       ? { lastCompletedAssistantMessage: record.lastCompletedAssistantMessage }
+      : {}),
+    ...(record.role === 'subagent' && record.finishFallbackMessage !== undefined
+      ? { finishFallbackMessage: record.finishFallbackMessage }
+      : {}),
+    ...(record.role === 'subagent' && record.finishCloseAfterTurnRequested === true
+      ? { finishCloseAfterTurnRequested: true as const }
       : {}),
     ...(record.lastSuccessfulOutbound !== undefined
       ? { lastSuccessfulOutbound: Object.freeze({ ...record.lastSuccessfulOutbound }) }

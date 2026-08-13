@@ -279,6 +279,8 @@ export interface AgentRecordSnapshot {
   readonly providerOutputActivityCount: number;
   readonly providerTurnCompletionCount: number;
   readonly lastCompletedAssistantMessage?: string;
+  readonly finishFallbackMessage?: string;
+  readonly finishCloseAfterTurnRequested?: true;
   readonly lastSuccessfulOutbound?: AgentOutboundMessageSnapshot;
   readonly providerExit?: AgentProviderExitEvent;
   readonly processControlId?: ProcessControlId;
@@ -308,7 +310,8 @@ export type AgentManagerErrorCode =
   | 'target_not_accepting_messages'
   | 'transport_error'
   | 'root_registration_failed'
-  | 'unknown_agent';
+  | 'unknown_agent'
+  | 'finish_not_available';
 
 export class AgentManagerError extends Error {
   public readonly code: AgentManagerErrorCode;

@@ -140,6 +140,20 @@ async function startFakeAgent(
   return launch;
 }
 
+async function startActiveFakeAgent(
+  manager: AgentManager,
+  launcher: FakeAgentLauncher,
+  name: string
+): Promise<Awaited<ReturnType<FakeAgentLauncher['waitForNextLaunch']>>> {
+  const launch = await startFakeAgent(manager, launcher, name);
+  launch.handle.input.markReady();
+  launch.handle.input.setActiveAccepting();
+  await waitFor(
+    () => manager.getAgentSnapshot(launch.request.identity.id)?.state === 'running-active'
+  );
+  return launch;
+}
+
 describe('AgentManager root registration and snapshots', () => {
   test('registers one ready orchestrator mailbox and excludes it from capacity', async () => {
     const manager = await createManager({ orchestratorExecutor: 'codex-cli' });
@@ -2604,6 +2618,175 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
       sequence: 2,
       target: 'outbound-second',
       content: 'peer result',
+    });
+  });
+});
+
+describe('AgentManager FinishAgent lifecycle', () => {
+  test('is self-only, target-free, and available only during an active turn', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const idle = await startFakeAgent(manager, launcher, 'finish-idle');
+
+    await expect(manager.finishAgent(idle.request.identity, {})).rejects.toMatchObject({
+      code: 'finish_not_available',
+    });
+    await expect(
+      manager.finishAgent(idle.request.identity, { target: 'finish-idle' })
+    ).rejects.toMatchObject({ code: 'invalid_request' });
+    await expect(
+      manager.finishAgent(manager.orchestratorIdentity, { message: 'root cannot finish' })
+    ).rejects.toMatchObject({ code: 'not_authorized' });
+    await expect(
+      manager.finishAgent({ id: idle.request.identity.id, role: 'orchestrator' }, {})
+    ).rejects.toMatchObject({ code: 'unknown_sender' });
+
+    const active = await startActiveFakeAgent(manager, launcher, 'finish-active');
+    const result = await manager.finishAgent(active.request.identity, {});
+
+    expect(result).toEqual({ state: 'finishing' });
+    expect(manager.listAgents().agents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'finish-active', state: 'finishing' }),
+      ])
+    );
+    expect(manager.subagentCount).toBe(2);
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'finish-active',
+        message: 'new work',
+      })
+    ).rejects.toMatchObject({ code: 'target_not_accepting_messages' });
+    expect(active.handle.lifecycle.closeAfterCurrentTurnCalls).toBe(0);
+  });
+
+  test('preserves the first nonblank fallback and closes only after turn completion', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'finish-order');
+    const lifecycle = launch.handle.lifecycle;
+
+    const closeStarted = lifecycle.deferNextCloseAfterCurrentTurn();
+    await expect(
+      manager.finishAgent(launch.request.identity, { message: '  fallback status  ' })
+    ).resolves.toEqual({ state: 'finishing' });
+    expect(lifecycle.closeAfterCurrentTurnCalls).toBe(0);
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      state: 'finishing',
+      finishFallbackMessage: '  fallback status  ',
+    });
+
+    await expect(
+      manager.finishAgent(launch.request.identity, { message: 'replacement status' })
+    ).resolves.toEqual({ state: 'finishing' });
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      finishFallbackMessage: '  fallback status  ',
+    });
+
+    lifecycle.emitCompletedAssistantMessage('completed assistant result');
+    expect(lifecycle.closeAfterCurrentTurnCalls).toBe(0);
+    lifecycle.emitTurnComplete();
+    await closeStarted;
+    expect(lifecycle.closeAfterCurrentTurnCalls).toBe(1);
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      state: 'finishing',
+      lastCompletedAssistantMessage: 'completed assistant result',
+      finishCloseAfterTurnRequested: true,
+    });
+
+    lifecycle.emitTurnComplete();
+    expect(lifecycle.closeAfterCurrentTurnCalls).toBe(1);
+    lifecycle.emitExit('natural');
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      providerExit: { classification: 'natural' },
+    });
+  });
+
+  test('uses fallback state only when no completed assistant result exists', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'finish-fallback');
+    const lifecycle = launch.handle.lifecycle;
+
+    await manager.finishAgent(launch.request.identity, { message: 'final fallback' });
+    lifecycle.emitTurnComplete();
+    lifecycle.emitExit('natural');
+
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      state: 'finishing',
+      finishFallbackMessage: 'final fallback',
+    });
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).not.toHaveProperty(
+      'lastCompletedAssistantMessage'
+    );
+    await expect(
+      manager.finishAgent(launch.request.identity, { message: 'late fallback' })
+    ).rejects.toMatchObject({
+      code: 'finish_not_available',
+    });
+  });
+
+  test('ignores turn-complete and result callbacks after provider exit', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'finish-race');
+    const lifecycle = launch.handle.lifecycle;
+
+    await manager.finishAgent(launch.request.identity, { message: 'fallback' });
+    lifecycle.emitExit('natural');
+    lifecycle.emitCompletedAssistantMessage('late completed result');
+    lifecycle.emitTurnComplete();
+
+    expect(lifecycle.closeAfterCurrentTurnCalls).toBe(0);
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      providerExit: { classification: 'natural' },
+    });
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).not.toHaveProperty(
+      'lastCompletedAssistantMessage'
+    );
+  });
+
+  test('does not request close after a forced-stop upgrade changes the state', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'finish-force-upgrade');
+
+    await manager.finishAgent(launch.request.identity, {});
+    manager.setAgentLifecycleState(launch.request.identity.id, 'stopping');
+    launch.handle.lifecycle.emitTurnComplete();
+
+    expect(launch.handle.lifecycle.closeAfterCurrentTurnCalls).toBe(0);
+  });
+
+  test('accepts the first nonblank fallback after an empty first request', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'finish-blank-fallback');
+
+    await manager.finishAgent(launch.request.identity, { message: '   ' });
+    await manager.finishAgent(launch.request.identity, { message: 'useful fallback' });
+    await manager.finishAgent(launch.request.identity, { message: 'replacement fallback' });
+
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      finishFallbackMessage: 'useful fallback',
     });
   });
 });

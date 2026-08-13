@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto';
 import {
   MAX_AGENT_MESSAGE_BYTES,
   ORCHESTRATOR_AGENT_NAME,
+  finishAgentArgumentsSchema,
   isNonterminalAgentLifecycleState,
   sendAgentMessageArgumentsSchema,
+  type FinishAgentResult,
   type ListAgentsResult,
   type NonterminalAgentLifecycleState,
   type SendAgentMessageResult,
@@ -47,6 +49,26 @@ import {
 } from './mailbox_protocol.js';
 import type { MailboxDeliveryResult } from './mailbox_server.js';
 import type { AgentRegistration } from './runtime_dir.js';
+
+interface FinishLifecycleState {
+  readonly terminalPromise: Promise<void>;
+  readonly resolveTerminal: () => void;
+  closeAfterTurnRequested: boolean;
+  closeAfterTurnPromise?: Promise<unknown>;
+  closeAfterTurnError?: unknown;
+}
+
+function createFinishLifecycleState(): FinishLifecycleState {
+  let resolveTerminal: (() => void) | undefined;
+  const terminalPromise = new Promise<void>((resolve) => {
+    resolveTerminal = resolve;
+  });
+  return {
+    terminalPromise,
+    resolveTerminal: (): void => resolveTerminal?.(),
+    closeAfterTurnRequested: false,
+  };
+}
 
 interface NormalizedManagerOptions extends AgentDirectoryOptions {
   readonly agentPreparer: AgentManagerOptions['agentPreparer'];
@@ -138,6 +160,8 @@ export class AgentManager {
   private readonly rootRegistration: SessionRegistrationHandle;
   private readonly options: NormalizedManagerOptions;
   private readonly lifecycleUnsubscribers = new Map<string, readonly (() => void)[]>();
+  /** Narrow lifecycle seam for FinishAgent; Task 5 owns terminal convergence. */
+  private readonly finishLifecycles = new Map<string, FinishLifecycleState>();
   private nextOutboundSequence = 0;
   private closed = false;
   private closePromise: Promise<void> | undefined;
@@ -405,6 +429,76 @@ export class AgentManager {
     }
   }
 
+  /** Request that the bound subagent close after its current provider turn. */
+  public async finishAgent(
+    caller: AgentCallerIdentity,
+    request: unknown
+  ): Promise<FinishAgentResult> {
+    this.ensureOpen();
+    const callerRecord = this.directory.resolveCaller(caller);
+    if (callerRecord.role !== 'subagent') {
+      throw new AgentManagerError(
+        'not_authorized',
+        'Only a subagent may finish its own current turn'
+      );
+    }
+
+    const parsed = finishAgentArgumentsSchema.safeParse(request);
+    if (!parsed.success) {
+      throw new AgentManagerError('invalid_request', 'FinishAgent request is invalid');
+    }
+
+    const record = callerRecord;
+    if (record.providerExit !== undefined) {
+      throw new AgentManagerError(
+        'finish_not_available',
+        'FinishAgent is not available after the provider has exited'
+      );
+    }
+    if (record.state === 'finishing') {
+      if (this.finishLifecycles.has(record.id)) {
+        if (
+          parsed.data.message !== undefined &&
+          parsed.data.message.trim().length > 0 &&
+          record.finishFallbackMessage === undefined
+        ) {
+          record.finishFallbackMessage = parsed.data.message;
+        }
+        return Object.freeze({ state: 'finishing' });
+      }
+      throw new AgentManagerError(
+        'finish_not_available',
+        'FinishAgent was not the operation that started this finishing transition'
+      );
+    }
+    if (record.state !== 'running-active') {
+      throw new AgentManagerError(
+        'finish_not_available',
+        'FinishAgent is only available during an active provider turn'
+      );
+    }
+    if (record.launchHandle?.lifecycle === undefined) {
+      throw new AgentManagerError(
+        'finish_not_available',
+        'The provider lifecycle is not ready for FinishAgent'
+      );
+    }
+
+    // This transition is synchronous. It must be visible before any later
+    // message or lifecycle callback can observe the request.
+    record.state = 'finishing';
+    if (
+      parsed.data.message !== undefined &&
+      parsed.data.message.trim().length > 0 &&
+      record.finishFallbackMessage === undefined
+    ) {
+      record.finishFallbackMessage = parsed.data.message;
+    }
+    this.finishLifecycles.set(record.id, createFinishLifecycleState());
+
+    return Object.freeze({ state: 'finishing' });
+  }
+
   public getAgentSnapshot(agentId: string): AgentRecordSnapshot | undefined {
     const parsedId = parseAgentId(agentId);
     const record = parsedId === undefined ? undefined : this.directory.getRecord(parsedId);
@@ -430,6 +524,8 @@ export class AgentManager {
     this.ensureOpen();
     const parsedId = parseAgentId(agentId);
     if (parsedId === undefined) return;
+    this.resolveFinishTerminal(parsedId);
+    this.finishLifecycles.delete(parsedId);
     this.unbindProviderLifecycle(parsedId);
     this.mailboxBindings.get(parsedId)?.dispose();
     this.mailboxBindings.delete(parsedId);
@@ -461,6 +557,10 @@ export class AgentManager {
       } catch (error) {
         firstError ??= error;
       } finally {
+        for (const agentId of this.finishLifecycles.keys()) {
+          this.resolveFinishTerminal(agentId);
+        }
+        this.finishLifecycles.clear();
         for (const agentId of this.lifecycleUnsubscribers.keys()) {
           this.unbindProviderLifecycle(agentId);
         }
@@ -517,20 +617,22 @@ export class AgentManager {
       !this.closed && agentId === record.id && this.directory.getRecord(record.id) === record;
     const unsubscribers = [
       lifecycle.onOutputActivity((event): void => {
-        if (!isCurrentEvent(event.agentId)) return;
+        if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
         record.providerOutputActivityCount += 1;
       }),
       lifecycle.onCompletedAssistantMessage((event): void => {
-        if (!isCurrentEvent(event.agentId)) return;
+        if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
         record.lastCompletedAssistantMessage = event.message;
       }),
       lifecycle.onTurnComplete((event): void => {
-        if (!isCurrentEvent(event.agentId)) return;
+        if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
         record.providerTurnCompletionCount += 1;
+        this.requestFinishCloseAfterTurn(record, lifecycle);
       }),
       lifecycle.onExit((event): void => {
         if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
         record.providerExit = Object.freeze({ ...event });
+        this.resolveFinishTerminal(record.id);
       }),
     ];
     this.lifecycleUnsubscribers.set(record.id, unsubscribers);
@@ -541,6 +643,36 @@ export class AgentManager {
     if (unsubscribers === undefined) return;
     this.lifecycleUnsubscribers.delete(agentId);
     for (const unsubscribe of unsubscribers) unsubscribe();
+  }
+
+  private requestFinishCloseAfterTurn(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    lifecycle: AgentProviderLifecycleControls
+  ): void {
+    if (record.state !== 'finishing' || record.providerExit !== undefined) return;
+    const finishLifecycle = this.finishLifecycles.get(record.id);
+    if (finishLifecycle === undefined || finishLifecycle.closeAfterTurnRequested) return;
+
+    // Claim before calling provider code. A provider can synchronously emit
+    // another turn-complete or exit event from the request itself.
+    finishLifecycle.closeAfterTurnRequested = true;
+    record.finishCloseAfterTurnRequested = true;
+    try {
+      finishLifecycle.closeAfterTurnPromise = Promise.resolve(
+        lifecycle.requestCloseAfterCurrentTurn()
+      ).catch((error: unknown): undefined => {
+        finishLifecycle.closeAfterTurnError = error;
+        return undefined;
+      });
+    } catch (error) {
+      finishLifecycle.closeAfterTurnError = error;
+    }
+  }
+
+  private resolveFinishTerminal(agentId: string): void {
+    const finishLifecycle = this.finishLifecycles.get(agentId);
+    if (finishLifecycle === undefined) return;
+    finishLifecycle.resolveTerminal();
   }
 
   private recordSuccessfulOutbound(
