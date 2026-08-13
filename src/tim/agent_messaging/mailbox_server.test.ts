@@ -198,7 +198,8 @@ function requestFor(
 async function sendRaw(
   socketPath: string,
   chunks: readonly Uint8Array[],
-  timeoutMs: number = 5_000
+  timeoutMs: number = 5_000,
+  delayBetweenChunksMs: number = 0
 ): Promise<MailboxAcknowledgement | undefined> {
   return new Promise<MailboxAcknowledgement | undefined>((resolve, reject) => {
     const socket = net.createConnection(socketPath);
@@ -217,11 +218,19 @@ async function sendRaw(
     socket.on('connect', () => {
       connected = true;
       void (async (): Promise<void> => {
-        for (const chunk of chunks) {
+        for (const [index, chunk] of chunks.entries()) {
           if (!socket.destroyed) {
             socket.write(chunk);
           }
-          await new Promise<void>((resolveNext) => setImmediate(resolveNext));
+          if (index < chunks.length - 1) {
+            await new Promise<void>((resolveNext) => {
+              if (delayBetweenChunksMs === 0) {
+                setImmediate(resolveNext);
+              } else {
+                setTimeout(resolveNext, delayBetweenChunksMs);
+              }
+            });
+          }
         }
         // The sender keeps the connection open while it waits for the ack.
       })().catch((error: unknown) => {
@@ -814,6 +823,62 @@ describe('agent mailbox receiver', () => {
     const valid = await sendRequest(mailbox, requestFor(mailbox, 'healthy-frame', 'healthy'));
     expect(valid).toMatchObject({ requestId: 'healthy-frame', success: true });
     expect(delivered).toEqual(['healthy']);
+  });
+
+  test('acknowledges the accepted frame when later chunks arrive during delivery', async () => {
+    let deliveryCount = 0;
+    const mailbox = await createMailbox(async (): Promise<'steered'> => {
+      deliveryCount += 1;
+      await new Promise<void>((resolve) => setTimeout(resolve, 40));
+      return 'steered';
+    });
+    const request = requestFor(mailbox, 'trailing-chunk', 'accepted');
+
+    const acknowledgement = await sendRaw(
+      mailbox.receiver.socketPath,
+      [Buffer.from(encodeMailboxFrame(request), 'utf8'), Buffer.from('trailing-junk', 'utf8')],
+      5_000,
+      10
+    );
+
+    expect(acknowledgement).toMatchObject({
+      requestId: request.requestId,
+      success: true,
+      delivery: 'steered',
+    });
+    expect(deliveryCount).toBe(1);
+  });
+
+  test('processes a concurrent retry fresh after the original client aborts', async () => {
+    const firstDeliveryStarted = deferred<void>();
+    const releaseFirstDelivery = deferred<void>();
+    let deliveryCount = 0;
+    const mailbox = await createMailbox(async (): Promise<'steered'> => {
+      deliveryCount += 1;
+      if (deliveryCount === 1) {
+        firstDeliveryStarted.resolve();
+        await releaseFirstDelivery.promise;
+      }
+      return 'steered';
+    });
+    const request = requestFor(mailbox, 'aborted-concurrent-retry', 'retry me');
+    const firstSocket = await connectSocket(mailbox.receiver.socketPath);
+    firstSocket.write(encodeMailboxFrame(request));
+    await firstDeliveryStarted.promise;
+    firstSocket.end();
+
+    const retryPromise = sendRequest(mailbox, request);
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    releaseFirstDelivery.resolve();
+
+    const acknowledgement = await retryPromise;
+    expect(acknowledgement).toMatchObject({
+      requestId: request.requestId,
+      success: true,
+      delivery: 'steered',
+    });
+    expect(deliveryCount).toBe(2);
+    firstSocket.destroy();
   });
 
   test('rejects connections over the configured limit and recovers after a client closes', async () => {

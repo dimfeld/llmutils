@@ -404,8 +404,13 @@ export class MailboxReceiver {
   }
 
   private handleData(state: ConnectionState, chunk: Buffer): void {
-    if (state.peerEnded || state.responseSent || state.frameReceived) {
+    if (state.peerEnded) {
       state.socket.destroy();
+      return;
+    }
+    if (state.responseSent || state.frameReceived) {
+      // The first complete frame owns the connection. Ignore later chunks so
+      // they cannot cancel an acknowledgement for an accepted request.
       return;
     }
 
@@ -467,6 +472,8 @@ export class MailboxReceiver {
     const acknowledgement = await this.acceptRequest(state, request);
     if (acknowledgement !== undefined) {
       await this.sendAcknowledgement(state, acknowledgement);
+    } else if (!state.peerEnded && !state.socket.destroyed) {
+      state.socket.destroy();
     }
   }
 
@@ -487,7 +494,17 @@ export class MailboxReceiver {
           'Mailbox requestId was already used for a different message'
         );
       }
-      return existing.completion;
+      const acknowledgement = await existing.completion;
+      if (acknowledgement !== undefined) {
+        return acknowledgement;
+      }
+      if (this.recentRequests.get(request.requestId) === existing) {
+        this.recentRequests.delete(request.requestId);
+      }
+      if (state.peerEnded) {
+        return undefined;
+      }
+      return this.acceptRequest(state, request);
     }
 
     const completion = this.deliverRequest(state, request).catch((error: unknown) =>
@@ -538,10 +555,6 @@ export class MailboxReceiver {
         'Mailbox request target does not match this receiver'
       );
     }
-    if (state.peerEnded) {
-      return undefined;
-    }
-
     let sourceRegistration: AgentRegistration | undefined;
     try {
       sourceRegistration = await this.resolveSourceRegistration(
@@ -550,9 +563,6 @@ export class MailboxReceiver {
       );
     } catch (error) {
       debugLog('[agent mailbox] source registration resolver failed:', error);
-    }
-    if (state.peerEnded) {
-      return undefined;
     }
     if (this.closed) {
       return buildMailboxFailureAcknowledgement(
@@ -587,9 +597,6 @@ export class MailboxReceiver {
         'unknown_source',
         'Mailbox source identity does not match its active registration'
       );
-    }
-    if (state.peerEnded) {
-      return undefined;
     }
     if (this.closed) {
       return buildMailboxFailureAcknowledgement(
