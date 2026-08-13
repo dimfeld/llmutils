@@ -3,22 +3,27 @@ import { randomUUID } from 'node:crypto';
 import {
   MAX_AGENT_MESSAGE_BYTES,
   ORCHESTRATOR_AGENT_NAME,
+  STOP_AGENT_INACTIVITY_TIMEOUT_MS,
   finishAgentArgumentsSchema,
   isNonterminalAgentLifecycleState,
   sendAgentMessageArgumentsSchema,
+  stopAgentArgumentsSchema,
   type FinishAgentResult,
   type ListAgentsResult,
   type NonterminalAgentLifecycleState,
   type SendAgentMessageResult,
   type StartAgentResult,
+  type StopAgentResult,
   utf8ByteLength,
 } from './contracts.js';
 import {
   AgentManagerError,
+  AgentProviderControlError,
   type AgentCallerIdentity,
   type AgentIdentity,
   type AgentInputAdapter,
   type AgentManagerOptions,
+  type AgentManagerScheduler,
   type AgentOutboundMessageSnapshot,
   type AgentProviderLifecycleControls,
   type AgentRecordSnapshot,
@@ -26,6 +31,7 @@ import {
   validateAgentProviderLifecycleControls,
   validateAgentInputAdapter,
 } from './agent_manager_types.js';
+import { DEFAULT_AGENT_MANAGER_SCHEDULER } from './lifecycle_scheduler.js';
 import {
   AgentDirectory,
   createRootAgentId,
@@ -58,6 +64,44 @@ interface FinishLifecycleState {
   closeAfterTurnError?: unknown;
 }
 
+type StopLifecycleCause = 'none' | 'graceful-stop' | 'self-finish' | 'forced-stop';
+
+interface StopLifecycleState {
+  cause: StopLifecycleCause;
+  gracefulRequested: boolean;
+  gracefulRequestInFlight: boolean;
+  gracefulAccepted: boolean;
+  gracefulInstruction: string;
+  lastActivityAt: number | undefined;
+  activityGeneration: number;
+  timerGeneration: number;
+  timerHandle: unknown;
+  forceInFlight: boolean;
+  forceAccepted: boolean;
+  forceOperationPromise: Promise<StopAgentResult> | undefined;
+  lastGracefulError: unknown;
+  lastForceError: unknown;
+}
+
+function createStopLifecycleState(): StopLifecycleState {
+  return {
+    cause: 'none',
+    gracefulRequested: false,
+    gracefulRequestInFlight: false,
+    gracefulAccepted: false,
+    gracefulInstruction: '',
+    lastActivityAt: undefined,
+    activityGeneration: 0,
+    timerGeneration: 0,
+    timerHandle: undefined,
+    forceInFlight: false,
+    forceAccepted: false,
+    forceOperationPromise: undefined,
+    lastGracefulError: undefined,
+    lastForceError: undefined,
+  };
+}
+
 function createFinishLifecycleState(): FinishLifecycleState {
   let resolveTerminal: (() => void) | undefined;
   const terminalPromise = new Promise<void>((resolve) => {
@@ -74,6 +118,7 @@ interface NormalizedManagerOptions extends AgentDirectoryOptions {
   readonly agentPreparer: AgentManagerOptions['agentPreparer'];
   readonly agentLauncher: AgentManagerOptions['agentLauncher'];
   readonly orchestratorInputAdapter: AgentInputAdapter | undefined;
+  readonly scheduler: AgentManagerScheduler;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -98,6 +143,14 @@ function validateAttempts(value: unknown, label: string, fallback: number): numb
     throw new AgentManagerError('invalid_options', `${label} must be a positive safe integer`);
   }
   return attempts as number;
+}
+
+const STANDARD_GRACEFUL_STOP_INSTRUCTION =
+  'The orchestrator has requested a graceful shutdown. Complete your current work, then provide your final status update or result before ending your session.';
+
+function buildGracefulStopInstruction(message: string | undefined): string {
+  if (message === undefined || message.length === 0) return STANDARD_GRACEFUL_STOP_INSTRUCTION;
+  return `${STANDARD_GRACEFUL_STOP_INSTRUCTION}\n\nAdditional shutdown context:\n---\n${message}\n---`;
 }
 
 function normalizeOptions(options: AgentManagerOptions): NormalizedManagerOptions {
@@ -140,11 +193,21 @@ function normalizeOptions(options: AgentManagerOptions): NormalizedManagerOption
   if (options.orchestratorInputAdapter !== undefined) {
     validateInputAdapter(options.orchestratorInputAdapter, 'orchestratorInputAdapter');
   }
+  const scheduler = options.scheduler ?? DEFAULT_AGENT_MANAGER_SCHEDULER;
+  if (!isRecord(scheduler)) {
+    throw new AgentManagerError('invalid_options', 'scheduler must be an object');
+  }
+  for (const method of ['now', 'setTimeout', 'clearTimeout']) {
+    if (typeof scheduler[method] !== 'function') {
+      throw new AgentManagerError('invalid_options', `scheduler.${method} must be a function`);
+    }
+  }
   return {
     ...directoryDefaults,
     agentPreparer: options.agentPreparer,
     agentLauncher: options.agentLauncher,
     orchestratorInputAdapter: options.orchestratorInputAdapter,
+    scheduler,
   };
 }
 
@@ -162,6 +225,8 @@ export class AgentManager {
   private readonly lifecycleUnsubscribers = new Map<string, readonly (() => void)[]>();
   /** Narrow lifecycle seam for FinishAgent; Task 5 owns terminal convergence. */
   private readonly finishLifecycles = new Map<string, FinishLifecycleState>();
+  /** Stop policy state; terminal convergence remains owned by the successor task. */
+  private readonly stopLifecycles = new Map<string, StopLifecycleState>();
   private nextOutboundSequence = 0;
   private closed = false;
   private closePromise: Promise<void> | undefined;
@@ -349,6 +414,7 @@ export class AgentManager {
       await operation.awaitBoundary(handle.ready);
       operation.ensureActive();
       binding.markLaunchReady();
+      this.maybeRequestProviderStop(record);
 
       return Object.freeze({
         name: record.name,
@@ -358,6 +424,7 @@ export class AgentManager {
         state: record.state,
       });
     } catch (error) {
+      this.disposeStopLifecycle(record.id);
       this.unbindProviderLifecycle(record.id);
       binding.dispose();
       this.mailboxBindings.delete(record.id);
@@ -499,6 +566,79 @@ export class AgentManager {
     return Object.freeze({ state: 'finishing' });
   }
 
+  /**
+   * Request a provider-neutral graceful or forced stop for one subagent.
+   * Graceful requests acknowledge immediately; explicit force requests wait
+   * only for the provider control to report accepted/already-exited or a
+   * guaranteed-unaccepted failure.
+   */
+  public async stopAgent(caller: AgentCallerIdentity, request: unknown): Promise<StopAgentResult> {
+    this.ensureOpen();
+    this.directory.assertOrchestrator(caller);
+
+    const parsed = stopAgentArgumentsSchema.safeParse(request);
+    if (!parsed.success) {
+      if (isRecord(request) && typeof request.name === 'string') {
+        if (request.name === ORCHESTRATOR_AGENT_NAME) {
+          throw new AgentManagerError(
+            'reserved_name',
+            `The reserved ${ORCHESTRATOR_AGENT_NAME} identity cannot be stopped`
+          );
+        }
+        if (parseAgentAddress(request.name) === undefined) {
+          throw new AgentManagerError('invalid_name', 'The target agent name is invalid');
+        }
+      }
+      throw new AgentManagerError('invalid_request', 'StopAgent request is invalid');
+    }
+
+    const targetName = this.parseTargetName(parsed.data.name);
+    const record = this.directory.getRecordByName(targetName);
+    if (
+      record === undefined ||
+      record.role !== 'subagent' ||
+      !isNonterminalAgentLifecycleState(record.state)
+    ) {
+      throw new AgentManagerError(
+        'unknown_target',
+        `Unknown or inactive target agent: ${targetName}`
+      );
+    }
+
+    // A provider exit is authoritative even while Task 5 still retains the
+    // record for terminal cleanup. Never turn a proven natural exit into a
+    // forced one because a late StopAgent call arrived.
+    if (record.providerExit !== undefined) {
+      return Object.freeze({ name: record.name, mode: 'already-stopping', state: record.state });
+    }
+
+    const stopState = this.stopLifecycles.get(record.id);
+    if (parsed.data.force === true) {
+      return this.requestForcedStop(record, stopState);
+    }
+
+    if (
+      record.state === 'finishing' ||
+      record.state === 'stopping' ||
+      stopState?.gracefulRequested
+    ) {
+      return Object.freeze({ name: record.name, mode: 'already-stopping', state: record.state });
+    }
+
+    // Make the state transition visible before provider work starts. This
+    // synchronously rejects ordinary sends and serializes duplicate stops.
+    record.state = 'stopping';
+    const lifecycle = this.getOrCreateStopLifecycle(record);
+    lifecycle.cause = 'graceful-stop';
+    lifecycle.gracefulRequested = true;
+    lifecycle.gracefulInstruction = buildGracefulStopInstruction(parsed.data.message);
+    lifecycle.lastActivityAt = this.options.scheduler.now();
+    lifecycle.activityGeneration += 1;
+    this.maybeRequestGracefulStop(record);
+
+    return Object.freeze({ name: record.name, mode: 'graceful-requested', state: record.state });
+  }
+
   public getAgentSnapshot(agentId: string): AgentRecordSnapshot | undefined {
     const parsedId = parseAgentId(agentId);
     const record = parsedId === undefined ? undefined : this.directory.getRecord(parsedId);
@@ -525,6 +665,7 @@ export class AgentManager {
     const parsedId = parseAgentId(agentId);
     if (parsedId === undefined) return;
     this.resolveFinishTerminal(parsedId);
+    this.disposeStopLifecycle(parsedId);
     this.finishLifecycles.delete(parsedId);
     this.unbindProviderLifecycle(parsedId);
     this.mailboxBindings.get(parsedId)?.dispose();
@@ -535,6 +676,7 @@ export class AgentManager {
   public close(): Promise<void> {
     if (this.closePromise !== undefined) return this.closePromise;
     this.closed = true;
+    for (const agentId of this.stopLifecycles.keys()) this.cancelStopTimer(agentId);
     const inFlight = this.startupTracker.values();
     const inFlightIds = new Set(inFlight.map((operation) => operation.record.id));
     const mailboxes = [
@@ -561,6 +703,10 @@ export class AgentManager {
           this.resolveFinishTerminal(agentId);
         }
         this.finishLifecycles.clear();
+        for (const agentId of this.stopLifecycles.keys()) {
+          this.disposeStopLifecycle(agentId);
+        }
+        this.stopLifecycles.clear();
         for (const agentId of this.lifecycleUnsubscribers.keys()) {
           this.unbindProviderLifecycle(agentId);
         }
@@ -619,10 +765,15 @@ export class AgentManager {
       lifecycle.onOutputActivity((event): void => {
         if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
         record.providerOutputActivityCount += 1;
+        this.noteStopOutputActivity(record);
       }),
       lifecycle.onCompletedAssistantMessage((event): void => {
         if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
         record.lastCompletedAssistantMessage = event.message;
+        // A complete assistant result is also provider output activity. Keep
+        // result capture separate from activity accounting, but do not let a
+        // provider that reports only the complete event look inactive.
+        this.noteStopOutputActivity(record);
       }),
       lifecycle.onTurnComplete((event): void => {
         if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
@@ -632,10 +783,321 @@ export class AgentManager {
       lifecycle.onExit((event): void => {
         if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
         record.providerExit = Object.freeze({ ...event });
+        this.cancelStopTimer(record.id);
         this.resolveFinishTerminal(record.id);
       }),
     ];
     this.lifecycleUnsubscribers.set(record.id, unsubscribers);
+  }
+
+  private getOrCreateStopLifecycle(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>
+  ): StopLifecycleState {
+    const existing = this.stopLifecycles.get(record.id);
+    if (existing !== undefined) return existing;
+    const created = createStopLifecycleState();
+    if (record.state === 'finishing') created.cause = 'self-finish';
+    this.stopLifecycles.set(record.id, created);
+    return created;
+  }
+
+  private maybeRequestProviderStop(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>
+  ): void {
+    const stopState = this.stopLifecycles.get(record.id);
+    if (
+      stopState === undefined ||
+      record.providerExit !== undefined ||
+      !record.launchReady ||
+      record.launchHandle?.lifecycle === undefined
+    ) {
+      return;
+    }
+    if (stopState.forceInFlight && !stopState.forceOperationPromise) {
+      void this.startForcedStopOperation(record, stopState, false);
+      return;
+    }
+    this.maybeRequestGracefulStop(record);
+  }
+
+  private maybeRequestGracefulStop(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>
+  ): void {
+    const stopState = this.stopLifecycles.get(record.id);
+    const lifecycle = record.launchHandle?.lifecycle;
+    if (
+      stopState === undefined ||
+      lifecycle === undefined ||
+      !record.launchReady ||
+      record.providerExit !== undefined ||
+      !stopState.gracefulRequested ||
+      stopState.gracefulRequestInFlight ||
+      stopState.gracefulAccepted ||
+      stopState.forceInFlight ||
+      stopState.forceAccepted
+    ) {
+      return;
+    }
+
+    stopState.gracefulRequestInFlight = true;
+    const requestGeneration = stopState.activityGeneration;
+    let request: Promise<import('./agent_manager_types.js').AgentProviderControlResult>;
+    try {
+      request = lifecycle.requestGracefulShutdown(stopState.gracefulInstruction);
+    } catch (error) {
+      this.handleGracefulStopFailure(record, stopState, error);
+      return;
+    }
+    void Promise.resolve(request).then(
+      (result): void => this.handleGracefulStopResult(record, stopState, result, requestGeneration),
+      (error: unknown): void => this.handleGracefulStopFailure(record, stopState, error)
+    );
+  }
+
+  private handleGracefulStopResult(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    stopState: StopLifecycleState,
+    result: import('./agent_manager_types.js').AgentProviderControlResult,
+    requestGeneration: number
+  ): void {
+    if (this.directory.getRecord(record.id) !== record) return;
+    stopState.gracefulRequestInFlight = false;
+    if (result.accepted) {
+      stopState.gracefulAccepted = true;
+      if (stopState.activityGeneration === requestGeneration) {
+        // No output arrived while acceptance was pending. The inactivity
+        // window begins when the provider accepted the graceful request.
+        stopState.lastActivityAt = this.options.scheduler.now();
+        stopState.activityGeneration += 1;
+      }
+      if (
+        record.providerExit === undefined &&
+        !stopState.forceInFlight &&
+        !stopState.forceAccepted
+      ) {
+        this.armStopInactivityTimer(record, stopState);
+      }
+      return;
+    }
+
+    // The provider reports already-exited separately from an accepted force.
+    // Leave the existing cause untouched and wait for its classified exit.
+    stopState.gracefulAccepted = false;
+    this.cancelStopTimer(record.id);
+  }
+
+  private handleGracefulStopFailure(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    stopState: StopLifecycleState,
+    error: unknown
+  ): void {
+    if (this.directory.getRecord(record.id) !== record) return;
+    stopState.gracefulRequestInFlight = false;
+    stopState.lastGracefulError = error;
+  }
+
+  private noteStopOutputActivity(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>
+  ): void {
+    const stopState = this.stopLifecycles.get(record.id);
+    if (
+      stopState === undefined ||
+      !stopState.gracefulRequested ||
+      stopState.forceInFlight ||
+      stopState.forceAccepted
+    ) {
+      return;
+    }
+    stopState.lastActivityAt = this.options.scheduler.now();
+    stopState.activityGeneration += 1;
+    if (stopState.gracefulAccepted) this.armStopInactivityTimer(record, stopState);
+  }
+
+  private armStopInactivityTimer(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    stopState: StopLifecycleState
+  ): void {
+    if (
+      record.providerExit !== undefined ||
+      !stopState.gracefulAccepted ||
+      stopState.forceInFlight ||
+      stopState.forceAccepted ||
+      stopState.lastActivityAt === undefined
+    ) {
+      return;
+    }
+    this.cancelStopTimer(record.id);
+    const expectedActivityGeneration = stopState.activityGeneration;
+    const expectedTimerGeneration = ++stopState.timerGeneration;
+    const remaining = Math.max(
+      0,
+      stopState.lastActivityAt + STOP_AGENT_INACTIVITY_TIMEOUT_MS - this.options.scheduler.now()
+    );
+    const timerHandle = this.options.scheduler.setTimeout((): void => {
+      if (
+        this.closed ||
+        this.directory.getRecord(record.id) !== record ||
+        record.providerExit !== undefined ||
+        stopState.timerGeneration !== expectedTimerGeneration ||
+        stopState.activityGeneration !== expectedActivityGeneration
+      ) {
+        return;
+      }
+      stopState.timerHandle = undefined;
+      const timeRemaining =
+        (stopState.lastActivityAt ?? this.options.scheduler.now()) +
+        STOP_AGENT_INACTIVITY_TIMEOUT_MS -
+        this.options.scheduler.now();
+      if (timeRemaining > 0) {
+        this.armStopInactivityTimer(record, stopState);
+        return;
+      }
+      void this.requestForcedStop(record, stopState, false).catch(() => undefined);
+    }, remaining);
+    stopState.timerHandle = timerHandle;
+  }
+
+  private cancelStopTimer(agentId: string): void {
+    const stopState = this.stopLifecycles.get(agentId);
+    if (stopState === undefined) return;
+    stopState.timerGeneration += 1;
+    if (stopState.timerHandle !== undefined) {
+      this.options.scheduler.clearTimeout(stopState.timerHandle);
+      stopState.timerHandle = undefined;
+    }
+  }
+
+  private disposeStopLifecycle(agentId: string): void {
+    this.cancelStopTimer(agentId);
+    this.stopLifecycles.delete(agentId);
+  }
+
+  private requestForcedStop(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    existingState: StopLifecycleState | undefined,
+    explicit: boolean = true
+  ): Promise<StopAgentResult> {
+    const stopState = existingState ?? this.getOrCreateStopLifecycle(record);
+    if (stopState.forceAccepted) {
+      return Promise.resolve(
+        Object.freeze({ name: record.name, mode: 'forced', state: 'stopping' })
+      );
+    }
+    if (stopState.forceInFlight) {
+      return (
+        stopState.forceOperationPromise ??
+        Promise.resolve(Object.freeze({ name: record.name, mode: 'forced', state: 'stopping' }))
+      );
+    }
+
+    const priorCause = stopState.cause;
+    record.state = 'stopping';
+    stopState.cause = 'forced-stop';
+    stopState.forceInFlight = true;
+    this.cancelStopTimer(record.id);
+
+    const lifecycle = record.launchHandle?.lifecycle;
+    if (!record.launchReady || lifecycle === undefined) {
+      // Startup will call maybeRequestProviderStop after the provider control
+      // becomes ready. The public force acknowledgement remains state-based.
+      return Promise.resolve(
+        Object.freeze({ name: record.name, mode: 'forced', state: 'stopping' })
+      );
+    }
+    return this.startForcedStopOperation(record, stopState, explicit, priorCause);
+  }
+
+  private startForcedStopOperation(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    stopState: StopLifecycleState,
+    explicit: boolean,
+    priorCause: StopLifecycleCause = stopState.cause
+  ): Promise<StopAgentResult> {
+    const lifecycle = record.launchHandle?.lifecycle;
+    if (lifecycle === undefined) {
+      return Promise.resolve(
+        Object.freeze({ name: record.name, mode: 'forced', state: 'stopping' })
+      );
+    }
+    let request: Promise<import('./agent_manager_types.js').AgentProviderControlResult>;
+    try {
+      request = lifecycle.requestForcedShutdown();
+    } catch (error) {
+      return Promise.resolve().then(() =>
+        this.handleForcedStopFailure(record, stopState, priorCause, explicit, error)
+      );
+    }
+
+    const operation = Promise.resolve(request).then(
+      (result): StopAgentResult => {
+        if (this.directory.getRecord(record.id) !== record) {
+          return Object.freeze({ name: record.name, mode: 'forced', state: 'stopping' });
+        }
+        stopState.forceInFlight = false;
+        if (result.accepted) {
+          stopState.forceAccepted = true;
+          stopState.cause = 'forced-stop';
+        } else {
+          stopState.cause = priorCause;
+        }
+        return Object.freeze({ name: record.name, mode: 'forced', state: 'stopping' });
+      },
+      (error: unknown): StopAgentResult =>
+        this.handleForcedStopFailure(record, stopState, priorCause, explicit, error)
+    );
+    stopState.forceOperationPromise = operation;
+    void operation.then(
+      (): void => {
+        if (stopState.forceOperationPromise === operation)
+          stopState.forceOperationPromise = undefined;
+      },
+      (): void => {
+        if (stopState.forceOperationPromise === operation)
+          stopState.forceOperationPromise = undefined;
+      }
+    );
+    return operation;
+  }
+
+  private handleForcedStopFailure(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    stopState: StopLifecycleState,
+    priorCause: StopLifecycleCause,
+    explicit: boolean,
+    error: unknown
+  ): StopAgentResult {
+    stopState.lastForceError = error;
+    if (
+      error instanceof AgentProviderControlError &&
+      error.operation === 'forced-shutdown' &&
+      error.accepted === false
+    ) {
+      stopState.forceInFlight = false;
+      stopState.forceAccepted = false;
+      stopState.cause = priorCause;
+      if (!explicit) {
+        return Object.freeze({ name: record.name, mode: 'already-stopping', state: 'stopping' });
+      }
+      throw new AgentManagerError(
+        'force_failed',
+        `Forced shutdown was not accepted for agent ${record.name}: ${error.message}`,
+        { cause: error }
+      );
+    }
+
+    // A non-typed rejection does not prove that the provider ignored the
+    // force request. Keep the in-flight claim so a later call cannot issue a
+    // second potentially unsafe operation.
+    if (explicit) {
+      throw new AgentManagerError(
+        'force_failed',
+        `Forced shutdown status is unknown for agent ${record.name}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error }
+      );
+    }
+    return Object.freeze({ name: record.name, mode: 'already-stopping', state: 'stopping' });
   }
 
   private unbindProviderLifecycle(agentId: string): void {

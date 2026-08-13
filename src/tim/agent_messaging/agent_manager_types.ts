@@ -19,6 +19,14 @@ export type ProviderThreadId = string & {
 /** Provider input availability is distinct from lifecycle state. */
 export type AgentInputActivity = 'not-ready' | 'active' | 'temporarily-unavailable' | 'idle';
 
+/** The clock and timer boundary used by AgentManager lifecycle policies. */
+export interface AgentManagerScheduler {
+  /** Return a monotonic timestamp in milliseconds. */
+  now(): number;
+  setTimeout(callback: () => void, delayMs: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
 export type AgentInputDelivery =
   | Exclude<import('./contracts.js').SendAgentMessageAcknowledgement, 'queued'>
   | 'temporarily-unavailable';
@@ -311,7 +319,8 @@ export type AgentManagerErrorCode =
   | 'transport_error'
   | 'root_registration_failed'
   | 'unknown_agent'
-  | 'finish_not_available';
+  | 'finish_not_available'
+  | 'force_failed';
 
 export class AgentManagerError extends Error {
   public readonly code: AgentManagerErrorCode;
@@ -339,6 +348,8 @@ export interface AgentManagerOptions {
   readonly maxAgentNameGenerationAttempts?: number;
   readonly agentPreparer?: AgentPreparation;
   readonly agentLauncher?: AgentLauncher;
+  /** Clock and timer functions used by graceful StopAgent inactivity control. */
+  readonly scheduler?: AgentManagerScheduler;
   /** Provider-neutral input boundary for messages addressed to orchestrator. */
   readonly orchestratorInputAdapter?: AgentInputAdapter;
 }

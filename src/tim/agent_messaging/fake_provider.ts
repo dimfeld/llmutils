@@ -21,11 +21,69 @@ import type {
   AgentProviderOutputActivityListener,
   AgentProviderTurnCompleteEvent,
   AgentProviderTurnCompleteListener,
+  AgentManagerScheduler,
   PreparedAgentExecution,
   ProcessControlId,
   ProviderThreadId,
 } from './agent_manager_types.js';
 import { AgentProviderControlError } from './agent_manager_types.js';
+
+/** Deterministic clock and timer implementation for lifecycle tests. */
+export class FakeAgentManagerScheduler implements AgentManagerScheduler {
+  private currentTime = 0;
+  private nextTimerId = 1;
+  private readonly timers = new Map<
+    number,
+    { readonly dueAt: number; readonly callback: () => void }
+  >();
+
+  public now(): number {
+    return this.currentTime;
+  }
+
+  public setTimeout(callback: () => void, delayMs: number): unknown {
+    if (!Number.isFinite(delayMs) || delayMs < 0) {
+      throw new RangeError('Fake timer delay must be a finite non-negative number');
+    }
+    const timerId = this.nextTimerId++;
+    this.timers.set(timerId, { dueAt: this.currentTime + delayMs, callback });
+    return timerId;
+  }
+
+  public clearTimeout(handle: unknown): void {
+    if (typeof handle === 'number') this.timers.delete(handle);
+  }
+
+  public get pendingTimerCount(): number {
+    return this.timers.size;
+  }
+
+  public advanceBy(milliseconds: number): void {
+    if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+      throw new RangeError('Fake time advance must be a finite non-negative number');
+    }
+    this.advanceTo(this.currentTime + milliseconds);
+  }
+
+  public advanceTo(timestamp: number): void {
+    if (!Number.isFinite(timestamp) || timestamp < this.currentTime) {
+      throw new RangeError('Fake time must advance to a finite, non-decreasing timestamp');
+    }
+    this.currentTime = timestamp;
+    this.runDueTimers();
+  }
+
+  private runDueTimers(): void {
+    while (true) {
+      const due = [...this.timers.entries()]
+        .filter(([, timer]) => timer.dueAt <= this.currentTime)
+        .toSorted((left, right) => left[1].dueAt - right[1].dueAt || left[0] - right[0])[0];
+      if (due === undefined) return;
+      this.timers.delete(due[0]);
+      due[1].callback();
+    }
+  }
+}
 
 function deferred<T>(): {
   readonly promise: Promise<T>;

@@ -73,6 +73,8 @@ export const MAX_AGENT_NAME_LENGTH = 48;
 export const MAX_SUBAGENTS_PER_SESSION = 8;
 export const MAX_AGENT_MESSAGE_BYTES = 65_536;
 export const MAX_PENDING_MESSAGES_PER_RECIPIENT = 100;
+/** Graceful StopAgent escalates after this much provider-output inactivity. */
+export const STOP_AGENT_INACTIVITY_TIMEOUT_MS = 120_000;
 
 const AGENT_ADDRESS_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
