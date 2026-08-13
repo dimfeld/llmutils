@@ -2,51 +2,35 @@ import { randomUUID } from 'node:crypto';
 
 import {
   MAX_AGENT_MESSAGE_BYTES,
-  MAX_SUBAGENTS_PER_SESSION,
   ORCHESTRATOR_AGENT_NAME,
-  agentExecutorSchema,
   isNonterminalAgentLifecycleState,
   sendAgentMessageArgumentsSchema,
-  startAgentArgumentsSchema,
-  type AgentSummary,
+  type ListAgentsResult,
+  type NonterminalAgentLifecycleState,
   type SendAgentMessageResult,
   type StartAgentResult,
-  type AgentExecutor,
-  type NonterminalAgentLifecycleState,
   utf8ByteLength,
 } from './contracts.js';
-import {
-  buildGeneratedAgentName,
-  createDefaultAgentId,
-  createDefaultAgentSlug,
-  DEFAULT_MAX_AGENT_ID_GENERATION_ATTEMPTS,
-  DEFAULT_MAX_AGENT_NAME_GENERATION_ATTEMPTS,
-  parseAgentAddress,
-  parseAgentId,
-  parseSubagentName,
-  type AgentId,
-  type AgentIdGenerator,
-  type AgentName,
-  type AgentSlugGenerator,
-} from './agent_names.js';
 import {
   AgentManagerError,
   type AgentCallerIdentity,
   type AgentIdentity,
-  type AgentInputActivity,
-  type AgentPreparationRequest,
-  type AgentManagerOptions,
   type AgentInputAdapter,
-  type AgentLaunchHandle,
-  type AgentRecord,
+  type AgentManagerOptions,
   type AgentRecordSnapshot,
-  type AgentReservation,
-  type AgentReservationRequest,
-  type OrchestratorAgentRecord,
   type OrchestratorIdentity,
-  type SubagentAgentRecord,
-  type SubagentIdentity,
 } from './agent_manager_types.js';
+import type { AgentInputActivity } from './agent_manager_types.js';
+import {
+  AgentDirectory,
+  createRootAgentId,
+  createDefaultAgentDirectoryOptions,
+  validateAgentReservationRequest,
+  type AgentDirectoryOptions,
+} from './agent_directory.js';
+import { parseAgentAddress, parseAgentId, type AgentName } from './agent_names.js';
+import { AgentMailboxBinding } from './agent_mailbox_binding.js';
+import { AgentStartupTracker } from './agent_startup.js';
 import {
   createAgentMessagingSessionRuntime,
   type AgentMessagingSessionRuntime,
@@ -58,54 +42,13 @@ import {
   type MailboxErrorCode,
   type MailboxMessageRequest,
 } from './mailbox_protocol.js';
-import type { MailboxDeliveryCallback, MailboxDeliveryResult } from './mailbox_server.js';
+import type { MailboxDeliveryResult } from './mailbox_server.js';
 import type { AgentRegistration } from './runtime_dir.js';
 
-interface NormalizedManagerOptions {
-  readonly orchestratorExecutor: AgentExecutor;
-  readonly agentIdGenerator: AgentIdGenerator;
-  readonly slugGenerator: AgentSlugGenerator;
-  readonly maxAgentIdGenerationAttempts: number;
-  readonly maxAgentNameGenerationAttempts: number;
+interface NormalizedManagerOptions extends AgentDirectoryOptions {
   readonly agentPreparer: AgentManagerOptions['agentPreparer'];
   readonly agentLauncher: AgentManagerOptions['agentLauncher'];
   readonly orchestratorInputAdapter: AgentInputAdapter | undefined;
-}
-
-interface InFlightStart {
-  readonly record: SubagentAgentRecord;
-  readonly reservation: AgentReservation;
-  readonly cancellation: {
-    readonly promise: Promise<void>;
-    cancel(): void;
-  };
-  mailbox?: SessionRegistrationHandle;
-  handle?: AgentLaunchHandle;
-  cleanupRequested: boolean;
-  pendingMailboxRegistration?: Promise<SessionRegistrationHandle>;
-  pendingHandleLaunch?: Promise<AgentLaunchHandle>;
-  mailboxDeregisterPromise?: Promise<void>;
-  handleReleasePromise?: Promise<void>;
-}
-
-function createCancellation(): {
-  readonly promise: Promise<void>;
-  cancel(): void;
-} {
-  let resolveCancellation: (() => void) | undefined;
-  let cancelled = false;
-  const promise = new Promise<void>((resolve) => {
-    resolveCancellation = resolve;
-  });
-  return {
-    promise,
-    cancel: (): void => {
-      if (!cancelled) {
-        cancelled = true;
-        resolveCancellation?.();
-      }
-    },
-  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -121,10 +64,7 @@ function isAgentInputActivity(value: unknown): value is AgentInputActivity {
   );
 }
 
-function validateAgentInputAdapter(
-  value: unknown,
-  label: string
-): asserts value is AgentInputAdapter {
+function validateInputAdapter(value: unknown, label: string): asserts value is AgentInputAdapter {
   if (!isRecord(value)) {
     throw new AgentManagerError('invalid_options', `${label} must be an input adapter object`);
   }
@@ -164,15 +104,21 @@ function normalizeOptions(options: AgentManagerOptions): NormalizedManagerOption
   if (typeof options !== 'object' || options === null || Array.isArray(options)) {
     throw new AgentManagerError('invalid_options', 'Agent manager options must be an object');
   }
-
-  const executor = options.orchestratorExecutor ?? 'claude-code';
-  if (!agentExecutorSchema.safeParse(executor).success) {
-    throw new AgentManagerError(
-      'invalid_options',
-      `Unsupported orchestrator executor: ${String(executor)}`
-    );
-  }
-
+  const directoryDefaults = createDefaultAgentDirectoryOptions({
+    orchestratorExecutor: options.orchestratorExecutor,
+    agentIdGenerator: options.agentIdGenerator,
+    slugGenerator: options.slugGenerator,
+    maxAgentIdGenerationAttempts: validateAttempts(
+      options.maxAgentIdGenerationAttempts,
+      'maxAgentIdGenerationAttempts',
+      32
+    ),
+    maxAgentNameGenerationAttempts: validateAttempts(
+      options.maxAgentNameGenerationAttempts,
+      'maxAgentNameGenerationAttempts',
+      32
+    ),
+  });
   if (options.agentIdGenerator !== undefined && typeof options.agentIdGenerator !== 'function') {
     throw new AgentManagerError('invalid_options', 'agentIdGenerator must be a function');
   }
@@ -192,166 +138,53 @@ function normalizeOptions(options: AgentManagerOptions): NormalizedManagerOption
     throw new AgentManagerError('invalid_options', 'agentLauncher must provide a launch function');
   }
   if (options.orchestratorInputAdapter !== undefined) {
-    validateAgentInputAdapter(options.orchestratorInputAdapter, 'orchestratorInputAdapter');
+    validateInputAdapter(options.orchestratorInputAdapter, 'orchestratorInputAdapter');
   }
-
   return {
-    orchestratorExecutor: executor as AgentExecutor,
-    agentIdGenerator: (options.agentIdGenerator ?? createDefaultAgentId) as AgentIdGenerator,
-    slugGenerator: (options.slugGenerator ?? createDefaultAgentSlug) as AgentSlugGenerator,
-    maxAgentIdGenerationAttempts: validateAttempts(
-      options.maxAgentIdGenerationAttempts,
-      'maxAgentIdGenerationAttempts',
-      DEFAULT_MAX_AGENT_ID_GENERATION_ATTEMPTS
-    ),
-    maxAgentNameGenerationAttempts: validateAttempts(
-      options.maxAgentNameGenerationAttempts,
-      'maxAgentNameGenerationAttempts',
-      DEFAULT_MAX_AGENT_NAME_GENERATION_ATTEMPTS
-    ),
+    ...directoryDefaults,
     agentPreparer: options.agentPreparer,
     agentLauncher: options.agentLauncher,
     orchestratorInputAdapter: options.orchestratorInputAdapter,
   };
 }
 
-function snapshotIdentity(record: AgentRecord): AgentIdentity {
-  if (record.role === 'orchestrator') {
-    return Object.freeze({
-      id: record.id,
-      name: record.name,
-      role: record.role,
-      executor: record.executor,
-    });
-  }
-  return Object.freeze({
-    id: record.id,
-    name: record.name,
-    role: record.role,
-    type: record.type,
-    executor: record.executor,
-  });
-}
-
-function snapshotRecord(record: AgentRecord): AgentRecordSnapshot {
-  return Object.freeze({
-    identity: snapshotIdentity(record),
-    state: record.state,
-    inputActivity: record.inputActivity,
-    creationSequence: record.creationSequence,
-    ...(record.role === 'subagent' && record.processControlId !== undefined
-      ? { processControlId: record.processControlId }
-      : {}),
-    ...(record.role === 'subagent' && record.providerThreadId !== undefined
-      ? { providerThreadId: record.providerThreadId }
-      : {}),
-  });
-}
-
-function toSummary(record: AgentRecord): AgentSummary {
-  if (record.role === 'orchestrator') {
-    return Object.freeze({
-      name: ORCHESTRATOR_AGENT_NAME,
-      id: record.id,
-      role: record.role,
-      executor: record.executor,
-      state: record.state,
-    });
-  }
-  return Object.freeze({
-    name: record.name,
-    id: record.id,
-    role: record.role,
-    type: record.type,
-    executor: record.executor,
-    state: record.state,
-  });
-}
-
-function matchesTrustedSource(
-  record: AgentRecord | undefined,
-  registration: AgentRegistration
-): boolean {
-  if (
-    record === undefined ||
-    record.id !== registration.id ||
-    record.name !== registration.name ||
-    record.role !== registration.role ||
-    record.executor !== registration.executor
-  ) {
-    return false;
-  }
-  if (record.role === 'orchestrator') {
-    return !Object.hasOwn(registration, 'type');
-  }
-  return registration.role === 'subagent' && record.type === registration.type;
-}
-
-function identityFromTrustedRegistration(registration: AgentRegistration): AgentIdentity {
-  if (registration.role === 'orchestrator') {
-    return Object.freeze({
-      id: registration.id as AgentId,
-      name: registration.name as AgentName,
-      role: registration.role,
-      executor: registration.executor,
-    });
-  }
-  return Object.freeze({
-    id: registration.id as AgentId,
-    name: registration.name as AgentName,
-    role: registration.role,
-    type: registration.type,
-    executor: registration.executor,
-  });
-}
-
-/**
- * Owns the root identity, startup boundary, synchronous identity/capacity
- * reservation, and public list snapshots. Message routing and terminal
- * lifecycle operations belong to adjacent manager layers.
- */
+/** Facade for the provider-neutral Start/List/Send manager core. */
 export class AgentManager {
   public readonly sessionRuntime: AgentMessagingSessionRuntime;
   public readonly orchestratorIdentity: OrchestratorIdentity;
 
-  private readonly options: NormalizedManagerOptions;
+  private readonly directory: AgentDirectory;
+  private readonly startupTracker: AgentStartupTracker;
+  private readonly mailboxBindings = new Map<string, AgentMailboxBinding>();
   private readonly ownsSessionRuntime: boolean;
-  private readonly byId = new Map<AgentId, AgentRecord>();
-  private readonly byName = new Map<AgentName, AgentId>();
-  private readonly inputAdapters = new Map<AgentId, AgentInputAdapter>();
-  private nextCreationSequence = 0;
   private readonly rootRegistration: SessionRegistrationHandle;
-  private readonly inputAvailabilityUnsubscribers = new Map<AgentId, () => void>();
-  private readonly inputAvailabilityVersions = new Map<AgentId, number>();
-  /** One retry is allowed at a later safe point for each unchanged activity version. */
-  private readonly pendingDrainRetryVersions = new Map<AgentId, number>();
-  private readonly pendingDrainPromises = new Map<AgentId, Promise<void>>();
-  private readonly inFlightStarts = new Map<AgentId, InFlightStart>();
+  private readonly options: NormalizedManagerOptions;
   private closed = false;
   private closePromise: Promise<void> | undefined;
 
   private constructor(
     sessionRuntime: AgentMessagingSessionRuntime,
+    directory: AgentDirectory,
     options: NormalizedManagerOptions,
     ownsSessionRuntime: boolean,
-    rootRegistration: SessionRegistrationHandle,
-    rootRecord: OrchestratorAgentRecord
+    rootRegistration: SessionRegistrationHandle
   ) {
     this.sessionRuntime = sessionRuntime;
+    this.directory = directory;
+    this.startupTracker = new AgentStartupTracker(directory);
     this.options = options;
     this.ownsSessionRuntime = ownsSessionRuntime;
     this.rootRegistration = rootRegistration;
-    this.orchestratorIdentity = Object.freeze({
-      id: rootRecord.id,
-      name: rootRecord.name,
-      role: rootRecord.role,
-      executor: rootRecord.executor,
-    });
-    this.byId.set(rootRecord.id, rootRecord);
-    this.byName.set(rootRecord.name, rootRecord.id);
-    this.nextCreationSequence = 1;
+    this.orchestratorIdentity = directory.orchestratorIdentity;
+    const rootRecord = directory.getRecord(this.orchestratorIdentity.id);
+    if (rootRecord === undefined) {
+      throw new AgentManagerError('root_registration_failed', 'The orchestrator record is missing');
+    }
+    const rootBinding = new AgentMailboxBinding(directory, rootRecord);
+    rootBinding.attachMailbox(rootRegistration);
+    this.mailboxBindings.set(rootRecord.id, rootBinding);
     if (options.orchestratorInputAdapter !== undefined) {
-      this.bindInputAdapter(rootRecord, options.orchestratorInputAdapter);
+      rootBinding.bindInputAdapter(options.orchestratorInputAdapter);
     }
   }
 
@@ -360,77 +193,62 @@ export class AgentManager {
     const normalizedOptions = normalizeOptions(options);
     const ownsSessionRuntime = options.sessionRuntime === undefined;
     const sessionRuntime = options.sessionRuntime ?? (await createAgentMessagingSessionRuntime());
-
     let rootRegistration: SessionRegistrationHandle | undefined;
-    let rootDelivery: MailboxDeliveryCallback = async (): Promise<MailboxDeliveryResult> =>
+    let rootDelivery: (
+      message: MailboxMessageRequest,
+      sourceRegistration: AgentRegistration
+    ) => Promise<MailboxDeliveryResult> = async (): Promise<MailboxDeliveryResult> =>
       'temporarily-unavailable';
     try {
-      const rootId = allocateOpaqueId(
-        normalizedOptions.agentIdGenerator,
-        normalizedOptions.maxAgentIdGenerationAttempts,
-        new Set<string>()
-      );
-      const rootName = parseAgentAddress(ORCHESTRATOR_AGENT_NAME);
-      if (rootName === undefined) {
-        throw new AgentManagerError(
-          'root_registration_failed',
-          'The reserved orchestrator name failed its shared validation'
-        );
-      }
-
+      const rootId = createRootAgentId(normalizedOptions);
+      const rootRegistrationDraft = {
+        id: rootId,
+        name: ORCHESTRATOR_AGENT_NAME,
+        role: 'orchestrator' as const,
+        executor: normalizedOptions.orchestratorExecutor,
+        state: 'running-idle' as const,
+      };
       rootRegistration = await sessionRuntime.register({
-        registration: {
-          id: rootId,
-          name: ORCHESTRATOR_AGENT_NAME,
-          role: 'orchestrator',
-          executor: normalizedOptions.orchestratorExecutor,
-          state: 'running-idle',
-        },
+        registration: rootRegistrationDraft,
         deliver: async (message, sourceRegistration): Promise<MailboxDeliveryResult> =>
           rootDelivery(message, sourceRegistration),
       });
       await rootRegistration.ready;
-
-      const rootRecord: OrchestratorAgentRecord = {
+      const rootName = rootRegistration.registration.name as AgentName;
+      const rootRecord = {
         id: rootId,
         name: rootName,
-        role: 'orchestrator',
+        role: 'orchestrator' as const,
         executor: normalizedOptions.orchestratorExecutor,
-        state: 'running-idle',
-        inputActivity: 'idle',
+        state: 'running-idle' as const,
+        inputActivity: 'idle' as const,
         creationSequence: 0,
-        registrationDraft: {
-          id: rootId,
-          name: ORCHESTRATOR_AGENT_NAME,
-          role: 'orchestrator',
-          executor: normalizedOptions.orchestratorExecutor,
-          state: 'running-idle',
-        },
+        registrationDraft: rootRegistrationDraft,
         registration: rootRegistration.registration,
         mailbox: rootRegistration,
       };
-
+      const directory = new AgentDirectory(normalizedOptions, rootRecord);
       const manager = new AgentManager(
         sessionRuntime,
+        directory,
         normalizedOptions,
         ownsSessionRuntime,
-        rootRegistration,
-        rootRecord
+        rootRegistration
       );
-      rootDelivery = (
-        message: MailboxMessageRequest,
-        sourceRegistration: AgentRegistration
-      ): Promise<MailboxDeliveryResult> =>
-        manager.deliverToRecord(rootRecord, message, sourceRegistration);
+      const rootBinding = manager.mailboxBindings.get(rootId);
+      if (rootBinding === undefined) {
+        throw new AgentManagerError(
+          'root_registration_failed',
+          'The root mailbox binding is missing'
+        );
+      }
+      rootDelivery = (message, sourceRegistration): Promise<MailboxDeliveryResult> =>
+        rootBinding.deliver(message, sourceRegistration);
       return manager;
     } catch (error) {
       await rootRegistration?.deregister().catch(() => undefined);
-      if (ownsSessionRuntime) {
-        await sessionRuntime.close().catch(() => undefined);
-      }
-      if (error instanceof AgentManagerError) {
-        throw error;
-      }
+      if (ownsSessionRuntime) await sessionRuntime.close().catch(() => undefined);
+      if (error instanceof AgentManagerError) throw error;
       throw new AgentManagerError(
         'root_registration_failed',
         `Could not register the orchestrator mailbox: ${error instanceof Error ? error.message : String(error)}`,
@@ -443,124 +261,80 @@ export class AgentManager {
     return this.closed;
   }
 
-  /** Number of reserved nonterminal subagents, excluding the root. */
   public get subagentCount(): number {
-    let count = 0;
-    for (const record of this.byId.values()) {
-      if (record.role === 'subagent' && isNonterminalAgentLifecycleState(record.state)) {
-        count += 1;
-      }
-    }
-    return count;
+    return this.directory.subagentCount;
   }
 
-  /** Return immutable public rows with the root first and creation order after it. */
-  public listAgents(): import('./contracts.js').ListAgentsResult {
-    const records = [...this.byId.values()]
-      .filter((record) => isNonterminalAgentLifecycleState(record.state))
-      .toSorted((left, right) => left.creationSequence - right.creationSequence);
-    const agents = records.map(toSummary);
-    return Object.freeze({
-      agents: Object.freeze(agents),
-    }) as import('./contracts.js').ListAgentsResult;
+  public listAgents(): ListAgentsResult {
+    return this.directory.listAgents();
   }
 
-  /**
-   * Start one named provider-backed subagent after mailbox and handle
-   * readiness. Provider completion and input readiness are deliberately not
-   * awaited here.
-   */
   public async startAgent(
     caller: AgentCallerIdentity,
     request: unknown
   ): Promise<StartAgentResult> {
     this.ensureOpen();
-    this.assertOrchestratorCaller(caller);
-
-    // Validate the complete request before checking or allocating any
-    // per-agent resource. Caller authorization above must remain first.
-    const validated = this.validateReservationRequest(request);
-    if (this.options.agentPreparer === undefined) {
+    this.directory.assertOrchestrator(caller);
+    const validated = validateAgentReservationRequest(request);
+    if (this.options.agentPreparer === undefined || this.options.agentLauncher === undefined) {
       throw new AgentManagerError(
         'launch_failed',
-        'No provider-neutral agent preparation dependency is configured'
-      );
-    }
-    if (this.options.agentLauncher === undefined) {
-      throw new AgentManagerError(
-        'launch_failed',
-        'No provider-neutral agent launcher is configured'
+        'Provider-neutral agent preparation and launch dependencies are required'
       );
     }
 
-    const reservation = this.reserveSubagent(validated);
-    const record = this.byId.get(reservation.id);
-    if (record === undefined || record.role !== 'subagent') {
-      reservation.release();
-      throw new AgentManagerError(
-        'launch_failed',
-        'The reserved agent record was not available for startup'
-      );
-    }
-
-    const start = this.createInFlightStart(record, reservation);
+    const reservation = this.directory.reserve(validated);
+    const record = reservation.record;
+    const binding = new AgentMailboxBinding(this.directory, record);
+    this.mailboxBindings.set(record.id, binding);
+    const operation = this.startupTracker.create(record, reservation);
     try {
-      const preparationRequest: AgentPreparationRequest = {
-        identity: reservation.identity,
-        initialMessage: validated.initialMessage,
-      };
-      const prepared = await this.awaitStartBoundary(
-        start,
-        this.options.agentPreparer.prepare(preparationRequest)
+      const prepared = await operation.awaitBoundary(
+        this.options.agentPreparer.prepare({
+          identity: reservation.identity,
+          initialMessage: validated.initialMessage,
+        })
       );
-      this.ensureStartActive(start);
+      operation.ensureActive();
       if (prepared.agentType !== record.type || prepared.executor !== record.executor) {
         throw new Error('Agent preparation did not preserve the requested type and executor');
       }
 
-      const mailbox = await this.awaitStartResource(
-        start,
+      const mailbox = await operation.awaitResource(
         this.sessionRuntime.register({
           registration: record.registrationDraft,
-          deliver: (
-            message,
-            sourceRegistration
-          ): Promise<import('./mailbox_server.js').MailboxDeliveryResult> =>
-            this.deliverToAgent(record, message, sourceRegistration),
+          deliver: (message, sourceRegistration): Promise<MailboxDeliveryResult> =>
+            binding.deliver(message, sourceRegistration),
         }),
-        (value: SessionRegistrationHandle): void => this.attachStartMailbox(start, value),
-        (value: Promise<SessionRegistrationHandle> | undefined): void => {
-          start.pendingMailboxRegistration = value;
+        (value): void => {
+          operation.attachMailbox(value);
+          binding.attachMailbox(value);
+        },
+        (value): void => {
+          operation.pendingMailboxRegistration = value;
         }
       );
-      this.ensureStartActive(start);
-      await this.awaitStartBoundary(start, mailbox.ready);
-      this.ensureStartActive(start);
+      operation.ensureActive();
+      await operation.awaitBoundary(mailbox.ready);
+      operation.ensureActive();
 
-      const handle = await this.awaitStartResource(
-        start,
+      const handle = await operation.awaitResource(
         this.options.agentLauncher.launch({
           identity: reservation.identity,
           initialMessage: validated.initialMessage,
           preparedExecution: prepared,
           processLabel: formatAgentProcessLabel(record.executor, record.name),
         }),
-        (value: AgentLaunchHandle): void => this.attachStartHandle(start, value),
-        (value: Promise<AgentLaunchHandle> | undefined): void => {
-          start.pendingHandleLaunch = value;
+        (value): void => operation.attachHandle(value),
+        (value): void => {
+          operation.pendingHandleLaunch = value;
         }
       );
-      this.ensureStartActive(start);
-      this.bindInputAdapter(record, handle.input);
-
-      // A launch handle's readiness is the provider-neutral establishment
-      // boundary. It is separate from the input adapter's readiness and from
-      // the completion promise.
-      await this.awaitStartBoundary(start, handle.ready);
-      this.ensureStartActive(start);
-      record.launchReady = true;
-      this.updateRecordInputState(record, handle.input);
-      this.schedulePendingDrain(record);
+      operation.ensureActive();
+      binding.bindInputAdapter(handle.input);
+      await operation.awaitBoundary(handle.ready);
+      operation.ensureActive();
+      binding.markLaunchReady();
 
       return Object.freeze({
         name: record.name,
@@ -570,41 +344,29 @@ export class AgentManager {
         state: record.state,
       });
     } catch (error) {
-      await this.rollbackStart(start);
-      if (error instanceof AgentManagerError && error.code === 'manager_closed') {
-        throw error;
-      }
+      binding.dispose();
+      this.mailboxBindings.delete(record.id);
+      await operation.rollback();
+      if (error instanceof AgentManagerError && error.code === 'manager_closed') throw error;
       throw new AgentManagerError(
         'launch_failed',
         `Could not start agent ${record.name}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error }
       );
     } finally {
-      if (this.inFlightStarts.get(record.id) === start) {
-        this.inFlightStarts.delete(record.id);
-      }
+      this.startupTracker.finish(operation);
     }
   }
 
-  /**
-   * Send one trusted message through the session mailbox transport. The
-   * caller identity is resolved from the authoritative manager map; request
-   * arguments never contain a source field.
-   */
   public async sendAgentMessage(
     caller: AgentCallerIdentity,
     request: unknown
   ): Promise<SendAgentMessageResult> {
     this.ensureOpen();
-    const validated = this.validateSendAgentMessageRequest(request);
-    const sourceRecord = this.resolveCaller(caller);
-    const targetName = parseAgentAddress(validated.name);
-    if (targetName === undefined) {
-      throw new AgentManagerError('invalid_name', `Invalid target agent name: ${validated.name}`);
-    }
-
-    const targetId = this.byName.get(targetName);
-    const targetRecord = targetId === undefined ? undefined : this.byId.get(targetId);
+    const validated = this.validateSendRequest(request);
+    const sourceRecord = this.directory.resolveCaller(caller);
+    const targetName = this.parseTargetName(validated.name);
+    const targetRecord = this.directory.getRecordByName(targetName);
     if (targetRecord === undefined || !isNonterminalAgentLifecycleState(targetRecord.state)) {
       throw new AgentManagerError(
         'unknown_target',
@@ -632,7 +394,7 @@ export class AgentManager {
         { requestId: messageId, content: validated.message }
       );
       if (!acknowledgement.success) {
-        this.throwForMailboxFailure(
+        throw this.mapMailboxError(
           acknowledgement.error.code,
           acknowledgement.error.message,
           acknowledgement.error.code === 'unknown_source'
@@ -646,363 +408,76 @@ export class AgentManager {
         delivery: acknowledgement.delivery,
       });
     } catch (error) {
-      if (error instanceof AgentManagerError) {
-        throw error;
-      }
+      if (error instanceof AgentManagerError) throw error;
       throw this.mapMailboxTransportError(error);
     }
   }
 
-  /** Return an immutable internal snapshot for lifecycle composition. */
-  public getAgentSnapshot(agentId: AgentId | string): AgentRecordSnapshot | undefined {
+  public getAgentSnapshot(agentId: string): AgentRecordSnapshot | undefined {
     const parsedId = parseAgentId(agentId);
-    const record = parsedId === undefined ? undefined : this.byId.get(parsedId);
-    return record === undefined ? undefined : snapshotRecord(record);
+    const record = parsedId === undefined ? undefined : this.directory.getRecord(parsedId);
+    return record === undefined ? undefined : this.directory.snapshot(record);
   }
 
-  /** Return an immutable identity snapshot for a known active name. */
   public getIdentityByName(name: string): AgentIdentity | undefined {
-    const parsedName = parseAgentAddress(name);
-    if (parsedName === undefined) {
-      return undefined;
-    }
-    const id = this.byName.get(parsedName);
-    const record = id === undefined ? undefined : this.byId.get(id);
-    return record === undefined ? undefined : snapshotIdentity(record);
-  }
-
-  /**
-   * Reserve one subagent name, identity, and capacity slot synchronously.
-   * This is the composition boundary used by the later StartAgent method.
-   */
-  public reserveSubagent(request: AgentReservationRequest): AgentReservation {
-    this.ensureOpen();
-    const validated = this.validateReservationRequest(request);
-    if (this.subagentCount >= MAX_SUBAGENTS_PER_SESSION) {
-      throw new AgentManagerError(
-        'agent_limit_reached',
-        `The session already has ${MAX_SUBAGENTS_PER_SESSION} nonterminal subagents`
-      );
-    }
-
-    const name = this.selectSubagentName(validated.type, validated.name);
-    const id = allocateOpaqueId(
-      this.options.agentIdGenerator,
-      this.options.maxAgentIdGenerationAttempts,
-      new Set(this.byId.keys())
-    );
-    const identity: SubagentIdentity = Object.freeze({
-      id,
-      name,
-      role: 'subagent',
-      type: validated.type,
-      executor: validated.executor,
-    });
-    const record: SubagentAgentRecord = {
-      ...identity,
-      state: 'starting',
-      inputActivity: 'not-ready',
-      launchReady: false,
-      creationSequence: this.nextCreationSequence,
-      registrationDraft: {
-        id,
-        name,
-        role: 'subagent',
-        type: validated.type,
-        executor: validated.executor,
-        state: 'starting',
-      },
-    };
-
-    // Keep this insertion section synchronous. No await may be introduced
-    // between the capacity check and both map insertions.
-    this.nextCreationSequence += 1;
-    this.byId.set(id, record);
-    this.byName.set(name, id);
-
-    let released = false;
-    return Object.freeze({
-      id,
-      name,
-      identity,
-      snapshot: snapshotRecord(record),
-      release: (): void => {
-        if (released) {
-          return;
-        }
-        released = true;
-        this.releaseReservation(record);
-      },
-    });
+    return this.directory.getIdentityByName(name);
   }
 
   /** Narrow successor-plan state seam; it does not perform completion or stop logic. */
-  public setAgentLifecycleState(
-    agentId: AgentId | string,
-    state: NonterminalAgentLifecycleState
-  ): void {
+  public setAgentLifecycleState(agentId: string, state: NonterminalAgentLifecycleState): void {
     this.ensureOpen();
     const parsedId = parseAgentId(agentId);
-    const record = parsedId === undefined ? undefined : this.byId.get(parsedId);
-    if (record === undefined) {
+    if (parsedId === undefined) {
       throw new AgentManagerError('unknown_agent', `Unknown agent ID: ${agentId}`);
     }
-    if (record.role !== 'subagent') {
-      throw new AgentManagerError(
-        'invalid_request',
-        'Lifecycle state transitions are only available for subagent identities'
-      );
-    }
-    record.state = state;
+    this.directory.setLifecycleState(parsedId, state);
   }
 
-  /**
-   * Remove a subagent after a successor lifecycle owner has completed its
-   * terminal cleanup. This seam only removes authoritative map entries; it
-   * does not stop providers, close mailboxes, or send notifications.
-   */
-  public removeTerminalAgent(agentId: AgentId | string): void {
+  /** Remove only authoritative state after a successor lifecycle owner cleans resources. */
+  public removeTerminalAgent(agentId: string): void {
     this.ensureOpen();
     const parsedId = parseAgentId(agentId);
-    const record = parsedId === undefined ? undefined : this.byId.get(parsedId);
-    if (record === undefined) {
-      return;
-    }
-    if (record.role !== 'subagent') {
-      throw new AgentManagerError(
-        'invalid_request',
-        'Terminal removal is only available for subagent identities'
-      );
-    }
-    this.releaseReservation(record);
+    if (parsedId === undefined) return;
+    this.mailboxBindings.get(parsedId)?.dispose();
+    this.mailboxBindings.delete(parsedId);
+    this.directory.removeTerminal(parsedId);
   }
 
-  /** Close the root mailbox and any session runtime created by this manager. */
   public close(): Promise<void> {
-    if (this.closePromise !== undefined) {
-      return this.closePromise;
-    }
+    if (this.closePromise !== undefined) return this.closePromise;
     this.closed = true;
-    const inFlightStarts = [...this.inFlightStarts.values()];
-    const inFlightStartIds = new Set(inFlightStarts.map((start) => start.record.id));
-    const managerMailboxes = [
+    const inFlight = this.startupTracker.values();
+    const inFlightIds = new Set(inFlight.map((operation) => operation.record.id));
+    const mailboxes = [
       this.rootRegistration,
-      ...[...this.byId.values()]
-        .filter(
-          (record): record is SubagentAgentRecord =>
-            record.role === 'subagent' && !inFlightStartIds.has(record.id)
-        )
-        .map((record) => record.mailbox)
-        .filter((mailbox): mailbox is SessionRegistrationHandle => mailbox !== undefined),
+      ...this.directory.records
+        .filter((record) => !inFlightIds.has(record.id) && record.mailbox !== undefined)
+        .map((record) => record.mailbox as SessionRegistrationHandle),
     ];
     this.closePromise = (async (): Promise<void> => {
       let firstError: unknown;
-      const cleanupResults = await Promise.allSettled([
-        ...managerMailboxes.map((mailbox) => mailbox.deregister()),
-        ...inFlightStarts.map((start) => this.cleanupInFlightStart(start)),
+      const results = await Promise.allSettled([
+        ...mailboxes.map((mailbox) => mailbox.deregister()),
+        ...inFlight.map((operation) => operation.cleanupForClose()),
       ]);
-      for (const result of cleanupResults) {
-        if (result.status === 'rejected' && firstError === undefined) {
-          firstError = result.reason;
-        }
+      for (const result of results) {
+        if (result.status === 'rejected') firstError ??= result.reason;
       }
       try {
-        if (this.ownsSessionRuntime) {
-          await this.sessionRuntime.close();
-        }
+        if (this.ownsSessionRuntime) await this.sessionRuntime.close();
       } catch (error) {
         firstError ??= error;
       } finally {
-        for (const unsubscribe of this.inputAvailabilityUnsubscribers.values()) {
-          unsubscribe();
-        }
-        this.inputAvailabilityUnsubscribers.clear();
-        this.inputAvailabilityVersions.clear();
-        this.pendingDrainRetryVersions.clear();
-        this.inputAdapters.clear();
-        this.pendingDrainPromises.clear();
-        this.byId.clear();
-        this.byName.clear();
+        for (const binding of this.mailboxBindings.values()) binding.dispose();
+        this.mailboxBindings.clear();
+        this.directory.clear();
       }
-      if (firstError !== undefined) {
-        throw firstError;
-      }
+      if (firstError !== undefined) throw firstError;
     })();
     return this.closePromise;
   }
 
-  private createInFlightStart(
-    record: SubagentAgentRecord,
-    reservation: AgentReservation
-  ): InFlightStart {
-    const start: InFlightStart = {
-      record,
-      reservation,
-      cancellation: createCancellation(),
-      cleanupRequested: false,
-    };
-    this.inFlightStarts.set(record.id, start);
-    return start;
-  }
-
-  private ensureStartActive(start: InFlightStart): void {
-    if (
-      this.closed ||
-      this.inFlightStarts.get(start.record.id) !== start ||
-      this.byId.get(start.record.id) !== start.record
-    ) {
-      throw new AgentManagerError(
-        'manager_closed',
-        'The agent manager was closed while the agent was starting'
-      );
-    }
-  }
-
-  private async awaitStartResource<T>(
-    start: InFlightStart,
-    operation: Promise<T>,
-    attach: (value: T) => void,
-    track: (operation: Promise<T> | undefined) => void
-  ): Promise<T> {
-    let attached = false;
-    const tracked = operation.then((value: T): T => {
-      if (!attached) {
-        attached = true;
-        attach(value);
-      }
-      return value;
-    });
-    track(tracked);
-    void tracked.then(
-      (): void => {
-        track(undefined);
-      },
-      (): void => {
-        track(undefined);
-      }
-    );
-    return this.raceStartOperation(start, tracked);
-  }
-
-  private awaitStartBoundary<T>(start: InFlightStart, operation: Promise<T>): Promise<T> {
-    return this.raceStartOperation(start, operation);
-  }
-
-  private async raceStartOperation<T>(start: InFlightStart, operation: Promise<T>): Promise<T> {
-    const result = await Promise.race([
-      operation.then((value: T) => ({ kind: 'value' as const, value })),
-      start.cancellation.promise.then(() => ({ kind: 'cancelled' as const })),
-    ]);
-    if (result.kind === 'cancelled') {
-      throw new AgentManagerError(
-        'manager_closed',
-        'The agent manager was closed while the agent was starting'
-      );
-    }
-    return result.value;
-  }
-
-  private attachStartMailbox(start: InFlightStart, mailbox: SessionRegistrationHandle): void {
-    start.mailbox = mailbox;
-    start.record.registration = mailbox.registration;
-    start.record.mailbox = mailbox;
-    if (start.cleanupRequested) {
-      void this.deregisterStartMailbox(start).catch(() => undefined);
-    }
-  }
-
-  private attachStartHandle(start: InFlightStart, handle: AgentLaunchHandle): void {
-    start.handle = handle;
-    start.record.launchHandle = handle;
-    start.record.processControlId = handle.processControlId;
-    start.record.providerThreadId = handle.providerThreadId;
-    if (start.cleanupRequested) {
-      void this.releaseStartHandle(start).catch(() => undefined);
-    }
-  }
-
-  private deregisterStartMailbox(start: InFlightStart): Promise<void> {
-    if (start.mailboxDeregisterPromise !== undefined) {
-      return start.mailboxDeregisterPromise;
-    }
-    if (start.mailbox === undefined) {
-      return Promise.resolve();
-    }
-    start.mailboxDeregisterPromise = start.mailbox.deregister();
-    return start.mailboxDeregisterPromise;
-  }
-
-  private releaseStartHandle(start: InFlightStart): Promise<void> {
-    if (start.handleReleasePromise !== undefined) {
-      return start.handleReleasePromise;
-    }
-    if (start.handle?.release === undefined) {
-      return Promise.resolve();
-    }
-    const handle = start.handle;
-    start.handleReleasePromise = Promise.resolve().then(() => handle.release?.());
-    return start.handleReleasePromise;
-  }
-
-  private async cleanupInFlightStart(start: InFlightStart): Promise<void> {
-    start.cleanupRequested = true;
-    start.cancellation.cancel();
-    let firstError: unknown;
-    const pendingResources = [start.pendingMailboxRegistration, start.pendingHandleLaunch].filter(
-      (operation): operation is Promise<SessionRegistrationHandle> | Promise<AgentLaunchHandle> =>
-        operation !== undefined
-    );
-    const pendingResults = await Promise.allSettled(pendingResources);
-    for (const result of pendingResults) {
-      if (result.status === 'rejected') {
-        firstError ??= result.reason;
-      }
-    }
-    const mailboxCleanup = this.deregisterStartMailbox(start);
-    const handleRelease = this.releaseStartHandle(start);
-    try {
-      await mailboxCleanup;
-    } catch (error) {
-      firstError ??= error;
-    }
-
-    // Release the reservation only after mailbox deregistration has completed,
-    // so a later same-name startup cannot race the old registration.
-    start.reservation.release();
-    try {
-      await handleRelease;
-    } catch (error) {
-      firstError ??= error;
-    }
-    if (firstError !== undefined) {
-      throw firstError;
-    }
-  }
-
-  private validateReservationRequest(request: unknown): AgentReservationRequest {
-    if (!isRecord(request)) {
-      throw new AgentManagerError('invalid_request', 'Agent reservation request must be an object');
-    }
-    if (request.name === ORCHESTRATOR_AGENT_NAME) {
-      throw new AgentManagerError('reserved_name', 'The orchestrator name is reserved');
-    }
-    if (Object.hasOwn(request, 'name') && request.name !== undefined) {
-      const parsedName = parseSubagentName(request.name);
-      if (parsedName === undefined) {
-        throw new AgentManagerError(
-          'invalid_name',
-          'Agent names must use lowercase ASCII letters, digits, and hyphens, with alphanumeric boundaries'
-        );
-      }
-    }
-    const result = startAgentArgumentsSchema.safeParse(request);
-    if (!result.success) {
-      throw new AgentManagerError('invalid_request', 'Agent reservation request is invalid');
-    }
-    return result.data;
-  }
-
-  private validateSendAgentMessageRequest(request: unknown): {
+  private validateSendRequest(request: unknown): {
     readonly name: string;
     readonly message: string;
   } {
@@ -1030,255 +505,11 @@ export class AgentManager {
     return result.data;
   }
 
-  private assertOrchestratorCaller(caller: unknown): void {
-    if (!isRecord(caller)) {
-      throw new AgentManagerError(
-        'not_authorized',
-        'Only the registered orchestrator identity may start agents'
-      );
-    }
-    const callerId = parseAgentId(caller.id);
-    const record = callerId === undefined ? undefined : this.byId.get(callerId);
-    if (
-      record === undefined ||
-      record.role !== 'orchestrator' ||
-      caller.role !== 'orchestrator' ||
-      caller.name !== ORCHESTRATOR_AGENT_NAME ||
-      caller.executor !== record.executor ||
-      Object.hasOwn(caller, 'type')
-    ) {
-      throw new AgentManagerError(
-        'not_authorized',
-        'Only the registered orchestrator identity may start agents'
-      );
-    }
-  }
-
-  private resolveCaller(caller: unknown): AgentRecord {
-    if (!isRecord(caller)) {
-      throw new AgentManagerError('unknown_sender', 'The message sender is not an active agent');
-    }
-    const callerId = parseAgentId(caller.id);
-    const record = callerId === undefined ? undefined : this.byId.get(callerId);
-    const matchesIdentity =
-      record !== undefined &&
-      isNonterminalAgentLifecycleState(record.state) &&
-      caller.name === record.name &&
-      caller.role === record.role &&
-      caller.executor === record.executor &&
-      (record.role === 'orchestrator'
-        ? !Object.hasOwn(caller, 'type')
-        : caller.type === record.type);
-    if (!matchesIdentity || record === undefined) {
-      throw new AgentManagerError('unknown_sender', 'The message sender is not an active agent');
-    }
-    return record;
-  }
-
-  private async deliverToAgent(
-    record: SubagentAgentRecord,
-    message: MailboxMessageRequest,
-    sourceRegistration: AgentRegistration
-  ): Promise<MailboxDeliveryResult> {
-    return this.deliverToRecord(record, message, sourceRegistration);
-  }
-
-  private async deliverToRecord(
-    record: AgentRecord,
-    message: MailboxMessageRequest,
-    sourceRegistration: AgentRegistration
-  ): Promise<MailboxDeliveryResult> {
-    if (this.byId.get(record.id) !== record || !isNonterminalAgentLifecycleState(record.state)) {
-      return 'temporarily-unavailable';
-    }
-    if (record.state === 'finishing' || record.state === 'stopping') {
-      return 'temporarily-unavailable';
-    }
-    const sourceId = parseAgentId(sourceRegistration.id);
-    const sourceRecord = sourceId === undefined ? undefined : this.byId.get(sourceId);
-    if (sourceRecord === undefined || !matchesTrustedSource(sourceRecord, sourceRegistration)) {
-      throw new AgentManagerError('unknown_sender', 'The message source is not an active agent');
-    }
-    const input = this.inputAdapters.get(record.id);
-    if (
-      !this.canDeliverNow(record, input) ||
-      this.pendingDrainPromises.has(record.id) ||
-      record.mailbox?.receiver.pendingCount !== 0
-    ) {
-      return 'temporarily-unavailable';
-    }
-
-    const delivery = await input.deliver({
-      messageId: message.requestId,
-      source: snapshotIdentity(sourceRecord),
-      content: message.content,
-    });
-    this.updateRecordInputState(record, input);
-    if (delivery === 'temporarily-unavailable') {
-      this.schedulePendingDrainRetry(record);
-    }
-    return delivery;
-  }
-
-  private bindInputAdapter(record: AgentRecord, input: AgentInputAdapter): void {
-    validateAgentInputAdapter(input, 'agent input adapter');
-    this.inputAdapters.set(record.id, input);
-    this.inputAvailabilityVersions.set(
-      record.id,
-      (this.inputAvailabilityVersions.get(record.id) ?? 0) + 1
-    );
-    const oldUnsubscribe = this.inputAvailabilityUnsubscribers.get(record.id);
-    oldUnsubscribe?.();
-    const unsubscribe = input.onAvailabilityChange(() => {
-      if (this.byId.get(record.id) === record) {
-        this.noteInputAvailabilityChange(record, input);
-      }
-    });
-    if (unsubscribe !== undefined) {
-      this.inputAvailabilityUnsubscribers.set(record.id, unsubscribe);
-    }
-    void input.ready
-      .then(() => {
-        if (this.byId.get(record.id) === record) {
-          this.noteInputAvailabilityChange(record, input);
-        }
-      })
-      .catch(() => undefined);
-  }
-
-  private noteInputAvailabilityChange(record: AgentRecord, input: AgentInputAdapter): void {
-    this.inputAvailabilityVersions.set(
-      record.id,
-      (this.inputAvailabilityVersions.get(record.id) ?? 0) + 1
-    );
-    this.pendingDrainRetryVersions.delete(record.id);
-    this.updateRecordInputState(record, input);
-    this.schedulePendingDrain(record);
-  }
-
-  private updateRecordInputState(record: AgentRecord, input: AgentInputAdapter): void {
-    record.inputActivity = input.activity;
-    if (
-      (record.role === 'orchestrator' || record.launchReady) &&
-      input.isReady &&
-      (record.state === 'starting' ||
-        record.state === 'running-active' ||
-        record.state === 'running-idle')
-    ) {
-      record.state = input.activity === 'active' ? 'running-active' : 'running-idle';
-    }
-  }
-
-  private canDeliverNow(
-    record: AgentRecord,
-    input: AgentInputAdapter | undefined
-  ): input is AgentInputAdapter {
-    return (
-      input !== undefined &&
-      this.byId.get(record.id) === record &&
-      isNonterminalAgentLifecycleState(record.state) &&
-      record.state !== 'finishing' &&
-      record.state !== 'stopping' &&
-      input.isReady &&
-      input.activity !== 'not-ready' &&
-      input.activity !== 'temporarily-unavailable' &&
-      (record.role !== 'subagent' || record.launchReady)
-    );
-  }
-
-  private schedulePendingDrain(record: AgentRecord): void {
-    if (record.mailbox?.receiver.pendingCount === 0) {
-      return;
-    }
-    const input = this.inputAdapters.get(record.id);
-    if (!this.canDeliverNow(record, input)) {
-      return;
-    }
-    if (this.pendingDrainPromises.has(record.id)) {
-      return;
-    }
-    let drainPromise: Promise<void>;
-    const availabilityVersion = this.inputAvailabilityVersions.get(record.id) ?? 0;
-    drainPromise = this.drainPending(record)
-      .catch(() => undefined)
-      .finally(() => {
-        if (this.pendingDrainPromises.get(record.id) === drainPromise) {
-          this.pendingDrainPromises.delete(record.id);
-          if (
-            this.inputAvailabilityVersions.get(record.id) !== availabilityVersion &&
-            this.byId.get(record.id) === record
-          ) {
-            this.schedulePendingDrain(record);
-          }
-        }
-      });
-    this.pendingDrainPromises.set(record.id, drainPromise);
-  }
-
-  /**
-   * Retry a temporary provider backpressure result once at a later event-loop
-   * turn. The activity version gate prevents a permanently unavailable
-   * provider from causing a busy loop; a real availability notification or a
-   * successful delivery clears the gate.
-   */
-  private schedulePendingDrainRetry(record: AgentRecord): void {
-    const availabilityVersion = this.inputAvailabilityVersions.get(record.id) ?? 0;
-    if (this.pendingDrainRetryVersions.get(record.id) === availabilityVersion) {
-      return;
-    }
-    this.pendingDrainRetryVersions.set(record.id, availabilityVersion);
-    setImmediate(() => {
-      if (
-        this.pendingDrainRetryVersions.get(record.id) !== availabilityVersion ||
-        this.byId.get(record.id) !== record
-      ) {
-        return;
-      }
-      if (record.mailbox?.receiver.pendingCount === 0) {
-        this.pendingDrainRetryVersions.delete(record.id);
-        return;
-      }
-      this.schedulePendingDrain(record);
-    });
-  }
-
-  private async drainPending(record: AgentRecord): Promise<void> {
-    const receiver = record.mailbox?.receiver;
-    if (receiver === undefined) {
-      return;
-    }
-    while (this.canDeliverNow(record, this.inputAdapters.get(record.id))) {
-      const input = this.inputAdapters.get(record.id);
-      if (!this.canDeliverNow(record, input)) return;
-      const pending = receiver.takePendingForDelivery(1);
-      const entry = pending[0];
-      if (entry === undefined) {
-        return;
-      }
-      const source = identityFromTrustedRegistration(entry.sourceRegistration);
-      try {
-        const delivery = await input.deliver({
-          messageId: entry.request.requestId,
-          source,
-          content: entry.request.content,
-        });
-        if (delivery === 'temporarily-unavailable') {
-          receiver.requeuePending(pending);
-          this.schedulePendingDrainRetry(record);
-          return;
-        }
-        receiver.acknowledgePending(pending);
-        this.pendingDrainRetryVersions.delete(record.id);
-        this.updateRecordInputState(record, input);
-      } catch {
-        receiver.requeuePending(pending);
-        return;
-      }
-    }
-  }
-
-  private throwForMailboxFailure(code: MailboxErrorCode, message: string, cause?: Error): never {
-    throw this.mapMailboxError(code, message, cause);
+  private parseTargetName(name: string): AgentName {
+    const parsed = parseAgentAddress(name);
+    if (parsed === undefined)
+      throw new AgentManagerError('invalid_name', `Invalid target agent name: ${name}`);
+    return parsed;
   }
 
   private mapMailboxTransportError(error: unknown): AgentManagerError {
@@ -1311,101 +542,9 @@ export class AgentManager {
     );
   }
 
-  private async rollbackStart(start: InFlightStart): Promise<void> {
-    const { record } = start;
-    start.cleanupRequested = true;
-    record.launchHandle = undefined;
-    record.launchReady = false;
-    record.mailbox = undefined;
-    record.registration = undefined;
-
-    // Start provider cleanup before mailbox cleanup. Both are independent, but
-    // this lets a release begin before a potentially slow mailbox deregister.
-    void this.releaseStartHandle(start).catch(() => undefined);
-    const mailboxCleanup = this.deregisterStartMailbox(start);
-    await mailboxCleanup.catch(() => undefined);
-    start.reservation.release();
-  }
-
-  private selectSubagentName(
-    agentType: AgentReservationRequest['type'],
-    requestedName: AgentReservationRequest['name']
-  ): AgentName {
-    if (requestedName !== undefined) {
-      const name = parseSubagentName(requestedName);
-      if (name === undefined) {
-        throw new AgentManagerError('invalid_name', `Invalid agent name: ${requestedName}`);
-      }
-      if (this.byName.has(name)) {
-        throw new AgentManagerError('name_in_use', `Agent name is already in use: ${name}`);
-      }
-      return name;
-    }
-
-    for (let attempt = 0; attempt < this.options.maxAgentNameGenerationAttempts; attempt += 1) {
-      let candidate;
-      try {
-        candidate = buildGeneratedAgentName(agentType, this.options.slugGenerator(agentType));
-      } catch {
-        candidate = undefined;
-      }
-      if (
-        candidate !== undefined &&
-        candidate !== ORCHESTRATOR_AGENT_NAME &&
-        !this.byName.has(candidate)
-      ) {
-        return candidate;
-      }
-    }
-    throw new AgentManagerError(
-      'name_generation_exhausted',
-      `Could not generate a unique ${agentType} name after ${this.options.maxAgentNameGenerationAttempts} attempts`
-    );
-  }
-
-  private releaseReservation(record: SubagentAgentRecord): void {
-    if (this.byId.get(record.id) !== record) {
-      return;
-    }
-    this.inputAvailabilityUnsubscribers.get(record.id)?.();
-    this.inputAvailabilityUnsubscribers.delete(record.id);
-    this.inputAvailabilityVersions.delete(record.id);
-    this.pendingDrainRetryVersions.delete(record.id);
-    this.inputAdapters.delete(record.id);
-    this.pendingDrainPromises.delete(record.id);
-    this.byId.delete(record.id);
-    if (this.byName.get(record.name) === record.id) {
-      this.byName.delete(record.name);
-    }
-  }
-
   private ensureOpen(): void {
-    if (this.closed) {
-      throw new AgentManagerError('manager_closed', 'The agent manager is closed');
-    }
+    if (this.closed) throw new AgentManagerError('manager_closed', 'The agent manager is closed');
   }
-}
-
-function allocateOpaqueId(
-  generator: AgentIdGenerator,
-  maxAttempts: number,
-  occupied: ReadonlySet<string>
-): AgentId {
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    let candidate: AgentId | undefined;
-    try {
-      candidate = parseAgentId(generator());
-    } catch {
-      candidate = undefined;
-    }
-    if (candidate !== undefined && !occupied.has(candidate)) {
-      return candidate;
-    }
-  }
-  throw new AgentManagerError(
-    'identity_generation_exhausted',
-    `Could not generate a unique opaque agent ID after ${maxAttempts} attempts`
-  );
 }
 
 export async function createAgentManager(options: AgentManagerOptions = {}): Promise<AgentManager> {

@@ -15,6 +15,7 @@ import {
 import { AgentManagerError, createAgentManager, createAgentPreparation } from './index.js';
 import { FakeAgentInputAdapter, FakeAgentLauncher, FakeAgentPreparer } from './fake_provider.js';
 import { formatAgentProcessLabel } from './agent_process_labels.js';
+import { reserveSubagentForTest } from './agent_manager.test-support.js';
 import { createAgentMessagingSessionRuntime } from './session_runtime.js';
 import { getDefaultConfig } from '../configSchema.js';
 import { writePlanFile } from '../plans.js';
@@ -161,8 +162,8 @@ describe('AgentManager root registration and snapshots', () => {
 
   test('uses immutable snapshots with the root first and stable creation ordering', async () => {
     const manager = await createManager();
-    const first = manager.reserveSubagent(reservationRequest('zulu'));
-    const second = manager.reserveSubagent(reservationRequest('alpha', 'tester'));
+    const first = reserveSubagentForTest(manager, reservationRequest('zulu'));
+    const second = reserveSubagentForTest(manager, reservationRequest('alpha', 'tester'));
 
     const listed = manager.listAgents();
     expect(listed.agents.map((agent) => agent.name)).toEqual(['orchestrator', 'zulu', 'alpha']);
@@ -440,8 +441,8 @@ describe('AgentManager root registration and snapshots', () => {
       })(),
     });
 
-    const firstReservation = first.reserveSubagent(reservationRequest('shared-name'));
-    const secondReservation = second.reserveSubagent(reservationRequest('shared-name'));
+    const firstReservation = reserveSubagentForTest(first, reservationRequest('shared-name'));
+    const secondReservation = reserveSubagentForTest(second, reservationRequest('shared-name'));
 
     expect(first.sessionRuntime.runtime.rootPath).not.toBe(second.sessionRuntime.runtime.rootPath);
     expect(firstReservation.id).not.toBe(secondReservation.id);
@@ -467,7 +468,7 @@ describe('AgentManager root registration and snapshots', () => {
 
   test('protects immutable list and record snapshots from mutation', async () => {
     const manager = await createManager();
-    const reservation = manager.reserveSubagent(reservationRequest('immutable'));
+    const reservation = reserveSubagentForTest(manager, reservationRequest('immutable'));
     const listed = manager.listAgents();
     const root = listed.agents[0];
     const subagent = listed.agents[1];
@@ -504,7 +505,7 @@ describe('AgentManager root registration and snapshots', () => {
 
   test('removes terminal subagents from authoritative list state without stopping them', async () => {
     const manager = await createManager();
-    const reservation = manager.reserveSubagent(reservationRequest('terminal-later'));
+    const reservation = reserveSubagentForTest(manager, reservationRequest('terminal-later'));
     manager.setAgentLifecycleState(reservation.id, 'finishing');
     expect(manager.listAgents().agents.map((agent) => agent.name)).toEqual([
       ORCHESTRATOR_AGENT_NAME,
@@ -528,13 +529,16 @@ describe('AgentManager root registration and snapshots', () => {
 describe('AgentManager names and atomic reservations', () => {
   test('accepts exact one- and 48-character names and rejects 49 characters', async () => {
     const manager = await createManager();
-    const shortest = manager.reserveSubagent(reservationRequest('a'));
-    const longest = manager.reserveSubagent(reservationRequest('b'.repeat(MAX_AGENT_NAME_LENGTH)));
+    const shortest = reserveSubagentForTest(manager, reservationRequest('a'));
+    const longest = reserveSubagentForTest(
+      manager,
+      reservationRequest('b'.repeat(MAX_AGENT_NAME_LENGTH))
+    );
 
     expect(shortest.name).toBe('a');
     expect(longest.name).toBe('b'.repeat(MAX_AGENT_NAME_LENGTH));
     expect(() =>
-      manager.reserveSubagent(reservationRequest('c'.repeat(MAX_AGENT_NAME_LENGTH + 1)))
+      reserveSubagentForTest(manager, reservationRequest('c'.repeat(MAX_AGENT_NAME_LENGTH + 1)))
     ).toThrowError(expect.objectContaining({ code: 'invalid_name' }));
     expect(manager.subagentCount).toBe(2);
     shortest.release();
@@ -553,20 +557,20 @@ describe('AgentManager names and atomic reservations', () => {
       'a'.repeat(MAX_AGENT_NAME_LENGTH + 1),
     ];
     for (const name of invalidNames) {
-      expect(() => manager.reserveSubagent(reservationRequest(name))).toThrowError(
+      expect(() => reserveSubagentForTest(manager, reservationRequest(name))).toThrowError(
         AgentManagerError
       );
-      expect(() => manager.reserveSubagent(reservationRequest(name))).toThrowError(
+      expect(() => reserveSubagentForTest(manager, reservationRequest(name))).toThrowError(
         expect.objectContaining({ code: 'invalid_name' })
       );
     }
 
-    expect(() => manager.reserveSubagent(reservationRequest(ORCHESTRATOR_AGENT_NAME))).toThrowError(
-      expect.objectContaining({ code: 'reserved_name' })
-    );
+    expect(() =>
+      reserveSubagentForTest(manager, reservationRequest(ORCHESTRATOR_AGENT_NAME))
+    ).toThrowError(expect.objectContaining({ code: 'reserved_name' }));
 
-    const original = manager.reserveSubagent(reservationRequest('same-name'));
-    expect(() => manager.reserveSubagent(reservationRequest('same-name'))).toThrowError(
+    const original = reserveSubagentForTest(manager, reservationRequest('same-name'));
+    expect(() => reserveSubagentForTest(manager, reservationRequest('same-name'))).toThrowError(
       expect.objectContaining({ code: 'name_in_use' })
     );
     expect(manager.listAgents().agents.map((agent) => agent.name)).toEqual([
@@ -582,8 +586,8 @@ describe('AgentManager names and atomic reservations', () => {
     const manager = await createManager({
       slugGenerator: (): string => slugs[slugIndex++] ?? 'unused',
     });
-    const existing = manager.reserveSubagent(reservationRequest('implementer-moss'));
-    const generated = manager.reserveSubagent(reservationRequest(undefined));
+    const existing = reserveSubagentForTest(manager, reservationRequest('implementer-moss'));
+    const generated = reserveSubagentForTest(manager, reservationRequest(undefined));
     expect(generated.name).toBe('implementer-river');
     existing.release();
     generated.release();
@@ -592,10 +596,10 @@ describe('AgentManager names and atomic reservations', () => {
       slugGenerator: (): string => 'same',
       maxAgentNameGenerationAttempts: 2,
     });
-    const occupied = exhausted.reserveSubagent(reservationRequest('tester-same'));
-    expect(() => exhausted.reserveSubagent(reservationRequest(undefined, 'tester'))).toThrowError(
-      expect.objectContaining({ code: 'name_generation_exhausted' })
-    );
+    const occupied = reserveSubagentForTest(exhausted, reservationRequest('tester-same'));
+    expect(() =>
+      reserveSubagentForTest(exhausted, reservationRequest(undefined, 'tester'))
+    ).toThrowError(expect.objectContaining({ code: 'name_generation_exhausted' }));
     occupied.release();
   });
 
@@ -618,7 +622,7 @@ describe('AgentManager names and atomic reservations', () => {
       maxAgentNameGenerationAttempts: invalidSlugs.length,
     });
 
-    expect(() => manager.reserveSubagent(reservationRequest(undefined))).toThrowError(
+    expect(() => reserveSubagentForTest(manager, reservationRequest(undefined))).toThrowError(
       expect.objectContaining({ code: 'name_generation_exhausted' })
     );
     expect(index).toBe(invalidSlugs.length);
@@ -636,7 +640,7 @@ describe('AgentManager names and atomic reservations', () => {
       maxAgentNameGenerationAttempts: 2,
     });
 
-    const reservation = manager.reserveSubagent(reservationRequest(undefined, 'tester'));
+    const reservation = reserveSubagentForTest(manager, reservationRequest(undefined, 'tester'));
     expect(reservation.name).toBe('tester-valid');
     expect(calls).toBe(2);
     reservation.release();
@@ -649,7 +653,7 @@ describe('AgentManager names and atomic reservations', () => {
       agentIdGenerator: (): string => generatedIds[index++] ?? 'unused',
       maxAgentIdGenerationAttempts: generatedIds.length,
     });
-    const reservation = manager.reserveSubagent(reservationRequest('valid-name'));
+    const reservation = reserveSubagentForTest(manager, reservationRequest('valid-name'));
     expect(reservation.id).toBe('valid-agent-id');
     expect(index).toBe(generatedIds.length);
     reservation.release();
@@ -660,11 +664,11 @@ describe('AgentManager names and atomic reservations', () => {
       agentIdGenerator: (): string => exhaustedIds[exhaustedIndex++] ?? 'unused',
       maxAgentIdGenerationAttempts: 2,
     });
-    expect(() => exhausted.reserveSubagent(reservationRequest('not-allocated'))).toThrowError(
-      expect.objectContaining({ code: 'identity_generation_exhausted' })
-    );
+    expect(() =>
+      reserveSubagentForTest(exhausted, reservationRequest('not-allocated'))
+    ).toThrowError(expect.objectContaining({ code: 'identity_generation_exhausted' }));
     expect(exhausted.subagentCount).toBe(0);
-    const retry = exhausted.reserveSubagent(reservationRequest('allocated-after-retry'));
+    const retry = reserveSubagentForTest(exhausted, reservationRequest('allocated-after-retry'));
     expect(retry.id).toBe('unused-agent');
     retry.release();
   });
@@ -672,17 +676,17 @@ describe('AgentManager names and atomic reservations', () => {
   test('holds exactly eight nonterminal reservations and releases names and slots idempotently', async () => {
     const manager = await createManager();
     const reservations = Array.from({ length: MAX_SUBAGENTS_PER_SESSION }, (_, index) =>
-      manager.reserveSubagent(reservationRequest(`worker-${index}`))
+      reserveSubagentForTest(manager, reservationRequest(`worker-${index}`))
     );
     expect(manager.subagentCount).toBe(MAX_SUBAGENTS_PER_SESSION);
-    expect(() => manager.reserveSubagent(reservationRequest('ninth'))).toThrowError(
+    expect(() => reserveSubagentForTest(manager, reservationRequest('ninth'))).toThrowError(
       expect.objectContaining({ code: 'agent_limit_reached' })
     );
 
     reservations[0]?.release();
     reservations[0]?.release();
     expect(manager.subagentCount).toBe(MAX_SUBAGENTS_PER_SESSION - 1);
-    const replacement = manager.reserveSubagent(reservationRequest('ninth'));
+    const replacement = reserveSubagentForTest(manager, reservationRequest('ninth'));
     expect(manager.subagentCount).toBe(MAX_SUBAGENTS_PER_SESSION);
     replacement.release();
     for (const reservation of reservations.slice(1)) {
@@ -694,11 +698,11 @@ describe('AgentManager names and atomic reservations', () => {
   test('atomically competes for the final slot when starts are scheduled together', async () => {
     const manager = await createManager();
     const initial = Array.from({ length: MAX_SUBAGENTS_PER_SESSION - 1 }, (_, index) =>
-      manager.reserveSubagent(reservationRequest(`existing-${index}`))
+      reserveSubagentForTest(manager, reservationRequest(`existing-${index}`))
     );
     const results = await Promise.allSettled(
       Array.from({ length: 32 }, (_, index) => `last-${index}`).map(async (name) =>
-        manager.reserveSubagent(reservationRequest(name))
+        reserveSubagentForTest(manager, reservationRequest(name))
       )
     );
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
@@ -717,8 +721,8 @@ describe('AgentManager names and atomic reservations', () => {
 
   test('counts finishing and stopping reservations and preserves stable IDs across state changes', async () => {
     const manager = await createManager();
-    const finishing = manager.reserveSubagent(reservationRequest('finishing'));
-    const stopping = manager.reserveSubagent(reservationRequest('stopping'));
+    const finishing = reserveSubagentForTest(manager, reservationRequest('finishing'));
+    const stopping = reserveSubagentForTest(manager, reservationRequest('stopping'));
     manager.setAgentLifecycleState(finishing.id, 'finishing');
     manager.setAgentLifecycleState(stopping.id, 'stopping');
 
@@ -747,7 +751,7 @@ describe('AgentManager names and atomic reservations', () => {
       'running-idle',
     ] as const;
     const reservations = states.map((state, index) => {
-      const reservation = manager.reserveSubagent(reservationRequest(`state-${index}`));
+      const reservation = reserveSubagentForTest(manager, reservationRequest(`state-${index}`));
       manager.setAgentLifecycleState(reservation.id, state);
       return reservation;
     });
@@ -757,7 +761,7 @@ describe('AgentManager names and atomic reservations', () => {
       'running-idle',
       ...states,
     ]);
-    expect(() => manager.reserveSubagent(reservationRequest('over-capacity'))).toThrowError(
+    expect(() => reserveSubagentForTest(manager, reservationRequest('over-capacity'))).toThrowError(
       expect.objectContaining({ code: 'agent_limit_reached' })
     );
     for (const reservation of reservations) {
@@ -768,11 +772,11 @@ describe('AgentManager names and atomic reservations', () => {
 
   test('does not consume capacity or replace the target on a custom-name collision', async () => {
     const manager = await createManager();
-    const original = manager.reserveSubagent(reservationRequest('collision-target'));
+    const original = reserveSubagentForTest(manager, reservationRequest('collision-target'));
 
-    expect(() => manager.reserveSubagent(reservationRequest('collision-target'))).toThrowError(
-      expect.objectContaining({ code: 'name_in_use' })
-    );
+    expect(() =>
+      reserveSubagentForTest(manager, reservationRequest('collision-target'))
+    ).toThrowError(expect.objectContaining({ code: 'name_in_use' }));
     expect(manager.subagentCount).toBe(1);
     expect(manager.getIdentityByName('collision-target')).toMatchObject({
       id: original.id,
@@ -833,7 +837,7 @@ describe('AgentManager StartAgent startup and rollback', () => {
         executor: 'codex-cli',
         initialMessage: 42,
       })
-    ).rejects.toMatchObject({ code: 'not_authorized' });
+    ).rejects.toMatchObject({ code: 'invalid_request' });
     expect(manager.subagentCount).toBe(0);
     expect(manager.listAgents().agents).toHaveLength(1);
     expect(slugGenerator).not.toHaveBeenCalled();
@@ -862,13 +866,17 @@ describe('AgentManager StartAgent startup and rollback', () => {
     const preparer = createPreparer();
     const manager = await createManager({ agentPreparer: preparer, agentLauncher: launcher });
 
+    const expectedCode =
+      caller?.id === manager.orchestratorIdentity.id && caller.role === 'orchestrator'
+        ? 'invalid_request'
+        : 'not_authorized';
     await expect(
       manager.startAgent(caller as never, {
         type: 'unsupported',
         executor: 'invalid',
         initialMessage: 42,
       })
-    ).rejects.toMatchObject({ code: 'not_authorized' });
+    ).rejects.toMatchObject({ code: expectedCode });
     expect(manager.listAgents().agents).toHaveLength(1);
     expect(preparer.requests).toHaveLength(0);
     expect(launcher.launches).toHaveLength(0);
@@ -878,7 +886,7 @@ describe('AgentManager StartAgent startup and rollback', () => {
     const launcher = new FakeAgentLauncher();
     const preparer = createPreparer();
     const manager = await createManager({ agentPreparer: preparer, agentLauncher: launcher });
-    const subagent = manager.reserveSubagent(reservationRequest('subagent-caller'));
+    const subagent = reserveSubagentForTest(manager, reservationRequest('subagent-caller'));
 
     await expect(
       manager.startAgent(subagent.identity, {
@@ -1236,11 +1244,11 @@ describe('AgentManager StartAgent startup and rollback', () => {
 
   test('does not let a removed identity release a later reused name or slot', async () => {
     const manager = await createManager();
-    const first = manager.reserveSubagent(reservationRequest('reused-name'));
+    const first = reserveSubagentForTest(manager, reservationRequest('reused-name'));
     const oldId = first.id;
     manager.removeTerminalAgent(oldId);
 
-    const second = manager.reserveSubagent(reservationRequest('reused-name', 'reviewer'));
+    const second = reserveSubagentForTest(manager, reservationRequest('reused-name', 'reviewer'));
     expect(second.id).not.toBe(oldId);
     manager.removeTerminalAgent(oldId);
     expect(manager.getIdentityByName('reused-name')).toMatchObject({
@@ -1388,7 +1396,7 @@ describe('AgentManager SendAgentMessage routing', () => {
     });
   });
 
-  test('rejects forged callers and source fields before transport work', async () => {
+  test('derives caller fields from the stable bound identity and rejects source fields', async () => {
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({
       agentPreparer: createPreparer(),
@@ -1402,7 +1410,7 @@ describe('AgentManager SendAgentMessage routing', () => {
         name: 'spoof-target',
         message: 'must not send',
       })
-    ).rejects.toMatchObject({ code: 'unknown_sender' });
+    ).resolves.toMatchObject({ name: 'spoof-target', delivery: 'started-idle-turn' });
     await expect(
       manager.sendAgentMessage(manager.orchestratorIdentity, {
         name: 'spoof-target',
@@ -1410,7 +1418,11 @@ describe('AgentManager SendAgentMessage routing', () => {
         source: 'spoofed-root',
       })
     ).rejects.toMatchObject({ code: 'invalid_request' });
-    expect(target.handle.input.receivedMessages).toHaveLength(0);
+    expect(target.handle.input.receivedMessages).toHaveLength(1);
+    expect(target.handle.input.receivedMessages[0]?.source).toMatchObject({
+      id: manager.orchestratorIdentity.id,
+      name: ORCHESTRATOR_AGENT_NAME,
+    });
   });
 
   test('queues temporary input and drains one mailbox FIFO when input becomes available', async () => {
@@ -1818,7 +1830,8 @@ describe('provider-neutral launch contracts and test fakes', () => {
       );
 
       const manager = await createManager();
-      const reservation = manager.reserveSubagent(
+      const reservation = reserveSubagentForTest(
+        manager,
         reservationRequest('real-prepared-agent', 'implementer')
       );
       try {
@@ -1859,7 +1872,8 @@ describe('provider-neutral launch contracts and test fakes', () => {
 
   test('keeps collaborative reviewer preparation behind a narrow injected seam', async () => {
     const manager = await createManager();
-    const reservation = manager.reserveSubagent(
+    const reservation = reserveSubagentForTest(
+      manager,
       reservationRequest('reviewer-prepared', 'reviewer')
     );
     const reviewerPreparation = createAgentPreparation({
@@ -1880,7 +1894,8 @@ describe('provider-neutral launch contracts and test fakes', () => {
 
   test('rejects reviewer preparation when no collaborative preparer is configured', async () => {
     const manager = await createManager();
-    const reservation = manager.reserveSubagent(
+    const reservation = reserveSubagentForTest(
+      manager,
       reservationRequest('reviewer-without-preparer', 'reviewer')
     );
 
@@ -1900,7 +1915,10 @@ describe('provider-neutral launch contracts and test fakes', () => {
 
   test('accepts reviewer prepared executions in launch requests', async () => {
     const manager = await createManager();
-    const reservation = manager.reserveSubagent(reservationRequest('reviewer-agent', 'reviewer'));
+    const reservation = reserveSubagentForTest(
+      manager,
+      reservationRequest('reviewer-agent', 'reviewer')
+    );
     const preparedExecution = {
       agentType: 'reviewer',
       executor: 'codex-cli',
@@ -1946,7 +1964,7 @@ describe('provider-neutral launch contracts and test fakes', () => {
 
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({ agentLauncher: launcher });
-    const reservation = manager.reserveSubagent(reservationRequest('worker-one'));
+    const reservation = reserveSubagentForTest(manager, reservationRequest('worker-one'));
     const input = new FakeAgentInputAdapter();
     input.markReady();
     input.setActiveAccepting();

@@ -1,12 +1,4 @@
-import type {
-  AgentExecutor,
-  AgentLifecycleState,
-  AgentType,
-  NonterminalAgentLifecycleState,
-  StartAgentArguments,
-} from './contracts.js';
-import type { AgentRegistration, AgentRegistrationDraft } from './runtime_dir.js';
-import type { SessionRegistrationHandle } from './session_runtime.js';
+import type { AgentExecutor, AgentLifecycleState, AgentType } from './contracts.js';
 import type { PreparedSubagentExecution } from '../subagents/types.js';
 import type { AgentId, AgentName } from './agent_names.js';
 import type { AgentProcessLabel } from './agent_process_labels.js';
@@ -33,7 +25,7 @@ export type AgentInputDelivery =
 
 export interface AgentInputMessage {
   readonly messageId: string;
-  readonly source: AgentCallerIdentity;
+  readonly source: AgentIdentity;
   readonly content: string;
 }
 
@@ -131,33 +123,11 @@ export interface SubagentIdentity {
 }
 
 export type AgentIdentity = OrchestratorIdentity | SubagentIdentity;
-export type AgentCallerIdentity = AgentIdentity;
-
-export interface OrchestratorAgentRecord extends OrchestratorIdentity {
-  readonly role: 'orchestrator';
-  state: NonterminalAgentLifecycleState;
-  inputActivity: AgentInputActivity;
-  readonly creationSequence: number;
-  readonly registrationDraft: AgentRegistrationDraft;
-  registration?: AgentRegistration;
-  mailbox?: SessionRegistrationHandle;
+/** The only caller data trusted by manager operations. */
+export interface AgentCallerIdentity {
+  readonly id: AgentId;
+  readonly role: 'orchestrator' | 'subagent';
 }
-
-export interface SubagentAgentRecord extends SubagentIdentity {
-  readonly role: 'subagent';
-  state: NonterminalAgentLifecycleState;
-  inputActivity: AgentInputActivity;
-  launchReady: boolean;
-  readonly creationSequence: number;
-  readonly registrationDraft: AgentRegistrationDraft;
-  registration?: AgentRegistration;
-  mailbox?: SessionRegistrationHandle;
-  launchHandle?: AgentLaunchHandle;
-  processControlId?: ProcessControlId;
-  providerThreadId?: ProviderThreadId;
-}
-
-export type AgentRecord = OrchestratorAgentRecord | SubagentAgentRecord;
 
 export interface AgentRecordSnapshot {
   readonly identity: AgentIdentity;
@@ -166,18 +136,6 @@ export interface AgentRecordSnapshot {
   readonly creationSequence: number;
   readonly processControlId?: ProcessControlId;
   readonly providerThreadId?: ProviderThreadId;
-}
-
-/** Low-level reservation input used by the later StartAgent composition. */
-export type AgentReservationRequest = StartAgentArguments;
-
-export interface AgentReservation {
-  readonly id: AgentId;
-  readonly name: AgentName;
-  readonly identity: SubagentIdentity;
-  readonly snapshot: AgentRecordSnapshot;
-  /** Idempotently release this reservation if startup does not continue. */
-  release(): void;
 }
 
 export type AgentManagerErrorCode =

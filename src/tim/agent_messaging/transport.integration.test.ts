@@ -428,9 +428,11 @@ describe('agent messaging transport integration', () => {
       error: { code: 'queue_full' },
     });
     expect(targetHandle.receiver.pendingCount).toBe(MAX_PENDING_MESSAGES_PER_RECIPIENT);
-    expect(targetHandle.receiver.drainPending().map((entry) => entry.request.content)).toEqual(
+    const queuedLease = targetHandle.receiver.leasePending();
+    expect(queuedLease?.messages.map((entry) => entry.request.content)).toEqual(
       Array.from({ length: MAX_PENDING_MESSAGES_PER_RECIPIENT }, (_, index) => `queue-${index + 1}`)
     );
+    queuedLease?.acknowledge();
     expect(targetHandle.receiver.pendingCount).toBe(0);
 
     const afterDrainAcknowledgement = await session.sendMessage(
@@ -442,9 +444,11 @@ describe('agent messaging transport integration', () => {
       success: true,
       delivery: 'queued',
     });
-    expect(targetHandle.receiver.drainPending().map((entry) => entry.request.content)).toEqual([
+    const afterDrainLease = targetHandle.receiver.leasePending();
+    expect(afterDrainLease?.messages.map((entry) => entry.request.content)).toEqual([
       'after-drain',
     ]);
+    afterDrainLease?.acknowledge();
   });
 
   test('isolates malformed and fragmented low-level clients from a healthy receiver', async () => {

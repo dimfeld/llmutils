@@ -48,6 +48,14 @@ export interface MailboxPendingMessage {
   readonly sourceRegistration: AgentRegistration;
 }
 
+export interface MailboxPendingDeliveryLease {
+  readonly messages: readonly MailboxPendingMessage[];
+  /** Idempotently release the reserved messages as delivered. */
+  acknowledge(): void;
+  /** Idempotently put the reserved messages back at the FIFO head. */
+  requeue(): void;
+}
+
 export interface MailboxReceiverOptions {
   readonly runtime: AgentMessagingRuntimeDirectory;
   readonly registration: AgentRegistration;
@@ -86,6 +94,11 @@ interface RecentRequest {
   readonly fingerprint: string;
   readonly completion: Promise<MailboxAcknowledgement | undefined>;
   completed: boolean;
+}
+
+interface PendingDeliveryLeaseState {
+  readonly messages: readonly MailboxPendingMessage[];
+  status: 'active' | 'acknowledged' | 'requeued';
 }
 
 function validateIntegerOption(value: unknown, label: string, maximum: number): number {
@@ -252,7 +265,7 @@ export class MailboxReceiver {
   private readonly activeConnections = new Set<net.Socket>();
   private readonly pending: MailboxPendingMessage[] = [];
   /** Messages removed by a manager drain but not yet acknowledged or requeued. */
-  private readonly pendingDeliveryReservations = new Set<MailboxPendingMessage>();
+  private readonly pendingDeliveryLeases = new Set<PendingDeliveryLeaseState>();
   private readonly recentRequests = new Map<string, RecentRequest>();
   private deliveryTail: Promise<void> = Promise.resolve();
   private server: net.Server | undefined;
@@ -296,86 +309,25 @@ export class MailboxReceiver {
   }
 
   /**
-   * Remove up to `limit` messages from the FIFO in one synchronous operation.
-   * Messages that arrive after this snapshot remain behind the returned batch.
+   * Remove one FIFO batch for provider delivery while reserving its capacity.
+   * The lease owns message identity and makes cleanup idempotent.
    */
-  public drainPending(limit?: number): MailboxPendingMessage[] {
+  public leasePending(limit?: number): MailboxPendingDeliveryLease | undefined {
     if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 0)) {
-      throw new RangeError('Pending-message drain limit must be a non-negative safe integer');
+      throw new RangeError('Pending-message lease limit must be a non-negative safe integer');
     }
     const count = limit === undefined ? this.pending.length : Math.min(limit, this.pending.length);
-    return this.pending.splice(0, count);
-  }
-
-  /**
-   * Remove one FIFO batch for provider delivery while reserving its capacity.
-   * New mailbox sends cannot consume these reserved slots until the batch is
-   * acknowledged or requeued.
-   */
-  public takePendingForDelivery(limit?: number): MailboxPendingMessage[] {
-    const messages = this.drainPending(limit);
-    for (const message of messages) {
-      this.pendingDeliveryReservations.add(message);
-    }
-    return messages;
-  }
-
-  /** Release the capacity for a batch that the provider accepted. */
-  public acknowledgePending(messages: readonly MailboxPendingMessage[]): void {
-    const uniqueMessages = new Set(messages);
-    if (
-      uniqueMessages.size !== messages.length ||
-      messages.some((message) => !this.pendingDeliveryReservations.has(message))
-    ) {
-      throw new MailboxReceiverError(
-        'receiver_not_ready',
-        'Mailbox pending delivery reservation is not active'
-      );
-    }
-    for (const message of messages) {
-      this.pendingDeliveryReservations.delete(message);
-    }
-  }
-
-  /** Put a drained batch back at the front when the provider is unavailable. */
-  public requeuePending(messages: readonly MailboxPendingMessage[]): void {
-    if (messages.length === 0) {
-      return;
-    }
-    if (this.closed) {
-      return;
-    }
-
-    // Ignore a repeated requeue of a batch that is already back in the FIFO.
-    // This keeps retry cleanup idempotent without duplicating messages.
-    const seen = new Set<MailboxPendingMessage>();
-    const toRequeue = messages.filter((message) => {
-      if (seen.has(message) || this.pending.includes(message)) {
-        return false;
-      }
-      seen.add(message);
-      return true;
+    if (count === 0) return undefined;
+    const state: PendingDeliveryLeaseState = {
+      messages: Object.freeze(this.pending.splice(0, count)),
+      status: 'active',
+    };
+    this.pendingDeliveryLeases.add(state);
+    return Object.freeze({
+      messages: state.messages,
+      acknowledge: (): void => this.acknowledgeLease(state),
+      requeue: (): void => this.requeueLease(state),
     });
-    const reservationsToRelease = toRequeue.filter((message) =>
-      this.pendingDeliveryReservations.has(message)
-    ).length;
-    if (
-      this.pending.length +
-        toRequeue.length +
-        this.pendingDeliveryReservations.size -
-        reservationsToRelease >
-      MAX_PENDING_MESSAGES_PER_RECIPIENT
-    ) {
-      throw new MailboxReceiverError(
-        'receiver_not_ready',
-        'Mailbox pending queue cannot accept the requeued messages'
-      );
-    }
-    for (const message of toRequeue) {
-      this.pendingDeliveryReservations.delete(message);
-    }
-    // splice restores the batch at the front of the FIFO in its original order.
-    this.pending.splice(0, 0, ...toRequeue);
   }
 
   /** Stop accepting clients, close active connections, and unlink this socket. */
@@ -648,7 +600,7 @@ export class MailboxReceiver {
       );
     }
     if (
-      this.pending.length + this.pendingDeliveryReservations.size >=
+      this.pending.length + this.pendingDeliveryLeasesSize() >=
       MAX_PENDING_MESSAGES_PER_RECIPIENT
     ) {
       return buildMailboxFailureAcknowledgement(
@@ -690,9 +642,40 @@ export class MailboxReceiver {
     }
     this.activeConnections.clear();
     this.pending.length = 0;
-    this.pendingDeliveryReservations.clear();
+    this.pendingDeliveryLeases.clear();
     this.recentRequests.clear();
     await this.closeServerAndSocket();
+  }
+
+  private acknowledgeLease(state: PendingDeliveryLeaseState): void {
+    if (state.status !== 'active') return;
+    state.status = 'acknowledged';
+    this.pendingDeliveryLeases.delete(state);
+  }
+
+  private requeueLease(state: PendingDeliveryLeaseState): void {
+    if (state.status !== 'active') return;
+    state.status = 'requeued';
+    this.pendingDeliveryLeases.delete(state);
+    if (this.closed) return;
+    if (
+      this.pending.length + this.pendingDeliveryLeasesSize() + state.messages.length >
+      MAX_PENDING_MESSAGES_PER_RECIPIENT
+    ) {
+      state.status = 'acknowledged';
+      throw new MailboxReceiverError(
+        'receiver_not_ready',
+        'Mailbox pending queue cannot accept the requeued messages'
+      );
+    }
+    // Restore the lease as one batch so its original FIFO order is preserved.
+    this.pending.splice(0, 0, ...state.messages);
+  }
+
+  private pendingDeliveryLeasesSize(): number {
+    let count = 0;
+    for (const lease of this.pendingDeliveryLeases) count += lease.messages.length;
+    return count;
   }
 
   private async closeServerAndSocket(): Promise<void> {

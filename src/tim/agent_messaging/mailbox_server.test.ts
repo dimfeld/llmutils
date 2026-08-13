@@ -619,10 +619,11 @@ describe('agent mailbox receiver', () => {
     });
     expect(mailbox.receiver.pendingCount).toBe(MAX_PENDING_MESSAGES_PER_RECIPIENT);
 
-    const firstHalf = mailbox.receiver.drainPending(50);
-    expect(firstHalf.map((entry) => entry.request.content)).toEqual(
+    const firstHalf = mailbox.receiver.leasePending(50);
+    expect(firstHalf?.messages.map((entry) => entry.request.content)).toEqual(
       Array.from({ length: 50 }, (_, index) => `message-${index + 1}`)
     );
+    firstHalf?.acknowledge();
 
     const afterDrain = await sendRequest(
       mailbox,
@@ -630,11 +631,12 @@ describe('agent mailbox receiver', () => {
     );
     expect(afterDrain).toMatchObject({ success: true, delivery: 'queued' });
 
-    const remaining = mailbox.receiver.drainPending();
-    expect(remaining.map((entry) => entry.request.content)).toEqual([
+    const remaining = mailbox.receiver.leasePending();
+    expect(remaining?.messages.map((entry) => entry.request.content)).toEqual([
       ...Array.from({ length: 50 }, (_, index) => `message-${index + 51}`),
       'message-102',
     ]);
+    remaining?.acknowledge();
     expect(mailbox.receiver.pendingCount).toBe(0);
   });
 
@@ -660,8 +662,8 @@ describe('agent mailbox receiver', () => {
     expect(mailbox.receiver.pendingCount).toBe(MAX_PENDING_MESSAGES_PER_RECIPIENT);
     expect(
       mailbox.receiver
-        .drainPending()
-        .map((entry) => entry.request.content)
+        .leasePending(MAX_PENDING_MESSAGES_PER_RECIPIENT)
+        ?.messages.map((entry) => entry.request.content)
         .sort()
     ).toEqual(
       Array.from(
@@ -677,17 +679,23 @@ describe('agent mailbox receiver', () => {
       await sendRequest(mailbox, requestFor(mailbox, `drain-${index}`, `message-${index}`));
     }
 
-    expect(mailbox.receiver.drainPending(0)).toEqual([]);
-    const first = mailbox.receiver.drainPending(2);
-    expect(first.map((entry) => entry.request.content)).toEqual(['message-1', 'message-2']);
+    expect(mailbox.receiver.leasePending(0)).toBeUndefined();
+    const first = mailbox.receiver.leasePending(2);
+    expect(first?.messages.map((entry) => entry.request.content)).toEqual([
+      'message-1',
+      'message-2',
+    ]);
+    first?.acknowledge();
     await sendRequest(mailbox, requestFor(mailbox, 'drain-4', 'message-4'));
-    expect(mailbox.receiver.drainPending(99).map((entry) => entry.request.content)).toEqual([
+    const remaining = mailbox.receiver.leasePending(99);
+    expect(remaining?.messages.map((entry) => entry.request.content)).toEqual([
       'message-3',
       'message-4',
     ]);
-    expect(mailbox.receiver.drainPending()).toEqual([]);
-    expect(() => mailbox.receiver.drainPending(-1)).toThrow(RangeError);
-    expect(() => mailbox.receiver.drainPending(Number.NaN)).toThrow(RangeError);
+    remaining?.acknowledge();
+    expect(mailbox.receiver.leasePending()).toBeUndefined();
+    expect(() => mailbox.receiver.leasePending(-1)).toThrow(RangeError);
+    expect(() => mailbox.receiver.leasePending(Number.NaN)).toThrow(RangeError);
   });
 
   test('requeues a drained batch at the front without reversing or duplicating it', async () => {
@@ -696,18 +704,21 @@ describe('agent mailbox receiver', () => {
       await sendRequest(mailbox, requestFor(mailbox, `requeue-${index}`, `message-${index}`));
     }
 
-    const drained = mailbox.receiver.drainPending(2);
+    const drained = mailbox.receiver.leasePending(2);
     await sendRequest(mailbox, requestFor(mailbox, 'requeue-5', 'message-5'));
-    mailbox.receiver.requeuePending(drained);
-    mailbox.receiver.requeuePending(drained);
+    drained?.requeue();
+    drained?.requeue();
 
-    expect(mailbox.receiver.drainPending().map((entry) => entry.request.content)).toEqual([
+    const all = mailbox.receiver.leasePending();
+    expect(all?.messages.map((entry) => entry.request.content)).toEqual([
       'message-1',
       'message-2',
       'message-3',
       'message-4',
       'message-5',
     ]);
+    all?.acknowledge();
+    all?.acknowledge();
   });
 
   test('replays duplicate acknowledgements without invoking delivery twice', async () => {
@@ -1085,6 +1096,6 @@ describe('agent mailbox receiver', () => {
 
     await expect(fs.lstat(mailbox.receiver.socketPath)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(mailbox.receiver.isClosed).toBe(true);
-    expect(mailbox.receiver.drainPending()).toEqual([]);
+    expect(mailbox.receiver.pendingCount).toBe(0);
   });
 });

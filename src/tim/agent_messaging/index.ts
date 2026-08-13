@@ -31,16 +31,11 @@ export type {
   AgentLauncher,
   AgentLaunchRequest,
   AgentManagerOptions,
-  AgentRecord,
   AgentRecordSnapshot,
-  AgentReservation,
-  AgentReservationRequest,
-  OrchestratorAgentRecord,
   OrchestratorIdentity,
   PreparedAgentExecution,
   ProcessControlId,
   ProviderThreadId,
-  SubagentAgentRecord,
   SubagentIdentity,
 } from './agent_manager_types.js';
 export { AgentManagerError } from './agent_manager_types.js';
