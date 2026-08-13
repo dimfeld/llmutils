@@ -5,7 +5,9 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
   AGENT_MESSAGING_RUNTIME_PREFIX,
+  MAX_AGENT_MESSAGE_BYTES,
   MAX_AGENT_NAME_LENGTH,
+  MAX_PENDING_MESSAGES_PER_RECIPIENT,
   MAX_SUBAGENTS_PER_SESSION,
   ORCHESTRATOR_AGENT_NAME,
 } from './contracts.js';
@@ -91,6 +93,25 @@ async function createManager(
   const manager = await createAgentManager({ agentIdGenerator: idGenerator(), ...options });
   managers.push(manager);
   return manager;
+}
+
+async function startFakeAgent(
+  manager: AgentManager,
+  launcher: FakeAgentLauncher,
+  name: string,
+  type: 'implementer' | 'tester' | 'tdd-tests' | 'reviewer' = 'tester'
+): Promise<Awaited<ReturnType<FakeAgentLauncher['waitForNextLaunch']>>> {
+  const launchPromise = launcher.waitForNextLaunch();
+  const startPromise = manager.startAgent(manager.orchestratorIdentity, {
+    name,
+    type,
+    executor: 'codex-cli',
+    initialMessage: `Initial message for ${name}`,
+  });
+  const launch = await launchPromise;
+  launch.handle.markReady();
+  await startPromise;
+  return launch;
 }
 
 describe('AgentManager root registration and snapshots', () => {
@@ -773,7 +794,8 @@ describe('AgentManager StartAgent startup and rollback', () => {
       name: 'launch-boundary',
       state: 'running-idle',
     });
-    expect(manager.listAgents().agents[1]?.state).toBe('running-idle');
+    expect(manager.listAgents().agents[1]?.state).toBe('running-active');
+    expect(launch.handle.input.receivedMessages[0]?.content).toBe('wait for launch readiness');
   });
 
   test('keeps starting mailbox delivery queue-safe before an input adapter is ready', async () => {
@@ -999,6 +1021,380 @@ describe('AgentManager StartAgent startup and rollback', () => {
     expect(manager.getIdentityByName('reused-name')).toMatchObject({ id: second.id });
     second.release();
     expect(manager.subagentCount).toBe(0);
+  });
+});
+
+describe('AgentManager SendAgentMessage routing', () => {
+  test('routes trusted orchestrator, peer, and subagent messages through real mailboxes', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+    const first = await startFakeAgent(manager, launcher, 'first-worker');
+    const second = await startFakeAgent(manager, launcher, 'second-worker');
+    first.handle.input.markReady();
+    second.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(first.request.identity.id)?.state === 'running-idle'
+    );
+    await waitFor(
+      () => manager.getAgentSnapshot(second.request.identity.id)?.state === 'running-idle'
+    );
+
+    first.handle.input.setActiveAccepting();
+    const steered = await manager.sendAgentMessage(manager.orchestratorIdentity, {
+      name: 'first-worker',
+      message: 'orchestrator steering',
+    });
+    expect(steered).toMatchObject({
+      name: 'first-worker',
+      delivery: 'steered',
+    });
+    expect(steered.messageId).toBe(first.handle.input.receivedMessages[0]?.messageId);
+    expect(first.handle.input.receivedMessages[0]).toMatchObject({
+      source: { id: manager.orchestratorIdentity.id, name: ORCHESTRATOR_AGENT_NAME },
+      content: 'orchestrator steering',
+    });
+
+    const firstIdentity = manager.getIdentityByName('first-worker');
+    const secondIdentity = manager.getIdentityByName('second-worker');
+    expect(firstIdentity?.role).toBe('subagent');
+    expect(secondIdentity?.role).toBe('subagent');
+
+    const peer = await manager.sendAgentMessage(firstIdentity as never, {
+      name: 'second-worker',
+      message: 'peer handoff',
+    });
+    expect(peer.delivery).toBe('started-idle-turn');
+    expect(second.handle.input.receivedMessages[0]).toMatchObject({
+      source: { name: 'first-worker', id: first.request.identity.id },
+      content: 'peer handoff',
+    });
+
+    const reply = await manager.sendAgentMessage(secondIdentity as never, {
+      name: 'orchestrator',
+      message: 'reply to root',
+    });
+    expect(reply.delivery).toBe('started-idle-turn');
+    expect(rootInput.receivedMessages[0]).toMatchObject({
+      source: { name: 'second-worker', id: second.request.identity.id },
+      content: 'reply to root',
+    });
+  });
+
+  test('rejects forged callers and source fields before transport work', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'spoof-target');
+    target.handle.input.markReady();
+
+    await expect(
+      manager.sendAgentMessage({ ...manager.orchestratorIdentity, name: 'spoofed-root' } as never, {
+        name: 'spoof-target',
+        message: 'must not send',
+      })
+    ).rejects.toMatchObject({ code: 'unknown_sender' });
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'spoof-target',
+        message: 'must reject source field',
+        source: 'spoofed-root',
+      })
+    ).rejects.toMatchObject({ code: 'invalid_request' });
+    expect(target.handle.input.receivedMessages).toHaveLength(0);
+  });
+
+  test('queues temporary input and drains one mailbox FIFO when input becomes available', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'queued-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+
+    const queued = [];
+    for (const message of ['one', 'two', 'three']) {
+      queued.push(
+        await manager.sendAgentMessage(manager.orchestratorIdentity, {
+          name: 'queued-target',
+          message,
+        })
+      );
+    }
+    expect(queued.map((result) => result.delivery)).toEqual(['queued', 'queued', 'queued']);
+    expect(target.handle.input.receivedMessages).toHaveLength(0);
+    expect(manager.sessionRuntime.runtime.listRegistrations()).resolves.toHaveLength(2);
+
+    target.handle.input.setActiveAccepting();
+    await waitFor(() => target.handle.input.receivedMessages.length === 3);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'one',
+      'two',
+      'three',
+    ]);
+    expect(target.handle.input.receivedMessages.map((message) => message.messageId)).toEqual(
+      queued.map((result) => result.messageId)
+    );
+  });
+
+  test('preserves concurrent per-recipient order through the real mailbox', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'concurrent-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+
+    const sends = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        manager.sendAgentMessage(manager.orchestratorIdentity, {
+          name: 'concurrent-target',
+          message: `concurrent-${index}`,
+        })
+      )
+    );
+    expect(sends.every((result) => result.delivery === 'queued')).toBe(true);
+
+    target.handle.input.setActiveAccepting();
+    await waitFor(() => target.handle.input.receivedMessages.length === sends.length);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual(
+      Array.from({ length: sends.length }, (_, index) => `concurrent-${index}`)
+    );
+  });
+
+  test('does not lose or reorder a message when availability changes during a drain', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'drain-race-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+    for (const message of ['one', 'two', 'three']) {
+      await manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'drain-race-target',
+        message,
+      });
+    }
+
+    target.handle.input.deferNextDelivery();
+    target.handle.input.setActiveAccepting();
+    const fourth = manager.sendAgentMessage(manager.orchestratorIdentity, {
+      name: 'drain-race-target',
+      message: 'four',
+    });
+    target.handle.input.setTemporarilyUnavailable();
+    target.handle.input.resolveNextDelivery('temporarily-unavailable');
+
+    expect((await fourth).delivery).toBe('queued');
+    expect(target.handle.input.receivedMessages).toHaveLength(0);
+
+    target.handle.input.setActiveAccepting();
+    await waitFor(() => target.handle.input.receivedMessages.length === 4);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'one',
+      'two',
+      'three',
+      'four',
+    ]);
+  });
+
+  test('counts a provider delivery reservation against the 100-message mailbox limit', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'drain-capacity-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+    for (let index = 0; index < MAX_PENDING_MESSAGES_PER_RECIPIENT; index += 1) {
+      await manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'drain-capacity-target',
+        message: `queued-${index}`,
+      });
+    }
+
+    target.handle.input.deferNextDelivery();
+    target.handle.input.setActiveAccepting();
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'drain-capacity-target',
+        message: 'must-not-overflow-reservation',
+      })
+    ).rejects.toMatchObject({ code: 'transport_error', transportCode: 'queue_full' });
+
+    target.handle.input.resolveNextDelivery('steered');
+    await waitFor(
+      () => target.handle.input.receivedMessages.length === MAX_PENDING_MESSAGES_PER_RECIPIENT
+    );
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual(
+      Array.from({ length: MAX_PENDING_MESSAGES_PER_RECIPIENT }, (_, index) => `queued-${index}`)
+    );
+  });
+
+  test('queues during starting and drains after both launch and input readiness', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('starting-queue', 'implementer')
+    );
+    const launch = await launchPromise;
+    const queued = await manager.sendAgentMessage(manager.orchestratorIdentity, {
+      name: 'starting-queue',
+      message: 'arrived during startup',
+    });
+    expect(queued.delivery).toBe('queued');
+    expect(launch.handle.input.receivedMessages).toHaveLength(0);
+
+    launch.handle.input.markReady();
+    launch.handle.markReady();
+    await expect(startPromise).resolves.toMatchObject({
+      name: 'starting-queue',
+      state: 'running-idle',
+    });
+    await waitFor(() => launch.handle.input.receivedMessages.length === 1);
+    expect(launch.handle.input.receivedMessages[0]).toMatchObject({
+      messageId: queued.messageId,
+      content: 'arrived during startup',
+      source: { name: 'orchestrator' },
+    });
+  });
+
+  test('returns the idle-turn disposition and enforces exact message and queue limits', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'limit-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+
+    const idle = await manager.sendAgentMessage(manager.orchestratorIdentity, {
+      name: 'limit-target',
+      message: 'idle turn',
+    });
+    expect(idle.delivery).toBe('started-idle-turn');
+
+    target.handle.input.setTemporarilyUnavailable();
+    const exactMessage = '🙂'.repeat(MAX_AGENT_MESSAGE_BYTES / 4);
+    const exact = await manager.sendAgentMessage(manager.orchestratorIdentity, {
+      name: 'limit-target',
+      message: exactMessage,
+    });
+    expect(exact.delivery).toBe('queued');
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'limit-target',
+        message: `${exactMessage}x`,
+      })
+    ).rejects.toMatchObject({ code: 'invalid_request', transportCode: 'message_too_large' });
+
+    const queued = [];
+    for (let index = 0; index < MAX_PENDING_MESSAGES_PER_RECIPIENT - 1; index += 1) {
+      queued.push(
+        await manager.sendAgentMessage(manager.orchestratorIdentity, {
+          name: 'limit-target',
+          message: `queued-${index}`,
+        })
+      );
+    }
+    expect(queued).toHaveLength(MAX_PENDING_MESSAGES_PER_RECIPIENT - 1);
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'limit-target',
+        message: 'queue-overflow',
+      })
+    ).rejects.toMatchObject({ code: 'transport_error', transportCode: 'queue_full' });
+    expect(target.handle.input.receivedMessages).toHaveLength(1);
+
+    target.handle.input.setActiveAccepting();
+    await waitFor(
+      () => target.handle.input.receivedMessages.length === MAX_PENDING_MESSAGES_PER_RECIPIENT + 1
+    );
+    expect(target.handle.input.receivedMessages.slice(1).map((message) => message.content)).toEqual(
+      [exactMessage, ...queued.map((result) => `queued-${queued.indexOf(result)}`)]
+    );
+  });
+
+  test('rejects lifecycle, stale, and transport failures with stable manager codes', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+    const finishing = await startFakeAgent(manager, launcher, 'finishing-target');
+    finishing.handle.input.markReady();
+    const stopping = await startFakeAgent(manager, launcher, 'stopping-target');
+    stopping.handle.input.markReady();
+    manager.setAgentLifecycleState(finishing.request.identity.id, 'finishing');
+    manager.setAgentLifecycleState(stopping.request.identity.id, 'stopping');
+
+    for (const name of ['finishing-target', 'stopping-target']) {
+      await expect(
+        manager.sendAgentMessage(manager.orchestratorIdentity, { name, message: 'rejected' })
+      ).rejects.toMatchObject({ code: 'target_not_accepting_messages' });
+    }
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'missing-target',
+        message: 'unknown',
+      })
+    ).rejects.toMatchObject({ code: 'unknown_target' });
+
+    const staleSender = manager.getIdentityByName('stopping-target');
+    manager.removeTerminalAgent(stopping.request.identity.id);
+    await expect(
+      manager.sendAgentMessage(staleSender as never, {
+        name: 'orchestrator',
+        message: 'stale sender',
+      })
+    ).rejects.toMatchObject({ code: 'unknown_sender' });
+
+    const staleTarget = await startFakeAgent(manager, launcher, 'stale-target');
+    staleTarget.handle.input.markReady();
+    await manager.sessionRuntime.deregister(staleTarget.request.identity.id);
+    await expect(
+      manager.sendAgentMessage(manager.orchestratorIdentity, {
+        name: 'stale-target',
+        message: 'stale registration',
+      })
+    ).rejects.toMatchObject({ code: 'unknown_target', transportCode: 'unknown_target' });
   });
 });
 

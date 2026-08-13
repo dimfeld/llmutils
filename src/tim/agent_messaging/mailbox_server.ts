@@ -251,7 +251,10 @@ export class MailboxReceiver {
   private readonly connections = new Set<net.Socket>();
   private readonly activeConnections = new Set<net.Socket>();
   private readonly pending: MailboxPendingMessage[] = [];
+  /** Messages removed by a manager drain but not yet acknowledged or requeued. */
+  private readonly pendingDeliveryReservations = new Set<MailboxPendingMessage>();
   private readonly recentRequests = new Map<string, RecentRequest>();
+  private deliveryTail: Promise<void> = Promise.resolve();
   private server: net.Server | undefined;
   private listening = false;
   private socketOwned = false;
@@ -302,6 +305,78 @@ export class MailboxReceiver {
     }
     const count = limit === undefined ? this.pending.length : Math.min(limit, this.pending.length);
     return this.pending.splice(0, count);
+  }
+
+  /**
+   * Remove one FIFO batch for provider delivery while reserving its capacity.
+   * New mailbox sends cannot consume these reserved slots until the batch is
+   * acknowledged or requeued.
+   */
+  public takePendingForDelivery(limit?: number): MailboxPendingMessage[] {
+    const messages = this.drainPending(limit);
+    for (const message of messages) {
+      this.pendingDeliveryReservations.add(message);
+    }
+    return messages;
+  }
+
+  /** Release the capacity for a batch that the provider accepted. */
+  public acknowledgePending(messages: readonly MailboxPendingMessage[]): void {
+    const uniqueMessages = new Set(messages);
+    if (
+      uniqueMessages.size !== messages.length ||
+      messages.some((message) => !this.pendingDeliveryReservations.has(message))
+    ) {
+      throw new MailboxReceiverError(
+        'receiver_not_ready',
+        'Mailbox pending delivery reservation is not active'
+      );
+    }
+    for (const message of messages) {
+      this.pendingDeliveryReservations.delete(message);
+    }
+  }
+
+  /** Put a drained batch back at the front when the provider is unavailable. */
+  public requeuePending(messages: readonly MailboxPendingMessage[]): void {
+    if (messages.length === 0) {
+      return;
+    }
+    if (this.closed) {
+      return;
+    }
+
+    // Ignore a repeated requeue of a batch that is already back in the FIFO.
+    // This keeps retry cleanup idempotent without duplicating messages.
+    const seen = new Set<MailboxPendingMessage>();
+    const toRequeue = messages.filter((message) => {
+      if (seen.has(message) || this.pending.includes(message)) {
+        return false;
+      }
+      seen.add(message);
+      return true;
+    });
+    const reservationsToRelease = toRequeue.filter((message) =>
+      this.pendingDeliveryReservations.has(message)
+    ).length;
+    if (
+      this.pending.length +
+        toRequeue.length +
+        this.pendingDeliveryReservations.size -
+        reservationsToRelease >
+      MAX_PENDING_MESSAGES_PER_RECIPIENT
+    ) {
+      throw new MailboxReceiverError(
+        'receiver_not_ready',
+        'Mailbox pending queue cannot accept the requeued messages'
+      );
+    }
+    for (const message of toRequeue) {
+      this.pendingDeliveryReservations.delete(message);
+    }
+    // splice preserves the batch order at the front of the FIFO. `unshift`
+    // with a spread argument would reverse the batch.
+    this.pending.splice(0, 0, ...toRequeue);
   }
 
   /** Stop accepting clients, close active connections, and unlink this socket. */
@@ -411,7 +486,7 @@ export class MailboxReceiver {
       return this.acceptRequest(request, isPeerEnded);
     }
 
-    const completion = this.deliverRequest(request, isPeerEnded).catch((error: unknown) =>
+    const completion = this.enqueueDelivery(request, isPeerEnded).catch((error: unknown) =>
       buildMailboxFailureAcknowledgement(
         request.requestId,
         'connection_failed',
@@ -436,6 +511,19 @@ export class MailboxReceiver {
     recentRequest.completed = true;
     this.trimRecentRequests();
     return acknowledgement;
+  }
+
+  /** Serialize delivery callbacks so one recipient observes one FIFO order. */
+  private enqueueDelivery(
+    request: MailboxMessageRequest,
+    isPeerEnded: () => boolean
+  ): Promise<MailboxAcknowledgement | undefined> {
+    const completion = this.deliveryTail.then(() => this.deliverRequest(request, isPeerEnded));
+    this.deliveryTail = completion.then(
+      (): void => undefined,
+      (): void => undefined
+    );
+    return completion;
   }
 
   /**
@@ -560,7 +648,10 @@ export class MailboxReceiver {
         'Mailbox receiver is closed'
       );
     }
-    if (this.pending.length >= MAX_PENDING_MESSAGES_PER_RECIPIENT) {
+    if (
+      this.pending.length + this.pendingDeliveryReservations.size >=
+      MAX_PENDING_MESSAGES_PER_RECIPIENT
+    ) {
       return buildMailboxFailureAcknowledgement(
         request.requestId,
         'queue_full',
@@ -594,6 +685,7 @@ export class MailboxReceiver {
     }
     this.activeConnections.clear();
     this.pending.length = 0;
+    this.pendingDeliveryReservations.clear();
     this.recentRequests.clear();
     await this.closeServerAndSocket();
   }

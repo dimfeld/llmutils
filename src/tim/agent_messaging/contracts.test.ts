@@ -303,14 +303,14 @@ describe('agent messaging tool result contracts', () => {
     expect(
       sendAgentMessageResultSchema.parse({
         name: ORCHESTRATOR_AGENT_NAME,
+        messageId: 'message-id',
         delivery: 'steered',
       })
-    ).toEqual({ name: ORCHESTRATOR_AGENT_NAME, delivery: 'steered' });
+    ).toEqual({ name: ORCHESTRATOR_AGENT_NAME, messageId: 'message-id', delivery: 'steered' });
     expect(
       sendAgentMessageResultSchema.safeParse({
         name: 'api-worker',
         delivery: 'queued',
-        messageId: 'not-model-facing',
       }).success
     ).toBe(false);
   });
@@ -416,7 +416,11 @@ describe('agent messaging tool result contracts', () => {
       },
       {
         schema: sendAgentMessageResultSchema,
-        value: { name: ORCHESTRATOR_AGENT_NAME, delivery: 'queued' },
+        value: {
+          name: ORCHESTRATOR_AGENT_NAME,
+          messageId: 'message-id',
+          delivery: 'queued',
+        },
       },
       {
         schema: stopAgentResultSchema,

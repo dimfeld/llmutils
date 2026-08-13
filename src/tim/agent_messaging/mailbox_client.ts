@@ -59,6 +59,11 @@ export interface MailboxClientOptions {
   readonly acknowledgementTimeoutMs?: number;
 }
 
+interface TargetSendOrder {
+  readonly previous: Promise<void>;
+  release(): void;
+}
+
 interface NodeSocketError extends Error {
   readonly code?: string;
 }
@@ -198,6 +203,8 @@ export class MailboxClient {
   private readonly resolveTargetRegistration: MailboxTargetRegistrationResolver;
   private readonly connectionTimeoutMs: number;
   private readonly acknowledgementTimeoutMs: number;
+  /** Serialize requests to one target without owning the recipient FIFO. */
+  private readonly targetSendTails = new Map<string, Promise<void>>();
 
   public constructor(options: MailboxClientOptions) {
     if (!isRecord(options)) {
@@ -241,112 +248,142 @@ export class MailboxClient {
       throw new MailboxProtocolError('unknown_source', 'Mailbox source identity is invalid');
     }
     const targetReference = validateTargetReference(target);
+    const sendOrder = this.beginTargetSendOrder(targetReference.name);
 
-    let sourceRegistration: AgentRegistration | undefined;
     try {
-      sourceRegistration = await this.resolveSourceRegistration(
-        sourceResult.data.id,
-        sourceResult.data.name
-      );
-    } catch (error) {
-      throw mapSourceResolutionError(error);
-    }
-    if (sourceRegistration === undefined) {
-      throw new MailboxProtocolError(
-        'unknown_source',
-        'Mailbox source is not an active registered identity'
-      );
-    }
-    try {
-      sourceRegistration = parseAgentRegistration(sourceRegistration);
-    } catch (error) {
-      throw new MailboxProtocolError(
-        'unknown_source',
-        `Mailbox source registration is invalid: ${sanitizeErrorMessage(error, 'invalid source')}`
-      );
-    }
-    if (
-      sourceRegistration.id !== sourceResult.data.id ||
-      sourceRegistration.name !== sourceResult.data.name
-    ) {
-      throw new MailboxProtocolError(
-        'unknown_source',
-        'Mailbox source identity does not match its active registration'
-      );
-    }
-    let expectedSourceSocketPath: string;
-    try {
-      expectedSourceSocketPath = this.runtime.socketPath(sourceRegistration.id);
-    } catch (error) {
-      throw new MailboxProtocolError(
-        'unknown_source',
-        `Mailbox source registration is invalid: ${sanitizeErrorMessage(error, 'invalid source')}`
-      );
-    }
-    if (sourceRegistration.socketPath !== expectedSourceSocketPath) {
-      throw new MailboxProtocolError(
-        'unknown_source',
-        'Mailbox source registration socket path is invalid'
-      );
-    }
-    try {
-      await validateMailboxSocketIdentity(this.runtime, expectedSourceSocketPath);
-    } catch (error) {
-      const mapped = mapRuntimeError(error, 'Mailbox source socket is stale');
-      if (mapped.code === 'runtime_closed') {
-        throw mapped;
+      await sendOrder.previous;
+
+      let sourceRegistration: AgentRegistration | undefined;
+      try {
+        sourceRegistration = await this.resolveSourceRegistration(
+          sourceResult.data.id,
+          sourceResult.data.name
+        );
+      } catch (error) {
+        throw mapSourceResolutionError(error);
       }
-      throw new MailboxProtocolError('unknown_source', 'Mailbox source is not ready');
-    }
-
-    let targetRegistration: AgentRegistration | undefined;
-    try {
-      targetRegistration = await this.resolveTargetRegistration(targetReference);
-    } catch (error) {
-      throw mapTargetResolutionError(error);
-    }
-    if (targetRegistration === undefined) {
-      throw new MailboxProtocolError(
-        'unknown_target',
-        'Mailbox target is not an active registered identity'
-      );
-    }
-    try {
-      targetRegistration = parseAgentRegistration(targetRegistration);
-    } catch (error) {
-      throw new MailboxProtocolError(
-        'target_stale',
-        `Mailbox target registration is invalid: ${sanitizeErrorMessage(error, 'invalid target')}`
-      );
-    }
-    if (
-      targetRegistration.name !== targetReference.name ||
-      (targetReference.id !== undefined && targetRegistration.id !== targetReference.id)
-    ) {
-      throw new MailboxProtocolError(
-        'unknown_target',
-        'Mailbox target does not match the requested active identity'
-      );
-    }
-
-    let targetSnapshot: MailboxTargetSnapshot;
-    try {
-      targetSnapshot = await createMailboxTargetSnapshot(this.runtime, targetRegistration);
-    } catch (error) {
-      throw mapTargetSnapshotError(error, 'Mailbox target is stale');
-    }
-    const request = buildMailboxMessageRequest(
-      { id: sourceRegistration.id, name: sourceRegistration.name },
-      {
-        requestId: validatedInput.requestId ?? randomUUID(),
-        targetId: targetSnapshot.registration.id,
-        targetName: targetSnapshot.registration.name,
-        content: validatedInput.content,
-        timestamp: validatedInput.timestamp,
+      if (sourceRegistration === undefined) {
+        throw new MailboxProtocolError(
+          'unknown_source',
+          'Mailbox source is not an active registered identity'
+        );
       }
-    );
-    const encoded = encodeMailboxFrame(request);
-    return this.exchange(targetSnapshot, encoded, request.requestId);
+      try {
+        sourceRegistration = parseAgentRegistration(sourceRegistration);
+      } catch (error) {
+        throw new MailboxProtocolError(
+          'unknown_source',
+          `Mailbox source registration is invalid: ${sanitizeErrorMessage(error, 'invalid source')}`
+        );
+      }
+      if (
+        sourceRegistration.id !== sourceResult.data.id ||
+        sourceRegistration.name !== sourceResult.data.name
+      ) {
+        throw new MailboxProtocolError(
+          'unknown_source',
+          'Mailbox source identity does not match its active registration'
+        );
+      }
+      let expectedSourceSocketPath: string;
+      try {
+        expectedSourceSocketPath = this.runtime.socketPath(sourceRegistration.id);
+      } catch (error) {
+        throw new MailboxProtocolError(
+          'unknown_source',
+          `Mailbox source registration is invalid: ${sanitizeErrorMessage(error, 'invalid source')}`
+        );
+      }
+      if (sourceRegistration.socketPath !== expectedSourceSocketPath) {
+        throw new MailboxProtocolError(
+          'unknown_source',
+          'Mailbox source registration socket path is invalid'
+        );
+      }
+      try {
+        await validateMailboxSocketIdentity(this.runtime, expectedSourceSocketPath);
+      } catch (error) {
+        const mapped = mapRuntimeError(error, 'Mailbox source socket is stale');
+        if (mapped.code === 'runtime_closed') {
+          throw mapped;
+        }
+        throw new MailboxProtocolError('unknown_source', 'Mailbox source is not ready');
+      }
+
+      let targetRegistration: AgentRegistration | undefined;
+      try {
+        targetRegistration = await this.resolveTargetRegistration(targetReference);
+      } catch (error) {
+        throw mapTargetResolutionError(error);
+      }
+      if (targetRegistration === undefined) {
+        throw new MailboxProtocolError(
+          'unknown_target',
+          'Mailbox target is not an active registered identity'
+        );
+      }
+      try {
+        targetRegistration = parseAgentRegistration(targetRegistration);
+      } catch (error) {
+        throw new MailboxProtocolError(
+          'target_stale',
+          `Mailbox target registration is invalid: ${sanitizeErrorMessage(error, 'invalid target')}`
+        );
+      }
+      if (
+        targetRegistration.name !== targetReference.name ||
+        (targetReference.id !== undefined && targetRegistration.id !== targetReference.id)
+      ) {
+        throw new MailboxProtocolError(
+          'unknown_target',
+          'Mailbox target does not match the requested active identity'
+        );
+      }
+
+      let targetSnapshot: MailboxTargetSnapshot;
+      try {
+        targetSnapshot = await createMailboxTargetSnapshot(this.runtime, targetRegistration);
+      } catch (error) {
+        throw mapTargetSnapshotError(error, 'Mailbox target is stale');
+      }
+      const request = buildMailboxMessageRequest(
+        { id: sourceRegistration.id, name: sourceRegistration.name },
+        {
+          requestId: validatedInput.requestId ?? randomUUID(),
+          targetId: targetSnapshot.registration.id,
+          targetName: targetSnapshot.registration.name,
+          content: validatedInput.content,
+          timestamp: validatedInput.timestamp,
+        }
+      );
+      const encoded = encodeMailboxFrame(request);
+      return await this.exchange(targetSnapshot, encoded, request.requestId);
+    } finally {
+      sendOrder.release();
+    }
+  }
+
+  private beginTargetSendOrder(targetName: string): TargetSendOrder {
+    const previous = this.targetSendTails.get(targetName) ?? Promise.resolve();
+    let released = false;
+    let releaseCurrent: () => void = () => undefined;
+    const current = new Promise<void>((resolve) => {
+      releaseCurrent = resolve;
+    });
+    this.targetSendTails.set(targetName, current);
+    return {
+      previous,
+      release: (): void => {
+        if (released) {
+          return;
+        }
+        released = true;
+        releaseCurrent();
+        if (this.targetSendTails.get(targetName) === current) {
+          this.targetSendTails.delete(targetName);
+        }
+      },
+    };
   }
 
   private exchange(

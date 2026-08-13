@@ -177,6 +177,7 @@ export type SendAgentMessageArguments = z.infer<typeof sendAgentMessageArguments
 export const sendAgentMessageResultSchema = z
   .object({
     name: agentAddressSchema,
+    messageId: z.string().min(1),
     delivery: sendAgentMessageAcknowledgementSchema,
   })
   .strict();

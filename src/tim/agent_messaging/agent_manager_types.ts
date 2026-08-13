@@ -48,6 +48,8 @@ export interface AgentInputAdapter {
   readonly isReady: boolean;
   readonly activity: AgentInputActivity;
   deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery>;
+  /** Notify the manager when temporary input backpressure changes. */
+  onAvailabilityChange?(listener: () => void): () => void;
   release?(): Promise<void>;
 }
 
@@ -196,11 +198,18 @@ export type AgentManagerErrorCode =
 
 export class AgentManagerError extends Error {
   public readonly code: AgentManagerErrorCode;
+  public readonly transportCode?: import('./mailbox_protocol.js').MailboxErrorCode;
 
-  public constructor(code: AgentManagerErrorCode, message: string, options?: ErrorOptions) {
+  public constructor(
+    code: AgentManagerErrorCode,
+    message: string,
+    options?: ErrorOptions,
+    transportCode?: import('./mailbox_protocol.js').MailboxErrorCode
+  ) {
     super(message, options);
     this.name = 'AgentManagerError';
     this.code = code;
+    this.transportCode = transportCode;
   }
 }
 
@@ -213,6 +222,8 @@ export interface AgentManagerOptions {
   readonly maxAgentNameGenerationAttempts?: number;
   readonly agentPreparer?: AgentPreparation;
   readonly agentLauncher?: AgentLauncher;
+  /** Provider-neutral input boundary for messages addressed to orchestrator. */
+  readonly orchestratorInputAdapter?: AgentInputAdapter;
 }
 
 export interface AgentManagerSnapshot {

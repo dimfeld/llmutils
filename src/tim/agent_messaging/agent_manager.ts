@@ -1,13 +1,19 @@
+import { randomUUID } from 'node:crypto';
+
 import {
+  MAX_AGENT_MESSAGE_BYTES,
   MAX_SUBAGENTS_PER_SESSION,
   ORCHESTRATOR_AGENT_NAME,
   agentExecutorSchema,
   isNonterminalAgentLifecycleState,
+  sendAgentMessageArgumentsSchema,
   startAgentArgumentsSchema,
   type AgentSummary,
+  type SendAgentMessageResult,
   type StartAgentResult,
   type AgentExecutor,
   type NonterminalAgentLifecycleState,
+  utf8ByteLength,
 } from './contracts.js';
 import {
   buildGeneratedAgentName,
@@ -29,6 +35,7 @@ import {
   type AgentIdentity,
   type AgentPreparationRequest,
   type AgentManagerOptions,
+  type AgentInputAdapter,
   type AgentRecord,
   type AgentRecordSnapshot,
   type AgentReservation,
@@ -44,7 +51,12 @@ import {
   type SessionRegistrationHandle,
 } from './session_runtime.js';
 import { formatAgentProcessLabel } from './agent_process_labels.js';
-import type { MailboxMessageRequest } from './mailbox_protocol.js';
+import {
+  MailboxProtocolError,
+  type MailboxErrorCode,
+  type MailboxMessageRequest,
+} from './mailbox_protocol.js';
+import type { MailboxDeliveryCallback, MailboxDeliveryResult } from './mailbox_server.js';
 import type { AgentRegistration } from './runtime_dir.js';
 
 interface NormalizedManagerOptions {
@@ -55,6 +67,7 @@ interface NormalizedManagerOptions {
   readonly maxAgentNameGenerationAttempts: number;
   readonly agentPreparer: AgentManagerOptions['agentPreparer'];
   readonly agentLauncher: AgentManagerOptions['agentLauncher'];
+  readonly orchestratorInputAdapter: AgentInputAdapter | undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -100,6 +113,17 @@ function normalizeOptions(options: AgentManagerOptions): NormalizedManagerOption
   ) {
     throw new AgentManagerError('invalid_options', 'agentLauncher must provide a launch function');
   }
+  if (
+    options.orchestratorInputAdapter !== undefined &&
+    (!isRecord(options.orchestratorInputAdapter) ||
+      typeof options.orchestratorInputAdapter.deliver !== 'function' ||
+      typeof options.orchestratorInputAdapter.isReady !== 'boolean')
+  ) {
+    throw new AgentManagerError(
+      'invalid_options',
+      'orchestratorInputAdapter must provide ready, isReady, activity, and deliver'
+    );
+  }
 
   return {
     orchestratorExecutor: executor as AgentExecutor,
@@ -117,6 +141,7 @@ function normalizeOptions(options: AgentManagerOptions): NormalizedManagerOption
     ),
     agentPreparer: options.agentPreparer,
     agentLauncher: options.agentLauncher,
+    orchestratorInputAdapter: options.orchestratorInputAdapter,
   };
 }
 
@@ -173,6 +198,25 @@ function toSummary(record: AgentRecord): AgentSummary {
   });
 }
 
+function matchesTrustedSource(
+  record: AgentRecord | undefined,
+  registration: AgentRegistration
+): boolean {
+  if (
+    record === undefined ||
+    record.id !== registration.id ||
+    record.name !== registration.name ||
+    record.role !== registration.role ||
+    record.executor !== registration.executor
+  ) {
+    return false;
+  }
+  if (record.role === 'orchestrator') {
+    return !Object.hasOwn(registration, 'type');
+  }
+  return registration.role === 'subagent' && record.type === registration.type;
+}
+
 /**
  * Owns the root identity, startup boundary, synchronous identity/capacity
  * reservation, and public list snapshots. Message routing and terminal
@@ -185,8 +229,12 @@ export class AgentManager {
   private readonly options: NormalizedManagerOptions;
   private readonly byId = new Map<AgentId, AgentRecord>();
   private readonly byName = new Map<AgentName, AgentId>();
+  private readonly inputAdapters = new Map<AgentId, AgentInputAdapter>();
   private nextCreationSequence = 0;
   private readonly rootRegistration: SessionRegistrationHandle;
+  private readonly inputAvailabilityUnsubscribers = new Map<AgentId, () => void>();
+  private readonly inputAvailabilityVersions = new Map<AgentId, number>();
+  private readonly pendingDrainPromises = new Map<AgentId, Promise<void>>();
   private closed = false;
   private closePromise: Promise<void> | undefined;
 
@@ -208,6 +256,9 @@ export class AgentManager {
     this.byId.set(rootRecord.id, rootRecord);
     this.byName.set(rootRecord.name, rootRecord.id);
     this.nextCreationSequence = 1;
+    if (options.orchestratorInputAdapter !== undefined) {
+      this.bindInputAdapter(rootRecord, options.orchestratorInputAdapter);
+    }
   }
 
   /** Create and initialize a manager with a ready reserved root mailbox. */
@@ -217,6 +268,8 @@ export class AgentManager {
     const sessionRuntime = options.sessionRuntime ?? (await createAgentMessagingSessionRuntime());
 
     let rootRegistration: SessionRegistrationHandle | undefined;
+    let rootDelivery: MailboxDeliveryCallback = async (): Promise<MailboxDeliveryResult> =>
+      'temporarily-unavailable';
     try {
       const rootId = allocateOpaqueId(
         normalizedOptions.agentIdGenerator,
@@ -239,7 +292,8 @@ export class AgentManager {
           executor: normalizedOptions.orchestratorExecutor,
           state: 'running-idle',
         },
-        deliver: async (): Promise<'temporarily-unavailable'> => 'temporarily-unavailable',
+        deliver: async (message, sourceRegistration): Promise<MailboxDeliveryResult> =>
+          rootDelivery(message, sourceRegistration),
       });
       await rootRegistration.ready;
 
@@ -262,7 +316,18 @@ export class AgentManager {
         mailbox: rootRegistration,
       };
 
-      return new AgentManager(sessionRuntime, normalizedOptions, rootRegistration, rootRecord);
+      const manager = new AgentManager(
+        sessionRuntime,
+        normalizedOptions,
+        rootRegistration,
+        rootRecord
+      );
+      rootDelivery = (
+        message: MailboxMessageRequest,
+        sourceRegistration: AgentRegistration
+      ): Promise<MailboxDeliveryResult> =>
+        manager.deliverToRecord(rootRecord, message, sourceRegistration);
+      return manager;
     } catch (error) {
       await rootRegistration?.deregister().catch(() => undefined);
       if (ownsSessionRuntime) {
@@ -376,7 +441,7 @@ export class AgentManager {
       record.launchHandle = handle;
       record.processControlId = handle.processControlId;
       record.providerThreadId = handle.providerThreadId;
-      this.watchInputReadiness(record, handle);
+      this.bindInputAdapter(record, handle.input);
 
       // A launch handle's readiness is the provider-neutral establishment
       // boundary. It is separate from the input adapter's readiness and from
@@ -384,6 +449,7 @@ export class AgentManager {
       await handle.ready;
       record.launchReady = true;
       this.updateRecordInputState(record, handle.input);
+      this.schedulePendingDrain(record);
 
       return Object.freeze({
         name: record.name,
@@ -399,6 +465,73 @@ export class AgentManager {
         `Could not start agent ${record.name}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error }
       );
+    }
+  }
+
+  /**
+   * Send one trusted message through the session mailbox transport. The
+   * caller identity is resolved from the authoritative manager map; request
+   * arguments never contain a source field.
+   */
+  public async sendAgentMessage(
+    caller: AgentCallerIdentity,
+    request: unknown
+  ): Promise<SendAgentMessageResult> {
+    this.ensureOpen();
+    const validated = this.validateSendAgentMessageRequest(request);
+    const sourceRecord = this.resolveCaller(caller);
+    const targetName = parseAgentAddress(validated.name);
+    if (targetName === undefined) {
+      throw new AgentManagerError('invalid_name', `Invalid target agent name: ${validated.name}`);
+    }
+
+    const targetId = this.byName.get(targetName);
+    const targetRecord = targetId === undefined ? undefined : this.byId.get(targetId);
+    if (targetRecord === undefined || !isNonterminalAgentLifecycleState(targetRecord.state)) {
+      throw new AgentManagerError(
+        'unknown_target',
+        `Unknown or inactive target agent: ${validated.name}`
+      );
+    }
+    if (targetRecord.state === 'finishing' || targetRecord.state === 'stopping') {
+      throw new AgentManagerError(
+        'target_not_accepting_messages',
+        `Agent ${targetRecord.name} is not accepting new messages while ${targetRecord.state}`
+      );
+    }
+    if (targetRecord.registration === undefined || targetRecord.mailbox === undefined) {
+      throw new AgentManagerError(
+        'target_not_accepting_messages',
+        `Agent ${targetRecord.name} does not have a ready mailbox`
+      );
+    }
+
+    const messageId = randomUUID();
+    try {
+      const acknowledgement = await this.sessionRuntime.sendMessage(
+        { id: sourceRecord.id, name: sourceRecord.name },
+        { id: targetRecord.id, name: targetRecord.name },
+        { requestId: messageId, content: validated.message }
+      );
+      if (!acknowledgement.success) {
+        this.throwForMailboxFailure(
+          acknowledgement.error.code,
+          acknowledgement.error.message,
+          acknowledgement.error.code === 'unknown_source'
+            ? undefined
+            : new MailboxProtocolError(acknowledgement.error.code, acknowledgement.error.message)
+        );
+      }
+      return Object.freeze({
+        name: targetRecord.name,
+        messageId: acknowledgement.requestId,
+        delivery: acknowledgement.delivery,
+      });
+    } catch (error) {
+      if (error instanceof AgentManagerError) {
+        throw error;
+      }
+      throw this.mapMailboxTransportError(error);
     }
   }
 
@@ -544,6 +677,13 @@ export class AgentManager {
       } catch (error) {
         firstError ??= error;
       } finally {
+        for (const unsubscribe of this.inputAvailabilityUnsubscribers.values()) {
+          unsubscribe();
+        }
+        this.inputAvailabilityUnsubscribers.clear();
+        this.inputAvailabilityVersions.clear();
+        this.inputAdapters.clear();
+        this.pendingDrainPromises.clear();
         this.byId.clear();
         this.byName.clear();
       }
@@ -577,6 +717,34 @@ export class AgentManager {
     return result.data;
   }
 
+  private validateSendAgentMessageRequest(request: unknown): {
+    readonly name: string;
+    readonly message: string;
+  } {
+    if (
+      isRecord(request) &&
+      typeof request.message === 'string' &&
+      utf8ByteLength(request.message) > MAX_AGENT_MESSAGE_BYTES
+    ) {
+      throw new AgentManagerError(
+        'invalid_request',
+        `Agent message content must be at most ${MAX_AGENT_MESSAGE_BYTES} UTF-8 bytes`,
+        undefined,
+        'message_too_large'
+      );
+    }
+    const result = sendAgentMessageArgumentsSchema.safeParse(request);
+    if (!result.success) {
+      if (isRecord(request) && Object.hasOwn(request, 'name')) {
+        if (parseAgentAddress(request.name) === undefined) {
+          throw new AgentManagerError('invalid_name', 'The target agent name is invalid');
+        }
+      }
+      throw new AgentManagerError('invalid_request', 'SendAgentMessage request is invalid');
+    }
+    return result.data;
+  }
+
   private assertOrchestratorCaller(caller: unknown): void {
     if (!isRecord(caller)) {
       throw new AgentManagerError(
@@ -601,21 +769,61 @@ export class AgentManager {
     }
   }
 
+  private resolveCaller(caller: unknown): AgentRecord {
+    if (!isRecord(caller)) {
+      throw new AgentManagerError('unknown_sender', 'The message sender is not an active agent');
+    }
+    const callerId = parseAgentId(caller.id);
+    const record = callerId === undefined ? undefined : this.byId.get(callerId);
+    const matchesIdentity =
+      record !== undefined &&
+      isNonterminalAgentLifecycleState(record.state) &&
+      caller.name === record.name &&
+      caller.role === record.role &&
+      caller.executor === record.executor &&
+      (record.role === 'orchestrator'
+        ? !Object.hasOwn(caller, 'type')
+        : caller.type === record.type);
+    if (!matchesIdentity || record === undefined) {
+      throw new AgentManagerError('unknown_sender', 'The message sender is not an active agent');
+    }
+    return record;
+  }
+
   private async deliverToAgent(
     record: SubagentAgentRecord,
     message: MailboxMessageRequest,
     sourceRegistration: AgentRegistration
-  ): Promise<import('./mailbox_server.js').MailboxDeliveryResult> {
+  ): Promise<MailboxDeliveryResult> {
+    return this.deliverToRecord(record, message, sourceRegistration);
+  }
+
+  private async deliverToRecord(
+    record: AgentRecord,
+    message: MailboxMessageRequest,
+    sourceRegistration: AgentRegistration
+  ): Promise<MailboxDeliveryResult> {
     if (this.byId.get(record.id) !== record || !isNonterminalAgentLifecycleState(record.state)) {
+      return 'temporarily-unavailable';
+    }
+    if (record.state === 'finishing' || record.state === 'stopping') {
       return 'temporarily-unavailable';
     }
     const sourceId = parseAgentId(sourceRegistration.id);
     const sourceRecord = sourceId === undefined ? undefined : this.byId.get(sourceId);
-    if (sourceRecord === undefined || sourceRecord.name !== sourceRegistration.name) {
+    if (sourceRecord === undefined || !matchesTrustedSource(sourceRecord, sourceRegistration)) {
       throw new AgentManagerError('unknown_sender', 'The message source is not an active agent');
     }
-    const input = record.launchHandle?.input;
-    if (!record.launchReady || input === undefined || !input.isReady) {
+    const input = this.inputAdapters.get(record.id);
+    if (
+      input === undefined ||
+      !input.isReady ||
+      input.activity === 'not-ready' ||
+      input.activity === 'temporarily-unavailable' ||
+      (record.role === 'subagent' && !record.launchReady) ||
+      this.pendingDrainPromises.has(record.id) ||
+      record.mailbox?.receiver.pendingCount !== 0
+    ) {
       return 'temporarily-unavailable';
     }
 
@@ -628,29 +836,44 @@ export class AgentManager {
     return delivery;
   }
 
-  private watchInputReadiness(
-    record: SubagentAgentRecord,
-    handle: import('./agent_manager_types.js').AgentLaunchHandle
-  ): void {
-    void handle.input.ready
+  private bindInputAdapter(record: AgentRecord, input: AgentInputAdapter): void {
+    this.inputAdapters.set(record.id, input);
+    this.inputAvailabilityVersions.set(
+      record.id,
+      (this.inputAvailabilityVersions.get(record.id) ?? 0) + 1
+    );
+    const oldUnsubscribe = this.inputAvailabilityUnsubscribers.get(record.id);
+    oldUnsubscribe?.();
+    const unsubscribe = input.onAvailabilityChange?.(() => {
+      if (this.byId.get(record.id) === record) {
+        this.noteInputAvailabilityChange(record, input);
+      }
+    });
+    if (unsubscribe !== undefined) {
+      this.inputAvailabilityUnsubscribers.set(record.id, unsubscribe);
+    }
+    void input.ready
       .then(() => {
-        if (this.byId.get(record.id) === record && record.launchHandle === handle) {
-          record.inputActivity = handle.input.activity;
-          if (record.launchReady) {
-            this.updateRecordInputState(record, handle.input);
-          }
+        if (this.byId.get(record.id) === record) {
+          this.noteInputAvailabilityChange(record, input);
         }
       })
       .catch(() => undefined);
   }
 
-  private updateRecordInputState(
-    record: SubagentAgentRecord,
-    input: import('./agent_manager_types.js').AgentInputAdapter
-  ): void {
+  private noteInputAvailabilityChange(record: AgentRecord, input: AgentInputAdapter): void {
+    this.inputAvailabilityVersions.set(
+      record.id,
+      (this.inputAvailabilityVersions.get(record.id) ?? 0) + 1
+    );
+    this.updateRecordInputState(record, input);
+    this.schedulePendingDrain(record);
+  }
+
+  private updateRecordInputState(record: AgentRecord, input: AgentInputAdapter): void {
     record.inputActivity = input.activity;
     if (
-      record.launchReady &&
+      (record.role === 'orchestrator' || record.launchReady) &&
       input.isReady &&
       (record.state === 'starting' ||
         record.state === 'running-active' ||
@@ -658,6 +881,129 @@ export class AgentManager {
     ) {
       record.state = input.activity === 'active' ? 'running-active' : 'running-idle';
     }
+  }
+
+  private schedulePendingDrain(record: AgentRecord): void {
+    if (record.mailbox?.receiver.pendingCount === 0) {
+      return;
+    }
+    const input = this.inputAdapters.get(record.id);
+    if (
+      input === undefined ||
+      !input.isReady ||
+      input.activity === 'not-ready' ||
+      input.activity === 'temporarily-unavailable' ||
+      (record.role === 'subagent' && !record.launchReady)
+    ) {
+      return;
+    }
+    if (this.pendingDrainPromises.has(record.id)) {
+      return;
+    }
+    let drainPromise: Promise<void>;
+    const availabilityVersion = this.inputAvailabilityVersions.get(record.id) ?? 0;
+    drainPromise = this.drainPending(record)
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.pendingDrainPromises.get(record.id) === drainPromise) {
+          this.pendingDrainPromises.delete(record.id);
+          if (
+            this.inputAvailabilityVersions.get(record.id) !== availabilityVersion &&
+            this.byId.get(record.id) === record
+          ) {
+            this.schedulePendingDrain(record);
+          }
+        }
+      });
+    this.pendingDrainPromises.set(record.id, drainPromise);
+  }
+
+  private async drainPending(record: AgentRecord): Promise<void> {
+    const receiver = record.mailbox?.receiver;
+    if (receiver === undefined) {
+      return;
+    }
+    while (
+      this.byId.get(record.id) === record &&
+      isNonterminalAgentLifecycleState(record.state) &&
+      record.state !== 'finishing' &&
+      record.state !== 'stopping'
+    ) {
+      const input = this.inputAdapters.get(record.id);
+      if (
+        input === undefined ||
+        !input.isReady ||
+        input.activity === 'not-ready' ||
+        input.activity === 'temporarily-unavailable' ||
+        (record.role === 'subagent' && !record.launchReady)
+      ) {
+        return;
+      }
+      const pending = receiver.takePendingForDelivery(1);
+      const entry = pending[0];
+      if (entry === undefined) {
+        return;
+      }
+      const sourceId = parseAgentId(entry.sourceRegistration.id);
+      const sourceRecord = sourceId === undefined ? undefined : this.byId.get(sourceId);
+      if (
+        sourceRecord === undefined ||
+        !matchesTrustedSource(sourceRecord, entry.sourceRegistration)
+      ) {
+        receiver.requeuePending(pending);
+        return;
+      }
+      try {
+        const delivery = await input.deliver({
+          messageId: entry.request.requestId,
+          source: snapshotIdentity(sourceRecord),
+          content: entry.request.content,
+        });
+        if (delivery === 'temporarily-unavailable') {
+          receiver.requeuePending(pending);
+          return;
+        }
+        receiver.acknowledgePending(pending);
+        this.updateRecordInputState(record, input);
+      } catch {
+        receiver.requeuePending(pending);
+        return;
+      }
+    }
+  }
+
+  private throwForMailboxFailure(code: MailboxErrorCode, message: string, cause?: Error): never {
+    throw this.mapMailboxError(code, message, cause);
+  }
+
+  private mapMailboxTransportError(error: unknown): AgentManagerError {
+    if (error instanceof MailboxProtocolError) {
+      return this.mapMailboxError(error.code, error.message, error);
+    }
+    return new AgentManagerError(
+      'transport_error',
+      `Agent message delivery failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error }
+    );
+  }
+
+  private mapMailboxError(
+    code: MailboxErrorCode,
+    message: string,
+    cause?: Error
+  ): AgentManagerError {
+    const managerCode: AgentManagerError['code'] =
+      code === 'unknown_source'
+        ? 'unknown_sender'
+        : code === 'unknown_target' || code === 'target_stale'
+          ? 'unknown_target'
+          : 'transport_error';
+    return new AgentManagerError(
+      managerCode,
+      `Agent message delivery failed (${code}): ${message}`,
+      { cause },
+      code
+    );
   }
 
   private async rollbackStart(
@@ -723,6 +1069,10 @@ export class AgentManager {
     if (this.byId.get(record.id) !== record) {
       return;
     }
+    this.inputAvailabilityUnsubscribers.get(record.id)?.();
+    this.inputAvailabilityUnsubscribers.delete(record.id);
+    this.inputAvailabilityVersions.delete(record.id);
+    this.inputAdapters.delete(record.id);
     this.byId.delete(record.id);
     if (this.byName.get(record.name) === record.id) {
       this.byName.delete(record.name);

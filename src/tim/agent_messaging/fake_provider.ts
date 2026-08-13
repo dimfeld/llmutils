@@ -39,6 +39,13 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
   private readyState = false;
   private inputActivity: AgentInputActivity = 'not-ready';
   private readonly received = new Array<AgentInputMessage>();
+  private readonly availabilityListeners = new Set<() => void>();
+  private nextDelivery:
+    | {
+        readonly promise: Promise<AgentInputDelivery>;
+        readonly resolve: (delivery: AgentInputDelivery) => void;
+      }
+    | undefined;
 
   public get ready(): Promise<void> {
     return this.readyDeferred.promise;
@@ -56,40 +63,95 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
     return Object.freeze([...this.received]);
   }
 
+  public onAvailabilityChange(listener: () => void): () => void {
+    this.availabilityListeners.add(listener);
+    return (): void => {
+      this.availabilityListeners.delete(listener);
+    };
+  }
+
+  private notifyAvailabilityChange(): void {
+    for (const listener of this.availabilityListeners) {
+      listener();
+    }
+  }
+
   public markReady(): void {
     this.readyState = true;
     if (this.inputActivity === 'not-ready') {
       this.inputActivity = 'idle';
     }
     this.readyDeferred.resolve(undefined);
+    this.notifyAvailabilityChange();
   }
 
   public setActiveAccepting(): void {
     this.inputActivity = 'active';
+    this.notifyAvailabilityChange();
   }
 
   public setTemporarilyUnavailable(): void {
     this.inputActivity = 'temporarily-unavailable';
+    this.notifyAvailabilityChange();
   }
 
   public setIdle(): void {
     this.inputActivity = 'idle';
+    this.notifyAvailabilityChange();
   }
 
-  public deliver(message: AgentInputMessage): AgentInputDelivery {
+  /** Hold the next accepted delivery until the test explicitly resolves it. */
+  public deferNextDelivery(): void {
+    if (this.nextDelivery !== undefined) {
+      throw new Error('A fake delivery is already deferred');
+    }
+    let resolveDelivery: (delivery: AgentInputDelivery) => void = () => undefined;
+    const promise = new Promise<AgentInputDelivery>((resolve) => {
+      resolveDelivery = resolve;
+    });
+    this.nextDelivery = { promise, resolve: resolveDelivery };
+  }
+
+  public resolveNextDelivery(delivery: AgentInputDelivery = 'steered'): void {
+    const nextDelivery = this.nextDelivery;
+    if (nextDelivery === undefined) {
+      throw new Error('No fake delivery is deferred');
+    }
+    this.nextDelivery = undefined;
+    nextDelivery.resolve(delivery);
+  }
+
+  public deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery> {
     if (!this.readyState || this.inputActivity === 'temporarily-unavailable') {
       return 'temporarily-unavailable';
     }
-    this.received.push(Object.freeze({ ...message }));
-    if (this.inputActivity === 'idle') {
-      this.inputActivity = 'active';
-      return 'started-idle-turn';
+    const deferredDelivery = this.nextDelivery;
+    if (deferredDelivery !== undefined) {
+      return deferredDelivery.promise.then((delivery) => this.finishDelivery(message, delivery));
     }
-    return 'steered';
+    return this.finishDelivery(
+      message,
+      this.inputActivity === 'idle' ? 'started-idle-turn' : 'steered'
+    );
+  }
+
+  private finishDelivery(
+    message: AgentInputMessage,
+    delivery: AgentInputDelivery
+  ): AgentInputDelivery {
+    if (delivery === 'temporarily-unavailable') {
+      return delivery;
+    }
+    this.received.push(Object.freeze({ ...message }));
+    if (delivery === 'started-idle-turn') {
+      this.inputActivity = 'active';
+    }
+    return delivery;
   }
 
   public async release(): Promise<void> {
     this.inputActivity = 'not-ready';
+    this.notifyAvailabilityChange();
   }
 }
 

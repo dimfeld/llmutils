@@ -690,6 +690,26 @@ describe('agent mailbox receiver', () => {
     expect(() => mailbox.receiver.drainPending(Number.NaN)).toThrow(RangeError);
   });
 
+  test('requeues a drained batch at the front without reversing or duplicating it', async () => {
+    const mailbox = await createMailbox((): 'temporarily-unavailable' => 'temporarily-unavailable');
+    for (let index = 1; index <= 4; index += 1) {
+      await sendRequest(mailbox, requestFor(mailbox, `requeue-${index}`, `message-${index}`));
+    }
+
+    const drained = mailbox.receiver.drainPending(2);
+    await sendRequest(mailbox, requestFor(mailbox, 'requeue-5', 'message-5'));
+    mailbox.receiver.requeuePending(drained);
+    mailbox.receiver.requeuePending(drained);
+
+    expect(mailbox.receiver.drainPending().map((entry) => entry.request.content)).toEqual([
+      'message-1',
+      'message-2',
+      'message-3',
+      'message-4',
+      'message-5',
+    ]);
+  });
+
   test('replays duplicate acknowledgements without invoking delivery twice', async () => {
     let deliveryCount = 0;
     const mailbox = await createMailbox((request: MailboxMessageRequest): 'steered' => {
