@@ -13,15 +13,15 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, error, log, sendStructured, warn } from '../../../logging.js';
-import { createLineSplitter, spawnWithStreamingIO } from '../../../common/process.js';
+import { spawnWithStreamingIO } from '../../../common/process.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import {
   normalizeSubprocessMonitorRules,
   startSubprocessMonitor,
   type SubprocessMonitorHandle,
 } from '../../../common/subprocess_monitor.js';
-import { createClaudeMessageFormatter, extractStructuredMessages } from './format.js';
 import type { FormattedClaudeMessage } from './format.js';
+import { createClaudeOutputStreamFormatter } from './output_stream_formatter.js';
 import { executeWithTerminalInput } from './terminal_input_lifecycle.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
@@ -402,8 +402,7 @@ export async function runClaudeSubprocess(
       args.push(...extraArgs);
     }
 
-    const splitter = createLineSplitter();
-    const formatter = createClaudeMessageFormatter();
+    const streamFormatter = createClaudeOutputStreamFormatter(modelToUse);
 
     if (logModelSelection) {
       log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
@@ -435,9 +434,7 @@ export async function runClaudeSubprocess(
         );
       },
       formatStdout: (output) => {
-        const lines = splitter(output);
-        const formattedResults = lines.map((line) => formatter.formatJsonMessage(line, modelToUse));
-        const structuredMessages = extractStructuredMessages(formattedResults);
+        const { formattedResults, structuredMessages } = streamFormatter.formatChunk(output);
 
         // Track result messages and file paths
         for (const formatted of formattedResults) {

@@ -5,27 +5,32 @@ import type { TimConfig } from '../configSchema.js';
 export type SubagentType = 'implementer' | 'tester' | 'tdd-tests';
 export type SubagentExecutor = 'codex-cli' | 'claude-code';
 
-export interface SubagentInputOptions {
-  input?: string;
-  inputFile?: string | string[];
-}
+export type SubagentInputPolicy =
+  | {
+      readonly type: 'resolved';
+      readonly initialMessage?: string;
+    }
+  | {
+      readonly type: 'orchestrator';
+      readonly input?: string;
+      readonly inputFile?: string | string[];
+      readonly fallbackToStdin: boolean;
+    };
 
 /**
  * Input and context used to prepare one one-shot subagent execution.
  *
- * `initialMessage` is already-resolved input for in-process callers. When it
- * is present, no input files or stdin are read. Stdin fallback is disabled by
- * default and must be enabled explicitly by a CLI adapter.
+ * Resolved input is used by in-process callers. Orchestrator input preserves
+ * the legacy input-file, inline-input, and optional stdin fallback behavior.
  */
-export interface SubagentPreparationRequest extends SubagentInputOptions {
+export interface SubagentPreparationRequest {
   agentType: SubagentType;
   planId: number;
   executor?: string;
   model?: string;
   taskIndex?: string | string[];
   configPath?: string;
-  initialMessage?: string;
-  fallbackToStdin?: boolean;
+  inputPolicy: SubagentInputPolicy;
   repositoryRoot?: string;
 }
 

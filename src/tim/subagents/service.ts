@@ -25,6 +25,7 @@ import type {
   PreparedSubagentExecution,
   SubagentExecutor,
   SubagentLaunchHandle,
+  SubagentInputPolicy,
   SubagentPreparationRequest,
   SubagentType,
 } from './types.js';
@@ -32,7 +33,44 @@ import type { PlanSchema } from '../planSchema.js';
 import type { ClaudeCodeSubprocessOptions } from '../executors/claude_code/run_claude_subprocess.js';
 
 type SubagentExecutorModelKey = 'claude' | 'codex';
-type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer';
+type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests';
+type SubagentInstructionKey = 'implementer' | 'tester' | 'tddTests';
+
+type SubagentPromptBuilder = (
+  contextContent: string,
+  planId: string,
+  customInstructions: string | undefined,
+  model: string | undefined,
+  progressGuidanceOptions: { mode: 'report'; useJj: boolean }
+) => { name: string; prompt: string };
+
+interface SubagentRoleDefinition {
+  instructionKey: SubagentInstructionKey;
+  configKey: SubagentConfigKey;
+  legacyClaudeModelKey: string;
+  promptBuilder: SubagentPromptBuilder;
+}
+
+export const ROLE_DEFINITIONS = {
+  implementer: {
+    instructionKey: 'implementer',
+    configKey: 'implementer',
+    legacyClaudeModelKey: 'implementer',
+    promptBuilder: getImplementerPrompt,
+  },
+  tester: {
+    instructionKey: 'tester',
+    configKey: 'tester',
+    legacyClaudeModelKey: 'tester',
+    promptBuilder: getTesterPrompt,
+  },
+  'tdd-tests': {
+    instructionKey: 'tddTests',
+    configKey: 'tddTests',
+    legacyClaudeModelKey: 'tddTests',
+    promptBuilder: getTddTestsPrompt,
+  },
+} satisfies Record<SubagentType, SubagentRoleDefinition>;
 
 /**
  * A minimal executor-like object used only while constructing the prompt.
@@ -136,18 +174,15 @@ export async function prepareSubagentExecution(
     referenceArtifactPaths,
   });
 
-  const agentInstructionsType: Parameters<typeof loadAgentInstructionsFor>[0] =
-    request.agentType === 'tdd-tests' ? 'tddTests' : request.agentType;
-  const customInstructions = await loadAgentInstructionsFor(agentInstructionsType, gitRoot, config);
-  const orchestratorInput =
-    request.initialMessage ??
-    (await resolveOrchestratorInput({
-      input: request.input,
-      inputFile: request.inputFile,
-      fallbackToStdin: request.fallbackToStdin === true,
-    }));
+  const roleDefinition = ROLE_DEFINITIONS[request.agentType];
+  const customInstructions = await loadAgentInstructionsFor(
+    roleDefinition.instructionKey,
+    gitRoot,
+    config
+  );
+  const inputText = await resolveSubagentInput(request.inputPolicy);
 
-  const allInstructions = [customInstructions, orchestratorInput]
+  const allInstructions = [customInstructions, inputText]
     .filter((value): value is string => Boolean(value?.trim()))
     .join('\n\n');
   const planIdLabel = planData.id?.toString() ?? 'unknown';
@@ -157,13 +192,12 @@ export async function prepareSubagentExecution(
     planFilePath,
     branch: planData.branch,
   });
-  const agentDefinition = buildAgentDefinition(
-    request.agentType,
+  const agentDefinition = roleDefinition.promptBuilder(
     contextContent,
     planIdLabel,
     allInstructions || undefined,
     selectedModel,
-    useJj
+    { mode: 'report', useJj }
   );
 
   return {
@@ -260,30 +294,12 @@ async function executeWithClaude(prepared: PreparedSubagentExecution): Promise<s
   return finalMessage;
 }
 
-function buildAgentDefinition(
-  agentType: SubagentType,
-  contextContent: string,
-  planId: string,
-  customInstructions: string | undefined,
-  model: string | undefined,
-  useJj: boolean
-): { name: string; prompt: string } {
-  switch (agentType) {
-    case 'implementer':
-      return getImplementerPrompt(contextContent, planId, customInstructions, model, {
-        mode: 'report',
-        useJj,
-      });
-    case 'tester':
-      return getTesterPrompt(contextContent, planId, customInstructions, model, {
-        mode: 'report',
-        useJj,
-      });
-    case 'tdd-tests':
-      return getTddTestsPrompt(contextContent, planId, customInstructions, model, {
-        mode: 'report',
-        useJj,
-      });
+async function resolveSubagentInput(policy: SubagentInputPolicy): Promise<string | undefined> {
+  switch (policy.type) {
+    case 'resolved':
+      return policy.initialMessage;
+    case 'orchestrator':
+      return resolveOrchestratorInput(policy);
   }
 }
 
@@ -298,10 +314,10 @@ function resolveSubagentModel(
   }
 
   const normalizedExecutor = normalizeSubagentExecutor(executorType);
-  const subagentKey = toSubagentConfigKey(agentType);
+  const roleDefinition = ROLE_DEFINITIONS[agentType];
   const configuredModel =
-    config.subagents?.[subagentKey]?.model?.[normalizedExecutor] ||
-    config.subagents?.[subagentKey]?.model?.[executorType as SubagentExecutorModelKey];
+    config.subagents?.[roleDefinition.configKey]?.model?.[normalizedExecutor] ||
+    config.subagents?.[roleDefinition.configKey]?.model?.[executorType as SubagentExecutorModelKey];
   if (configuredModel?.trim()) {
     return configuredModel;
   }
@@ -310,12 +326,9 @@ function resolveSubagentModel(
     const claudeAgents = (config.executors as Record<string, unknown> | undefined)?.[
       'claude-code'
     ] as { agents?: Record<string, { model?: string } | undefined> } | undefined;
-    const legacyAgentKeys = toLegacyClaudeAgentKeys(agentType);
-    for (const key of legacyAgentKeys) {
-      const legacyModel = claudeAgents?.agents?.[key]?.model;
-      if (legacyModel?.trim()) {
-        return legacyModel;
-      }
+    const legacyModel = claudeAgents?.agents?.[roleDefinition.legacyClaudeModelKey]?.model;
+    if (legacyModel?.trim()) {
+      return legacyModel;
     }
   }
 
@@ -341,17 +354,4 @@ function resolveSubagentExecutor(
     throw new Error(`Unsupported subagent executor: ${executor}`);
   }
   return executor;
-}
-
-function toSubagentConfigKey(agentType: SubagentType): SubagentConfigKey {
-  return agentType === 'tdd-tests' ? 'tddTests' : agentType;
-}
-
-function toLegacyClaudeAgentKeys(agentType: SubagentType): SubagentConfigKey[] {
-  switch (agentType) {
-    case 'tdd-tests':
-      return ['tddTests'];
-    default:
-      return [agentType];
-  }
 }

@@ -47,11 +47,14 @@ export async function handleSubagentCommand(
     planId,
     executor: options.executor,
     model: options.model,
-    input: options.input,
-    inputFile: options.inputFile,
+    inputPolicy: {
+      type: 'orchestrator',
+      input: options.input,
+      inputFile: options.inputFile,
+      fallbackToStdin: true,
+    },
     taskIndex: options.taskIndex,
     configPath: globalCliOptions.config,
-    fallbackToStdin: true,
   };
   const prepared = await prepareSubagentExecution(preparationRequest);
   const handle = launchPreparedSubagent(prepared);

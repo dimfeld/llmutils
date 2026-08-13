@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, log, sendStructured, error, warn } from '../../logging.ts';
-import { createLineSplitter, debug, spawnWithStreamingIO } from '../../common/process.ts';
+import { debug, spawnWithStreamingIO } from '../../common/process.ts';
 import { getGitRoot, getUsingJj, getWorkingCopyStatus } from '../../common/git.ts';
 import {
   normalizeSubprocessMonitorRules,
@@ -12,7 +12,7 @@ import {
 } from '../../common/subprocess_monitor.js';
 import type { TimConfig } from '../configSchema.ts';
 import type { Executor, ExecutorCommonOptions, ExecutePlanInfo } from './types.ts';
-import { createClaudeMessageFormatter, extractStructuredMessages } from './claude_code/format.ts';
+import { createClaudeOutputStreamFormatter } from './claude_code/output_stream_formatter.ts';
 import { claudeCodeOptionsSchema, ClaudeCodeExecutorName } from './schemas.js';
 import chalk from 'chalk';
 import { promptPrefixSelect } from '../../common/input.ts';
@@ -748,7 +748,6 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       args.push('--verbose', '--output-format', 'stream-json', '--input-format', 'stream-json');
-      let splitter = createLineSplitter();
       let capturedOutputLines: string[] = [];
       let lastAssistantRaw: string | undefined;
       let failureSummary: string | undefined;
@@ -773,7 +772,7 @@ export class ClaudeCodeExecutor implements Executor {
       const disableInactivityTimeout = this.sharedOptions.disableInactivityTimeout !== false;
       const executionTimeoutMs = 60 * 60 * 1000; // 60 minutes
       let killedByTimeout = false;
-      const formatter = createClaudeMessageFormatter();
+      const streamFormatter = createClaudeOutputStreamFormatter();
       const streaming = await spawnWithStreamingIO(args, {
         sessionProcessLabel: 'Claude execution',
         sessionProcessControl: 'both',
@@ -800,9 +799,7 @@ export class ClaudeCodeExecutor implements Executor {
           );
         },
         formatStdout: (output) => {
-          let lines = splitter(output);
-          const formattedResults = lines.map((line) => formatter.formatJsonMessage(line));
-          const structuredMessages = extractStructuredMessages(formattedResults);
+          const { formattedResults, structuredMessages } = streamFormatter.formatChunk(output);
           // Capture output based on the specified mode
           const captureMode = planInfo?.captureOutput;
 

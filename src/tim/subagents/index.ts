@@ -7,7 +7,7 @@ export type {
   PreparedSubagentExecution,
   SubagentExecutionResult,
   SubagentExecutor,
-  SubagentInputOptions,
+  SubagentInputPolicy,
   SubagentLaunchHandle,
   SubagentPreparationRequest,
   SubagentType,

@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { createLineSplitter, spawnAndLogOutput } from '../../common/process.js';
+import { spawnAndLogOutput } from '../../common/process.js';
 import { debugLog, runWithLogger, warn } from '../../logging.js';
 import type { LoggerAdapter } from '../../logging/adapter.js';
 import { formatStructuredMessage } from '../../logging/console_formatter.js';
@@ -12,10 +12,7 @@ import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tun
 import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import { codexReasoningLevelSchema, type CodexReasoningLevel } from '../executors/schemas.js';
-import {
-  createClaudeMessageFormatter,
-  extractStructuredMessages,
-} from '../executors/claude_code/format.js';
+import { createClaudeOutputStreamFormatter } from '../executors/claude_code/output_stream_formatter.js';
 import { createCodexStdoutFormatter } from '../executors/codex_cli/format.js';
 import {
   buildOutputSchemaConversionPrompt,
@@ -329,12 +326,11 @@ export async function executeClaudePrompt(
   const tunnelEnv: Record<string, string> =
     tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {};
 
-  const split = createLineSplitter();
   let seenResultMessage = false;
   let capturedResult: string | undefined;
   let capturedStructuredOutput: unknown;
   let killedByTimeout = false;
-  const formatter = createClaudeMessageFormatter();
+  const streamFormatter = createClaudeOutputStreamFormatter();
 
   try {
     const result = await spawnAndLogOutput(args, {
@@ -358,9 +354,7 @@ export async function executeClaudePrompt(
         );
       },
       formatStdout: (chunk) => {
-        const lines = split(chunk);
-        const formattedResults = lines.map((line) => formatter.formatJsonMessage(line));
-        const structuredMessages = extractStructuredMessages(formattedResults);
+        const { formattedResults, structuredMessages } = streamFormatter.formatChunk(chunk);
 
         for (const formatted of formattedResults) {
           if (formatted.type !== 'result') {

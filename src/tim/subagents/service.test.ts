@@ -8,6 +8,7 @@ import {
   mockIsTTY,
 } from '../commands/subagent.test-helpers.js';
 import type { PlanSchema } from '../planSchema.js';
+import type { SubagentInputPolicy } from './types.js';
 import { launchPreparedSubagent, prepareSubagentExecution } from './service.js';
 
 const mocks = vi.hoisted(() => ({
@@ -72,6 +73,11 @@ vi.mock('../executors/claude_code/run_claude_subprocess.js', () => ({
 }));
 
 describe('reusable subagent service', () => {
+  const resolvedInput = (initialMessage?: string): SubagentInputPolicy => ({
+    type: 'resolved' as const,
+    initialMessage,
+  });
+
   let plan: PlanSchema;
   const gitRoot = '/tmp/subagent-service-repository';
   const planPath = path.join(gitRoot, '.tim', 'plans', '42.plan.md');
@@ -116,7 +122,7 @@ describe('reusable subagent service', () => {
       agentType: 'implementer',
       planId: 42,
       executor: 'codex-cli',
-      initialMessage: 'Use the initial message.',
+      inputPolicy: resolvedInput('Use the initial message.'),
     });
 
     expect(prepared.executor).toBe('codex-cli');
@@ -140,7 +146,7 @@ describe('reusable subagent service', () => {
       planId: 42,
       executor: 'codex-cli',
       repositoryRoot: suppliedRepositoryRoot,
-      initialMessage: 'Use the supplied repository root.',
+      inputPolicy: resolvedInput('Use the supplied repository root.'),
     });
 
     expect(mocks.resolveRepoRoot).not.toHaveBeenCalled();
@@ -171,7 +177,7 @@ describe('reusable subagent service', () => {
         planId: 42,
         executor: 'codex-cli',
         model: 'gpt-5-codex',
-        initialMessage: `Initial ${agentType} message`,
+        inputPolicy: resolvedInput(`Initial ${agentType} message`),
       });
 
       expect(prepared.prompt).toBe(`${agentType} prepared prompt`);
@@ -217,7 +223,7 @@ describe('reusable subagent service', () => {
     const prepared = await prepareSubagentExecution({
       agentType: 'tester',
       planId: 42,
-      initialMessage: 'Use the configured executor.',
+      inputPolicy: resolvedInput('Use the configured executor.'),
     });
 
     expect(prepared.executor).toBe('claude-code');
@@ -233,7 +239,7 @@ describe('reusable subagent service', () => {
     const prepared = await prepareSubagentExecution({
       agentType: 'tester',
       planId: 42,
-      initialMessage: 'Use the fallback executor.',
+      inputPolicy: resolvedInput('Use the fallback executor.'),
     });
 
     expect(prepared.executor).toBe('claude-code');
@@ -245,7 +251,7 @@ describe('reusable subagent service', () => {
         agentType: 'implementer',
         planId: 42,
         executor: 'unsupported-provider',
-        initialMessage: 'This must fail before launch.',
+        inputPolicy: resolvedInput('This must fail before launch.'),
       })
     ).rejects.toThrow('Unsupported subagent executor: unsupported-provider');
 
@@ -274,7 +280,7 @@ describe('reusable subagent service', () => {
       agentType: 'implementer',
       planId: 42,
       executor: 'claude-code',
-      initialMessage: 'Use the configured model.',
+      inputPolicy: resolvedInput('Use the configured model.'),
     });
     expect(configured.model).toBe('configured-claude-model');
 
@@ -282,7 +288,7 @@ describe('reusable subagent service', () => {
       agentType: 'implementer',
       planId: 42,
       executor: 'codex-cli',
-      initialMessage: 'Use the configured Codex model.',
+      inputPolicy: resolvedInput('Use the configured Codex model.'),
     });
     expect(configuredCodex.model).toBe('configured-codex-model');
 
@@ -291,7 +297,7 @@ describe('reusable subagent service', () => {
       planId: 42,
       executor: 'claude-code',
       model: 'cli-claude-model',
-      initialMessage: 'Use the CLI model.',
+      inputPolicy: resolvedInput('Use the CLI model.'),
     });
     expect(cliSelected.model).toBe('cli-claude-model');
 
@@ -303,7 +309,7 @@ describe('reusable subagent service', () => {
       agentType: 'implementer',
       planId: 42,
       executor: 'claude-code',
-      initialMessage: 'Use the legacy model.',
+      inputPolicy: resolvedInput('Use the legacy model.'),
     });
     expect(legacySelected.model).toBe('legacy-claude-model');
 
@@ -317,7 +323,7 @@ describe('reusable subagent service', () => {
       agentType: 'implementer',
       planId: 42,
       executor: 'claude-code',
-      initialMessage: 'Use the provider default.',
+      inputPolicy: resolvedInput('Use the provider default.'),
     });
     expect(providerDefault.model).toBeUndefined();
   });
@@ -328,7 +334,7 @@ describe('reusable subagent service', () => {
       planId: 42,
       executor: 'codex-cli',
       model: 'gpt-5.6-sol:high',
-      initialMessage: 'Run with high reasoning.',
+      inputPolicy: resolvedInput('Run with high reasoning.'),
     });
 
     await launchPreparedSubagent(prepared).completion;
@@ -357,8 +363,12 @@ describe('reusable subagent service', () => {
         agentType: 'implementer',
         planId: 42,
         executor: 'codex-cli',
-        inputFile: [firstInputPath, secondInputPath],
-        input: 'inline input',
+        inputPolicy: {
+          type: 'orchestrator',
+          inputFile: [firstInputPath, secondInputPath],
+          input: 'inline input',
+          fallbackToStdin: false,
+        },
       });
 
       expect(prepared.prompt).toContain(
@@ -378,7 +388,10 @@ describe('reusable subagent service', () => {
         agentType: 'tester',
         planId: 42,
         executor: 'codex-cli',
-        fallbackToStdin: true,
+        inputPolicy: {
+          type: 'orchestrator',
+          fallbackToStdin: true,
+        },
       });
 
       expect(prepared.prompt).toBe('tester prompt');
@@ -395,15 +408,12 @@ describe('reusable subagent service', () => {
     }
   });
 
-  test('uses initialMessage without reading input files or stdin', async () => {
+  test('uses resolved input without reading input files or stdin', async () => {
     const prepared = await prepareSubagentExecution({
       agentType: 'implementer',
       planId: 42,
       executor: 'codex-cli',
-      input: 'CLI input that must be ignored',
-      inputFile: '/path/that/does/not/exist',
-      initialMessage: 'Already resolved in-process input',
-      fallbackToStdin: true,
+      inputPolicy: resolvedInput('Already resolved in-process input'),
     });
 
     expect(prepared.prompt).toContain('Already resolved in-process input');
@@ -421,7 +431,7 @@ describe('reusable subagent service', () => {
       agentType: 'tester',
       planId: 42,
       executor: 'codex-cli',
-      initialMessage: 'Check the artifact.',
+      inputPolicy: resolvedInput('Check the artifact.'),
     });
 
     expect(mocks.materializePlan).toHaveBeenCalledWith(42, gitRoot);
@@ -466,6 +476,7 @@ describe('reusable subagent service', () => {
         planId: 42,
         executor: 'codex-cli',
         taskIndex: '1',
+        inputPolicy: resolvedInput(),
       })
     ).rejects.toThrow('Already completed task indexes: 1');
 
@@ -481,6 +492,7 @@ describe('reusable subagent service', () => {
         planId: 42,
         executor: 'codex-cli',
         taskIndex: '999',
+        inputPolicy: resolvedInput(),
       })
     ).rejects.toThrow('Unknown task indexes: 999');
 
@@ -495,7 +507,7 @@ describe('reusable subagent service', () => {
       agentType: 'implementer',
       planId: 42,
       executor: 'codex-cli',
-      initialMessage: 'Run once.',
+      inputPolicy: resolvedInput('Run once.'),
     });
 
     const handle = launchPreparedSubagent(prepared);
@@ -523,7 +535,7 @@ describe('reusable subagent service', () => {
       agentType: 'implementer',
       planId: 42,
       executor: 'codex-cli',
-      initialMessage: 'Run once.',
+      inputPolicy: resolvedInput('Run once.'),
     });
 
     const handle = launchPreparedSubagent(prepared);
@@ -557,7 +569,7 @@ describe('reusable subagent service', () => {
       agentType: 'implementer',
       planId: 42,
       executor: 'claude-code',
-      initialMessage: 'Run through Claude.',
+      inputPolicy: resolvedInput('Run through Claude.'),
     });
     const handle = launchPreparedSubagent(prepared);
 
@@ -602,7 +614,7 @@ describe('reusable subagent service', () => {
       agentType: 'tester',
       planId: 42,
       executor: 'claude-code',
-      initialMessage: 'Test the change.',
+      inputPolicy: resolvedInput('Test the change.'),
     });
 
     await expect(launchPreparedSubagent(prepared).completion).resolves.toEqual({
@@ -628,7 +640,7 @@ describe('reusable subagent service', () => {
       agentType: 'tdd-tests',
       planId: 42,
       executor: 'claude-code',
-      initialMessage: 'Write tests.',
+      inputPolicy: resolvedInput('Write tests.'),
     });
 
     await expect(launchPreparedSubagent(prepared).completion).rejects.toThrow(
