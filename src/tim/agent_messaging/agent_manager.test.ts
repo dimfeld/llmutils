@@ -3945,6 +3945,37 @@ describe('AgentManager terminal convergence', () => {
     expect(launch.handle.releaseCount).toBe(1);
   });
 
+  test('ignores provider events after terminal claim while notification delivery is pending', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'terminal-late-events');
+    const deliveryStarted = rootInput.deferNextDelivery();
+
+    launch.handle.lifecycle.emitCompletedAssistantMessage('captured terminal result');
+    launch.handle.lifecycle.emitExit('natural');
+    await deliveryStarted;
+
+    launch.handle.lifecycle.emitOutputActivity();
+    launch.handle.lifecycle.emitCompletedAssistantMessage('late result must be ignored');
+    launch.handle.lifecycle.emitTurnComplete();
+    launch.handle.lifecycle.emitExit('failed', new Error('late provider failure'));
+
+    rootInput.resolveNextDelivery();
+    await manager.waitForAgentTerminal(launch.request.identity.id);
+
+    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages[0]?.content).toContain('captured terminal result');
+    expect(rootInput.receivedMessages[0]?.content).not.toContain('late result must be ignored');
+    expect(launch.handle.releaseCount).toBe(1);
+  });
+
   test('suppresses only the exact approved duplicate and keeps cleanup single-shot', async () => {
     const launcher = new FakeAgentLauncher();
     const rootInput = new FakeAgentInputAdapter();
@@ -4920,6 +4951,45 @@ describe('AgentManager terminal convergence', () => {
       launch.handle.lifecycle.emitExit('graceful');
       await teardown;
       expect(launch.handle.releaseCount).toBe(1);
+    } finally {
+      await manager?.close().catch(() => undefined);
+      await session.close().catch(() => undefined);
+    }
+  });
+
+  test('keeps an agent live after an unknown automatic force outcome until provider exit', async () => {
+    const session = await createAgentMessagingSessionRuntime();
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    let manager: AgentManager | undefined;
+    try {
+      manager = await createManager({
+        sessionRuntime: session,
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+        orchestratorInputAdapter: rootInput,
+        scheduler,
+      });
+      const launch = await startActiveFakeAgent(manager, launcher, 'teardown-force-unknown');
+      launch.handle.lifecycle.failNextForcedShutdown(new Error('force outcome is unknown'));
+
+      const teardown = manager.close();
+      await flushLifecyclePromises();
+      scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS);
+      await flushLifecyclePromises();
+
+      expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
+      expect(launch.handle.releaseCount).toBe(0);
+      expect(manager.getIdentityByName('teardown-force-unknown')).toBeDefined();
+
+      launch.handle.lifecycle.emitExit('graceful');
+      await teardown;
+
+      expect(launch.handle.releaseCount).toBe(1);
+      expect(manager.getIdentityByName('teardown-force-unknown')).toBeUndefined();
     } finally {
       await manager?.close().catch(() => undefined);
       await session.close().catch(() => undefined);
