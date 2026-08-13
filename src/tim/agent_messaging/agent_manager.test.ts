@@ -11,7 +11,12 @@ import {
   MAX_SUBAGENTS_PER_SESSION,
   ORCHESTRATOR_AGENT_NAME,
 } from './contracts.js';
-import { AgentManagerError, createAgentManager, createAgentPreparation } from './index.js';
+import {
+  AgentManagerError,
+  AgentProviderControlError,
+  createAgentManager,
+  createAgentPreparation,
+} from './index.js';
 import {
   FakeAgentInputAdapter,
   FakeAgentLauncher,
@@ -2368,9 +2373,13 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     lifecycle.resolveCloseAfterCurrentTurn();
     await expect(closeRequest).resolves.toEqual({ accepted: true, alreadyExited: false });
 
-    const forcedError = new Error('force was not accepted');
+    const forcedError = new AgentProviderControlError('forced-shutdown', 'force was not accepted');
     lifecycle.failNextForcedShutdown(forcedError);
     await expect(lifecycle.requestForcedShutdown()).rejects.toBe(forcedError);
+    expect(forcedError).toMatchObject({
+      operation: 'forced-shutdown',
+      accepted: false,
+    });
     expect(lifecycle.forcedShutdownCalls).toBe(1);
 
     lifecycle.emitOutputActivity();
@@ -2391,6 +2400,14 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
       accepted: false,
       alreadyExited: true,
     });
+    await expect(lifecycle.requestGracefulShutdown('late shutdown')).resolves.toEqual({
+      accepted: false,
+      alreadyExited: true,
+    });
+    await expect(lifecycle.requestCloseAfterCurrentTurn()).resolves.toEqual({
+      accepted: false,
+      alreadyExited: true,
+    });
   });
 
   test('binds events to the launched opaque identity and ignores late callbacks', async () => {
@@ -2403,7 +2420,7 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     const lifecycle = launch.handle.lifecycle;
 
     lifecycle.emitOutputActivity();
-    lifecycle.emitCompletedAssistantMessage('  exact completed message  ');
+    lifecycle.emitCompletedAssistantMessage('  exact\tcompleted\nmessage  ');
     lifecycle.emitTurnComplete();
     lifecycle.emitOutputActivity();
     lifecycle.emitExit('natural');
@@ -2415,7 +2432,7 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
       providerOutputActivityCount: 2,
       providerTurnCompletionCount: 1,
-      lastCompletedAssistantMessage: '  exact completed message  ',
+      lastCompletedAssistantMessage: '  exact\tcompleted\nmessage  ',
       providerExit: { classification: 'natural' },
     });
 
@@ -2426,6 +2443,67 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     lifecycle.emitExit('forced');
     expect(manager.getAgentSnapshot(launch.request.identity.id)).toBeUndefined();
     await launch.handle.release();
+  });
+
+  test('does not let late events from a removed provider update a reused name', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const first = await startFakeAgent(manager, launcher, 'reused-lifecycle-name');
+    const firstLifecycle = first.handle.lifecycle;
+    const firstId = first.request.identity.id;
+
+    firstLifecycle.emitOutputActivity();
+    await manager.sessionRuntime.deregister(firstId);
+    manager.removeTerminalAgent(firstId);
+
+    const second = await startFakeAgent(manager, launcher, 'reused-lifecycle-name');
+    second.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(second.request.identity.id)?.state === 'running-idle'
+    );
+
+    firstLifecycle.emitOutputActivity();
+    firstLifecycle.emitCompletedAssistantMessage('stale result from the first provider');
+    firstLifecycle.emitTurnComplete();
+    firstLifecycle.emitExit('failed', new Error('stale provider failure'));
+
+    expect(manager.getAgentSnapshot(second.request.identity.id)).toMatchObject({
+      providerOutputActivityCount: 0,
+      providerTurnCompletionCount: 0,
+    });
+    expect(manager.getAgentSnapshot(second.request.identity.id)).not.toHaveProperty(
+      'lastCompletedAssistantMessage'
+    );
+    expect(manager.getAgentSnapshot(second.request.identity.id)).not.toHaveProperty('providerExit');
+    await first.handle.release();
+  });
+
+  test('detaches lifecycle listeners when the manager closes', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launch = await startFakeAgent(manager, launcher, 'close-lifecycle-listeners');
+    const lifecycle = launch.handle.lifecycle;
+
+    lifecycle.emitOutputActivity();
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      providerOutputActivityCount: 1,
+    });
+
+    await manager.close();
+
+    lifecycle.emitOutputActivity();
+    lifecycle.emitCompletedAssistantMessage('late result after manager close');
+    lifecycle.emitTurnComplete();
+    lifecycle.emitExit('forced');
+
+    expect(manager.isClosed).toBe(true);
+    expect(manager.listAgents().agents).toEqual([]);
   });
 
   test('records successful outbound delivery only after acknowledgement', async () => {
@@ -2451,7 +2529,7 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     const pause = first.handle.input.pauseAfterNextAcceptedDelivery();
     const pendingRootSend = manager.sendAgentMessage(manager.orchestratorIdentity, {
       name: 'outbound-first',
-      message: 'first successful result',
+      message: '  first successful\tresult\n  ',
     });
     await pause.accepted;
     expect(manager.getAgentSnapshot(manager.orchestratorIdentity.id)?.lastSuccessfulOutbound).toBe(
@@ -2464,7 +2542,7 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     ).toMatchObject({
       sequence: 1,
       target: 'outbound-first',
-      content: 'first successful result',
+      content: '  first successful\tresult\n  ',
     });
 
     const firstIdentity = manager.getIdentityByName('outbound-first');
@@ -2474,6 +2552,22 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
         message: 'peer result',
       })
     ).resolves.toMatchObject({ delivery: 'started-idle-turn' });
+    expect(
+      manager.getAgentSnapshot(first.request.identity.id)?.lastSuccessfulOutbound
+    ).toMatchObject({
+      sequence: 2,
+      target: 'outbound-second',
+      content: 'peer result',
+    });
+
+    const failedDelivery = new Error('provider rejected the outbound message');
+    second.handle.input.rejectNextDelivery(failedDelivery);
+    await expect(
+      manager.sendAgentMessage(firstIdentity as never, {
+        name: 'outbound-second',
+        message: 'failed provider delivery must not replace snapshot',
+      })
+    ).rejects.toMatchObject({ code: 'transport_error' });
     expect(
       manager.getAgentSnapshot(first.request.identity.id)?.lastSuccessfulOutbound
     ).toMatchObject({
@@ -2494,7 +2588,7 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     ).toMatchObject({
       sequence: 1,
       target: 'outbound-first',
-      content: 'first successful result',
+      content: '  first successful\tresult\n  ',
     });
 
     await manager.sessionRuntime.deregister(second.request.identity.id);
