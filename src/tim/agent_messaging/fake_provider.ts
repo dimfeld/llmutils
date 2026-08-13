@@ -40,6 +40,7 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
   private inputActivity: AgentInputActivity = 'not-ready';
   private readonly received = new Array<AgentInputMessage>();
   private readonly availabilityListeners = new Set<() => void>();
+  private deferredDeliveryStarted: ReturnType<typeof deferred<void>> | undefined;
   private nextDelivery:
     | {
         readonly promise: Promise<AgentInputDelivery>;
@@ -101,15 +102,17 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
   }
 
   /** Hold the next accepted delivery until the test explicitly resolves it. */
-  public deferNextDelivery(): void {
+  public deferNextDelivery(): Promise<void> {
     if (this.nextDelivery !== undefined) {
       throw new Error('A fake delivery is already deferred');
     }
+    this.deferredDeliveryStarted = deferred<void>();
     let resolveDelivery: (delivery: AgentInputDelivery) => void = () => undefined;
     const promise = new Promise<AgentInputDelivery>((resolve) => {
       resolveDelivery = resolve;
     });
     this.nextDelivery = { promise, resolve: resolveDelivery };
+    return this.deferredDeliveryStarted.promise;
   }
 
   public resolveNextDelivery(delivery: AgentInputDelivery = 'steered'): void {
@@ -127,6 +130,8 @@ export class FakeAgentInputAdapter implements AgentInputAdapter {
     }
     const deferredDelivery = this.nextDelivery;
     if (deferredDelivery !== undefined) {
+      this.deferredDeliveryStarted?.resolve(undefined);
+      this.deferredDeliveryStarted = undefined;
       return deferredDelivery.promise.then((delivery) => this.finishDelivery(message, delivery));
     }
     return this.finishDelivery(

@@ -55,7 +55,6 @@ import { formatAgentProcessLabel } from './agent_process_labels.js';
 import {
   MailboxProtocolError,
   type MailboxErrorCode,
-  type MailboxIdentity,
   type MailboxMessageRequest,
 } from './mailbox_protocol.js';
 import type { MailboxDeliveryCallback, MailboxDeliveryResult } from './mailbox_server.js';
@@ -251,13 +250,7 @@ function matchesTrustedSource(
   return registration.role === 'subagent' && record.type === registration.type;
 }
 
-function identityFromTrustedRegistration(
-  source: MailboxIdentity,
-  registration: AgentRegistration
-): AgentIdentity | undefined {
-  if (source.id !== registration.id || source.name !== registration.name) {
-    return undefined;
-  }
+function identityFromTrustedRegistration(registration: AgentRegistration): AgentIdentity {
   if (registration.role === 'orchestrator') {
     return Object.freeze({
       id: registration.id as AgentId,
@@ -293,6 +286,8 @@ export class AgentManager {
   private readonly rootRegistration: SessionRegistrationHandle;
   private readonly inputAvailabilityUnsubscribers = new Map<AgentId, () => void>();
   private readonly inputAvailabilityVersions = new Map<AgentId, number>();
+  /** One retry is allowed at a later safe point for each unchanged activity version. */
+  private readonly pendingDrainRetryVersions = new Map<AgentId, number>();
   private readonly pendingDrainPromises = new Map<AgentId, Promise<void>>();
   private closed = false;
   private closePromise: Promise<void> | undefined;
@@ -500,7 +495,6 @@ export class AgentManager {
         preparedExecution: prepared,
         processLabel: formatAgentProcessLabel(record.executor, record.name),
       });
-      validateAgentInputAdapter(handle.input, 'launched agent input adapter');
       record.launchHandle = handle;
       record.processControlId = handle.processControlId;
       record.providerThreadId = handle.providerThreadId;
@@ -728,12 +722,22 @@ export class AgentManager {
       return this.closePromise;
     }
     this.closed = true;
+    const managerMailboxes = [
+      this.rootRegistration,
+      ...[...this.byId.values()]
+        .filter((record): record is SubagentAgentRecord => record.role === 'subagent')
+        .map((record) => record.mailbox)
+        .filter((mailbox): mailbox is SessionRegistrationHandle => mailbox !== undefined),
+    ];
     this.closePromise = (async (): Promise<void> => {
       let firstError: unknown;
-      try {
-        await this.rootRegistration.deregister();
-      } catch (error) {
-        firstError = error;
+      const mailboxResults = await Promise.allSettled(
+        managerMailboxes.map((mailbox) => mailbox.deregister())
+      );
+      for (const result of mailboxResults) {
+        if (result.status === 'rejected' && firstError === undefined) {
+          firstError = result.reason;
+        }
       }
       try {
         if (this.ownsSessionRuntime) {
@@ -747,6 +751,7 @@ export class AgentManager {
         }
         this.inputAvailabilityUnsubscribers.clear();
         this.inputAvailabilityVersions.clear();
+        this.pendingDrainRetryVersions.clear();
         this.inputAdapters.clear();
         this.pendingDrainPromises.clear();
         this.byId.clear();
@@ -894,6 +899,9 @@ export class AgentManager {
       content: message.content,
     });
     this.updateRecordInputState(record, input);
+    if (delivery === 'temporarily-unavailable') {
+      this.schedulePendingDrainRetry(record);
+    }
     return delivery;
   }
 
@@ -928,6 +936,7 @@ export class AgentManager {
       record.id,
       (this.inputAvailabilityVersions.get(record.id) ?? 0) + 1
     );
+    this.pendingDrainRetryVersions.delete(record.id);
     this.updateRecordInputState(record, input);
     this.schedulePendingDrain(record);
   }
@@ -991,6 +1000,33 @@ export class AgentManager {
     this.pendingDrainPromises.set(record.id, drainPromise);
   }
 
+  /**
+   * Retry a temporary provider backpressure result once at a later event-loop
+   * turn. The activity version gate prevents a permanently unavailable
+   * provider from causing a busy loop; a real availability notification or a
+   * successful delivery clears the gate.
+   */
+  private schedulePendingDrainRetry(record: AgentRecord): void {
+    const availabilityVersion = this.inputAvailabilityVersions.get(record.id) ?? 0;
+    if (this.pendingDrainRetryVersions.get(record.id) === availabilityVersion) {
+      return;
+    }
+    this.pendingDrainRetryVersions.set(record.id, availabilityVersion);
+    setImmediate(() => {
+      if (
+        this.pendingDrainRetryVersions.get(record.id) !== availabilityVersion ||
+        this.byId.get(record.id) !== record
+      ) {
+        return;
+      }
+      if (record.mailbox?.receiver.pendingCount === 0) {
+        this.pendingDrainRetryVersions.delete(record.id);
+        return;
+      }
+      this.schedulePendingDrain(record);
+    });
+  }
+
   private async drainPending(record: AgentRecord): Promise<void> {
     const receiver = record.mailbox?.receiver;
     if (receiver === undefined) {
@@ -1004,16 +1040,7 @@ export class AgentManager {
       if (entry === undefined) {
         return;
       }
-      const sourceId = parseAgentId(entry.sourceRegistration.id);
-      const sourceRecord = sourceId === undefined ? undefined : this.byId.get(sourceId);
-      const source =
-        sourceRecord !== undefined && matchesTrustedSource(sourceRecord, entry.sourceRegistration)
-          ? snapshotIdentity(sourceRecord)
-          : identityFromTrustedRegistration(entry.sourceIdentity, entry.sourceRegistration);
-      if (source === undefined) {
-        receiver.requeuePending(pending);
-        return;
-      }
+      const source = identityFromTrustedRegistration(entry.sourceRegistration);
       try {
         const delivery = await input.deliver({
           messageId: entry.request.requestId,
@@ -1022,9 +1049,11 @@ export class AgentManager {
         });
         if (delivery === 'temporarily-unavailable') {
           receiver.requeuePending(pending);
+          this.schedulePendingDrainRetry(record);
           return;
         }
         receiver.acknowledgePending(pending);
+        this.pendingDrainRetryVersions.delete(record.id);
         this.updateRecordInputState(record, input);
       } catch {
         receiver.requeuePending(pending);
@@ -1073,22 +1102,23 @@ export class AgentManager {
     mailbox: SessionRegistrationHandle | undefined,
     handle: import('./agent_manager_types.js').AgentLaunchHandle | undefined
   ): Promise<void> {
-    // Release the authoritative reservation before waiting for provider or
-    // mailbox cleanup. A slow provider must not block name or capacity reuse.
-    reservation.release();
     record.launchHandle = undefined;
     record.launchReady = false;
     record.mailbox = undefined;
     record.registration = undefined;
 
-    const cleanup = new Array<Promise<void>>();
+    // Start provider cleanup without making reservation reuse wait for it. The
+    // mailbox must finish deregistering first, because its registration file
+    // can otherwise race a later same-name startup in the shared runtime.
     if (handle?.release !== undefined) {
-      cleanup.push(handle.release().catch(() => undefined));
+      void Promise.resolve()
+        .then(() => handle.release?.())
+        .catch(() => undefined);
     }
     if (mailbox !== undefined) {
-      cleanup.push(mailbox.deregister().catch(() => undefined));
+      await mailbox.deregister().catch(() => undefined);
     }
-    await Promise.all(cleanup);
+    reservation.release();
   }
 
   private selectSubagentName(
@@ -1134,6 +1164,7 @@ export class AgentManager {
     this.inputAvailabilityUnsubscribers.get(record.id)?.();
     this.inputAvailabilityUnsubscribers.delete(record.id);
     this.inputAvailabilityVersions.delete(record.id);
+    this.pendingDrainRetryVersions.delete(record.id);
     this.inputAdapters.delete(record.id);
     this.pendingDrainPromises.delete(record.id);
     this.byId.delete(record.id);

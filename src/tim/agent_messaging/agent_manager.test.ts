@@ -230,7 +230,13 @@ describe('AgentManager root registration and snapshots', () => {
   test('closes only the manager-owned registrations when sharing a runtime', async () => {
     const session = await createAgentMessagingSessionRuntime();
     try {
-      const manager = await createManager({ sessionRuntime: session });
+      const launcher = new FakeAgentLauncher();
+      const manager = await createManager({
+        sessionRuntime: session,
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+      });
+      await startFakeAgent(manager, launcher, 'manager-agent');
       const peer = await session.register({
         registration: {
           id: 'shared-peer-id',
@@ -1086,34 +1092,74 @@ describe('AgentManager StartAgent startup and rollback', () => {
     expect(manager.subagentCount).toBe(0);
   });
 
-  test('releases the name and slot before a hanging provider cleanup completes', async () => {
+  test('waits for mailbox cleanup before reuse without waiting for provider cleanup', async () => {
+    const session = await createAgentMessagingSessionRuntime();
     const launcher = new FakeAgentLauncher();
     launcher.setNextReadinessFailure();
     launcher.setNextReleasePending();
-    const manager = await createManager({
-      agentPreparer: createPreparer(),
-      agentLauncher: launcher,
+    let manager: AgentManager | undefined;
+    let releaseDeregister: () => void = () => undefined;
+    const deregisterStarted = new Promise<void>((resolve) => {
+      const allowDeregister = new Promise<void>((resolveAllow) => {
+        releaseDeregister = resolveAllow;
+      });
+      const originalRegister = session.register.bind(session);
+      vi.spyOn(session, 'register').mockImplementation(async (options) => {
+        const registration = await originalRegister(options);
+        if (options.registration.name !== 'hanging-cleanup') {
+          return registration;
+        }
+        const originalDeregister = registration.deregister.bind(registration);
+        registration.deregister = async (): Promise<void> => {
+          resolve();
+          await allowDeregister;
+          await originalDeregister();
+        };
+        return registration;
+      });
     });
 
-    const failedStart = manager.startAgent(
-      manager.orchestratorIdentity,
-      reservationRequest('hanging-cleanup')
-    );
-    const failedLaunch = await launcher.waitForNextLaunch();
-    await waitFor(() => manager.subagentCount === 0);
-    expect(manager.getIdentityByName('hanging-cleanup')).toBeUndefined();
+    try {
+      manager = await createManager({
+        sessionRuntime: session,
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+      });
 
-    const retryLaunchPromise = launcher.waitForNextLaunch();
-    const retryStart = manager.startAgent(
-      manager.orchestratorIdentity,
-      reservationRequest('hanging-cleanup')
-    );
-    const retryLaunch = await retryLaunchPromise;
-    retryLaunch.handle.markReady();
-    await expect(retryStart).resolves.toMatchObject({ name: 'hanging-cleanup' });
+      const failedStart = manager.startAgent(
+        manager.orchestratorIdentity,
+        reservationRequest('hanging-cleanup')
+      );
+      const failedLaunch = await launcher.waitForNextLaunch();
+      await deregisterStarted;
 
-    failedLaunch.handle.resolveRelease();
-    await expect(failedStart).rejects.toMatchObject({ code: 'launch_failed' });
+      expect(manager.subagentCount).toBe(1);
+      expect(manager.getIdentityByName('hanging-cleanup')).toBeDefined();
+      expect(failedLaunch.handle.releaseCount).toBe(1);
+
+      await expect(
+        manager.startAgent(manager.orchestratorIdentity, reservationRequest('hanging-cleanup'))
+      ).rejects.toMatchObject({ code: 'name_in_use' });
+
+      releaseDeregister();
+      await expect(failedStart).rejects.toMatchObject({ code: 'launch_failed' });
+      expect(manager.subagentCount).toBe(0);
+      expect(manager.getIdentityByName('hanging-cleanup')).toBeUndefined();
+
+      const retryLaunchPromise = launcher.waitForNextLaunch();
+      const retryStart = manager.startAgent(
+        manager.orchestratorIdentity,
+        reservationRequest('hanging-cleanup')
+      );
+      const retryLaunch = await retryLaunchPromise;
+      retryLaunch.handle.markReady();
+      await expect(retryStart).resolves.toMatchObject({ name: 'hanging-cleanup' });
+
+      failedLaunch.handle.resolveRelease();
+    } finally {
+      await manager?.close().catch(() => undefined);
+      await session.close();
+    }
   });
 });
 
@@ -1240,6 +1286,43 @@ describe('AgentManager SendAgentMessage routing', () => {
     expect(target.handle.input.receivedMessages.map((message) => message.messageId)).toEqual(
       queued.map((result) => result.messageId)
     );
+  });
+
+  test('retries one temporary delivery at a safe point without an activity transition', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const target = await startFakeAgent(manager, launcher, 'temporary-retry-target');
+    target.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(target.request.identity.id)?.state === 'running-idle'
+    );
+    target.handle.input.setTemporarilyUnavailable();
+    const queued = await Promise.all(
+      ['first', 'second'].map((message) =>
+        manager.sendAgentMessage(manager.orchestratorIdentity, {
+          name: 'temporary-retry-target',
+          message,
+        })
+      )
+    );
+    expect(queued.map((result) => result.delivery)).toEqual(['queued', 'queued']);
+
+    const deliveryStarted = target.handle.input.deferNextDelivery();
+    target.handle.input.setActiveAccepting();
+    expect(target.handle.input.isReady).toBe(true);
+    expect(target.handle.input.activity).toBe('active');
+    expect(manager.getAgentSnapshot(target.request.identity.id)?.state).toBe('running-active');
+    await deliveryStarted;
+    target.handle.input.resolveNextDelivery('temporarily-unavailable');
+
+    await waitFor(() => target.handle.input.receivedMessages.length === 2);
+    expect(target.handle.input.receivedMessages.map((message) => message.content)).toEqual([
+      'first',
+      'second',
+    ]);
   });
 
   test('drains queued messages from a removed sender without blocking later FIFO work', async () => {
