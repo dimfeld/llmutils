@@ -184,6 +184,13 @@ The shared identity, name, lifecycle, disposition, and environment contracts
 remain in `contracts.ts` and `environment.ts`. The mailbox modules consume
 those contracts and do not define provider-specific alternatives.
 
+Provider input adapters must treat `deliver()` as a fast accept-or-refuse
+operation. When an adapter reports that input is available but refuses a
+delivery, `AgentMailboxBinding` makes at most one immediate retry for that
+availability version. Further progress requires the adapter to call its
+`onAvailabilityChange` listeners. Claude and Codex persistent-session adapters
+must emit that notification whenever delivery can make progress again.
+
 ## Public API surface
 
 `createAgentMessagingSessionRuntime(options?)` (or

@@ -301,7 +301,25 @@ describe('agent mailbox receiver', () => {
         maxConnections: 0,
       })
     ).rejects.toMatchObject({ code: 'invalid_options' });
+    await expect(
+      createMailboxReceiver({
+        runtime,
+        registration: target,
+        resolveSourceRegistration: (): undefined => undefined,
+        deliver: (): 'steered' => 'steered',
+        onMessageQueued: 'not-a-function' as never,
+      })
+    ).rejects.toMatchObject({ code: 'invalid_options' });
     await expect(fs.lstat(target.socketPath)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const receiver = await createMailboxReceiver({
+      runtime,
+      registration: target,
+      resolveSourceRegistration: (): undefined => undefined,
+      deliver: (): 'steered' => 'steered',
+      onMessageQueued: (): void => undefined,
+    });
+    await receiver.close();
   });
 
   test('rejects a pre-existing socket entry before attempting to bind', async () => {

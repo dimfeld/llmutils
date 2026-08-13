@@ -3,6 +3,7 @@ import {
   ORCHESTRATOR_AGENT_NAME,
   agentExecutorSchema,
   isNonterminalAgentLifecycleState,
+  nonterminalAgentLifecycleStateSchema,
   startAgentArgumentsSchema,
   type AgentExecutor,
   type AgentSummary,
@@ -382,6 +383,10 @@ export class AgentDirectory {
   }
 
   public setLifecycleState(agentId: AgentId, state: NonterminalAgentLifecycleState): void {
+    const parsedState = nonterminalAgentLifecycleStateSchema.safeParse(state);
+    if (!parsedState.success) {
+      throw new AgentManagerError('invalid_request', `Invalid agent lifecycle state: ${state}`);
+    }
     const record = this.byId.get(agentId);
     if (record === undefined) {
       throw new AgentManagerError('unknown_agent', `Unknown agent ID: ${agentId}`);
@@ -392,7 +397,7 @@ export class AgentDirectory {
         'Lifecycle state transitions are only available for subagent identities'
       );
     }
-    record.state = state;
+    record.state = parsedState.data;
   }
 
   public removeTerminal(agentId: AgentId): void {

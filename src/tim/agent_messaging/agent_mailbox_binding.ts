@@ -1,4 +1,5 @@
 import { isNonterminalAgentLifecycleState } from './contracts.js';
+import { debugLog } from '../../logging.js';
 import { AgentManagerError, validateAgentInputAdapter } from './agent_manager_types.js';
 import type { AgentIdentity, AgentInputAdapter } from './agent_manager_types.js';
 import { MailboxProtocolError, type MailboxMessageRequest } from './mailbox_protocol.js';
@@ -82,7 +83,12 @@ export class AgentMailboxBinding {
       this.drainAfterEnqueue = true;
       return;
     }
-    if (this.retryVersion === this.availabilityVersion) return;
+    if (this.retryVersion === this.availabilityVersion) {
+      debugLog(
+        `[agent mailbox] ${this.record.name} has ${this.pendingCount} pending message(s) after the provider exhausted its retry budget`
+      );
+      return;
+    }
     this.scheduleDrain();
   }
 

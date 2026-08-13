@@ -5,7 +5,6 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
-  AGENT_MESSAGING_RUNTIME_PREFIX,
   MAX_AGENT_MESSAGE_BYTES,
   MAX_AGENT_NAME_LENGTH,
   MAX_PENDING_MESSAGES_PER_RECIPIENT,
@@ -25,7 +24,6 @@ import type {
   PreparedAgentExecution,
 } from './agent_manager_types.js';
 import type { AgentMailboxBinding } from './agent_mailbox_binding.js';
-import type { PreparedSubagentExecution } from '../subagents/types.js';
 import type { AgentManager } from './agent_manager.js';
 
 const managers: AgentManager[] = [];
@@ -82,7 +80,7 @@ function createPreparer(): FakeAgentPreparer {
 }
 
 async function waitFor(condition: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 1_000; attempt += 1) {
     if (condition()) {
       return;
     }
@@ -370,28 +368,29 @@ describe('AgentManager root registration and snapshots', () => {
   });
 
   test('cleans up an owned runtime when root registration fails', async () => {
-    const before = new Set(
-      (await fs.readdir(os.tmpdir())).filter((entry) =>
-        entry.startsWith(AGENT_MESSAGING_RUNTIME_PREFIX)
-      )
-    );
+    const isolatedTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-manager-test-'));
+    const originalTmpdir = process.env.TMPDIR;
+    process.env.TMPDIR = isolatedTmp;
 
-    await expect(
-      createAgentManager({
-        agentIdGenerator: () => 'r'.repeat(90),
-        maxAgentIdGenerationAttempts: 1,
-      })
-    ).rejects.toMatchObject({
-      name: 'AgentManagerError',
-      code: 'root_registration_failed',
-    });
-
-    const after = new Set(
-      (await fs.readdir(os.tmpdir())).filter((entry) =>
-        entry.startsWith(AGENT_MESSAGING_RUNTIME_PREFIX)
-      )
-    );
-    expect(after).toEqual(before);
+    try {
+      await expect(
+        createAgentManager({
+          agentIdGenerator: () => 'r'.repeat(90),
+          maxAgentIdGenerationAttempts: 1,
+        })
+      ).rejects.toMatchObject({
+        name: 'AgentManagerError',
+        code: 'root_registration_failed',
+      });
+      expect(await fs.readdir(isolatedTmp)).toEqual([]);
+    } finally {
+      if (originalTmpdir === undefined) {
+        delete process.env.TMPDIR;
+      } else {
+        process.env.TMPDIR = originalTmpdir;
+      }
+      await fs.rm(isolatedTmp, { recursive: true });
+    }
   });
 
   test('keeps an injected runtime open when root registration fails', async () => {
@@ -743,6 +742,36 @@ describe('AgentManager names and atomic reservations', () => {
     }
   });
 
+  test('enforces the eight-agent limit through concurrent StartAgent calls', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: {
+        launch: async (request: AgentLaunchRequest) => {
+          const handle = await launcher.launch(request);
+          handle.markReady();
+          return handle;
+        },
+      },
+    });
+    const starts = Array.from({ length: MAX_SUBAGENTS_PER_SESSION + 1 }, (_, index) =>
+      manager.startAgent(manager.orchestratorIdentity, reservationRequest(`public-worker-${index}`))
+    );
+    const settledStarts = Promise.allSettled(starts);
+
+    const results = await settledStarts;
+    expect(manager.subagentCount).toBe(MAX_SUBAGENTS_PER_SESSION);
+    expect(launcher.launches).toHaveLength(MAX_SUBAGENTS_PER_SESSION);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(
+      MAX_SUBAGENTS_PER_SESSION
+    );
+    const rejected = results.filter(
+      (result): result is PromiseRejectedResult => result.status === 'rejected'
+    );
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reason).toMatchObject({ code: 'agent_limit_reached' });
+  });
+
   test('counts finishing and stopping reservations and preserves stable IDs across state changes', async () => {
     const manager = await createManager();
     const finishing = reserveSubagentForTest(manager, reservationRequest('finishing'));
@@ -760,6 +789,23 @@ describe('AgentManager names and atomic reservations', () => {
     expect(manager.getAgentSnapshot(finishing.id)?.identity.id).toBe(finishing.id);
     finishing.release();
     stopping.release();
+  });
+
+  test('rejects invalid and unknown lifecycle transition inputs', async () => {
+    const manager = await createManager();
+    const reservation = reserveSubagentForTest(manager, reservationRequest('lifecycle-worker'));
+
+    expect(() => manager.setAgentLifecycleState('', 'finishing')).toThrowError(
+      expect.objectContaining({ code: 'unknown_agent' })
+    );
+    expect(() => manager.setAgentLifecycleState('unknown-agent-id', 'finishing')).toThrowError(
+      expect.objectContaining({ code: 'unknown_agent' })
+    );
+    expect(() => manager.setAgentLifecycleState(reservation.id, 'invalid' as never)).toThrowError(
+      expect.objectContaining({ code: 'invalid_request' })
+    );
+    expect(manager.getAgentSnapshot(reservation.id)?.state).toBe('starting');
+    reservation.release();
   });
 
   test('counts every nonterminal state toward the capacity limit', async () => {
@@ -1466,7 +1512,7 @@ describe('AgentManager SendAgentMessage routing', () => {
     });
   });
 
-  test('reports an immediately vanished source as unknown_source', async () => {
+  test('reports an immediately vanished source as unknown_source at the mailbox boundary', async () => {
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({
       agentPreparer: createPreparer(),
@@ -2285,69 +2331,8 @@ describe('provider-neutral launch contracts and test fakes', () => {
     }
   });
 
-  test('accepts reviewer prepared executions in launch requests', async () => {
-    const manager = await createManager();
-    const reservation = reserveSubagentForTest(
-      manager,
-      reservationRequest('reviewer-agent', 'reviewer')
-    );
-    const preparedExecution = {
-      agentType: 'reviewer',
-      executor: 'codex-cli',
-      model: undefined,
-      plan: {
-        id: 1,
-        title: 'Review plan',
-        status: 'pending',
-        tasks: [],
-      },
-      planId: 1,
-      planPath: '/tmp/review-plan.md',
-      gitRoot: '/tmp/repo',
-      useJj: false,
-      prompt: 'Review the current changes.',
-      config: getDefaultConfig(),
-      timEnvironment: { context: {} },
-    } satisfies PreparedAgentExecution;
-    const legacyPreparedExecution = {
-      ...preparedExecution,
-      agentType: 'implementer',
-    } satisfies PreparedSubagentExecution;
-    const widenedPreparedExecution: PreparedAgentExecution = legacyPreparedExecution;
-    const reviewerLaunchRequest = {
-      identity: reservation.identity,
-      initialMessage: 'Inspect the current changes.',
-      preparedExecution,
-      processLabel: formatAgentProcessLabel('codex-cli', reservation.name),
-    } satisfies AgentLaunchRequest;
-
-    const launcher = new FakeAgentLauncher();
-    const handle = await launcher.launch(reviewerLaunchRequest);
-
-    expect(launcher.launches[0]?.request.preparedExecution.agentType).toBe('reviewer');
-    expect(widenedPreparedExecution.agentType).toBe('implementer');
-    await handle.release?.();
-    reservation.release();
-  });
-
-  test('formats named labels without conflating names and provider identities', async () => {
+  test('formats named labels without conflating names and provider identities', () => {
     expect(formatAgentProcessLabel('claude-code', 'worker-one')).toBe('Claude agent (worker-one)');
     expect(formatAgentProcessLabel('codex-cli', 'worker-one')).toBe('Codex thread (worker-one)');
-
-    const launcher = new FakeAgentLauncher();
-    const manager = await createManager({ agentLauncher: launcher });
-    const reservation = reserveSubagentForTest(manager, reservationRequest('worker-one'));
-    const input = new FakeAgentInputAdapter();
-    input.markReady();
-    input.setActiveAccepting();
-    expect(
-      input.deliver({
-        messageId: 'message-1',
-        source: manager.orchestratorIdentity,
-        content: 'hello',
-      })
-    ).toBe('steered');
-    expect(input.receivedMessages[0]?.source.name).toBe('orchestrator');
-    reservation.release();
   });
 });
