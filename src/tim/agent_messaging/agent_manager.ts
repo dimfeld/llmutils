@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { CleanupRegistry } from '../../common/cleanup_registry.js';
 import {
   MAX_AGENT_MESSAGE_BYTES,
   ORCHESTRATOR_AGENT_NAME,
@@ -244,6 +245,7 @@ export class AgentManager {
   private nextOutboundSequence = 0;
   private closed = false;
   private closePromise: Promise<void> | undefined;
+  private unregisterCleanupHandler: (() => void) | undefined;
 
   private constructor(
     sessionRuntime: AgentMessagingSessionRuntime,
@@ -334,6 +336,9 @@ export class AgentManager {
       const registeredRootBinding = rootBinding;
       rootDelivery = (message, sourceRegistration): Promise<MailboxDeliveryResult> =>
         registeredRootBinding.deliver(message, sourceRegistration);
+      manager.unregisterCleanupHandler = CleanupRegistry.getInstance().register(() =>
+        manager.close()
+      );
       return manager;
     } catch (error) {
       await rootRegistration?.deregister().catch(() => undefined);
@@ -439,12 +444,20 @@ export class AgentManager {
         state: record.state,
       });
     } catch (error) {
+      const terminalLifecycle = this.terminalLifecycles.get(record.id);
       this.disposeStopLifecycle(record.id);
-      this.terminalLifecycles.delete(record.id);
       this.unbindProviderLifecycle(record.id);
       binding.dispose();
       this.mailboxBindings.delete(record.id);
       await operation.rollback();
+      if (this.closePromise === undefined) {
+        this.terminalLifecycles.delete(record.id);
+      } else {
+        // Root teardown may already be waiting for this startup generation.
+        // A failed start has no provider exit event, so resolve its shared
+        // terminal wait after the normal rollback has completed.
+        terminalLifecycle?.resolveTerminal();
+      }
       if (error instanceof AgentManagerError && error.code === 'manager_closed') throw error;
       throw new AgentManagerError(
         'launch_failed',
@@ -699,24 +712,29 @@ export class AgentManager {
   public close(): Promise<void> {
     if (this.closePromise !== undefined) return this.closePromise;
     this.closed = true;
-    for (const agentId of this.stopLifecycles.keys()) this.cancelStopTimer(agentId);
-    const inFlight = this.startupTracker.values();
-    const inFlightIds = new Set(inFlight.map((operation) => operation.record.id));
-    const mailboxes = [
-      this.rootRegistration,
-      ...this.directory.records
-        .filter((record) => !inFlightIds.has(record.id) && record.mailbox !== undefined)
-        .map((record) => record.mailbox as SessionRegistrationHandle),
-    ];
+    const snapshot = this.directory.records.filter(
+      (
+        record
+      ): record is Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }> =>
+        record.role === 'subagent' && isNonterminalAgentLifecycleState(record.state)
+    );
+    // Claim the shutdown intent for every agent before awaiting any terminal
+    // promise. This is the parallel fan-out point for root teardown.
+    const terminalPromises = snapshot.map((record) => this.requestRootTeardown(record));
     this.closePromise = (async (): Promise<void> => {
       let firstError: unknown;
-      const results = await Promise.allSettled([
-        ...mailboxes.map((mailbox) => mailbox.deregister()),
-        ...inFlight.map((operation) => operation.cleanupForClose()),
-      ]);
-      for (const result of results) {
+      const terminalResults = await Promise.allSettled(terminalPromises);
+      for (const result of terminalResults) {
         if (result.status === 'rejected') firstError ??= result.reason;
       }
+
+      // Terminal notifications use the orchestrator mailbox, so root
+      // resources stay open until every subagent terminal attempt settles.
+      const rootCleanup = await Promise.allSettled([this.rootRegistration.deregister()]);
+      for (const result of rootCleanup) {
+        if (result.status === 'rejected') firstError ??= result.reason;
+      }
+
       try {
         if (this.ownsSessionRuntime) await this.sessionRuntime.close();
       } catch (error) {
@@ -733,10 +751,68 @@ export class AgentManager {
         this.mailboxBindings.clear();
         this.terminalLifecycles.clear();
         this.directory.clear();
+        this.unregisterCleanupHandler?.();
+        this.unregisterCleanupHandler = undefined;
       }
       if (firstError !== undefined) throw firstError;
     })();
     return this.closePromise;
+  }
+
+  /** Start or join one graceful shutdown for a root-teardown snapshot entry. */
+  private requestRootTeardown(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>
+  ): Promise<void> {
+    const terminalLifecycle = this.getOrCreateTerminalLifecycle(record.id);
+    if (terminalLifecycle.terminalClaimed) return terminalLifecycle.terminalPromise;
+
+    const wasStarting = record.state === 'starting';
+    const stopState = this.getOrCreateStopLifecycle(record);
+    if (
+      record.state !== 'finishing' &&
+      !stopState.gracefulRequested &&
+      !stopState.forceInFlight &&
+      !stopState.forceAccepted
+    ) {
+      record.state = 'stopping';
+      stopState.cause = 'graceful-stop';
+      stopState.gracefulRequested = true;
+      stopState.gracefulInstruction = buildGracefulStopInstruction(undefined);
+      stopState.lastActivityAt = this.options.scheduler.now();
+      stopState.activityGeneration += 1;
+    }
+
+    const startupOperation = this.startupTracker
+      .values()
+      .find((operation) => operation.record === record);
+    if (wasStarting && record.launchHandle?.lifecycle === undefined) {
+      // There is no provider control to call yet. Keep the stop intent on the
+      // record. The startup path will call maybeRequestProviderStop as soon
+      // as it binds the provider lifecycle, or its normal failure rollback
+      // will resolve this terminal wait if startup fails first.
+      if (startupOperation !== undefined) {
+        return terminalLifecycle.terminalPromise;
+      } else {
+        terminalLifecycle.resolveTerminal();
+      }
+      return terminalLifecycle.terminalPromise;
+    }
+
+    if (
+      record.launchHandle?.lifecycle !== undefined &&
+      !this.lifecycleUnsubscribers.has(record.id)
+    ) {
+      // A launch handle can be attached while startAgent is between the
+      // launch and readiness awaits. Bind it now so exit and output events
+      // remain observable during teardown.
+      this.bindProviderLifecycle(record, record.launchHandle.lifecycle);
+    }
+
+    // This call performs provider control synchronously up to its first
+    // promise boundary. Calling it for every snapshot entry above means all
+    // graceful requests start before this method awaits any terminal result.
+    this.maybeRequestProviderStop(record);
+    return terminalLifecycle.terminalPromise;
   }
 
   private validateSendRequest(request: unknown): {
@@ -780,7 +856,7 @@ export class AgentManager {
   ): void {
     this.unbindProviderLifecycle(record.id);
     const isCurrentEvent = (agentId: string): boolean =>
-      !this.closed && agentId === record.id && this.directory.getRecord(record.id) === record;
+      agentId === record.id && this.directory.getRecord(record.id) === record;
     const unsubscribers = [
       lifecycle.onOutputActivity((event): void => {
         if (
@@ -844,7 +920,6 @@ export class AgentManager {
     if (
       stopState === undefined ||
       record.providerExit !== undefined ||
-      !record.launchReady ||
       record.launchHandle?.lifecycle === undefined
     ) {
       return;
@@ -864,7 +939,6 @@ export class AgentManager {
     if (
       stopState === undefined ||
       lifecycle === undefined ||
-      !record.launchReady ||
       record.providerExit !== undefined ||
       !stopState.gracefulRequested ||
       stopState.gracefulRequestInFlight ||
@@ -971,7 +1045,6 @@ export class AgentManager {
     );
     const timerHandle = this.options.scheduler.setTimeout((): void => {
       if (
-        this.closed ||
         this.directory.getRecord(record.id) !== record ||
         record.providerExit !== undefined ||
         stopState.timerGeneration !== expectedTimerGeneration ||
