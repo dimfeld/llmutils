@@ -74,9 +74,13 @@ Injected generators are what make concurrency, collision, and exhaustion tests
 deterministic. The manager reads no global mutable state and never mutates
 `process.env`; per-agent environment belongs to the launch request.
 
-`close()` is idempotent. It cancels in-flight starts, deregisters mailboxes,
-closes the session runtime when it owns it, disposes every mailbox binding, and
-clears the directory.
+`close()` is idempotent. It cancels in-flight starts, waits for each cleanup
+operation that has attached, closes the session runtime when it owns it,
+disposes every mailbox binding, and clears the directory. Each attached startup
+cleanup action (`release()` or `deregister()`) has a 5,000 millisecond bound.
+The timer is cleared when the action settles and is unreferenced by the
+production scheduler. A timeout is retained as a diagnostic and does not keep
+the manager or session teardown pending.
 
 ### Root orchestrator identity
 
@@ -296,9 +300,15 @@ the provider-neutral lifecycle tests. It does not perform terminal cleanup.
 `close()` marks the manager closed, snapshots every nonterminal subagent, and
 starts all stop work before awaiting any terminal promise. It also cancels every
 in-flight preparation, mailbox-registration, launch, and readiness boundary.
-Startup promises that have no cancellation API are not awaited during close:
-late mailbox or provider resources attach to the cancelled start operation and
-are released by its idempotent cleanup hooks. This keeps root teardown bounded.
+Startup promises that have no cancellation API are not awaited during close.
+Only resources that have attached are cleaned up and included in the close
+wait. The manager performs one event-loop drain after the current cleanup set
+to catch resources that attach during teardown. A resource that attaches after
+that final drain is still released by the cancelled start operation's
+idempotent cleanup hook, with the same 5,000 millisecond bound, but it does not
+delay manager close or session removal. Its late cleanup result is retained
+only for diagnostics owned by that startup operation; it cannot recreate an
+agent record or keep the closed session alive.
 
 Every nonterminal agent has an independent output-inactivity path:
 

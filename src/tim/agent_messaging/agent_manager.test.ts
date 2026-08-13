@@ -19,6 +19,7 @@ import {
   createAgentManager,
   createAgentPreparation,
 } from './index.js';
+import { AGENT_STARTUP_CLEANUP_TIMEOUT_MS } from './agent_startup.js';
 import {
   FakeAgentInputAdapter,
   FakeAgentLauncher,
@@ -113,14 +114,17 @@ function createPreparer(): FakeAgentPreparer {
   return new FakeAgentPreparer(preparedExecutionFor);
 }
 
-async function waitFor(condition: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 1_000; attempt += 1) {
+async function waitFor(condition: () => boolean, timeoutMs: number = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     if (condition()) {
       return;
     }
+    if (Date.now() >= deadline) {
+      throw new Error(`Condition did not become true within ${timeoutMs} milliseconds`);
+    }
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
-  throw new Error('Condition did not become true');
 }
 
 async function flushLifecyclePromises(): Promise<void> {
@@ -1324,12 +1328,38 @@ describe('AgentManager StartAgent startup and rollback', () => {
     expect(manager.subagentCount).toBe(0);
   });
 
+  test('maps provider exit while launch handle readiness is unresolved to launch_failed', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('exit-while-ready-pending')
+    );
+    void startPromise.catch(() => undefined);
+    const launch = await launchPromise;
+    await waitFor(
+      () => manager.getAgentSnapshot(launch.request.identity.id)?.providerThreadId !== undefined
+    );
+
+    launch.handle.lifecycle.emitExit('natural');
+
+    await expect(startPromise).rejects.toMatchObject({ code: 'launch_failed' });
+    expect(launch.handle.releaseCount).toBe(1);
+    expect(manager.getIdentityByName('exit-while-ready-pending')).toBeUndefined();
+    expect(manager.subagentCount).toBe(0);
+  });
+
   test('waits for a late launch handle release without waiting for the launch promise itself', async () => {
     const launchDeferred = deferred<AgentLaunchHandle>();
-    let launchRequest: AgentLaunchRequest | undefined;
+    const launchCalled = deferred<AgentLaunchRequest>();
     const launcher: AgentLauncher = {
       launch: async (request: AgentLaunchRequest): Promise<AgentLaunchHandle> => {
-        launchRequest = request;
+        launchCalled.resolve(request);
         return launchDeferred.promise;
       },
     };
@@ -1341,12 +1371,12 @@ describe('AgentManager StartAgent startup and rollback', () => {
       manager.orchestratorIdentity,
       reservationRequest('late-launch-resource')
     );
-    await waitFor(() => launchRequest !== undefined);
+    void start.catch(() => undefined);
+    const request = await launchCalled.promise;
 
     const releaseStarted = deferred<void>();
     const releaseGate = deferred<void>();
     let releaseCalls = 0;
-    const request = launchRequest as AgentLaunchRequest;
     const handle: AgentLaunchHandle = {
       executor: request.identity.executor,
       processLabel: request.processLabel,
@@ -1379,6 +1409,60 @@ describe('AgentManager StartAgent startup and rollback', () => {
     releaseGate.resolve(undefined);
     await expect(start).rejects.toMatchObject({ code: 'manager_closed' });
     await close;
+    expect(releaseCalls).toBe(1);
+    expect(manager.sessionRuntime.isClosed).toBe(true);
+  });
+
+  test('bounds a late launch handle release during manager close', async () => {
+    const launchDeferred = deferred<AgentLaunchHandle>();
+    const launchCalled = deferred<AgentLaunchRequest>();
+    const scheduler = new FakeAgentManagerScheduler();
+    const releaseStarted = deferred<void>();
+    const launcher: AgentLauncher = {
+      launch: async (request: AgentLaunchRequest): Promise<AgentLaunchHandle> => {
+        launchCalled.resolve(request);
+        return launchDeferred.promise;
+      },
+    };
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const start = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('late-launch-timeout')
+    );
+    void start.catch(() => undefined);
+    const request = await launchCalled.promise;
+    const releaseGate = deferred<void>();
+    let releaseCalls = 0;
+    const handle: AgentLaunchHandle = {
+      executor: request.identity.executor,
+      processLabel: request.processLabel,
+      input: new FakeAgentInputAdapter(),
+      ready: Promise.resolve(),
+      completion: new Promise<never>(() => undefined),
+      lifecycle: new FakeAgentProviderLifecycleControls(request.identity.id),
+      release: async (): Promise<void> => {
+        releaseCalls += 1;
+        releaseStarted.resolve(undefined);
+        await releaseGate.promise;
+      },
+    };
+
+    const close = manager.close();
+    void close.catch(() => undefined);
+    launchDeferred.resolve(handle);
+    await releaseStarted.promise;
+    await flushLifecyclePromises();
+
+    scheduler.advanceBy(AGENT_STARTUP_CLEANUP_TIMEOUT_MS);
+    await flushLifecyclePromises();
+    scheduler.advanceBy(AGENT_STARTUP_CLEANUP_TIMEOUT_MS);
+
+    await expect(start).rejects.toMatchObject({ code: 'manager_closed' });
+    await expect(close).rejects.toThrow('did not settle within');
     expect(releaseCalls).toBe(1);
     expect(manager.sessionRuntime.isClosed).toBe(true);
   });

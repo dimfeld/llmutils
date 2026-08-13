@@ -262,7 +262,7 @@ export class AgentManager {
   ) {
     this.sessionRuntime = sessionRuntime;
     this.directory = directory;
-    this.startupTracker = new AgentStartupTracker(directory);
+    this.startupTracker = new AgentStartupTracker(directory, options.scheduler);
     this.options = options;
     this.ownsSessionRuntime = ownsSessionRuntime;
     this.rootRegistration = rootRegistration;

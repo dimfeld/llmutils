@@ -1,4 +1,8 @@
-import { AgentManagerError, type AgentLaunchHandle } from './agent_manager_types.js';
+import {
+  AgentManagerError,
+  type AgentLaunchHandle,
+  type AgentManagerScheduler,
+} from './agent_manager_types.js';
 import type { SessionRegistrationHandle } from './session_runtime.js';
 import type {
   AgentDirectory,
@@ -35,6 +39,15 @@ function managerClosedError(): AgentManagerError {
   );
 }
 
+/** Maximum time AgentManager waits for one startup resource cleanup action. */
+export const AGENT_STARTUP_CLEANUP_TIMEOUT_MS = 5_000;
+
+function cleanupTimeoutError(label: string): Error {
+  return new Error(
+    `${label} did not settle within ${AGENT_STARTUP_CLEANUP_TIMEOUT_MS} milliseconds`
+  );
+}
+
 /** Tracks resources that may resolve after a start has been cancelled. */
 class AgentStartOperation {
   public mailbox: SessionRegistrationHandle | undefined;
@@ -55,7 +68,8 @@ class AgentStartOperation {
   public constructor(
     public readonly record: SubagentDirectoryRecord,
     public readonly reservation: AgentReservation,
-    private readonly directory: AgentDirectory
+    private readonly directory: AgentDirectory,
+    private readonly scheduler: AgentManagerScheduler
   ) {}
 
   public ensureActive(): void {
@@ -120,7 +134,12 @@ class AgentStartOperation {
     this.record.registration = mailbox.registration;
     this.record.mailbox = mailbox;
     if (this.cleanupRequested) {
-      this.trackLateCleanup(this.deregisterMailbox());
+      this.trackLateCleanup(
+        this.withCleanupTimeout(
+          this.deregisterMailbox(),
+          `Late mailbox deregistration for ${this.record.name}`
+        )
+      );
     }
   }
 
@@ -130,7 +149,12 @@ class AgentStartOperation {
     this.record.processControlId = handle.processControlId;
     this.record.providerThreadId = handle.providerThreadId;
     if (this.cleanupRequested) {
-      this.trackLateCleanup(this.releaseHandle());
+      this.trackLateCleanup(
+        this.withCleanupTimeout(
+          this.releaseHandle(),
+          `Late provider handle release for ${this.record.name}`
+        )
+      );
     }
   }
 
@@ -156,9 +180,15 @@ class AgentStartOperation {
       );
     }
     const handleRelease = this.releaseHandle();
-    void handleRelease.catch(() => undefined);
+    void this.withCleanupTimeout(
+      handleRelease,
+      `Provider handle release for ${this.record.name}`
+    ).catch(() => undefined);
     const mailboxCleanup = this.deregisterMailbox();
-    await mailboxCleanup.catch(() => undefined);
+    await this.withCleanupTimeout(
+      mailboxCleanup,
+      `Mailbox deregistration for ${this.record.name}`
+    ).catch(() => undefined);
     this.reservation.release();
     // Provider cleanup can outlive the failed StartAgent operation. The name
     // and capacity become reusable once the mailbox generation is gone.
@@ -173,13 +203,19 @@ class AgentStartOperation {
     // cancellation API. Do not wait for them here; their tracked continuations
     // clean up a late resource when it resolves.
     try {
-      await this.deregisterMailbox();
+      await this.withCleanupTimeout(
+        this.deregisterMailbox(),
+        `Mailbox deregistration for ${this.record.name}`
+      );
     } catch (error) {
       firstError ??= error;
     }
     this.reservation.release();
     try {
-      await this.releaseHandle();
+      await this.withCleanupTimeout(
+        this.releaseHandle(),
+        `Provider handle release for ${this.record.name}`
+      );
     } catch (error) {
       firstError ??= error;
     }
@@ -236,12 +272,38 @@ class AgentStartOperation {
     });
   }
 
+  private withCleanupTimeout(operation: Promise<void>, label: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timer = this.scheduler.setTimeout((): void => {
+        if (settled) return;
+        settled = true;
+        reject(cleanupTimeoutError(label));
+      }, AGENT_STARTUP_CLEANUP_TIMEOUT_MS);
+      void operation.then(
+        (): void => {
+          if (settled) return;
+          settled = true;
+          this.scheduler.clearTimeout(timer);
+          resolve();
+        },
+        (error: unknown): void => {
+          if (settled) return;
+          settled = true;
+          this.scheduler.clearTimeout(timer);
+          reject(error);
+        }
+      );
+    });
+  }
+
   private deregisterMailbox(): Promise<void> {
     if (this.mailboxDeregisterPromise !== undefined) {
       return this.mailboxDeregisterPromise;
     }
     if (this.mailbox === undefined) return Promise.resolve();
-    this.mailboxDeregisterPromise = this.mailbox.deregister();
+    const mailbox = this.mailbox;
+    this.mailboxDeregisterPromise = Promise.resolve().then(() => mailbox.deregister());
     return this.mailboxDeregisterPromise;
   }
 
@@ -260,13 +322,16 @@ class AgentStartOperation {
 export class AgentStartupTracker {
   private readonly operations = new Map<string, AgentStartOperation>();
 
-  public constructor(private readonly directory: AgentDirectory) {}
+  public constructor(
+    private readonly directory: AgentDirectory,
+    private readonly scheduler: AgentManagerScheduler
+  ) {}
 
   public create(
     record: SubagentDirectoryRecord,
     reservation: AgentReservation
   ): AgentStartOperation {
-    const operation = new AgentStartOperation(record, reservation, this.directory);
+    const operation = new AgentStartOperation(record, reservation, this.directory, this.scheduler);
     this.operations.set(record.id, operation);
     return operation;
   }
