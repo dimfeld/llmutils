@@ -103,9 +103,7 @@ function makeSubprocessOptions() {
   };
 }
 
-async function setupRunClaudeSubprocess(
-  stdinWriteSpy: ReturnType<typeof vi.fn>
-) {
+async function setupRunClaudeSubprocess(stdinWriteSpy: ReturnType<typeof vi.fn>) {
   const stdinEndSpy = vi.fn(async () => {});
   let formatStdout: ((output: string) => unknown) | undefined;
   let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
