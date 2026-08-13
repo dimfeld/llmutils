@@ -74,6 +74,12 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
   private nextGracefulFailure: Error | undefined;
   private nextCloseAfterTurnFailure: Error | undefined;
   private nextForcedFailure: Error | undefined;
+  private nextCloseAfterTurnExit:
+    | {
+        readonly classification: AgentProviderExitClassification;
+        readonly error?: Error;
+      }
+    | undefined;
   private providerExited = false;
 
   public readonly gracefulShutdownInstructions: string[] = [];
@@ -123,6 +129,9 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
 
   public async requestCloseAfterCurrentTurn(): Promise<AgentProviderControlResult> {
     this.closeAfterCurrentTurnCalls += 1;
+    const exit = this.nextCloseAfterTurnExit;
+    this.nextCloseAfterTurnExit = undefined;
+    if (exit !== undefined) this.emitExit(exit.classification, exit.error);
     return this.resolveOperation(
       this.nextCloseAfterTurnOperation,
       this.nextCloseAfterTurnFailure,
@@ -216,6 +225,17 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
     error: Error = new Error('fake close-after-turn failure')
   ): void {
     this.nextCloseAfterTurnFailure = error;
+  }
+
+  /** Cause the provider to report exit synchronously during the next close request. */
+  public exitDuringNextCloseAfterCurrentTurn(
+    classification: AgentProviderExitClassification = 'natural',
+    error?: Error
+  ): void {
+    this.nextCloseAfterTurnExit = Object.freeze({
+      classification,
+      ...(error === undefined ? {} : { error }),
+    });
   }
 
   public failNextForcedShutdown(
