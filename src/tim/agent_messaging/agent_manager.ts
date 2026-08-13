@@ -80,9 +80,11 @@ type StopLifecycleCause = 'none' | 'graceful-stop' | 'self-finish' | 'forced-sto
 
 interface StopLifecycleState {
   cause: StopLifecycleCause;
+  gracefulAttempted: boolean;
   gracefulRequested: boolean;
   gracefulRequestInFlight: boolean;
   gracefulAccepted: boolean;
+  inactivityTimerEnabled: boolean;
   gracefulInstruction: string;
   lastActivityAt: number | undefined;
   activityGeneration: number;
@@ -90,6 +92,7 @@ interface StopLifecycleState {
   timerHandle: unknown;
   forceInFlight: boolean;
   forceAccepted: boolean;
+  forceOutcomeUnknown: boolean;
   forceOperationPromise: Promise<StopAgentResult> | undefined;
   lastGracefulError: unknown;
   lastForceError: unknown;
@@ -98,9 +101,11 @@ interface StopLifecycleState {
 function createStopLifecycleState(): StopLifecycleState {
   return {
     cause: 'none',
+    gracefulAttempted: false,
     gracefulRequested: false,
     gracefulRequestInFlight: false,
     gracefulAccepted: false,
+    inactivityTimerEnabled: false,
     gracefulInstruction: '',
     lastActivityAt: undefined,
     activityGeneration: 0,
@@ -108,6 +113,7 @@ function createStopLifecycleState(): StopLifecycleState {
     timerHandle: undefined,
     forceInFlight: false,
     forceAccepted: false,
+    forceOutcomeUnknown: false,
     forceOperationPromise: undefined,
     lastGracefulError: undefined,
     lastForceError: undefined,
@@ -433,6 +439,14 @@ export class AgentManager {
       binding.bindInputAdapter(handle.input);
       await operation.awaitBoundary(handle.ready);
       operation.ensureActive();
+      if (record.providerExit !== undefined) {
+        throw new AgentManagerError(
+          'launch_failed',
+          `Agent ${record.name} exited before launch readiness${
+            record.providerExit.error === undefined ? '' : `: ${record.providerExit.error.message}`
+          }`
+        );
+      }
       binding.markLaunchReady();
       this.maybeRequestProviderStop(record);
 
@@ -458,7 +472,11 @@ export class AgentManager {
         // terminal wait after the normal rollback has completed.
         terminalLifecycle?.resolveTerminal();
       }
-      if (error instanceof AgentManagerError && error.code === 'manager_closed') throw error;
+      if (
+        error instanceof AgentManagerError &&
+        (error.code === 'manager_closed' || error.code === 'launch_failed')
+      )
+        throw error;
       throw new AgentManagerError(
         'launch_failed',
         `Could not start agent ${record.name}: ${error instanceof Error ? error.message : String(error)}`,
@@ -676,6 +694,7 @@ export class AgentManager {
     lifecycle.gracefulInstruction = buildGracefulStopInstruction(parsed.data.message);
     lifecycle.lastActivityAt = this.options.scheduler.now();
     lifecycle.activityGeneration += 1;
+    lifecycle.inactivityTimerEnabled = true;
     this.maybeRequestGracefulStop(record);
 
     return Object.freeze({ name: record.name, mode: 'graceful-requested', state: record.state });
@@ -712,6 +731,9 @@ export class AgentManager {
   public close(): Promise<void> {
     if (this.closePromise !== undefined) return this.closePromise;
     this.closed = true;
+    const startupCleanupPromises = this.startupTracker
+      .values()
+      .map((operation) => operation.cleanupForClose());
     const snapshot = this.directory.records.filter(
       (
         record
@@ -725,6 +747,10 @@ export class AgentManager {
       let firstError: unknown;
       const terminalResults = await Promise.allSettled(terminalPromises);
       for (const result of terminalResults) {
+        if (result.status === 'rejected') firstError ??= result.reason;
+      }
+      const startupResults = await Promise.allSettled(startupCleanupPromises);
+      for (const result of startupResults) {
         if (result.status === 'rejected') firstError ??= result.reason;
       }
 
@@ -768,11 +794,20 @@ export class AgentManager {
 
     const wasStarting = record.state === 'starting';
     const stopState = this.getOrCreateStopLifecycle(record);
+    if (record.state === 'finishing' && !stopState.inactivityTimerEnabled) {
+      // Root teardown owns an independent deadline for a self-finishing
+      // provider. It must not send a second graceful instruction.
+      stopState.lastActivityAt = this.options.scheduler.now();
+      stopState.activityGeneration += 1;
+      stopState.inactivityTimerEnabled = true;
+      this.armStopInactivityTimer(record, stopState);
+    }
     if (
       record.state !== 'finishing' &&
       !stopState.gracefulRequested &&
       !stopState.forceInFlight &&
-      !stopState.forceAccepted
+      !stopState.forceAccepted &&
+      !stopState.forceOutcomeUnknown
     ) {
       record.state = 'stopping';
       stopState.cause = 'graceful-stop';
@@ -780,6 +815,7 @@ export class AgentManager {
       stopState.gracefulInstruction = buildGracefulStopInstruction(undefined);
       stopState.lastActivityAt = this.options.scheduler.now();
       stopState.activityGeneration += 1;
+      stopState.inactivityTimerEnabled = true;
     }
 
     const startupOperation = this.startupTracker
@@ -894,10 +930,51 @@ export class AgentManager {
       lifecycle.onExit((event): void => {
         if (!isCurrentEvent(event.agentId) || record.providerExit !== undefined) return;
         record.providerExit = Object.freeze({ ...event });
+        if (!record.launchReady) {
+          this.startupTracker
+            .findByRecord(record)
+            ?.cancel(
+              new AgentManagerError(
+                'launch_failed',
+                `Agent ${record.name} exited before launch readiness${
+                  event.error === undefined ? '' : `: ${event.error.message}`
+                }`
+              )
+            );
+          return;
+        }
         void this.beginTerminal(record, this.selectTerminalCause(record, event));
       }),
     ];
     this.lifecycleUnsubscribers.set(record.id, unsubscribers);
+  }
+
+  /**
+   * Converge a provider control result that proves the provider already exited
+   * even when that provider does not emit a separate exit callback.
+   */
+  private synthesizeProviderExit(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    classification: AgentProviderExitEvent['classification']
+  ): void {
+    if (record.providerExit !== undefined) return;
+    const event: AgentProviderExitEvent = Object.freeze({
+      agentId: record.id as AgentProviderExitEvent['agentId'],
+      classification,
+    });
+    record.providerExit = event;
+    if (!record.launchReady) {
+      this.startupTracker
+        .findByRecord(record)
+        ?.cancel(
+          new AgentManagerError(
+            'launch_failed',
+            `Agent ${record.name} exited before launch readiness`
+          )
+        );
+      return;
+    }
+    void this.beginTerminal(record, this.selectTerminalCause(record, event));
   }
 
   private getOrCreateStopLifecycle(
@@ -941,6 +1018,7 @@ export class AgentManager {
       lifecycle === undefined ||
       record.providerExit !== undefined ||
       !stopState.gracefulRequested ||
+      stopState.gracefulAttempted ||
       stopState.gracefulRequestInFlight ||
       stopState.gracefulAccepted ||
       stopState.forceInFlight ||
@@ -950,6 +1028,7 @@ export class AgentManager {
     }
 
     stopState.gracefulRequestInFlight = true;
+    stopState.gracefulAttempted = true;
     const requestGeneration = stopState.activityGeneration;
     let request: Promise<import('./agent_manager_types.js').AgentProviderControlResult>;
     try {
@@ -974,6 +1053,7 @@ export class AgentManager {
     stopState.gracefulRequestInFlight = false;
     if (result.accepted) {
       stopState.gracefulAccepted = true;
+      stopState.inactivityTimerEnabled = true;
       if (stopState.activityGeneration === requestGeneration) {
         // No output arrived while acceptance was pending. The inactivity
         // window begins when the provider accepted the graceful request.
@@ -990,10 +1070,11 @@ export class AgentManager {
       return;
     }
 
-    // The provider reports already-exited separately from an accepted force.
-    // Leave the existing cause untouched and wait for its classified exit.
+    // The provider contract allows an already-exited result without a second
+    // exit callback. Synthesize the provider-neutral convergence event.
     stopState.gracefulAccepted = false;
     this.cancelStopTimer(record.id);
+    this.synthesizeProviderExit(record, 'natural');
   }
 
   private handleGracefulStopFailure(
@@ -1004,6 +1085,9 @@ export class AgentManager {
     if (this.directory.getRecord(record.id) !== record) return;
     stopState.gracefulRequestInFlight = false;
     stopState.lastGracefulError = error;
+    stopState.inactivityTimerEnabled = true;
+    stopState.lastActivityAt ??= this.options.scheduler.now();
+    this.armStopInactivityTimer(record, stopState);
   }
 
   private noteStopOutputActivity(
@@ -1012,7 +1096,7 @@ export class AgentManager {
     const stopState = this.stopLifecycles.get(record.id);
     if (
       stopState === undefined ||
-      !stopState.gracefulRequested ||
+      !stopState.inactivityTimerEnabled ||
       stopState.forceInFlight ||
       stopState.forceAccepted
     ) {
@@ -1020,7 +1104,7 @@ export class AgentManager {
     }
     stopState.lastActivityAt = this.options.scheduler.now();
     stopState.activityGeneration += 1;
-    if (stopState.gracefulAccepted) this.armStopInactivityTimer(record, stopState);
+    if (!stopState.gracefulRequestInFlight) this.armStopInactivityTimer(record, stopState);
   }
 
   private armStopInactivityTimer(
@@ -1029,7 +1113,7 @@ export class AgentManager {
   ): void {
     if (
       record.providerExit !== undefined ||
-      !stopState.gracefulAccepted ||
+      !stopState.inactivityTimerEnabled ||
       stopState.forceInFlight ||
       stopState.forceAccepted ||
       stopState.lastActivityAt === undefined
@@ -1245,6 +1329,14 @@ export class AgentManager {
         Object.freeze({ name: record.name, mode: 'forced', state: 'stopping' })
       );
     }
+    if (stopState.forceOutcomeUnknown) {
+      if (!explicit) {
+        return Promise.resolve(
+          Object.freeze({ name: record.name, mode: 'already-stopping', state: 'stopping' })
+        );
+      }
+      return Promise.reject(this.createUnknownForceError(record, stopState.lastForceError));
+    }
     if (stopState.forceInFlight) {
       return (
         stopState.forceOperationPromise ??
@@ -1301,6 +1393,7 @@ export class AgentManager {
           stopState.cause = 'forced-stop';
         } else {
           stopState.cause = priorCause;
+          this.synthesizeProviderExit(record, 'natural');
         }
         return Object.freeze({ name: record.name, mode: 'forced', state: 'stopping' });
       },
@@ -1348,8 +1441,12 @@ export class AgentManager {
     }
 
     // A non-typed rejection does not prove that the provider ignored the
-    // force request. Keep the in-flight claim so a later call cannot issue a
-    // second potentially unsafe operation.
+    // force request. Preserve that unknown outcome so a later call cannot
+    // issue a second potentially unsafe operation.
+    stopState.forceInFlight = false;
+    stopState.forceAccepted = false;
+    stopState.forceOutcomeUnknown = true;
+    stopState.cause = priorCause;
     if (explicit) {
       throw new AgentManagerError(
         'force_failed',
@@ -1360,6 +1457,20 @@ export class AgentManager {
       );
     }
     return Object.freeze({ name: record.name, mode: 'already-stopping', state: 'stopping' });
+  }
+
+  private createUnknownForceError(
+    record: Extract<import('./agent_directory.js').DirectoryRecord, { role: 'subagent' }>,
+    error: unknown
+  ): AgentManagerError {
+    return new AgentManagerError(
+      'force_failed',
+      'Forced shutdown status is unknown for agent ' +
+        record.name +
+        ': ' +
+        (error instanceof Error ? error.message : String(error)),
+      { cause: error }
+    );
   }
 
   private unbindProviderLifecycle(agentId: string): void {
@@ -1389,10 +1500,15 @@ export class AgentManager {
     try {
       finishLifecycle.closeAfterTurnPromise = Promise.resolve(
         lifecycle.requestCloseAfterCurrentTurn()
-      ).catch((error: unknown): undefined => {
-        finishLifecycle.closeAfterTurnError = error;
-        return undefined;
-      });
+      )
+        .then((result): undefined => {
+          if (!result.accepted) this.synthesizeProviderExit(record, 'natural');
+          return undefined;
+        })
+        .catch((error: unknown): undefined => {
+          finishLifecycle.closeAfterTurnError = error;
+          return undefined;
+        });
     } catch (error) {
       finishLifecycle.closeAfterTurnError = error;
     }

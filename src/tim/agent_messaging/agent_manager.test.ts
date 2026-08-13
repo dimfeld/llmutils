@@ -306,8 +306,7 @@ describe('AgentManager root registration and snapshots', () => {
       await preparationStarted.promise;
 
       const closePromise = manager.close();
-      preparation.reject(new Error('startup failed during root teardown'));
-      await expect(startPromise).resolves.toMatchObject({ code: 'launch_failed' });
+      await expect(startPromise).resolves.toMatchObject({ code: 'manager_closed' });
       await closePromise;
       expect(manager.listAgents().agents).toEqual([]);
       expect(manager.subagentCount).toBe(0);
@@ -423,10 +422,7 @@ describe('AgentManager root registration and snapshots', () => {
     const closePromise = manager.close();
     launch.handle.markReady();
     launch.handle.lifecycle.emitExit('forced');
-    await expect(startPromise).resolves.toMatchObject({
-      name: 'close-owned-runtime',
-      state: 'stopping',
-    });
+    await expect(startPromise).rejects.toMatchObject({ code: 'manager_closed' });
     await closePromise;
     expect(launch.handle.isReleased).toBe(true);
     expect(launch.handle.releaseCount).toBe(1);
@@ -1292,6 +1288,35 @@ describe('AgentManager StartAgent startup and rollback', () => {
     const launch = await launchPromise;
     launch.handle.markReady();
     await expect(startPromise).resolves.toMatchObject({ name: 'retry-ready' });
+  });
+
+  test('maps a provider exit before launch readiness to one clear launch failure', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('exit-before-ready')
+    );
+    const launch = await launchPromise;
+    await waitFor(
+      () => manager.getAgentSnapshot(launch.request.identity.id)?.providerThreadId !== undefined
+    );
+
+    launch.handle.lifecycle.emitExit('natural');
+    await expect(startPromise).rejects.toMatchObject({ code: 'launch_failed' });
+    expect(rootInput.receivedMessages).toHaveLength(0);
+    expect(launch.handle.releaseCount).toBe(1);
+    expect(manager.getIdentityByName('exit-before-ready')).toBeUndefined();
+    expect(manager.subagentCount).toBe(0);
   });
 
   test('rolls back a real mailbox socket readiness failure and reuses the slot and name', async () => {
@@ -2881,7 +2906,7 @@ describe('AgentManager FinishAgent lifecycle', () => {
     });
   });
 
-  test('accepts an already-exited close result and waits for the exit event', async () => {
+  test('converges an already-exited close result without requiring another exit event', async () => {
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({
       agentPreparer: createPreparer(),
@@ -2895,16 +2920,13 @@ describe('AgentManager FinishAgent lifecycle', () => {
     lifecycle.emitTurnComplete();
     await closeStarted;
     lifecycle.resolveCloseAfterCurrentTurn({ accepted: false, alreadyExited: true });
-    await Promise.resolve();
+    await flushLifecyclePromises();
 
     expect(lifecycle.closeAfterCurrentTurnCalls).toBe(1);
     expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
       state: 'finishing',
       finishCloseAfterTurnRequested: true,
     });
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).not.toHaveProperty('providerExit');
-
-    lifecycle.emitExit('natural');
     expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
       providerExit: { classification: 'natural' },
     });
@@ -3147,6 +3169,55 @@ describe('AgentManager StopAgent lifecycle', () => {
     ).rejects.toMatchObject({ code: 'unknown_target' });
 
     expect(launch.handle.lifecycle.gracefulShutdownCalls).toBe(0);
+  });
+
+  test('starts the inactivity deadline after an explicit graceful rejection', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'stop-graceful-rejected');
+    const lifecycle = launch.handle.lifecycle;
+    const gracefulStarted = lifecycle.deferNextGracefulShutdown();
+
+    await expect(
+      manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-graceful-rejected' })
+    ).resolves.toMatchObject({ mode: 'graceful-requested', state: 'stopping' });
+    await gracefulStarted;
+    lifecycle.rejectGracefulShutdown(new Error('graceful request rejected'));
+    await flushLifecyclePromises();
+
+    expect(lifecycle.gracefulShutdownCalls).toBe(1);
+    expect(scheduler.pendingTimerCount).toBe(1);
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS);
+    await flushLifecyclePromises();
+    expect(lifecycle.forcedShutdownCalls).toBe(1);
+  });
+
+  test('root teardown escalates after a graceful request failure', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'teardown-graceful-rejected');
+    launch.handle.lifecycle.failNextGracefulShutdown(new Error('root graceful request failed'));
+
+    const teardown = manager.close();
+    await flushLifecyclePromises();
+    expect(launch.handle.lifecycle.gracefulShutdownCalls).toBe(1);
+    expect(scheduler.pendingTimerCount).toBe(1);
+
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS);
+    await flushLifecyclePromises();
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
+    launch.handle.lifecycle.emitExit('forced');
+    await teardown;
   });
 
   test('keeps the standard instruction exact and does not shift a duplicate timer', async () => {
@@ -3519,7 +3590,10 @@ describe('AgentManager StopAgent lifecycle', () => {
         name: 'stop-force-unknown',
         force: true,
       })
-    ).resolves.toEqual({ name: 'stop-force-unknown', mode: 'forced', state: 'stopping' });
+    ).rejects.toMatchObject({
+      code: 'force_failed',
+      message: expect.stringContaining('status is unknown'),
+    });
     expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
   });
 
@@ -3640,7 +3714,9 @@ describe('AgentManager StopAgent lifecycle', () => {
       mode: 'forced',
       state: 'stopping',
     });
-    expect(manager.getAgentSnapshot(launch.request.identity.id)).not.toHaveProperty('providerExit');
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toMatchObject({
+      providerExit: { classification: 'natural' },
+    });
     expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
   });
 
@@ -4054,6 +4130,7 @@ describe('AgentManager terminal convergence', () => {
       orchestratorInputAdapter: rootInput,
     });
     const launch = await startActiveFakeAgent(manager, launcher, 'terminal-forced-empty');
+    launch.handle.lifecycle.emitCompletedAssistantMessage(' \t\n ');
     await manager.stopAgent(manager.orchestratorIdentity, {
       name: 'terminal-forced-empty',
       force: true,
@@ -4323,6 +4400,34 @@ describe('AgentManager terminal convergence', () => {
     }
   });
 
+  test('gives a finishing agent its own teardown deadline without a second graceful request', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'teardown-finishing-timeout');
+    await manager.finishAgent(launch.request.identity, { message: 'final status' });
+
+    const teardown = manager.close();
+    await flushLifecyclePromises();
+    expect(launch.handle.lifecycle.gracefulShutdownCalls).toBe(0);
+    expect(scheduler.pendingTimerCount).toBe(1);
+
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+    launch.handle.lifecycle.emitOutputActivity();
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(0);
+    scheduler.advanceBy(1);
+    await flushLifecyclePromises();
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
+
+    launch.handle.lifecycle.emitExit('forced');
+    await teardown;
+  });
+
   test('rejects new work immediately and unregisters one memoized cleanup handler', async () => {
     const session = await createAgentMessagingSessionRuntime();
     const cleanupRegistry = CleanupRegistry.getInstance();
@@ -4422,17 +4527,9 @@ describe('AgentManager terminal convergence', () => {
       expect(finishing.handle.lifecycle.gracefulShutdownCalls).toBe(0);
       expect(terminal.handle.lifecycle.gracefulShutdownCalls).toBe(0);
 
-      releasePreparation.resolve(undefined);
-      const startingLaunch = await launcher.waitForNextLaunch();
-      startingLaunch.handle.markReady();
-      await expect(startingStart).resolves.toMatchObject({
-        name: 'teardown-starting-snapshot',
-        state: 'stopping',
-      });
-      expect(startingLaunch.handle.lifecycle.gracefulShutdownCalls).toBe(1);
+      await expect(startingStart).rejects.toMatchObject({ code: 'manager_closed' });
       finishing.handle.lifecycle.emitExit('natural');
       stopping.handle.lifecycle.emitExit('graceful');
-      startingLaunch.handle.lifecycle.emitExit('graceful');
       rootInput.resolveNextDelivery();
       await teardown;
       expect(manager.listAgents().agents).toEqual([]);
@@ -4641,17 +4738,10 @@ describe('AgentManager terminal convergence', () => {
       );
       await preparationStarted.promise;
       const teardown = manager.close();
-      preparation.resolve(preparedExecutionFor(preparationRequest as AgentPreparationRequest));
-      const launch = await launcher.waitForNextLaunch();
-      launch.handle.markReady();
-      await expect(start).resolves.toMatchObject({
-        name: 'teardown-starting',
-        state: 'stopping',
-      });
-      expect(launch.handle.lifecycle.gracefulShutdownCalls).toBe(1);
-      launch.handle.lifecycle.emitExit('graceful');
+      await expect(start).rejects.toMatchObject({ code: 'manager_closed' });
       await teardown;
       expect(manager.listAgents().agents).toEqual([]);
+      expect(launcher.launches).toHaveLength(0);
     } finally {
       await manager?.close().catch(() => undefined);
       await session.close().catch(() => undefined);

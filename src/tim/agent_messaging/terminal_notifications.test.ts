@@ -130,6 +130,17 @@ describe('terminal notification policy', () => {
       suppressed: false,
       content: `${NO_COMPLETED_ASSISTANT_MESSAGE}\n\n${FORCE_STOP_STALE_CONTEXT_WARNING}`,
     });
+
+    expect(
+      formatTerminalNotification({
+        ...baseInput,
+        cause: 'forced-stop',
+        lastCompletedAssistantMessage: ' \t\n ',
+      })
+    ).toEqual({
+      suppressed: false,
+      content: `${NO_COMPLETED_ASSISTANT_MESSAGE}\n\n${FORCE_STOP_STALE_CONTEXT_WARNING}`,
+    });
   });
 
   test('provider failures are never deduplicated or exposed with raw diagnostics', () => {

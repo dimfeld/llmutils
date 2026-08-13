@@ -259,16 +259,6 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
     );
   }
 
-  public rejectCloseAfterCurrentTurn(
-    error: Error = new Error('fake close-after-turn failure')
-  ): void {
-    this.rejectPendingOperation(
-      this.nextCloseAfterTurnOperation,
-      error,
-      'close-after-current-turn'
-    );
-  }
-
   public deferNextForcedShutdown(): Promise<void> {
     if (this.nextForcedOperation !== undefined) {
       throw new Error('A fake forced shutdown operation is already pending');
@@ -279,15 +269,6 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
 
   public resolveForcedShutdown(result: AgentProviderControlResult = acceptedControlResult()): void {
     this.resolvePendingOperation(this.nextForcedOperation, result, 'forced-shutdown');
-  }
-
-  public rejectForcedShutdown(
-    error: Error = new AgentProviderControlError(
-      'forced-shutdown',
-      'The fake provider did not accept forced shutdown'
-    )
-  ): void {
-    this.rejectPendingOperation(this.nextForcedOperation, error, 'forced-shutdown');
   }
 
   public failNextGracefulShutdown(

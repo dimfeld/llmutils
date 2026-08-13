@@ -291,6 +291,38 @@ terminal promise and cleanup path. Callers that need to observe completion use
 `setAgentLifecycleState(id, state)` remains a narrow nonterminal test seam for
 the provider-neutral lifecycle tests. It does not perform terminal cleanup.
 
+### Teardown convergence invariants
+
+`close()` marks the manager closed, snapshots every nonterminal subagent, and
+starts all stop work before awaiting any terminal promise. It also cancels every
+in-flight preparation, mailbox-registration, launch, and readiness boundary.
+Startup promises that have no cancellation API are not awaited during close:
+late mailbox or provider resources attach to the cancelled start operation and
+are released by its idempotent cleanup hooks. This keeps root teardown bounded.
+
+Every nonterminal agent has an independent output-inactivity path:
+
+- `stopping` agents arm the 120,000 ms deadline after graceful acceptance or
+  graceful-control failure. A failed graceful request does not permit another
+  graceful instruction; the timer escalates through the normal force path.
+- `finishing` agents receive the same independent deadline during root
+  teardown, but never receive a second graceful instruction. Provider output
+  resets only that agent's timer.
+- A provider `alreadyExited` control result is a convergence event. The manager
+  synthesizes a classified exit when the provider does not send a separate
+  callback. An exit before launch readiness is instead a `launch_failed`
+  startup result and never creates a normal terminal notification.
+- A force rejection that does not prove non-acceptance has an unknown outcome.
+  The manager reports that error on later explicit force calls and never retries
+  the provider control automatically. Root teardown does not issue another
+  control and keeps resources until a classified provider exit arrives. A typed
+  unaccepted failure remains explicitly retryable.
+
+Forced notifications use the last nonblank completed assistant message. A
+whitespace-only completed message is treated as no completed message and uses
+the explicit no-result marker. The notification does not include partial output,
+tool traces, or shutdown instructions.
+
 ## Testing
 
 `fake_provider.ts` provides `FakeAgentPreparer`, `FakeAgentLauncher`,

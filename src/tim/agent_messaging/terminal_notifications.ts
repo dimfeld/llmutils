@@ -65,9 +65,12 @@ export function formatTerminalNotification(
   }
 
   if (input.cause === 'forced-stop') {
+    const completedMessage = hasNonblankContent(input.lastCompletedAssistantMessage)
+      ? input.lastCompletedAssistantMessage
+      : NO_COMPLETED_ASSISTANT_MESSAGE;
     return Object.freeze({
       suppressed: false,
-      content: `${input.lastCompletedAssistantMessage ?? NO_COMPLETED_ASSISTANT_MESSAGE}\n\n${FORCE_STOP_STALE_CONTEXT_WARNING}`,
+      content: completedMessage + '\n\n' + FORCE_STOP_STALE_CONTEXT_WARNING,
     });
   }
 

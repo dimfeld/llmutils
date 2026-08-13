@@ -7,25 +7,32 @@ import type {
 } from './agent_directory.js';
 
 interface Cancellation {
-  readonly promise: Promise<void>;
-  cancel(): void;
+  readonly promise: Promise<AgentManagerError>;
+  cancel(error: AgentManagerError): void;
 }
 
 function createCancellation(): Cancellation {
-  let resolveCancellation: (() => void) | undefined;
+  let resolveCancellation: ((error: AgentManagerError) => void) | undefined;
   let cancelled = false;
-  const promise = new Promise<void>((resolve) => {
+  const promise = new Promise<AgentManagerError>((resolve) => {
     resolveCancellation = resolve;
   });
   return {
     promise,
-    cancel: (): void => {
+    cancel: (error: AgentManagerError): void => {
       if (!cancelled) {
         cancelled = true;
-        resolveCancellation?.();
+        resolveCancellation?.(error);
       }
     },
   };
+}
+
+function managerClosedError(): AgentManagerError {
+  return new AgentManagerError(
+    'manager_closed',
+    'The agent manager was closed while the agent was starting'
+  );
 }
 
 /** Tracks resources that may resolve after a start has been cancelled. */
@@ -39,6 +46,7 @@ class AgentStartOperation {
   private readonly cancellation = createCancellation();
   private mailboxDeregisterPromise: Promise<void> | undefined;
   private handleReleasePromise: Promise<void> | undefined;
+  private closeCleanupRequested = false;
 
   public constructor(
     public readonly record: SubagentDirectoryRecord,
@@ -48,23 +56,23 @@ class AgentStartOperation {
 
   public ensureActive(): void {
     if (this.cleanupRequested || this.directory.getRecord(this.record.id) !== this.record) {
-      throw new AgentManagerError(
-        'manager_closed',
-        'The agent manager was closed while the agent was starting'
-      );
+      throw managerClosedError();
     }
+  }
+
+  /** Abort the active startup boundary with a classified manager error. */
+  public cancel(error: AgentManagerError): void {
+    this.cleanupRequested = true;
+    this.cancellation.cancel(error);
   }
 
   public async awaitBoundary<T>(operation: Promise<T>): Promise<T> {
     const result = await Promise.race([
       operation.then((value: T) => ({ kind: 'value' as const, value })),
-      this.cancellation.promise.then(() => ({ kind: 'cancelled' as const })),
+      this.cancellation.promise.then((error) => ({ kind: 'cancelled' as const, error })),
     ]);
     if (result.kind === 'cancelled') {
-      throw new AgentManagerError(
-        'manager_closed',
-        'The agent manager was closed while the agent was starting'
-      );
+      throw result.error;
     }
     return result.value;
   }
@@ -111,20 +119,25 @@ class AgentStartOperation {
 
   public async rollback(): Promise<void> {
     this.cleanupRequested = true;
-    this.cancellation.cancel();
+    this.cancellation.cancel(managerClosedError());
     this.record.launchHandle = undefined;
     this.record.launchReady = false;
     this.record.mailbox = undefined;
     this.record.registration = undefined;
 
-    // Await any operation that may still attach a late resource before
-    // releasing the name. This prevents a replacement generation racing it.
-    await Promise.allSettled(
-      [this.pendingMailboxRegistration, this.pendingHandleLaunch].filter(
-        (operation): operation is Promise<SessionRegistrationHandle> | Promise<AgentLaunchHandle> =>
-          operation !== undefined
-      )
-    );
+    // A close-cancelled operation must not wait for an unresolved provider
+    // preparation or launch promise. Late resources are attached and released
+    // by attachMailbox()/attachHandle() after cleanupRequested is set.
+    if (!this.closeCleanupRequested) {
+      await Promise.allSettled(
+        [this.pendingMailboxRegistration, this.pendingHandleLaunch].filter(
+          (
+            operation
+          ): operation is Promise<SessionRegistrationHandle> | Promise<AgentLaunchHandle> =>
+            operation !== undefined
+        )
+      );
+    }
     const handleRelease = this.releaseHandle();
     void handleRelease.catch(() => undefined);
     const mailboxCleanup = this.deregisterMailbox();
@@ -135,18 +148,13 @@ class AgentStartOperation {
   }
 
   public async cleanupForClose(): Promise<void> {
+    this.closeCleanupRequested = true;
     this.cleanupRequested = true;
-    this.cancellation.cancel();
+    this.cancellation.cancel(managerClosedError());
     let firstError: unknown;
-    const pendingResults = await Promise.allSettled(
-      [this.pendingMailboxRegistration, this.pendingHandleLaunch].filter(
-        (operation): operation is Promise<SessionRegistrationHandle> | Promise<AgentLaunchHandle> =>
-          operation !== undefined
-      )
-    );
-    for (const result of pendingResults) {
-      if (result.status === 'rejected') firstError ??= result.reason;
-    }
+    // Pending registration, launch, and readiness promises have no common
+    // cancellation API. Do not wait for them here; their tracked continuations
+    // clean up a late resource when it resolves.
     try {
       await this.deregisterMailbox();
     } catch (error) {
@@ -204,5 +212,11 @@ export class AgentStartupTracker {
 
   public values(): readonly AgentStartOperation[] {
     return [...this.operations.values()];
+  }
+
+  public findByRecord(record: SubagentDirectoryRecord): AgentStartOperation | undefined {
+    return this.operations.get(record.id)?.record === record
+      ? this.operations.get(record.id)
+      : undefined;
   }
 }
