@@ -4,6 +4,7 @@ import net from 'node:net';
 
 import { debugLog } from '../../logging.js';
 import { MailboxConnection } from './mailbox_connection.js';
+import { isRecord, isNotFoundError, sanitizeErrorMessage } from './mailbox_helpers.js';
 import {
   MAX_PENDING_MESSAGES_PER_RECIPIENT,
   buildMailboxFailureAcknowledgement,
@@ -87,24 +88,6 @@ interface RecentRequest {
   completed: boolean;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNotFoundError(error: unknown): boolean {
-  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
-}
-
-function validationErrorMessage(error: unknown, fallback: string): string {
-  const raw = error instanceof Error ? error.message : fallback;
-  let safe = '';
-  for (const character of raw) {
-    const codePoint = character.codePointAt(0);
-    safe += codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f) ? ' ' : character;
-  }
-  return safe.slice(0, 512) || fallback;
-}
-
 function validateIntegerOption(value: unknown, label: string, maximum: number): number {
   if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > maximum) {
     throw new MailboxReceiverError(
@@ -183,7 +166,7 @@ export function normalizeMailboxReceiverOptions(
   } catch (error) {
     throw new MailboxReceiverError(
       'invalid_options',
-      `Mailbox receiver registration is invalid: ${validationErrorMessage(
+      `Mailbox receiver registration is invalid: ${sanitizeErrorMessage(
         error,
         'invalid registration'
       )}`
@@ -416,6 +399,9 @@ export class MailboxReceiver {
       if (acknowledgement !== undefined) {
         return acknowledgement;
       }
+      // The original completed with no acknowledgement because the peer ended
+      // before delivery began (the immediate-FIN rule). That entry did not
+      // invoke the callback, so it is safe to remove and allow a fresh attempt.
       if (this.recentRequests.get(request.requestId) === existing) {
         this.recentRequests.delete(request.requestId);
       }
@@ -429,7 +415,7 @@ export class MailboxReceiver {
       buildMailboxFailureAcknowledgement(
         request.requestId,
         'connection_failed',
-        `Mailbox delivery failed: ${validationErrorMessage(error, 'delivery callback failed')}`
+        `Mailbox delivery failed: ${sanitizeErrorMessage(error, 'delivery callback failed')}`
       )
     );
     const recentRequest: RecentRequest = {
@@ -452,6 +438,14 @@ export class MailboxReceiver {
     return acknowledgement;
   }
 
+  /**
+   * Validate and deliver one request. Once the delivery callback is invoked,
+   * this method always returns a concrete acknowledgement so the dedup history
+   * retains a stable result — even if the original client aborts mid-delivery.
+   * The only path that returns `undefined` is the immediate-FIN rule: the peer
+   * ended before source validation and delivery began, so no callback ran and
+   * the request ID is not permanently reserved.
+   */
   private async deliverRequest(
     request: MailboxMessageRequest,
     isPeerEnded: () => boolean
@@ -530,6 +524,9 @@ export class MailboxReceiver {
       return undefined;
     }
 
+    // Past this point, the delivery callback will be invoked. Any peer abort
+    // after this must still produce a concrete acknowledgement so the dedup
+    // history retains a stable result and never invokes the callback again.
     const trustedRequest = parseMailboxMessageRequest({
       ...request,
       sourceId: sourceRegistration.id,
@@ -542,11 +539,8 @@ export class MailboxReceiver {
       return buildMailboxFailureAcknowledgement(
         request.requestId,
         'connection_failed',
-        `Mailbox delivery failed: ${validationErrorMessage(error, 'delivery callback failed')}`
+        `Mailbox delivery failed: ${sanitizeErrorMessage(error, 'delivery callback failed')}`
       );
-    }
-    if (isPeerEnded()) {
-      return undefined;
     }
 
     if (delivery === 'steered' || delivery === 'started-idle-turn') {
@@ -558,9 +552,6 @@ export class MailboxReceiver {
         'connection_failed',
         'Mailbox delivery callback returned an invalid result'
       );
-    }
-    if (isPeerEnded()) {
-      return undefined;
     }
     if (this.closed) {
       return buildMailboxFailureAcknowledgement(

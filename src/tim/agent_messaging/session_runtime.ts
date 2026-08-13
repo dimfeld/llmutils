@@ -8,6 +8,14 @@ import {
   type MailboxTargetReference,
 } from './mailbox_client.js';
 import {
+  fileIdentity,
+  isNotFoundError,
+  isRecord,
+  sameFileIdentity,
+  sanitizeErrorMessage,
+  type FileIdentity,
+} from './mailbox_helpers.js';
+import {
   MailboxReceiver,
   normalizeMailboxReceiverOptions,
   type MailboxDeliveryCallback,
@@ -65,37 +73,6 @@ export class AgentMessagingSessionRuntimeError extends Error {
     this.name = 'AgentMessagingSessionRuntimeError';
     this.code = code;
   }
-}
-
-interface FileIdentity {
-  readonly dev: number;
-  readonly ino: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNotFoundError(error: unknown): boolean {
-  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
-}
-
-function fileIdentity(stats: { dev: number; ino: number }): FileIdentity {
-  return { dev: stats.dev, ino: stats.ino };
-}
-
-function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
-  return left.dev === right.dev && left.ino === right.ino;
-}
-
-function describeError(error: unknown, fallback: string): string {
-  const raw = error instanceof Error ? error.message : fallback;
-  let safe = '';
-  for (const character of raw) {
-    const codePoint = character.codePointAt(0);
-    safe += codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f) ? ' ' : character;
-  }
-  return safe.slice(0, 512) || fallback;
 }
 
 type RegistrationSlotState =
@@ -213,7 +190,7 @@ export class AgentMessagingSessionRuntime {
     } catch (error) {
       throw new AgentMessagingSessionRuntimeError(
         'invalid_options',
-        `Session runtime options are invalid: ${describeError(error, 'invalid options')}`
+        `Session runtime options are invalid: ${sanitizeErrorMessage(error, 'invalid options')}`
       );
     }
     const runtime = await AgentMessagingRuntimeDirectory.create();
@@ -252,7 +229,7 @@ export class AgentMessagingSessionRuntime {
     } catch (error) {
       throw new AgentMessagingSessionRuntimeError(
         'invalid_options',
-        `Mailbox registration options are invalid: ${describeError(error, 'invalid options')}`
+        `Mailbox registration options are invalid: ${sanitizeErrorMessage(error, 'invalid options')}`
       );
     }
 
@@ -322,7 +299,7 @@ export class AgentMessagingSessionRuntime {
       }
       throw new AgentMessagingSessionRuntimeError(
         'registration_failed',
-        `Mailbox registration failed: ${describeError(error, 'registration failed')}`
+        `Mailbox registration failed: ${sanitizeErrorMessage(error, 'registration failed')}`
       );
     }
   }
@@ -393,7 +370,7 @@ export class AgentMessagingSessionRuntime {
       }
       throw new AgentMessagingSessionRuntimeError(
         'registration_conflict',
-        `Agent registration path cannot be reused: ${describeError(error, 'registration conflict')}`
+        `Agent registration path cannot be reused: ${sanitizeErrorMessage(error, 'registration conflict')}`
       );
     }
   }

@@ -156,12 +156,21 @@ spoof them, and they stay out of `TIM_ENVIRONMENT_CONTEXT_DEFINITIONS` and
 - `runtime_dir.ts` creates the owner-private temporary root, contained
   `agents` and `sockets` directories, opaque-ID paths, atomic registration
   files, strict reads, and idempotent cleanup.
+- `mailbox_helpers.ts` exports small shared utilities used across the mailbox
+  modules: control-character detection, error-message sanitization, filesystem
+  identity comparison, and record type guards.
 - `mailbox_protocol.ts` defines the validated request and acknowledgement
   envelopes, stable protocol errors, UTF-8 content limits, and frame encoding.
 - `mailbox_framing.ts` decodes bounded JSONL bytes without corrupting
   multibyte UTF-8 characters split across chunks.
+- `mailbox_connection.ts` owns one receiver-side socket, its JSONL framing,
+  peer FIN state, and acknowledgement reply. `mailbox_server.ts` delegates
+  per-connection handling to this class.
 - `mailbox_server.ts` implements one Unix receiver, source validation,
   acknowledgement handling, duplicate request replay, and the pending FIFO.
+- `mailbox_target.ts` captures and validates immutable target snapshots —
+  registration file identity, socket identity, and containment checks —
+  used by `mailbox_client.ts` before each send attempt.
 - `mailbox_client.ts` resolves and validates a target snapshot, sends one
   request, waits for its acknowledgement, and maps connection races to stable
   protocol errors.

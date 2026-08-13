@@ -17,6 +17,7 @@ import {
   nonterminalAgentLifecycleStateSchema,
   ORCHESTRATOR_AGENT_NAME,
 } from './contracts.js';
+import { containsControlCharacters } from './mailbox_helpers.js';
 import { MAILBOX_PROTOCOL_VERSION, MAX_MAILBOX_AGENT_ID_LENGTH } from './mailbox_protocol.js';
 
 /** A short prefix keeps Unix socket paths usable on macOS and Linux. */
@@ -163,16 +164,6 @@ const writeRegistrationOptionsSchema = z
     requireSocket: z.boolean().optional(),
   })
   .strict();
-
-function containsControlCharacters(value: string): boolean {
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) {
-      return true;
-    }
-  }
-  return false;
-}
 
 function validationMessage(result: { error: { issues: Array<{ message: string }> } }): string {
   return result.error.issues[0]?.message ?? 'Agent registration failed validation';

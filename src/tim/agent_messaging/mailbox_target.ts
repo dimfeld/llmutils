@@ -1,5 +1,11 @@
 import { promises as fs } from 'node:fs';
 
+import {
+  fileIdentity,
+  sameFileIdentity,
+  sanitizeErrorMessage,
+  type FileIdentity,
+} from './mailbox_helpers.js';
 import { MailboxProtocolError } from './mailbox_protocol.js';
 import {
   AgentMessagingRuntimeDirectory,
@@ -8,10 +14,7 @@ import {
   type AgentRegistration,
 } from './runtime_dir.js';
 
-export interface FileIdentity {
-  readonly dev: number;
-  readonly ino: number;
-}
+export type { FileIdentity } from './mailbox_helpers.js';
 
 export interface SocketIdentity extends FileIdentity {}
 
@@ -21,18 +24,6 @@ export interface MailboxTargetSnapshot {
   readonly registrationFileIdentity: FileIdentity;
   readonly socketPath: string;
   readonly socketIdentity: SocketIdentity;
-}
-
-function fileIdentity(stats: { dev: number; ino: number }): FileIdentity {
-  return { dev: stats.dev, ino: stats.ino };
-}
-
-export function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
-  return left.dev === right.dev && left.ino === right.ino;
-}
-
-export function sameSocketIdentity(left: SocketIdentity, right: SocketIdentity): boolean {
-  return sameFileIdentity(left, right);
 }
 
 function staleTarget(message: string): MailboxProtocolError {
@@ -72,7 +63,7 @@ export async function validateMailboxSocketIdentity(
     throw staleTarget('Mailbox target socket is missing or is not a Unix socket');
   }
   const identity = fileIdentity(stats);
-  if (expectedIdentity !== undefined && !sameSocketIdentity(identity, expectedIdentity)) {
+  if (expectedIdentity !== undefined && !sameFileIdentity(identity, expectedIdentity)) {
     throw staleTarget('Mailbox target socket was replaced before delivery');
   }
   return identity;
@@ -133,12 +124,8 @@ export function mapTargetSnapshotError(error: unknown, fallback: string): Mailbo
   if (error instanceof AgentMessagingRuntimeDirectoryError && error.code === 'runtime_closed') {
     return new MailboxProtocolError('runtime_closed', 'The agent messaging runtime is closed');
   }
-  const raw = error instanceof Error ? error.message : fallback;
-  let message = '';
-  for (const character of raw) {
-    const codePoint = character.codePointAt(0);
-    message +=
-      codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f) ? ' ' : character;
-  }
-  return new MailboxProtocolError('target_stale', `${fallback}: ${message}`);
+  return new MailboxProtocolError(
+    'target_stale',
+    `${fallback}: ${sanitizeErrorMessage(error, fallback)}`
+  );
 }

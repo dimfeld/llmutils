@@ -849,7 +849,7 @@ describe('agent mailbox receiver', () => {
     expect(deliveryCount).toBe(1);
   });
 
-  test('processes a concurrent retry fresh after the original client aborts', async () => {
+  test('retains delivery result when original client aborts after callback starts', async () => {
     const firstDeliveryStarted = deferred<void>();
     const releaseFirstDelivery = deferred<void>();
     let deliveryCount = 0;
@@ -877,7 +877,9 @@ describe('agent mailbox receiver', () => {
       success: true,
       delivery: 'steered',
     });
-    expect(deliveryCount).toBe(2);
+    // The delivery callback must not run twice for the same request ID.
+    // The retry receives the retained result from the original delivery.
+    expect(deliveryCount).toBe(1);
     firstSocket.destroy();
   });
 

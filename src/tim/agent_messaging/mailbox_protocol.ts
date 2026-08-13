@@ -9,6 +9,7 @@ import {
   sendAgentMessageAcknowledgementSchema,
   type SendAgentMessageAcknowledgement,
 } from './contracts.js';
+import { containsControlCharacters } from './mailbox_helpers.js';
 
 // Re-export the canonical limits for mailbox consumers without defining a
 // second transport-specific value.
@@ -86,16 +87,6 @@ const mailboxTimestampSchema = z.iso.datetime({ offset: true }).max(MAX_MAILBOX_
 const mailboxErrorMessageSchema = mailboxSafeStringSchema
   .min(1)
   .max(MAX_MAILBOX_ERROR_MESSAGE_LENGTH);
-
-function containsControlCharacters(value: string): boolean {
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) {
-      return true;
-    }
-  }
-  return false;
-}
 
 /** The identity fields carried in a validated mailbox envelope. */
 export const mailboxIdentitySchema = z

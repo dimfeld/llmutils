@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 
 import { MailboxJsonlDecoder } from './mailbox_framing.js';
+import { isRecord, sanitizeErrorMessage } from './mailbox_helpers.js';
 import {
   MailboxProtocolError,
   buildMailboxMessageRequest,
@@ -71,10 +72,6 @@ const MAILBOX_CLIENT_OPTION_KEYS = new Set([
 ]);
 const MAILBOX_TARGET_KEYS = new Set(['name', 'id']);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function assertKnownKeys(
   value: Record<string, unknown>,
   allowedKeys: ReadonlySet<string>,
@@ -86,16 +83,6 @@ function assertKnownKeys(
       throw new MailboxProtocolError(errorCode, `${label} contains an unsupported field: ${key}`);
     }
   }
-}
-
-function safeErrorMessage(error: unknown, fallback: string): string {
-  const raw = error instanceof Error ? error.message : fallback;
-  let safe = '';
-  for (const character of raw) {
-    const codePoint = character.codePointAt(0);
-    safe += codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f) ? ' ' : character;
-  }
-  return safe.slice(0, 512) || fallback;
 }
 
 function validateTimeout(value: unknown, label: string): number {
@@ -146,7 +133,7 @@ function mapRuntimeError(error: unknown, context: string): MailboxProtocolError 
   }
   return new MailboxProtocolError(
     'target_stale',
-    `${context}: ${safeErrorMessage(error, context)}`
+    `${context}: ${sanitizeErrorMessage(error, context)}`
   );
 }
 
@@ -169,7 +156,7 @@ function mapSocketError(error: unknown, connected: boolean): MailboxProtocolErro
     'connection_failed',
     connected
       ? 'The target mailbox connection closed before acknowledgement'
-      : `The target mailbox connection failed: ${safeErrorMessage(error, 'connection failed')}`
+      : `The target mailbox connection failed: ${sanitizeErrorMessage(error, 'connection failed')}`
   );
 }
 
@@ -179,7 +166,7 @@ function mapAcknowledgementError(error: unknown): MailboxProtocolError {
   }
   return new MailboxProtocolError(
     'invalid_ack',
-    `The target returned an invalid mailbox acknowledgement: ${safeErrorMessage(
+    `The target returned an invalid mailbox acknowledgement: ${sanitizeErrorMessage(
       error,
       'invalid acknowledgement'
     )}`
@@ -275,7 +262,7 @@ export class MailboxClient {
     } catch (error) {
       throw new MailboxProtocolError(
         'unknown_source',
-        `Mailbox source registration is invalid: ${safeErrorMessage(error, 'invalid source')}`
+        `Mailbox source registration is invalid: ${sanitizeErrorMessage(error, 'invalid source')}`
       );
     }
     if (
@@ -293,7 +280,7 @@ export class MailboxClient {
     } catch (error) {
       throw new MailboxProtocolError(
         'unknown_source',
-        `Mailbox source registration is invalid: ${safeErrorMessage(error, 'invalid source')}`
+        `Mailbox source registration is invalid: ${sanitizeErrorMessage(error, 'invalid source')}`
       );
     }
     if (sourceRegistration.socketPath !== expectedSourceSocketPath) {
@@ -329,7 +316,7 @@ export class MailboxClient {
     } catch (error) {
       throw new MailboxProtocolError(
         'target_stale',
-        `Mailbox target registration is invalid: ${safeErrorMessage(error, 'invalid target')}`
+        `Mailbox target registration is invalid: ${sanitizeErrorMessage(error, 'invalid target')}`
       );
     }
     if (
@@ -521,7 +508,7 @@ function mapSourceResolutionError(error: unknown): MailboxProtocolError {
   }
   return new MailboxProtocolError(
     'unknown_source',
-    `Mailbox source could not be resolved: ${safeErrorMessage(error, 'unknown source')}`
+    `Mailbox source could not be resolved: ${sanitizeErrorMessage(error, 'unknown source')}`
   );
 }
 
@@ -531,10 +518,6 @@ function mapTargetResolutionError(error: unknown): MailboxProtocolError {
   }
   return new MailboxProtocolError(
     'unknown_target',
-    `Mailbox target could not be resolved: ${safeErrorMessage(error, 'unknown target')}`
+    `Mailbox target could not be resolved: ${sanitizeErrorMessage(error, 'unknown target')}`
   );
-}
-
-export function createMailboxClient(options: MailboxClientOptions): MailboxClient {
-  return new MailboxClient(options);
 }

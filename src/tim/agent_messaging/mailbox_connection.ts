@@ -2,6 +2,7 @@ import net from 'node:net';
 
 import { debugLog } from '../../logging.js';
 import { MailboxJsonlDecoder } from './mailbox_framing.js';
+import { isRecord, sanitizeErrorMessage } from './mailbox_helpers.js';
 import {
   MailboxProtocolError,
   buildMailboxFailureAcknowledgement,
@@ -19,20 +20,6 @@ export interface MailboxConnectionHandlers {
   ) => Promise<MailboxAcknowledgement | undefined>;
   readonly onInactive: () => void;
   readonly onClosed: () => void;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function validationErrorMessage(error: unknown, fallback: string): string {
-  const raw = error instanceof Error ? error.message : fallback;
-  let safe = '';
-  for (const character of raw) {
-    const codePoint = character.codePointAt(0);
-    safe += codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f) ? ' ' : character;
-  }
-  return safe.slice(0, 512) || fallback;
 }
 
 function recoverRequestId(line: string): string | undefined {
@@ -60,8 +47,7 @@ function recoverRequestId(line: string): string | undefined {
 
 /** Owns one receiver-side socket, its JSONL framing, FIN state, and reply. */
 export class MailboxConnection {
-  public readonly socket: net.Socket;
-
+  private readonly socket: net.Socket;
   private readonly handlers: MailboxConnectionHandlers;
   private readonly decoder = new MailboxJsonlDecoder({ maxFrames: 1 });
   private frameReceived = false;
@@ -71,10 +57,6 @@ export class MailboxConnection {
   public constructor(socket: net.Socket, handlers: MailboxConnectionHandlers) {
     this.socket = socket;
     this.handlers = handlers;
-  }
-
-  public get isPeerEnded(): boolean {
-    return this.peerEnded;
   }
 
   public start(): void {
@@ -91,10 +73,6 @@ export class MailboxConnection {
     this.socket.on('close', () => {
       this.handlers.onClosed();
     });
-  }
-
-  public destroy(): void {
-    this.socket.destroy();
   }
 
   private handleData(chunk: Buffer): void {
@@ -173,7 +151,7 @@ export class MailboxConnection {
       acknowledgement = buildMailboxFailureAcknowledgement(
         request.requestId,
         'connection_failed',
-        `Mailbox delivery failed: ${validationErrorMessage(error, 'delivery callback failed')}`
+        `Mailbox delivery failed: ${sanitizeErrorMessage(error, 'delivery callback failed')}`
       );
     }
     if (acknowledgement !== undefined) {
@@ -197,7 +175,7 @@ export class MailboxConnection {
     const acknowledgement = buildMailboxFailureAcknowledgement(
       requestId,
       code,
-      validationErrorMessage(error, 'Mailbox request failed')
+      sanitizeErrorMessage(error, 'Mailbox request failed')
     );
     await this.sendAcknowledgement(acknowledgement);
   }
