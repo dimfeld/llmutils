@@ -89,6 +89,23 @@ export interface AgentLaunchRequest {
   readonly processLabel: AgentProcessLabel;
 }
 
+/** Input needed by the provider-neutral plan 414 preparation boundary. */
+export interface AgentPreparationRequest {
+  readonly identity: SubagentIdentity;
+  readonly initialMessage: string;
+}
+
+/**
+ * Prepares one named agent without starting a provider.
+ *
+ * Implementations for the three established roles should delegate to
+ * `prepareSubagentExecution()`. A caller may provide a narrow reviewer
+ * implementation that prepares collaborative, read-only review context.
+ */
+export interface AgentPreparation {
+  prepare(request: AgentPreparationRequest): Promise<PreparedAgentExecution>;
+}
+
 export interface AgentLauncher {
   launch(request: AgentLaunchRequest): Promise<AgentLaunchHandle>;
 }
@@ -125,6 +142,7 @@ export interface SubagentAgentRecord extends SubagentIdentity {
   readonly role: 'subagent';
   state: NonterminalAgentLifecycleState;
   inputActivity: AgentInputActivity;
+  launchReady: boolean;
   readonly creationSequence: number;
   readonly registrationDraft: AgentRegistrationDraft;
   registration?: AgentRegistration;
@@ -193,6 +211,7 @@ export interface AgentManagerOptions {
   readonly slugGenerator?: import('./agent_names.js').AgentSlugGenerator;
   readonly maxAgentIdGenerationAttempts?: number;
   readonly maxAgentNameGenerationAttempts?: number;
+  readonly agentPreparer?: AgentPreparation;
   readonly agentLauncher?: AgentLauncher;
 }
 

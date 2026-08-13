@@ -1,7 +1,7 @@
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
   AGENT_MESSAGING_RUNTIME_PREFIX,
@@ -9,12 +9,16 @@ import {
   MAX_SUBAGENTS_PER_SESSION,
   ORCHESTRATOR_AGENT_NAME,
 } from './contracts.js';
-import { AgentManagerError, createAgentManager } from './index.js';
-import { FakeAgentInputAdapter, FakeAgentLauncher } from './fake_provider.js';
+import { AgentManagerError, createAgentManager, createAgentPreparation } from './index.js';
+import { FakeAgentInputAdapter, FakeAgentLauncher, FakeAgentPreparer } from './fake_provider.js';
 import { formatAgentProcessLabel } from './agent_process_labels.js';
 import { createAgentMessagingSessionRuntime } from './session_runtime.js';
 import { getDefaultConfig } from '../configSchema.js';
-import type { AgentLaunchRequest, PreparedAgentExecution } from './agent_manager_types.js';
+import type {
+  AgentLaunchRequest,
+  AgentPreparationRequest,
+  PreparedAgentExecution,
+} from './agent_manager_types.js';
 import type { PreparedSubagentExecution } from '../subagents/types.js';
 import type { AgentManager } from './agent_manager.js';
 
@@ -44,6 +48,41 @@ function reservationRequest(
     executor: 'codex-cli',
     initialMessage: `Initial message for ${name ?? type}`,
   };
+}
+
+function preparedExecutionFor(request: AgentPreparationRequest): PreparedAgentExecution {
+  return {
+    agentType: request.identity.type,
+    executor: request.identity.executor,
+    model: undefined,
+    plan: {
+      id: 1,
+      title: 'Agent manager test plan',
+      status: 'pending',
+      tasks: [],
+    },
+    planId: 1,
+    planPath: '/tmp/agent-manager-test-plan.md',
+    gitRoot: '/tmp/agent-manager-test-repository',
+    useJj: false,
+    prompt: 'Prepared agent prompt.',
+    config: getDefaultConfig(),
+    timEnvironment: { context: {} },
+  };
+}
+
+function createPreparer(): FakeAgentPreparer {
+  return new FakeAgentPreparer(preparedExecutionFor);
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (condition()) {
+      return;
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  throw new Error('Condition did not become true');
 }
 
 async function createManager(
@@ -241,6 +280,28 @@ describe('AgentManager root registration and snapshots', () => {
       name: ORCHESTRATOR_AGENT_NAME,
       state: 'running-idle',
     });
+  });
+
+  test('removes terminal subagents from authoritative list state without stopping them', async () => {
+    const manager = await createManager();
+    const reservation = manager.reserveSubagent(reservationRequest('terminal-later'));
+    manager.setAgentLifecycleState(reservation.id, 'finishing');
+    expect(manager.listAgents().agents.map((agent) => agent.name)).toEqual([
+      ORCHESTRATOR_AGENT_NAME,
+      'terminal-later',
+    ]);
+    expect(manager.subagentCount).toBe(1);
+
+    manager.removeTerminalAgent(reservation.id);
+    manager.removeTerminalAgent(reservation.id);
+    expect(manager.listAgents().agents.map((agent) => agent.name)).toEqual([
+      ORCHESTRATOR_AGENT_NAME,
+    ]);
+    expect(manager.subagentCount).toBe(0);
+    expect(manager.getIdentityByName('terminal-later')).toBeUndefined();
+    expect(() => manager.removeTerminalAgent(manager.orchestratorIdentity.id)).toThrowError(
+      expect.objectContaining({ code: 'invalid_request' })
+    );
   });
 });
 
@@ -502,7 +563,467 @@ describe('AgentManager names and atomic reservations', () => {
   });
 });
 
+describe('AgentManager StartAgent startup and rollback', () => {
+  test('authorizes the registered orchestrator before validation, name generation, or allocation', async () => {
+    const launcher = new FakeAgentLauncher();
+    const preparer = createPreparer();
+    const slugGenerator = vi.fn((): string => 'unused');
+    const manager = await createManager({
+      agentPreparer: preparer,
+      agentLauncher: launcher,
+      slugGenerator,
+    });
+
+    await expect(
+      manager.startAgent({ ...manager.orchestratorIdentity, name: 'forged-root' } as never, {
+        type: 'implementer',
+        executor: 'codex-cli',
+        initialMessage: 42,
+      })
+    ).rejects.toMatchObject({ code: 'not_authorized' });
+    expect(manager.subagentCount).toBe(0);
+    expect(manager.listAgents().agents).toHaveLength(1);
+    expect(slugGenerator).not.toHaveBeenCalled();
+    expect(preparer.requests).toHaveLength(0);
+    expect(launcher.launches).toHaveLength(0);
+  });
+
+  test.each([
+    undefined,
+    {
+      id: 'stale-root',
+      name: ORCHESTRATOR_AGENT_NAME,
+      role: 'orchestrator',
+      executor: 'claude-code',
+    },
+    { id: 'agent-id-1', name: ORCHESTRATOR_AGENT_NAME, role: 'subagent', executor: 'claude-code' },
+    {
+      id: 'agent-id-1',
+      name: ORCHESTRATOR_AGENT_NAME,
+      role: 'orchestrator',
+      executor: 'codex-cli',
+    },
+    { id: 'agent-id-1', name: 'forged-root', role: 'orchestrator', executor: 'claude-code' },
+  ])('rejects a caller that is not the authoritative orchestrator identity: %j', async (caller) => {
+    const launcher = new FakeAgentLauncher();
+    const preparer = createPreparer();
+    const manager = await createManager({ agentPreparer: preparer, agentLauncher: launcher });
+
+    await expect(
+      manager.startAgent(caller as never, {
+        type: 'unsupported',
+        executor: 'invalid',
+        initialMessage: 42,
+      })
+    ).rejects.toMatchObject({ code: 'not_authorized' });
+    expect(manager.listAgents().agents).toHaveLength(1);
+    expect(preparer.requests).toHaveLength(0);
+    expect(launcher.launches).toHaveLength(0);
+  });
+
+  test('rejects a registered subagent caller before validating the StartAgent request', async () => {
+    const launcher = new FakeAgentLauncher();
+    const preparer = createPreparer();
+    const manager = await createManager({ agentPreparer: preparer, agentLauncher: launcher });
+    const subagent = manager.reserveSubagent(reservationRequest('subagent-caller'));
+
+    await expect(
+      manager.startAgent(subagent.identity, {
+        type: 'unsupported',
+        executor: 'invalid',
+        initialMessage: 42,
+      })
+    ).rejects.toMatchObject({ code: 'not_authorized' });
+    expect(manager.subagentCount).toBe(1);
+    expect(preparer.requests).toHaveLength(0);
+    expect(launcher.launches).toHaveLength(0);
+    subagent.release();
+  });
+
+  test.each([
+    ['implementer', 'claude-code'],
+    ['tester', 'codex-cli'],
+    ['tdd-tests', 'claude-code'],
+    ['reviewer', 'codex-cli'],
+  ] as const)('starts a %s with the exact %s inputs and named label', async (type, executor) => {
+    const launcher = new FakeAgentLauncher();
+    const preparer = createPreparer();
+    const manager = await createManager({ agentPreparer: preparer, agentLauncher: launcher });
+    const request = {
+      name: `${type}-agent`,
+      type,
+      executor,
+      initialMessage: `Initial ${type} instructions`,
+    } as const;
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(manager.orchestratorIdentity, request);
+    const launch = await launchPromise;
+    expect(startPromise).toBeInstanceOf(Promise);
+    launch.handle.markReady();
+    const result = await startPromise;
+
+    const registrations = await manager.sessionRuntime.runtime.listRegistrations();
+    expect(registrations).toHaveLength(2);
+    expect(registrations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: result.id,
+          name: request.name,
+          role: 'subagent',
+          state: 'starting',
+        }),
+      ])
+    );
+    const registration = registrations.find((entry) => entry.id === result.id);
+    expect(registration?.socketPath).toBeDefined();
+    await expect(fs.stat(registration?.socketPath as string)).resolves.toBeTruthy();
+
+    expect(result).toMatchObject({
+      name: request.name,
+      id: launch?.request.identity.id,
+      type,
+      executor,
+      state: 'starting',
+    });
+    expect(preparer.requests[0]).toMatchObject({
+      identity: { id: result.id, name: request.name, type, executor },
+      initialMessage: request.initialMessage,
+    });
+    expect(launch?.request).toMatchObject({
+      identity: { id: result.id, name: request.name, type, executor },
+      initialMessage: request.initialMessage,
+      processLabel:
+        executor === 'claude-code'
+          ? `Claude agent (${request.name})`
+          : `Codex thread (${request.name})`,
+    });
+    expect(launch?.request.preparedExecution.agentType).toBe(type);
+
+    const listed = manager.listAgents().agents;
+    expect(listed[1]).toMatchObject({ ...result, role: 'subagent' });
+    expect(manager.getAgentSnapshot(result.id)?.identity.id).toBe(result.id);
+    expect(manager.getAgentSnapshot(result.id)?.processControlId).toBe(
+      launch?.handle.processControlId
+    );
+    expect(manager.getAgentSnapshot(result.id)?.providerThreadId).toBe(
+      launch?.handle.providerThreadId
+    );
+
+    launch?.handle.input.markReady();
+    await waitFor(() => manager.listAgents().agents[1]?.state === 'running-idle');
+    expect(manager.getAgentSnapshot(result.id)?.identity.id).toBe(result.id);
+    expect(launch?.handle.completion).toBeInstanceOf(Promise);
+    expect(launch?.handle.isReleased).toBe(false);
+  });
+
+  test('returns after handle readiness without waiting for input readiness or completion', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('nonblocking')
+    );
+    const launch = await launchPromise;
+    expect(launch.handle.input.isReady).toBe(false);
+    launch.handle.markReady();
+
+    const result = await startPromise;
+    expect(result.state).toBe('starting');
+    expect(launch?.handle.input.isReady).toBe(false);
+    expect(manager.listAgents().agents[1]?.state).toBe('starting');
+
+    launch?.handle.input.markReady();
+    await waitFor(() => manager.listAgents().agents[1]?.state === 'running-idle');
+    expect(manager.getAgentSnapshot(result.id)?.identity.id).toBe(result.id);
+  });
+
+  test('does not publish running state when input readiness precedes launch readiness', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('launch-boundary')
+    );
+    const launch = await launchPromise;
+
+    launch.handle.input.markReady();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(manager.listAgents().agents[1]?.state).toBe('starting');
+
+    const acknowledgement = await manager.sessionRuntime.sendMessage(
+      { id: manager.orchestratorIdentity.id, name: manager.orchestratorIdentity.name },
+      { id: launch.request.identity.id, name: launch.request.identity.name },
+      { requestId: 'launch-boundary-message', content: 'wait for launch readiness' }
+    );
+    expect(acknowledgement).toMatchObject({ success: true, delivery: 'queued' });
+    expect(launch.handle.input.receivedMessages).toHaveLength(0);
+
+    launch.handle.markReady();
+    await expect(startPromise).resolves.toMatchObject({
+      name: 'launch-boundary',
+      state: 'running-idle',
+    });
+    expect(manager.listAgents().agents[1]?.state).toBe('running-idle');
+  });
+
+  test('keeps starting mailbox delivery queue-safe before an input adapter is ready', async () => {
+    const launcher = new FakeAgentLauncher();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('mailbox-starting')
+    );
+    const launch = await launchPromise;
+
+    const acknowledgement = await manager.sessionRuntime.sendMessage(
+      { id: manager.orchestratorIdentity.id, name: manager.orchestratorIdentity.name },
+      { id: launch.request.identity.id, name: launch.request.identity.name },
+      { requestId: 'starting-message-1', content: 'queued during startup' }
+    );
+    expect(acknowledgement).toMatchObject({ success: true, delivery: 'queued' });
+    expect(launch.handle.input.receivedMessages).toHaveLength(0);
+    expect(manager.getAgentSnapshot(launch.request.identity.id)?.state).toBe('starting');
+    expect(manager.getAgentSnapshot(launch.request.identity.id)).toBeDefined();
+
+    launch.handle.markReady();
+    await startPromise;
+    expect(launch.handle.input.isReady).toBe(false);
+    expect(manager.getAgentSnapshot(launch.request.identity.id)?.state).toBe('starting');
+  });
+
+  test('rolls back preparation failure and reuses the name and capacity', async () => {
+    const launcher = new FakeAgentLauncher();
+    const preparer = createPreparer();
+    preparer.setNextPreparationFailure();
+    const manager = await createManager({ agentPreparer: preparer, agentLauncher: launcher });
+
+    await expect(
+      manager.startAgent(manager.orchestratorIdentity, reservationRequest('retry-preparation'))
+    ).rejects.toMatchObject({ code: 'launch_failed' });
+    expect(manager.subagentCount).toBe(0);
+    expect(manager.listAgents().agents).toHaveLength(1);
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('retry-preparation')
+    );
+    const launch = await launchPromise;
+    launch.handle.markReady();
+    await expect(startPromise).resolves.toMatchObject({ name: 'retry-preparation' });
+  });
+
+  test('rolls back launch failure and releases the prepared mailbox', async () => {
+    const launcher = new FakeAgentLauncher();
+    launcher.setNextLaunchFailure();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+
+    await expect(
+      manager.startAgent(manager.orchestratorIdentity, reservationRequest('retry-launch'))
+    ).rejects.toMatchObject({ code: 'launch_failed' });
+    expect(manager.subagentCount).toBe(0);
+    expect(manager.listAgents().agents).toHaveLength(1);
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('retry-launch')
+    );
+    const launch = await launchPromise;
+    launch.handle.markReady();
+    await expect(startPromise).resolves.toMatchObject({ name: 'retry-launch' });
+  });
+
+  test('rolls back readiness failure and releases the provider handle', async () => {
+    const launcher = new FakeAgentLauncher();
+    launcher.setNextReadinessFailure();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+
+    await expect(
+      manager.startAgent(manager.orchestratorIdentity, reservationRequest('retry-ready'))
+    ).rejects.toMatchObject({ code: 'launch_failed' });
+    expect(launcher.launches[0]?.handle.isReleased).toBe(true);
+    expect(manager.subagentCount).toBe(0);
+    expect(manager.listAgents().agents).toHaveLength(1);
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('retry-ready')
+    );
+    const launch = await launchPromise;
+    launch.handle.markReady();
+    await expect(startPromise).resolves.toMatchObject({ name: 'retry-ready' });
+  });
+
+  test('rolls back a real mailbox socket readiness failure and reuses the slot and name', async () => {
+    const launcher = new FakeAgentLauncher();
+    const ids = ['root-id', 'blocked-mailbox-id', 'retry-mailbox-id'];
+    const manager = await createManager({
+      agentIdGenerator: () => ids.shift() ?? 'unused-id',
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+    const blockedSocketPath = manager.sessionRuntime.runtime.socketPath('blocked-mailbox-id');
+    await fs.writeFile(blockedSocketPath, 'socket path is occupied');
+
+    await expect(
+      manager.startAgent(manager.orchestratorIdentity, reservationRequest('retry-mailbox'))
+    ).rejects.toMatchObject({ code: 'launch_failed' });
+    expect(manager.subagentCount).toBe(0);
+    expect(manager.listAgents().agents).toHaveLength(1);
+    expect(launcher.launches).toHaveLength(0);
+    await expect(fs.stat(blockedSocketPath)).resolves.toBeTruthy();
+    expect(await manager.sessionRuntime.runtime.listRegistrations()).toHaveLength(1);
+
+    await fs.unlink(blockedSocketPath);
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('retry-mailbox')
+    );
+    const launch = await launchPromise;
+    launch.handle.markReady();
+    await expect(startPromise).resolves.toMatchObject({
+      name: 'retry-mailbox',
+      id: 'retry-mailbox-id',
+    });
+  });
+
+  test('releases a handle once and preserves reservation cleanup when handle release fails', async () => {
+    const launcher = new FakeAgentLauncher();
+    launcher.setNextReadinessFailure();
+    launcher.setNextReleaseFailure();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+    });
+
+    await expect(
+      manager.startAgent(manager.orchestratorIdentity, reservationRequest('release-error'))
+    ).rejects.toMatchObject({ code: 'launch_failed' });
+    const failedLaunch = launcher.launches[0];
+    expect(failedLaunch?.handle.isReleased).toBe(true);
+    expect(failedLaunch?.handle.releaseCount).toBe(1);
+    expect(manager.subagentCount).toBe(0);
+    expect(manager.getIdentityByName('release-error')).toBeUndefined();
+
+    await failedLaunch?.handle.release();
+    expect(failedLaunch?.handle.releaseCount).toBe(1);
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('release-error')
+    );
+    const launch = await launchPromise;
+    launch.handle.markReady();
+    await expect(startPromise).resolves.toMatchObject({ name: 'release-error' });
+  });
+
+  test('does not let mailbox cleanup affect another active identity', async () => {
+    const launcher = new FakeAgentLauncher();
+    const preparer = createPreparer();
+    const ids = ['root-id', 'occupied-id', 'active-id'];
+    const manager = await createManager({
+      agentIdGenerator: () => ids.shift() ?? 'unused-id',
+      agentPreparer: preparer,
+      agentLauncher: launcher,
+    });
+    const external = await manager.sessionRuntime.register({
+      registration: {
+        id: 'occupied-id',
+        name: 'external-agent',
+        role: 'subagent',
+        type: 'tester',
+        executor: 'codex-cli',
+        state: 'starting',
+      },
+      deliver: async (): Promise<'temporarily-unavailable'> => 'temporarily-unavailable',
+    });
+
+    await expect(
+      manager.startAgent(manager.orchestratorIdentity, reservationRequest('mailbox-conflict'))
+    ).rejects.toMatchObject({ code: 'launch_failed' });
+    expect(manager.subagentCount).toBe(0);
+    expect(await manager.sessionRuntime.runtime.listRegistrations()).toHaveLength(2);
+    await expect(fs.stat(external.registration.socketPath)).resolves.toBeTruthy();
+
+    const launchPromise = launcher.waitForNextLaunch();
+    const startPromise = manager.startAgent(
+      manager.orchestratorIdentity,
+      reservationRequest('mailbox-conflict')
+    );
+    const launch = await launchPromise;
+    launch.handle.markReady();
+    await expect(startPromise).resolves.toMatchObject({ name: 'mailbox-conflict' });
+    await external.deregister();
+  });
+
+  test('does not let a removed identity release a later reused name or slot', async () => {
+    const manager = await createManager();
+    const first = manager.reserveSubagent(reservationRequest('reused-name'));
+    const oldId = first.id;
+    manager.removeTerminalAgent(oldId);
+
+    const second = manager.reserveSubagent(reservationRequest('reused-name', 'reviewer'));
+    expect(second.id).not.toBe(oldId);
+    manager.removeTerminalAgent(oldId);
+    expect(manager.getIdentityByName('reused-name')).toMatchObject({
+      id: second.id,
+      type: 'reviewer',
+    });
+    expect(manager.subagentCount).toBe(1);
+
+    first.release();
+    expect(manager.getIdentityByName('reused-name')).toMatchObject({ id: second.id });
+    second.release();
+    expect(manager.subagentCount).toBe(0);
+  });
+});
+
 describe('provider-neutral launch contracts and test fakes', () => {
+  test('keeps collaborative reviewer preparation behind a narrow injected seam', async () => {
+    const manager = await createManager();
+    const reservation = manager.reserveSubagent(
+      reservationRequest('reviewer-prepared', 'reviewer')
+    );
+    const reviewerPreparation = createAgentPreparation({
+      planId: 1,
+      prepareReviewer: async (request): Promise<PreparedAgentExecution> =>
+        preparedExecutionFor(request),
+    });
+
+    const prepared = await reviewerPreparation.prepare({
+      identity: reservation.identity,
+      initialMessage: 'Review without mutating the workspace.',
+    });
+
+    expect(prepared.agentType).toBe('reviewer');
+    expect(prepared.executor).toBe('codex-cli');
+    reservation.release();
+  });
+
   test('accepts reviewer prepared executions in launch requests', async () => {
     const manager = await createManager();
     const reservation = manager.reserveSubagent(reservationRequest('reviewer-agent', 'reviewer'));

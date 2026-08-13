@@ -4,8 +4,9 @@ import {
   agentExecutorSchema,
   isNonterminalAgentLifecycleState,
   startAgentArgumentsSchema,
-  type AgentExecutor,
   type AgentSummary,
+  type StartAgentResult,
+  type AgentExecutor,
   type NonterminalAgentLifecycleState,
 } from './contracts.js';
 import {
@@ -24,7 +25,9 @@ import {
 } from './agent_names.js';
 import {
   AgentManagerError,
+  type AgentCallerIdentity,
   type AgentIdentity,
+  type AgentPreparationRequest,
   type AgentManagerOptions,
   type AgentRecord,
   type AgentRecordSnapshot,
@@ -40,6 +43,9 @@ import {
   type AgentMessagingSessionRuntime,
   type SessionRegistrationHandle,
 } from './session_runtime.js';
+import { formatAgentProcessLabel } from './agent_process_labels.js';
+import type { MailboxMessageRequest } from './mailbox_protocol.js';
+import type { AgentRegistration } from './runtime_dir.js';
 
 interface NormalizedManagerOptions {
   readonly orchestratorExecutor: AgentExecutor;
@@ -47,6 +53,7 @@ interface NormalizedManagerOptions {
   readonly slugGenerator: AgentSlugGenerator;
   readonly maxAgentIdGenerationAttempts: number;
   readonly maxAgentNameGenerationAttempts: number;
+  readonly agentPreparer: AgentManagerOptions['agentPreparer'];
   readonly agentLauncher: AgentManagerOptions['agentLauncher'];
 }
 
@@ -81,6 +88,18 @@ function normalizeOptions(options: AgentManagerOptions): NormalizedManagerOption
   if (options.slugGenerator !== undefined && typeof options.slugGenerator !== 'function') {
     throw new AgentManagerError('invalid_options', 'slugGenerator must be a function');
   }
+  if (
+    options.agentPreparer !== undefined &&
+    (!isRecord(options.agentPreparer) || typeof options.agentPreparer.prepare !== 'function')
+  ) {
+    throw new AgentManagerError('invalid_options', 'agentPreparer must provide a prepare function');
+  }
+  if (
+    options.agentLauncher !== undefined &&
+    (!isRecord(options.agentLauncher) || typeof options.agentLauncher.launch !== 'function')
+  ) {
+    throw new AgentManagerError('invalid_options', 'agentLauncher must provide a launch function');
+  }
 
   return {
     orchestratorExecutor: executor as AgentExecutor,
@@ -96,6 +115,7 @@ function normalizeOptions(options: AgentManagerOptions): NormalizedManagerOption
       'maxAgentNameGenerationAttempts',
       DEFAULT_MAX_AGENT_NAME_GENERATION_ATTEMPTS
     ),
+    agentPreparer: options.agentPreparer,
     agentLauncher: options.agentLauncher,
   };
 }
@@ -154,9 +174,9 @@ function toSummary(record: AgentRecord): AgentSummary {
 }
 
 /**
- * Owns the root identity and the synchronous identity/capacity reservation
- * boundary. Provider launch and message operations are deliberately added by
- * later plan layers.
+ * Owns the root identity, startup boundary, synchronous identity/capacity
+ * reservation, and public list snapshots. Message routing and terminal
+ * lifecycle operations belong to adjacent manager layers.
  */
 export class AgentManager {
   public readonly sessionRuntime: AgentMessagingSessionRuntime;
@@ -285,6 +305,103 @@ export class AgentManager {
     }) as import('./contracts.js').ListAgentsResult;
   }
 
+  /**
+   * Start one named provider-backed subagent after mailbox and handle
+   * readiness. Provider completion and input readiness are deliberately not
+   * awaited here.
+   */
+  public async startAgent(
+    caller: AgentCallerIdentity,
+    request: unknown
+  ): Promise<StartAgentResult> {
+    this.ensureOpen();
+    this.assertOrchestratorCaller(caller);
+
+    // Validate the complete request before checking or allocating any
+    // per-agent resource. Caller authorization above must remain first.
+    const validated = this.validateReservationRequest(request);
+    if (this.options.agentPreparer === undefined) {
+      throw new AgentManagerError(
+        'launch_failed',
+        'No provider-neutral agent preparation dependency is configured'
+      );
+    }
+    if (this.options.agentLauncher === undefined) {
+      throw new AgentManagerError(
+        'launch_failed',
+        'No provider-neutral agent launcher is configured'
+      );
+    }
+
+    const reservation = this.reserveSubagent(validated);
+    const record = this.byId.get(reservation.id);
+    if (record === undefined || record.role !== 'subagent') {
+      reservation.release();
+      throw new AgentManagerError(
+        'launch_failed',
+        'The reserved agent record was not available for startup'
+      );
+    }
+
+    let mailbox: SessionRegistrationHandle | undefined;
+    let handle: import('./agent_manager_types.js').AgentLaunchHandle | undefined;
+    try {
+      const preparationRequest: AgentPreparationRequest = {
+        identity: reservation.identity,
+        initialMessage: validated.initialMessage,
+      };
+      const prepared = await this.options.agentPreparer.prepare(preparationRequest);
+      if (prepared.agentType !== record.type || prepared.executor !== record.executor) {
+        throw new Error('Agent preparation did not preserve the requested type and executor');
+      }
+
+      mailbox = await this.sessionRuntime.register({
+        registration: record.registrationDraft,
+        deliver: (
+          message,
+          sourceRegistration
+        ): Promise<import('./mailbox_server.js').MailboxDeliveryResult> =>
+          this.deliverToAgent(record, message, sourceRegistration),
+      });
+      record.registration = mailbox.registration;
+      record.mailbox = mailbox;
+      await mailbox.ready;
+
+      handle = await this.options.agentLauncher.launch({
+        identity: reservation.identity,
+        initialMessage: validated.initialMessage,
+        preparedExecution: prepared,
+        processLabel: formatAgentProcessLabel(record.executor, record.name),
+      });
+      record.launchHandle = handle;
+      record.processControlId = handle.processControlId;
+      record.providerThreadId = handle.providerThreadId;
+      this.watchInputReadiness(record, handle);
+
+      // A launch handle's readiness is the provider-neutral establishment
+      // boundary. It is separate from the input adapter's readiness and from
+      // the completion promise.
+      await handle.ready;
+      record.launchReady = true;
+      this.updateRecordInputState(record, handle.input);
+
+      return Object.freeze({
+        name: record.name,
+        id: record.id,
+        type: record.type,
+        executor: record.executor,
+        state: record.state,
+      });
+    } catch (error) {
+      await this.rollbackStart(record, reservation, mailbox, handle);
+      throw new AgentManagerError(
+        'launch_failed',
+        `Could not start agent ${record.name}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
+    }
+  }
+
   /** Return an immutable internal snapshot for lifecycle composition. */
   public getAgentSnapshot(agentId: AgentId | string): AgentRecordSnapshot | undefined {
     const parsedId = parseAgentId(agentId);
@@ -334,6 +451,7 @@ export class AgentManager {
       ...identity,
       state: 'starting',
       inputActivity: 'not-ready',
+      launchReady: false,
       creationSequence: this.nextCreationSequence,
       registrationDraft: {
         id,
@@ -387,6 +505,27 @@ export class AgentManager {
     record.state = state;
   }
 
+  /**
+   * Remove a subagent after a successor lifecycle owner has completed its
+   * terminal cleanup. This seam only removes authoritative map entries; it
+   * does not stop providers, close mailboxes, or send notifications.
+   */
+  public removeTerminalAgent(agentId: AgentId | string): void {
+    this.ensureOpen();
+    const parsedId = parseAgentId(agentId);
+    const record = parsedId === undefined ? undefined : this.byId.get(parsedId);
+    if (record === undefined) {
+      return;
+    }
+    if (record.role !== 'subagent') {
+      throw new AgentManagerError(
+        'invalid_request',
+        'Terminal removal is only available for subagent identities'
+      );
+    }
+    this.releaseReservation(record);
+  }
+
   /** Close the root mailbox and the manager-owned session runtime. */
   public close(): Promise<void> {
     if (this.closePromise !== undefined) {
@@ -436,6 +575,112 @@ export class AgentManager {
       throw new AgentManagerError('invalid_request', 'Agent reservation request is invalid');
     }
     return result.data;
+  }
+
+  private assertOrchestratorCaller(caller: unknown): void {
+    if (!isRecord(caller)) {
+      throw new AgentManagerError(
+        'not_authorized',
+        'Only the registered orchestrator identity may start agents'
+      );
+    }
+    const callerId = parseAgentId(caller.id);
+    const record = callerId === undefined ? undefined : this.byId.get(callerId);
+    if (
+      record === undefined ||
+      record.role !== 'orchestrator' ||
+      caller.role !== 'orchestrator' ||
+      caller.name !== ORCHESTRATOR_AGENT_NAME ||
+      caller.executor !== record.executor ||
+      Object.hasOwn(caller, 'type')
+    ) {
+      throw new AgentManagerError(
+        'not_authorized',
+        'Only the registered orchestrator identity may start agents'
+      );
+    }
+  }
+
+  private async deliverToAgent(
+    record: SubagentAgentRecord,
+    message: MailboxMessageRequest,
+    sourceRegistration: AgentRegistration
+  ): Promise<import('./mailbox_server.js').MailboxDeliveryResult> {
+    if (this.byId.get(record.id) !== record || !isNonterminalAgentLifecycleState(record.state)) {
+      return 'temporarily-unavailable';
+    }
+    const sourceId = parseAgentId(sourceRegistration.id);
+    const sourceRecord = sourceId === undefined ? undefined : this.byId.get(sourceId);
+    if (sourceRecord === undefined || sourceRecord.name !== sourceRegistration.name) {
+      throw new AgentManagerError('unknown_sender', 'The message source is not an active agent');
+    }
+    const input = record.launchHandle?.input;
+    if (!record.launchReady || input === undefined || !input.isReady) {
+      return 'temporarily-unavailable';
+    }
+
+    const delivery = await input.deliver({
+      messageId: message.requestId,
+      source: snapshotIdentity(sourceRecord),
+      content: message.content,
+    });
+    this.updateRecordInputState(record, input);
+    return delivery;
+  }
+
+  private watchInputReadiness(
+    record: SubagentAgentRecord,
+    handle: import('./agent_manager_types.js').AgentLaunchHandle
+  ): void {
+    void handle.input.ready
+      .then(() => {
+        if (this.byId.get(record.id) === record && record.launchHandle === handle) {
+          record.inputActivity = handle.input.activity;
+          if (record.launchReady) {
+            this.updateRecordInputState(record, handle.input);
+          }
+        }
+      })
+      .catch(() => undefined);
+  }
+
+  private updateRecordInputState(
+    record: SubagentAgentRecord,
+    input: import('./agent_manager_types.js').AgentInputAdapter
+  ): void {
+    record.inputActivity = input.activity;
+    if (
+      record.launchReady &&
+      input.isReady &&
+      (record.state === 'starting' ||
+        record.state === 'running-active' ||
+        record.state === 'running-idle')
+    ) {
+      record.state = input.activity === 'active' ? 'running-active' : 'running-idle';
+    }
+  }
+
+  private async rollbackStart(
+    record: SubagentAgentRecord,
+    reservation: AgentReservation,
+    mailbox: SessionRegistrationHandle | undefined,
+    handle: import('./agent_manager_types.js').AgentLaunchHandle | undefined
+  ): Promise<void> {
+    const cleanup = new Array<Promise<void>>();
+    if (handle?.release !== undefined) {
+      cleanup.push(handle.release().catch(() => undefined));
+    }
+    if (mailbox !== undefined) {
+      cleanup.push(mailbox.deregister().catch(() => undefined));
+    }
+    await Promise.all(cleanup);
+    // The identity check in releaseReservation makes this safe even if a
+    // later lifecycle owner has reused the human name.
+    reservation.release();
+    record.launchHandle = undefined;
+    record.launchReady = false;
+    record.mailbox = undefined;
+    record.registration = undefined;
   }
 
   private selectSubagentName(

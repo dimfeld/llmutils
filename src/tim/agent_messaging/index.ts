@@ -1,4 +1,5 @@
 export { AgentManager, createAgentManager } from './agent_manager.js';
+export { createAgentPreparation } from './agent_preparation.js';
 export {
   buildGeneratedAgentName,
   createDefaultAgentId,
@@ -13,12 +14,19 @@ export { formatAgentProcessLabel } from './agent_process_labels.js';
 export {
   FakeAgentInputAdapter,
   FakeAgentLaunchHandle,
+  FakeAgentPreparer,
   FakeAgentLauncher,
 } from './fake_provider.js';
 export type { AgentId, AgentIdGenerator, AgentName, AgentSlugGenerator } from './agent_names.js';
 export type { AgentProcessLabel } from './agent_process_labels.js';
 export type {
+  AgentPreparationOptions,
+  CollaborativeReviewerPreparation,
+} from './agent_preparation.js';
+export type {
   AgentCallerIdentity,
+  AgentPreparation,
+  AgentPreparationRequest,
   AgentIdentity,
   AgentInputActivity,
   AgentInputAdapter,

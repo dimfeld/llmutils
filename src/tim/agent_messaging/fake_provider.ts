@@ -8,6 +8,9 @@ import type {
   AgentLaunchHandle,
   AgentLauncher,
   AgentLaunchRequest,
+  AgentPreparation,
+  AgentPreparationRequest,
+  PreparedAgentExecution,
   ProcessControlId,
   ProviderThreadId,
 } from './agent_manager_types.js';
@@ -15,14 +18,18 @@ import type {
 function deferred<T>(): {
   readonly promise: Promise<T>;
   resolve(value: T): void;
+  reject(error: unknown): void;
 } {
   let resolvePromise: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((resolve) => {
+  let rejectPromise: ((error: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
     resolvePromise = resolve;
+    rejectPromise = reject;
   });
   return {
     promise,
     resolve: (value: T): void => resolvePromise?.(value),
+    reject: (error: unknown): void => rejectPromise?.(error),
   };
 }
 
@@ -91,11 +98,39 @@ export interface FakeAgentLaunch {
   readonly handle: FakeAgentLaunchHandle;
 }
 
+export type FakeAgentPreparationFactory = (
+  request: AgentPreparationRequest
+) => PreparedAgentExecution;
+
+/** Deterministic preparation boundary with explicit failure injection. */
+export class FakeAgentPreparer implements AgentPreparation {
+  public readonly requests: AgentPreparationRequest[] = [];
+  private nextPreparationError: Error | undefined;
+
+  public constructor(private readonly factory: FakeAgentPreparationFactory) {}
+
+  public setNextPreparationFailure(error: Error = new Error('fake preparation failure')): void {
+    this.nextPreparationError = error;
+  }
+
+  public async prepare(request: AgentPreparationRequest): Promise<PreparedAgentExecution> {
+    if (this.nextPreparationError !== undefined) {
+      const error = this.nextPreparationError;
+      this.nextPreparationError = undefined;
+      throw error;
+    }
+    this.requests.push(Object.freeze({ ...request }));
+    return this.factory(request);
+  }
+}
+
 /** A launch handle with explicit readiness and completion controls. */
 export class FakeAgentLaunchHandle implements AgentLaunchHandle {
   private readonly readyDeferred = deferred<void>();
   private readonly completionDeferred = deferred<AgentLaunchCompletion>();
   private released = false;
+  private releaseError: Error | undefined;
+  private releaseCalls = 0;
 
   public constructor(
     public readonly executor: AgentExecutor,
@@ -113,20 +148,42 @@ export class FakeAgentLaunchHandle implements AgentLaunchHandle {
     return this.completionDeferred.promise;
   }
 
+  public get isReleased(): boolean {
+    return this.released;
+  }
+
+  public get releaseCount(): number {
+    return this.releaseCalls;
+  }
+
   public markReady(): void {
     this.readyDeferred.resolve(undefined);
+  }
+
+  public failReady(error: Error = new Error('fake readiness failure')): void {
+    this.readyDeferred.reject(error);
   }
 
   public complete(completion: AgentLaunchCompletion = {}): void {
     this.completionDeferred.resolve(completion);
   }
 
+  public setReleaseFailure(error: Error = new Error('fake release failure')): void {
+    this.releaseError = error;
+  }
+
   public async release(): Promise<void> {
     if (this.released) {
       return;
     }
+    this.releaseCalls += 1;
     this.released = true;
     await this.input.release?.();
+    if (this.releaseError !== undefined) {
+      const error = this.releaseError;
+      this.releaseError = undefined;
+      throw error;
+    }
   }
 }
 
@@ -135,9 +192,24 @@ export class FakeAgentLauncher implements AgentLauncher {
   public readonly launches: FakeAgentLaunch[] = [];
   private nextId = 1;
   private nextLaunchError: Error | undefined;
+  private nextReadinessError: Error | undefined;
+  private nextReleaseError: Error | undefined;
+  private launchWaiter = deferred<FakeAgentLaunch>();
+
+  public waitForNextLaunch(): Promise<FakeAgentLaunch> {
+    return this.launchWaiter.promise;
+  }
 
   public setNextLaunchFailure(error: Error = new Error('fake launch failure')): void {
     this.nextLaunchError = error;
+  }
+
+  public setNextReadinessFailure(error: Error = new Error('fake readiness failure')): void {
+    this.nextReadinessError = error;
+  }
+
+  public setNextReleaseFailure(error: Error = new Error('fake release failure')): void {
+    this.nextReleaseError = error;
   }
 
   public async launch(request: AgentLaunchRequest): Promise<FakeAgentLaunchHandle> {
@@ -155,7 +227,19 @@ export class FakeAgentLauncher implements AgentLauncher {
       `fake-process-${sequence}` as ProcessControlId,
       `fake-thread-${sequence}` as ProviderThreadId
     );
-    this.launches.push(Object.freeze({ request, handle }));
+    const launch = Object.freeze({ request, handle });
+    this.launches.push(launch);
+    this.launchWaiter.resolve(launch);
+    this.launchWaiter = deferred<FakeAgentLaunch>();
+    if (this.nextReleaseError !== undefined) {
+      handle.setReleaseFailure(this.nextReleaseError);
+      this.nextReleaseError = undefined;
+    }
+    if (this.nextReadinessError !== undefined) {
+      const error = this.nextReadinessError;
+      this.nextReadinessError = undefined;
+      handle.failReady(error);
+    }
     return handle;
   }
 }
