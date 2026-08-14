@@ -3,10 +3,29 @@ import type { FileSink } from 'bun';
 import type { SpawnAndLogOutputResult, StreamingProcess } from '../../../common/process.ts';
 import {
   buildSingleUserInputMessageLine,
+  PersistentClaudeInputWriter,
   safeEndStdin,
   sendFollowUpMessage,
   sendInitialPrompt,
 } from './streaming_input.ts';
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+} {
+  let resolvePromise: ((value: T) => void) | undefined;
+  let rejectPromise: ((error: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return {
+    promise,
+    resolve: (value: T): void => resolvePromise?.(value),
+    reject: (error: unknown): void => rejectPromise?.(error),
+  };
+}
 
 type MockFileSink = {
   writes: string[];
@@ -123,5 +142,220 @@ describe('streaming_input multi-message helpers', () => {
     expect(capturedArgs).toHaveLength(1);
     expect(capturedArgs[0]?.[0]).toBe('Failed to close stdin: %s');
     expect(capturedArgs[0]?.[1]).toBeInstanceOf(Error);
+  });
+});
+
+describe('PersistentClaudeInputWriter', () => {
+  it('accepts a synchronous active-turn write and uses canonical JSONL encoding', () => {
+    const stdin = createMockFileSink();
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+    writer.markReady('active');
+
+    expect(writer.writeUserMessage('quoted "content" and \\ slash')).toEqual({
+      status: 'accepted',
+      acknowledgement: 'steered',
+      generation: 1,
+    });
+    expect(stdin.writes).toEqual([
+      buildSingleUserInputMessageLine('quoted "content" and \\ slash'),
+    ]);
+    expect(writer.isWriteInProgress).toBe(false);
+  });
+
+  it('normalizes an asynchronous write and refuses a second in-flight message', async () => {
+    const write = deferred<number>();
+    const stdin = {
+      writes: [] as string[],
+      endCalls: 0,
+      write(chunk: string): Promise<number> {
+        this.writes.push(chunk);
+        return write.promise;
+      },
+      end(): Promise<void> {
+        this.endCalls += 1;
+        return Promise.resolve();
+      },
+    };
+    const availability = vi.fn();
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+      onAvailabilityChange: availability,
+    });
+    writer.markReady('active');
+
+    const first = writer.writeUserMessage('first');
+    expect(first).toBeInstanceOf(Promise);
+    expect(writer.writeUserMessage('second')).toEqual({
+      status: 'temporarily-unavailable',
+      reason: 'write-in-progress',
+    });
+
+    write.resolve(1);
+    await expect(first).resolves.toEqual({
+      status: 'accepted',
+      acknowledgement: 'steered',
+      generation: 1,
+    });
+    expect(stdin.writes).toHaveLength(1);
+    expect(availability).toHaveBeenCalled();
+    expect(writer.isWriteInProgress).toBe(false);
+  });
+
+  it('claims idle synchronously so concurrent sends cannot start two turns', async () => {
+    const write = deferred<number>();
+    const stdin = {
+      write: vi.fn(() => write.promise),
+      end: vi.fn(() => Promise.resolve(0)),
+    };
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+    writer.markReady('idle');
+
+    const first = writer.writeUserMessage('first');
+    expect(writer.state).toBe('active');
+    const second = writer.writeUserMessage('second');
+    expect(second).toEqual({
+      status: 'temporarily-unavailable',
+      reason: 'write-in-progress',
+    });
+    expect(stdin.write).toHaveBeenCalledTimes(1);
+
+    write.resolve(1);
+    await expect(first).resolves.toMatchObject({
+      status: 'accepted',
+      acknowledgement: 'started-idle-turn',
+    });
+  });
+
+  it('restores idle only for the generation that claimed it', async () => {
+    const firstWrite = deferred<number>();
+    const stdin = {
+      write: vi.fn(() => firstWrite.promise),
+      end: vi.fn(() => Promise.resolve(0)),
+    };
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+    writer.markReady('idle');
+
+    const first = writer.writeUserMessage('first');
+    writer.markProviderState('active');
+    firstWrite.reject(new Error('write failed'));
+
+    await expect(first).resolves.toMatchObject({ status: 'closed-or-failed' });
+    expect(writer.state).toBe('active');
+    expect(writer.generation).toBe(2);
+  });
+
+  it('restores idle after an un-superseded rejected write and reports the failure', async () => {
+    const write = deferred<number>();
+    const failure = vi.fn();
+    const stdin = {
+      write: vi.fn(() => write.promise),
+      end: vi.fn(() => Promise.resolve(0)),
+    };
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+      onWriteFailure: failure,
+    });
+    writer.markReady('idle');
+
+    const pending = writer.writeUserMessage('first');
+    write.reject(new Error('broken pipe'));
+
+    await expect(pending).resolves.toMatchObject({ status: 'closed-or-failed' });
+    expect(writer.state).toBe('idle');
+    expect(failure).toHaveBeenCalledOnce();
+  });
+
+  it('returns closed-or-failed for thrown writes and closed input without queueing', () => {
+    const stdin = {
+      write: vi.fn(() => {
+        throw new Error('broken pipe');
+      }),
+      end: vi.fn(() => Promise.resolve(0)),
+    };
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+    writer.markReady('active');
+
+    expect(writer.writeUserMessage('first')).toMatchObject({ status: 'closed-or-failed' });
+    writer.close();
+    expect(writer.writeUserMessage('second')).toMatchObject({ status: 'closed-or-failed' });
+    expect(stdin.write).toHaveBeenCalledTimes(1);
+    expect(stdin.end).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps spawning input temporarily unavailable until readiness', () => {
+    const stdin = createMockFileSink();
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+
+    expect(writer.writeUserMessage('initial')).toEqual({
+      status: 'temporarily-unavailable',
+      reason: 'not-ready',
+    });
+    expect(stdin.writes).toEqual([]);
+    writer.markReady('active');
+    expect(writer.writeUserMessage('initial')).toMatchObject({ status: 'accepted' });
+  });
+
+  it('maps accepted and closed writes through AgentInputAdapter delivery', async () => {
+    const stdin = createMockFileSink();
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+    writer.markReady('idle');
+
+    await expect(
+      Promise.resolve(
+        writer.deliver({ messageId: 'message-1', source: {} as never, content: 'continue' })
+      )
+    ).resolves.toBe('started-idle-turn');
+
+    writer.close();
+    await expect(
+      Promise.resolve().then(() =>
+        writer.deliver({ messageId: 'message-2', source: {} as never, content: 'late' })
+      )
+    ).rejects.toThrow('closed or failed');
+  });
+
+  it('closes stdin once during a close/write race and rejects the pending delivery', async () => {
+    const write = deferred<number>();
+    const stdin = {
+      write: vi.fn(() => write.promise),
+      end: vi.fn(() => Promise.resolve(0)),
+    };
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+    writer.markReady('active');
+
+    const pending = writer.deliver({
+      messageId: 'message-1',
+      source: {} as never,
+      content: 'work',
+    });
+    writer.close();
+    writer.close();
+    write.resolve(1);
+
+    await expect(pending).rejects.toThrow('closed or failed');
+    expect(stdin.end).toHaveBeenCalledTimes(1);
   });
 });

@@ -47,6 +47,24 @@ export {
 } from './claude_mcp_launch.js';
 export type { ClaudeMcpCapabilities } from './claude_mcp_launch.js';
 import type { TimConfig } from '../../configSchema.js';
+import type {
+  ClaudePersistentAgentCompletion,
+  ClaudePersistentAgentLaunchHandle,
+  ClaudePersistentAgentMode,
+} from './persistent_agent_contract.js';
+export {
+  CLAUDE_PERSISTENT_AGENT_MODE,
+  CLAUDE_PERSISTENT_AGENT_STATES,
+  isClaudePersistentAgentMode,
+  isClaudePersistentAgentState,
+  validateClaudePersistentAgentLaunchHandle,
+} from './persistent_agent_contract.js';
+export type {
+  ClaudePersistentAgentCompletion,
+  ClaudePersistentAgentLaunchHandle,
+  ClaudePersistentAgentMode,
+  ClaudePersistentAgentState,
+} from './persistent_agent_contract.js';
 
 const DEFAULT_CLAUDE_MODEL = 'opus';
 
@@ -164,6 +182,9 @@ export interface ClaudeCodeSubprocessOptions {
 }
 
 export interface RunClaudeSubprocessOptions {
+  /** Existing one-shot behavior. Omitted means one-shot for compatibility. */
+  mode?: 'one-shot';
+
   /** The prompt to send to Claude */
   prompt: string;
 
@@ -224,6 +245,28 @@ export interface RunClaudeSubprocessOptions {
   /** Whether to log model selection. Defaults to false. */
   logModelSelection?: boolean;
 }
+
+/**
+ * Explicit persistent-agent options. This is kept separate from
+ * RunClaudeSubprocessOptions so existing one-shot callers do not receive a
+ * persistent-handle union as the runner is migrated in a later task.
+ */
+export interface ClaudePersistentAgentRunOptions extends Omit<RunClaudeSubprocessOptions, 'mode'> {
+  readonly mode: ClaudePersistentAgentMode;
+  /** Provider output activity callback consumed by the lifecycle owner. */
+  readonly onOutputActivity?: () => void;
+}
+
+/** The complete Claude option surface used by the future provider launcher. */
+export type ClaudeSubprocessExecutionOptions =
+  | RunClaudeSubprocessOptions
+  | ClaudePersistentAgentRunOptions;
+
+/** The result type returned by the future persistent launch branch. */
+export type ClaudePersistentAgentLaunchResult = ClaudePersistentAgentLaunchHandle;
+
+/** The completion type used by a persistent Claude provider. */
+export type ClaudePersistentAgentCompletionResult = ClaudePersistentAgentCompletion;
 
 export interface RunClaudeSubprocessResult {
   /** Whether a successful result message was accepted as final completion. */
