@@ -11,6 +11,10 @@ import { safeEndStdin, sendFollowUpMessage, sendInitialPrompt } from './streamin
 import { TerminalInputReader } from './terminal_input.ts';
 import { BackgroundActivityTracker } from './background_activity_tracker.ts';
 import type { BackgroundActivitySignal, FormattedClaudeMessage } from './format.ts';
+import {
+  PersistentClaudeTurnController,
+  type PersistentClaudeTurnControllerOptions,
+} from './persistent_agent_lifecycle.ts';
 
 /** Shared guard for stdin lifecycle management. Ensures stdin is only closed once. */
 export interface StdinGuard {
@@ -139,6 +143,8 @@ export interface ExecuteWithTerminalInputOptions {
   tunnelForwardingEnabled: boolean;
   /** Keep stdin open on result only when an interactive input source is active. */
   keepInteractiveInputOpenOnResult?: boolean;
+  /** Explicit persistent-agent policy. Omitted means the existing one-shot path. */
+  persistentAgent?: Omit<PersistentClaudeTurnControllerOptions, 'stdin' | 'debugLog'>;
 }
 
 export interface ExecuteWithTerminalInputResult {
@@ -149,6 +155,7 @@ export interface ExecuteWithTerminalInputResult {
   acceptedSuccessfulFinalResult: () => boolean;
   endSession: () => void;
   cleanup: () => void;
+  persistentAgent?: PersistentClaudeTurnController;
 }
 
 /**
@@ -176,11 +183,23 @@ export function executeWithTerminalInput(
     terminalInputEnabled,
     tunnelForwardingEnabled,
     keepInteractiveInputOpenOnResult = false,
+    persistentAgent,
   } = options;
 
-  // Single shared guard for stdin lifecycle, used across all three paths
-  // (terminal input, tunnel forwarding, single prompt) and the tunnel handler.
-  const stdinGuard = createStdinGuard(streaming.stdin, debugLog);
+  const persistentController =
+    persistentAgent === undefined
+      ? undefined
+      : new PersistentClaudeTurnController({
+          ...persistentAgent,
+          initialPrompt: persistentAgent.initialPrompt ?? prompt,
+          stdin: streaming.stdin,
+          debugLog,
+        });
+
+  // Single shared guard for the legacy stdin lifecycle. Persistent mode uses
+  // PersistentClaudeInputWriter as its sole stdin owner.
+  const stdinGuard =
+    persistentController === undefined ? createStdinGuard(streaming.stdin, debugLog) : undefined;
   let terminalInputController: TerminalInputController | undefined;
   let handleProcessSigterm: (() => void) | undefined;
   let tunnelUserInputHandlerRegistered = false;
@@ -189,9 +208,11 @@ export function executeWithTerminalInput(
   let clearHeadlessUserInputHandler = (): void => {};
 
   const closeInputNow = (): void => {
-    if (terminalInputController) {
+    if (persistentController) {
+      persistentController.forceCloseInputNow();
+    } else if (terminalInputController) {
       terminalInputController.onResultMessage();
-    } else {
+    } else if (stdinGuard) {
       stdinGuard.close();
     }
   };
@@ -202,12 +223,19 @@ export function executeWithTerminalInput(
     closeInputNow();
   };
 
-  const backgroundActivityTracker = new BackgroundActivityTracker({
-    onClose: closeForResult,
-  });
+  const backgroundActivityTracker =
+    persistentController === undefined
+      ? new BackgroundActivityTracker({
+          onClose: closeForResult,
+        })
+      : undefined;
 
   const forceCloseInputNow = (): void => {
-    backgroundActivityTracker.forceClose();
+    if (persistentController) {
+      persistentController.forceCloseInputNow();
+    } else {
+      backgroundActivityTracker?.forceClose();
+    }
   };
 
   const stopActiveSessionForShutdown = (): void => {
@@ -229,7 +257,10 @@ export function executeWithTerminalInput(
     let tunnelHandlerActive = true;
     tunnelUserInputHandlerRegistered = true;
     loggerAdapter.setUserInputHandler((content) => {
-      if (!tunnelHandlerActive || stdinGuard.isClosed) {
+      if (
+        !tunnelHandlerActive ||
+        (stdinGuard?.isClosed ?? persistentController?.state === 'closing')
+      ) {
         return;
       }
       try {
@@ -250,7 +281,10 @@ export function executeWithTerminalInput(
     let headlessHandlerActive = true;
     headlessUserInputHandlerRegistered = true;
     loggerAdapter.setUserInputHandler((content) => {
-      if (!headlessHandlerActive || stdinGuard.isClosed) {
+      if (
+        !headlessHandlerActive ||
+        (stdinGuard?.isClosed ?? persistentController?.state === 'closing')
+      ) {
         return;
       }
 
@@ -297,36 +331,54 @@ export function executeWithTerminalInput(
 
   // onResultMessage is called by the formatStdout callback when a result message is detected
   const onResultMessage = (resultWasSuccessful: boolean): void => {
-    if (keepInteractiveInputOpenOnResult && hasInteractiveInputSource()) {
-      backgroundActivityTracker.acceptResultWithoutClosing(resultWasSuccessful);
+    if (persistentController) {
+      persistentController.onResultMessage(resultWasSuccessful);
       return;
     }
-    backgroundActivityTracker.onResultMessage(resultWasSuccessful);
+    if (keepInteractiveInputOpenOnResult && hasInteractiveInputSource()) {
+      backgroundActivityTracker?.acceptResultWithoutClosing(resultWasSuccessful);
+      return;
+    }
+    backgroundActivityTracker?.onResultMessage(resultWasSuccessful);
   };
 
   const dispatchBackgroundActivity = (signal: BackgroundActivitySignal): void => {
-    backgroundActivityTracker.backgroundTasksChanged(signal.hasRunningTasks);
+    if (persistentController) {
+      persistentController.observeFormattedMessage({ type: 'system', backgroundActivity: signal });
+      return;
+    }
+    backgroundActivityTracker?.backgroundTasksChanged(signal.hasRunningTasks);
   };
 
   // Lifecycle classification of a formatted stream message: concrete facts are
   // dispatched to the tracker, and an assistant/user message counts as turn activity.
   const observeFormattedMessage = (formatted: FormattedClaudeMessage): void => {
+    if (persistentController) {
+      persistentController.observeFormattedMessage(formatted);
+      return;
+    }
     if (formatted.backgroundActivity) {
       dispatchBackgroundActivity(formatted.backgroundActivity);
       return;
     }
 
     if (formatted.type === 'assistant' || formatted.type === 'user') {
-      backgroundActivityTracker.onTurnActivity();
+      backgroundActivityTracker?.onTurnActivity();
     }
   };
 
   const sendFollowUp = (content: string): void => {
-    if (stdinGuard.isClosed) {
+    if (persistentController) {
+      void Promise.resolve(persistentController.sendContent(content)).catch((error: unknown) => {
+        debugLog('Failed to send persistent Claude input: %s', error);
+      });
+      return;
+    }
+    if (stdinGuard?.isClosed) {
       return;
     }
     sendFollowUpMessage(streaming.stdin, content);
-    backgroundActivityTracker.onContinuationStarted();
+    backgroundActivityTracker?.onContinuationStarted();
   };
 
   const sendFollowUpForInterceptedResult = (content: string): void => {
@@ -335,7 +387,19 @@ export function executeWithTerminalInput(
 
   // Branching: terminal input vs. non-terminal input (tunnel/headless/pure non-interactive).
   let resultPromise: Promise<SpawnAndLogOutputResult>;
-  if (terminalInputEnabled) {
+  if (persistentController) {
+    persistentController.start();
+    resultPromise = streaming.result.then(
+      (result) => {
+        persistentController.markProviderExited();
+        return result;
+      },
+      (error: unknown) => {
+        persistentController.markProviderFailed(error);
+        throw error;
+      }
+    );
+  } else if (terminalInputEnabled) {
     terminalInputController = setupTerminalInput({
       streaming,
       prompt,
@@ -343,7 +407,7 @@ export function executeWithTerminalInput(
       debugLog,
       tunnelServer,
       onFollowUpSent: () => {
-        backgroundActivityTracker.onContinuationStarted();
+        backgroundActivityTracker?.onContinuationStarted();
       },
       stdinGuard,
       onReaderError: (err) => {
@@ -369,7 +433,7 @@ export function executeWithTerminalInput(
       sendInitialPrompt(streaming, prompt);
     }
     resultPromise = streaming.result.finally(() => {
-      stdinGuard.close();
+      stdinGuard?.close();
     });
   }
 
@@ -379,14 +443,15 @@ export function executeWithTerminalInput(
     observeFormattedMessage,
     sendFollowUpForInterceptedResult,
     acceptedSuccessfulFinalResult: (): boolean =>
-      backgroundActivityTracker.acceptedSuccessfulFinalResult(),
+      backgroundActivityTracker?.acceptedSuccessfulFinalResult() ?? false,
     endSession: () => {
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();
       forceCloseInputNow();
     },
     cleanup: () => {
-      backgroundActivityTracker.cancel();
+      backgroundActivityTracker?.cancel();
+      persistentController?.cleanup();
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();
       if (loggerAdapter instanceof HeadlessAdapter) {
@@ -398,5 +463,6 @@ export function executeWithTerminalInput(
         handleProcessSigterm = undefined;
       }
     },
+    persistentAgent: persistentController,
   };
 }

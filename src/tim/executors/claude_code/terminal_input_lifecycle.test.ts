@@ -685,4 +685,43 @@ describe('terminal_input_lifecycle', () => {
 
     controller.cleanup();
   });
+
+  it('uses the explicit persistent policy as the only stdin owner', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+    const pendingResult = new Promise<SpawnAndLogOutputResult>(() => {});
+    const streaming = makeStreaming({ stdinEnd: stdinEndSpy, result: pendingResult });
+
+    const controller = executeWithTerminalInput({
+      streaming,
+      prompt: 'legacy prompt should be used as the fallback only',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude worker',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+      persistentAgent: {},
+    });
+
+    expect(controller.persistentAgent?.state).toBe('active');
+    expect(streaming.stdin.write).toHaveBeenCalledTimes(1);
+    expect(mockSendInitialPrompt).not.toHaveBeenCalled();
+
+    controller.onResultMessage(true);
+    expect(controller.persistentAgent?.state).toBe('idle');
+    expect(stdinEndSpy).not.toHaveBeenCalled();
+
+    expect(
+      controller.persistentAgent?.deliver({
+        messageId: 'next',
+        source: {} as never,
+        content: 'next turn',
+      })
+    ).toBe('started-idle-turn');
+    expect(controller.persistentAgent?.state).toBe('active');
+
+    controller.cleanup();
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+  });
 });
