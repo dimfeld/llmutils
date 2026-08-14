@@ -3,10 +3,15 @@ import type { SpawnAndLogOutputResult } from '../../../common/process.ts';
 import type { AgentProcessLabel } from '../../agent_messaging/agent_process_labels.js';
 
 const mockSpawnWithStreamingIO = vi.fn();
+const mockGetCurrentSessionProcessOwner = vi.fn(() => undefined);
 
 vi.mock('../../../common/process.js', () => ({
   spawnWithStreamingIO: mockSpawnWithStreamingIO,
   createLineSplitter: vi.fn(() => (input: string) => input.split('\n').filter(Boolean)),
+}));
+
+vi.mock('../../../common/session_process_control.js', () => ({
+  getCurrentSessionProcessOwner: mockGetCurrentSessionProcessOwner,
 }));
 
 vi.mock('../../../logging.js', () => ({
@@ -145,6 +150,14 @@ async function setupPersistentClaudeSubprocess(
   mockSpawnWithStreamingIO.mockImplementation(async (_args: string[], opts: any) => {
     spawnOptions = opts;
     formatStdout = opts.formatStdout;
+    opts.onSessionProcessReady?.({
+      processId: 'process-1',
+      setGracefulEndHandler: vi.fn(),
+      updateMetadata: vi.fn(),
+      markSpawned: vi.fn(),
+      markSpawnFailed: vi.fn(),
+      markExited: vi.fn(),
+    });
     return {
       pid: 456,
       stdin: { write: stdinWriteSpy, end: stdinEndSpy },
@@ -180,6 +193,7 @@ describe('runClaudeSubprocess lifecycle', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
+    mockGetCurrentSessionProcessOwner.mockReturnValue(undefined);
   });
 
   test('normal non-interactive result closes stdin before streaming.result resolves', async () => {
@@ -574,6 +588,202 @@ describe('runClaudeSubprocess lifecycle', () => {
       resultText: '',
       error: expect.any(Error),
     });
+  });
+
+  test('graceful shutdown steers an active turn and closes after its result', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+    const exits: string[] = [];
+    setup.handle.lifecycle.subscribe({
+      outputActivity: (): void => {},
+      completedAssistantMessage: (): void => {},
+      turnComplete: (): void => {},
+      exit: (classification): void => exits.push(classification),
+    });
+
+    await expect(setup.handle.lifecycle.requestGracefulShutdown('finish this work')).resolves.toBe(
+      'accepted'
+    );
+    expect(setup.stdinWriteSpy).toHaveBeenCalledTimes(2);
+    expect(setup.handle.providerState).toBe('graceful-stop-active');
+    expect(setup.stdinEndSpy).not.toHaveBeenCalled();
+
+    setup.formatStdout(`${RESULT_LINE}\n`);
+    expect(setup.stdinEndSpy).toHaveBeenCalledOnce();
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+
+    await expect(setup.handle.completion).resolves.toMatchObject({ exitCode: 0 });
+    expect(exits).toEqual(['graceful']);
+  });
+
+  test('graceful shutdown starts one idle turn and duplicate calls do not write again', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+    setup.formatStdout(`${RESULT_LINE}\n`);
+    expect(setup.handle.providerState).toBe('idle');
+
+    const first = setup.handle.lifecycle.requestGracefulShutdown('report final status');
+    const second = setup.handle.lifecycle.requestGracefulShutdown('different instruction');
+    await expect(first).resolves.toBe('accepted');
+    await expect(second).resolves.toBe('accepted');
+
+    expect(setup.stdinWriteSpy).toHaveBeenCalledTimes(2);
+    expect(setup.handle.providerState).toBe('graceful-stop-active');
+    setup.formatStdout(`${RESULT_LINE}\n`);
+    expect(setup.stdinEndSpy).toHaveBeenCalledOnce();
+
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await setup.handle.completion;
+  });
+
+  test('busy shutdown input fails without retaining a Claude-local queue', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+    let resolveWrite: ((value: number) => void) | undefined;
+    setup.stdinWriteSpy.mockImplementationOnce(
+      () =>
+        new Promise<number>((resolve) => {
+          resolveWrite = resolve;
+        })
+    );
+
+    const steering = setup.handle.input.deliver({
+      messageId: 'busy-steering',
+      source: {} as never,
+      content: 'busy steering',
+    });
+    await expect(
+      setup.handle.lifecycle.requestGracefulShutdown('must not be queued')
+    ).rejects.toMatchObject({
+      operation: 'graceful-shutdown',
+      message: expect.stringContaining('temporarily unavailable'),
+    });
+    expect(setup.stdinWriteSpy).toHaveBeenCalledTimes(2);
+
+    resolveWrite?.(1);
+    await expect(steering).resolves.toBe('steered');
+    await setup.handle.release();
+  });
+
+  test('shutdown write failure is reported as a control failure and provider failure', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+    setup.stdinWriteSpy.mockImplementationOnce(() => Promise.reject(new Error('stdin failed')));
+
+    await expect(
+      setup.handle.lifecycle.requestGracefulShutdown('final status')
+    ).rejects.toMatchObject({
+      operation: 'graceful-shutdown',
+      message: expect.stringContaining('input'),
+    });
+    expect(setup.handle.providerState).toBe('failed');
+
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await expect(setup.handle.completion).resolves.toMatchObject({
+      error: expect.any(Error),
+    });
+  });
+
+  test('close-after-current-turn is graceful and races natural process exit exactly once', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+    const exits: string[] = [];
+    setup.handle.lifecycle.subscribe({
+      outputActivity: (): void => {},
+      completedAssistantMessage: (): void => {},
+      turnComplete: (): void => {},
+      exit: (classification): void => exits.push(classification),
+    });
+
+    await expect(setup.handle.lifecycle.requestCloseAfterCurrentTurn()).resolves.toBe('accepted');
+    setup.formatStdout(`${RESULT_LINE}\n`);
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await setup.handle.completion;
+    expect(exits).toEqual(['graceful']);
+    await expect(setup.handle.lifecycle.requestCloseAfterCurrentTurn()).resolves.toBe(
+      'already-exited'
+    );
+  });
+
+  test('force shutdown uses the captured safe owner capability and classifies completion as forced', async () => {
+    const terminateExecutor = vi.fn(() => 'terminated');
+    mockGetCurrentSessionProcessOwner.mockReturnValue({ terminateExecutor } as never);
+    const setup = await setupPersistentClaudeSubprocess();
+
+    await expect(setup.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');
+    await expect(setup.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');
+    expect(terminateExecutor).toHaveBeenCalledOnce();
+    expect(terminateExecutor).toHaveBeenCalledWith('process-1');
+
+    setup.resolveStreamingResult({
+      exitCode: 143,
+      stdout: '',
+      stderr: '',
+      signal: 'SIGTERM',
+      killedByInactivity: false,
+    });
+    await expect(setup.handle.completion).resolves.toMatchObject({
+      exitCode: 143,
+      signal: 'SIGTERM',
+    });
+  });
+
+  test('force shutdown reports typed non-acceptance and permits a later retry', async () => {
+    const terminateExecutor = vi
+      .fn<() => 'stale_target' | 'terminated'>()
+      .mockReturnValueOnce('stale_target')
+      .mockReturnValueOnce('terminated');
+    mockGetCurrentSessionProcessOwner.mockReturnValue({ terminateExecutor } as never);
+    const setup = await setupPersistentClaudeSubprocess();
+
+    await expect(setup.handle.lifecycle.requestForcedShutdown()).rejects.toMatchObject({
+      name: 'AgentProviderForceNotAcceptedError',
+      operation: 'forced-shutdown',
+    });
+    await expect(setup.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');
+    expect(terminateExecutor).toHaveBeenCalledTimes(2);
+
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await setup.handle.completion;
+  });
+
+  test('force shutdown treats a failed safe-control result as not accepted', async () => {
+    const terminateExecutor = vi.fn(() => 'signal_failed');
+    mockGetCurrentSessionProcessOwner.mockReturnValue({ terminateExecutor } as never);
+    const setup = await setupPersistentClaudeSubprocess();
+
+    await expect(setup.handle.lifecycle.requestForcedShutdown()).rejects.toMatchObject({
+      name: 'AgentProviderForceNotAcceptedError',
+      operation: 'forced-shutdown',
+      message: expect.stringContaining('signal_failed'),
+    });
+    expect(terminateExecutor).toHaveBeenCalledOnce();
+    await setup.handle.release();
   });
 
   test('persistent setup failure before spawn rejects the launch and never leaves completion pending', async () => {

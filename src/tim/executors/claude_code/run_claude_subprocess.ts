@@ -14,7 +14,10 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, error, log, sendStructured, warn } from '../../../logging.js';
 import { spawnWithStreamingIO, type StreamingProcess } from '../../../common/process.js';
-import type { SessionExecutorLifecycle } from '../../../common/session_process_control.js';
+import {
+  getCurrentSessionProcessOwner,
+  type SessionExecutorLifecycle,
+} from '../../../common/session_process_control.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import {
   normalizeSubprocessMonitorRules,
@@ -343,6 +346,10 @@ export async function runClaudeSubprocess(
   const inactivityTimeoutMs = options.inactivityTimeoutMs ?? 30 * 60 * 1000;
   const initialInactivityTimeoutMs = options.initialInactivityTimeoutMs ?? 2 * 60 * 1000;
   const trackedFiles = options.trackedFiles ?? new Set<string>();
+  // Capture the owner that created this exact executor before any asynchronous
+  // setup. Force control must use this owner and the lifecycle's opaque
+  // process ID; it must never fall back to the child PID or display label.
+  const sessionProcessOwner = persistentAgent ? getCurrentSessionProcessOwner() : undefined;
 
   // Validate subprocess monitor rules up front, before any resource allocation,
   // so a bad regex fails cleanly without leaking permissions MCP or tunnel resources.
@@ -470,6 +477,11 @@ export async function runClaudeSubprocess(
   let settledResultText: string | undefined;
   let lastCompletedAssistantMessage: string | undefined;
   let lastSessionEndMessage: StructuredMessage | undefined;
+  let closeAfterTurnRequested = false;
+  let gracefulShutdownAccepted = false;
+  let gracefulShutdownRequest: Promise<AgentProviderControlResult> | undefined;
+  let forcedShutdownAccepted = false;
+  let forcedShutdownRequest: Promise<AgentProviderControlResult> | undefined;
   let pendingFormattedMessages: FormattedClaudeMessage[] | undefined = persistentAgent
     ? []
     : undefined;
@@ -540,21 +552,83 @@ export async function runClaudeSubprocess(
   };
 
   const lifecycle: AgentProviderLifecycleControls = {
-    requestGracefulShutdown: async (): Promise<AgentProviderControlResult> => {
-      throw new AgentProviderControlError(
-        'graceful-shutdown',
-        'Claude persistent graceful shutdown is not wired by this provider task'
-      );
+    requestGracefulShutdown: (instruction: string): Promise<AgentProviderControlResult> => {
+      if (gracefulShutdownRequest !== undefined) return gracefulShutdownRequest;
+      if (completionFinalized || persistentController === undefined) {
+        return Promise.resolve('already-exited');
+      }
+
+      gracefulShutdownRequest = (async (): Promise<AgentProviderControlResult> => {
+        try {
+          const delivery = await Promise.resolve(persistentController!.sendContent(instruction));
+          if (delivery === 'temporarily-unavailable') {
+            throw new AgentProviderControlError(
+              'graceful-shutdown',
+              'Claude persistent input is temporarily unavailable for graceful shutdown'
+            );
+          }
+
+          // The writer has accepted the shutdown instruction. Close only after
+          // the turn that contains it settles. If the result callback already
+          // moved the controller to idle while the write was resolving, that
+          // result is already settled and closing the input is safe.
+          closeAfterTurnRequested = true;
+          if (persistentController!.state === 'idle') {
+            persistentController!.forceCloseInputNow();
+          } else {
+            persistentController!.requestCloseAfterCurrentResult('graceful');
+          }
+          gracefulShutdownAccepted = true;
+          return 'accepted';
+        } catch (error) {
+          if (persistentController?.state === 'exited' || completionFinalized) {
+            return 'already-exited';
+          }
+          if (error instanceof AgentProviderControlError) throw error;
+          throw new AgentProviderControlError(
+            'graceful-shutdown',
+            `Claude persistent graceful shutdown failed: ${String(error)}`,
+            { cause: error }
+          );
+        }
+      })();
+      return gracefulShutdownRequest;
     },
     requestCloseAfterCurrentTurn: async (): Promise<AgentProviderControlResult> => {
       if (completionFinalized || persistentController === undefined) return 'already-exited';
+      if (closeAfterTurnRequested) return 'accepted';
+      if (
+        persistentController.state === 'exited' ||
+        persistentController.state === 'failed' ||
+        persistentController.state === 'closing'
+      ) {
+        return persistentController.state === 'closing' ? 'accepted' : 'already-exited';
+      }
+      closeAfterTurnRequested = true;
       try {
-        persistentController.requestCloseAfterCurrentResult();
+        // AgentLifecycleController receives turnComplete after the provider
+        // controller has settled to idle. In that case the current result is
+        // already complete, so close the shared input now. Active and
+        // background-pending turns keep the controller's result boundary.
+        if (persistentController.state === 'idle') {
+          if (persistentController.generation === 0) {
+            closeAfterTurnRequested = false;
+            throw new AgentProviderControlError(
+              'close-after-current-turn',
+              'Claude persistent agent has no current turn to close'
+            );
+          }
+          persistentController.forceCloseInputNow();
+        } else {
+          persistentController.requestCloseAfterCurrentResult();
+        }
         return 'accepted';
       } catch (error) {
-        if (persistentController.state === 'exited' || persistentController.state === 'failed') {
+        const stateAfterError = persistentController.state as string;
+        if (stateAfterError === 'exited' || stateAfterError === 'failed') {
           return 'already-exited';
         }
+        if (error instanceof AgentProviderControlError) throw error;
         throw new AgentProviderControlError(
           'close-after-current-turn',
           `Claude persistent close-after-turn failed: ${String(error)}`,
@@ -562,10 +636,56 @@ export async function runClaudeSubprocess(
         );
       }
     },
-    requestForcedShutdown: async (): Promise<AgentProviderControlResult> => {
-      throw new AgentProviderForceNotAcceptedError(
-        'Claude persistent forced shutdown is not wired by this provider task'
-      );
+    requestForcedShutdown: (): Promise<AgentProviderControlResult> => {
+      if (forcedShutdownRequest !== undefined) return forcedShutdownRequest;
+      if (completionFinalized || persistentController === undefined) {
+        return Promise.resolve('already-exited');
+      }
+      if (persistentController.state === 'exited') return Promise.resolve('already-exited');
+      if (forcedShutdownAccepted) return Promise.resolve('accepted');
+
+      forcedShutdownRequest = (async (): Promise<AgentProviderControlResult> => {
+        const processLifecycle = sessionProcessLifecycle;
+        if (sessionProcessOwner === undefined || processLifecycle === undefined) {
+          throw new AgentProviderForceNotAcceptedError(
+            'Claude persistent forced shutdown has no captured safe process capability'
+          );
+        }
+
+        let result: ReturnType<typeof sessionProcessOwner.terminateExecutor>;
+        try {
+          result = sessionProcessOwner.terminateExecutor(processLifecycle.processId);
+        } catch (error) {
+          throw new AgentProviderForceNotAcceptedError(
+            `Claude persistent forced shutdown failed before acceptance: ${String(error)}`,
+            { cause: error }
+          );
+        }
+
+        switch (result) {
+          case 'terminated':
+          case 'requested':
+            forcedShutdownAccepted = true;
+            return 'accepted';
+          case 'already_exited':
+            return 'already-exited';
+          default:
+            throw new AgentProviderForceNotAcceptedError(
+              `Claude persistent forced shutdown was not accepted by the safe process owner (${result})`
+            );
+        }
+      })();
+
+      forcedShutdownRequest = forcedShutdownRequest.catch((error: unknown) => {
+        // A typed failure proves that no force was accepted. Keep the
+        // operation retryable. Other failures are intentionally retained by
+        // the already-set promise so callers cannot issue an unsafe retry.
+        if (error instanceof AgentProviderForceNotAcceptedError) {
+          forcedShutdownRequest = undefined;
+        }
+        throw error;
+      });
+      return forcedShutdownRequest;
     },
     subscribe: (observer: AgentProviderLifecycleObserver): (() => void) => {
       lifecycleObservers.add(observer);
@@ -805,7 +925,14 @@ export async function runClaudeSubprocess(
         let processError: Error | undefined;
         try {
           processResult = await processCompletion;
-          persistentController?.markProviderExited();
+          if (persistentController?.state === 'failed') {
+            processError = toError(
+              persistentController.inputWriter.lastError ??
+                new Error(`Claude ${label} persistent input failed`)
+            );
+          } else {
+            persistentController?.markProviderExited();
+          }
         } catch (error) {
           processError = toError(error);
           persistentController?.markProviderFailed(processError);
@@ -833,7 +960,13 @@ export async function runClaudeSubprocess(
           (processResult !== undefined && processResult.exitCode !== 0
             ? new Error(`Claude ${label} exited with code ${processResult.exitCode}`)
             : undefined);
-        const classification = exitError === undefined ? 'natural' : 'failed';
+        const classification = forcedShutdownAccepted
+          ? 'forced'
+          : exitError === undefined
+            ? closeAfterTurnRequested || gracefulShutdownAccepted
+              ? 'graceful'
+              : 'natural'
+            : 'failed';
         notifyExit(classification, exitError);
         lifecycleObservers.clear();
         if (!completionFinalized) {

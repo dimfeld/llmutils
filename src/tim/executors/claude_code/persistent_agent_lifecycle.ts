@@ -195,7 +195,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
    * Mark the current turn for close after its settled result. The flag is set
    * before any provider call or result callback can run.
    */
-  public requestCloseAfterCurrentResult(): void {
+  public requestCloseAfterCurrentResult(closeKind: 'finish' | 'graceful' = 'finish'): void {
     if (this.isTerminal() || this.stateValue === 'closing') return;
     if (this.closeAfterCurrentResultValue) return;
     if (
@@ -209,8 +209,8 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     }
 
     this.closeAfterCurrentResultValue = true;
-    this.stateValue = 'finish-after-result';
-    this.writer.markProviderState('finish-after-result');
+    this.stateValue = closeKind === 'graceful' ? 'graceful-stop-active' : 'finish-after-result';
+    this.writer.markProviderState(this.stateValue);
   }
 
   /** Close stdin immediately for a provider/session-wide end request. */
