@@ -33,13 +33,12 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
-import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
+import { runClaudeSubprocess, buildAllowedToolsList } from './claude_code/run_claude_subprocess.js';
 import {
-  runClaudeSubprocess,
-  buildAllowedToolsList,
-  resolveClaudeMcpCapabilities,
-} from './claude_code/run_claude_subprocess.js';
-import { CLAUDE_APPROVAL_MCP_TOOL_ID } from './claude_code/claude_mcp_protocol.js';
+  applyClaudeMcpLaunchArgs,
+  prepareClaudeMcpLaunch,
+  type ClaudeMcpLaunchResult,
+} from './claude_code/claude_mcp_launch.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
 import {
   FAST_NOOP_ORCHESTRATOR_RETRY_MS,
@@ -632,7 +631,8 @@ export class ClaudeCodeExecutor implements Executor {
     // Get git root for agent instructions and other operations
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
 
-    let interactiveApprovalEnabled = this.options.permissionsMcp?.enabled === true;
+    const interactiveApprovalRequested = this.options.permissionsMcp?.enabled === true;
+    let interactiveApprovalEnabled = interactiveApprovalRequested;
     if (process.env.CLAUDE_CODE_MCP) {
       interactiveApprovalEnabled = process.env.CLAUDE_CODE_MCP === 'true';
     }
@@ -643,56 +643,38 @@ export class ClaudeCodeExecutor implements Executor {
       allowAllTools = envAllowAllTools;
     }
 
-    const agentToolContext = this.sharedOptions.claudeAgentToolContext;
-    const capabilities = resolveClaudeMcpCapabilities({
-      interactiveApprovalRequested: interactiveApprovalEnabled,
-      allowAllTools,
-      noninteractive: this.sharedOptions.noninteractive === true,
-      agentToolContext,
-      disallowedTools,
-    });
-    interactiveApprovalEnabled = capabilities.interactiveApprovalEnabled;
-    const { agentToolIds, internalMcpNeeded } = capabilities;
-
-    let tempMcpConfigDir: string | undefined = undefined;
-    let dynamicMcpConfigFile: string | undefined;
-    let permissionsMcpCleanup: (() => Promise<void>) | undefined;
-
     // Load shared permissions from cross-worktree storage
     const sharedPermissions = await this.loadSharedPermissions();
 
-    let allowedTools = buildAllowedToolsList({
+    const baseAllowedTools = buildAllowedToolsList({
       includeDefaultTools: this.options.includeDefaultTools,
       configAllowedTools: this.options.allowedTools,
       extraAllowedTools: this.sharedOptions.extraAllowedTools,
       disallowedTools,
       sharedPermissions,
     });
-    if (agentToolIds.length > 0) {
-      allowedTools.push(...agentToolIds);
-    }
+
+    const agentToolContext = this.sharedOptions.claudeAgentToolContext;
+    const mcpLaunch: ClaudeMcpLaunchResult = await prepareClaudeMcpLaunch({
+      cwd: gitRoot,
+      allowedTools: baseAllowedTools,
+      mcpConfigFile,
+      interactiveApprovalRequested: interactiveApprovalEnabled,
+      allowAllTools,
+      noninteractive: this.sharedOptions.noninteractive === true,
+      disallowedTools,
+      permissionsMcp: this.options.permissionsMcp,
+      trackedFiles: this.trackedFiles,
+      agentToolContext,
+      permissionPromptCoordinator: this.sharedOptions.claudePermissionPromptCoordinator,
+    });
+    interactiveApprovalEnabled = mcpLaunch.capabilities.interactiveApprovalEnabled;
+    const tempMcpConfigDir = mcpLaunch.tempDir;
+    const permissionsMcpCleanup = mcpLaunch.cleanup;
+    const allowedTools = mcpLaunch.allowedTools;
 
     // Parse allowedTools into efficient lookup structure for auto-approval
     this.parseAllowedTools(allowedTools);
-
-    if (internalMcpNeeded) {
-      const result = await setupPermissionsMcp({
-        allowedTools,
-        defaultResponse: this.options.permissionsMcp?.defaultResponse,
-        timeout: this.options.permissionsMcp?.timeout,
-        autoApproveCreatedFileDeletion: this.options.permissionsMcp?.autoApproveCreatedFileDeletion,
-        trackedFiles: this.trackedFiles,
-        workingDirectory: gitRoot,
-        mcpConfigFile:
-          mcpConfigFile === undefined ? undefined : path.resolve(gitRoot, mcpConfigFile),
-        interactiveApprovalEnabled,
-        agentToolContext,
-        permissionPromptCoordinator: this.sharedOptions.claudePermissionPromptCoordinator,
-      });
-      tempMcpConfigDir = result.tempDir;
-      dynamicMcpConfigFile = result.mcpConfigFile;
-      permissionsMcpCleanup = result.cleanup;
-    }
 
     // Create tunnel server for output forwarding from child processes
     let tunnelServer: TunnelServer | undefined;
@@ -740,14 +722,7 @@ export class ClaudeCodeExecutor implements Executor {
         args.push('--disallowedTools', disallowedTools.join(','));
       }
 
-      if (internalMcpNeeded && dynamicMcpConfigFile) {
-        args.push('--mcp-config', dynamicMcpConfigFile);
-        if (interactiveApprovalEnabled) {
-          args.push('--permission-prompt-tool', CLAUDE_APPROVAL_MCP_TOOL_ID);
-        }
-      } else if (mcpConfigFile) {
-        args.push('--mcp-config', mcpConfigFile);
-      }
+      applyClaudeMcpLaunchArgs(args, mcpLaunch, mcpConfigFile);
 
       // Automatic model selection for review and planning modes
       let modelToUse = this.sharedOptions.model;

@@ -16,6 +16,7 @@ import {
   claudeMcpResponseSchema,
   type AgentToolResponse,
   type ClaudeAgentToolName,
+  type ClaudeMcpRequest,
   type ClaudeMcpResponse,
   type PermissionResponse,
 } from './claude_mcp_protocol.js';
@@ -64,6 +65,26 @@ type PendingRequest = {
   readonly resolve: (response: ClaudeMcpResponse) => void;
   readonly reject: (error: Error) => void;
   readonly timer: ReturnType<typeof setTimeout>;
+};
+
+type ClaudeMcpRequestResponseMap = {
+  permission_request: {
+    readonly request: Omit<Extract<ClaudeMcpRequest, { type: 'permission_request' }>, 'requestId'>;
+    readonly response: PermissionResponse;
+  };
+  agent_tool_request: {
+    readonly request: Omit<Extract<ClaudeMcpRequest, { type: 'agent_tool_request' }>, 'requestId'>;
+    readonly response: AgentToolResponse;
+  };
+};
+
+type ClaudeMcpRequestType = keyof ClaudeMcpRequestResponseMap;
+
+const responseTypeByRequestType: {
+  readonly [K in ClaudeMcpRequestType]: ClaudeMcpRequestResponseMap[K]['response']['type'];
+} = {
+  permission_request: 'permission_response',
+  agent_tool_request: 'agent_tool_response',
 };
 
 const pendingRequests = new Map<string, PendingRequest>();
@@ -231,31 +252,38 @@ function connectToParent(socketPath: string): void {
   installParentSocketHandlers(parentSocket, true);
 }
 
-async function requestParent<T extends ClaudeMcpResponse>(
-  request: Omit<
-    Extract<
-      import('./claude_mcp_protocol.js').ClaudeMcpRequest,
-      { type: T extends PermissionResponse ? 'permission_request' : 'agent_tool_request' }
-    >,
-    'requestId'
-  >,
-  expectedResponseType: PendingRequest['expectedResponseType']
-): Promise<T> {
+function requestParent(
+  request: ClaudeMcpRequestResponseMap['permission_request']['request']
+): Promise<ClaudeMcpRequestResponseMap['permission_request']['response']>;
+function requestParent(
+  request: ClaudeMcpRequestResponseMap['agent_tool_request']['request']
+): Promise<ClaudeMcpRequestResponseMap['agent_tool_request']['response']>;
+function requestParent(
+  request:
+    | ClaudeMcpRequestResponseMap['permission_request']['request']
+    | ClaudeMcpRequestResponseMap['agent_tool_request']['request']
+): Promise<ClaudeMcpResponse>;
+async function requestParent(
+  request:
+    | ClaudeMcpRequestResponseMap['permission_request']['request']
+    | ClaudeMcpRequestResponseMap['agent_tool_request']['request']
+): Promise<ClaudeMcpResponse> {
   if (!parentSocket || parentSocket.destroyed) {
     throw new Error('Not connected to tim MCP parent');
   }
 
   const requestId = generateRequestId();
+  const expectedResponseType = responseTypeByRequestType[request.type];
   // Keep correlation metadata before potentially large tool input so the parent
   // can return a bounded, correlated error for an oversized frame.
   const fullRequest = { requestId, ...request };
-  return new Promise<T>((resolve, reject) => {
+  return new Promise<ClaudeMcpResponse>((resolve, reject) => {
     const timer = setTimeout(() => {
       rejectPendingRequest(requestId, new Error('MCP request timed out'));
     }, PARENT_REQUEST_TIMEOUT_MS);
     pendingRequests.set(requestId, {
       expectedResponseType,
-      resolve: (response) => resolve(response as T),
+      resolve,
       reject,
       timer,
     });
@@ -273,20 +301,14 @@ async function requestPermissionFromParent(
   tool_name: string,
   input: Record<string, unknown>
 ): Promise<PermissionResponse> {
-  return requestParent<PermissionResponse>(
-    { type: 'permission_request', tool_name, input },
-    'permission_response'
-  );
+  return requestParent({ type: 'permission_request', tool_name, input });
 }
 
 async function requestAgentToolFromParent(
   tool_name: ClaudeAgentToolName,
   input: unknown
 ): Promise<AgentToolResponse> {
-  return requestParent<AgentToolResponse>(
-    { type: 'agent_tool_request', tool_name, input },
-    'agent_tool_response'
-  );
+  return requestParent({ type: 'agent_tool_request', tool_name, input });
 }
 
 function modelVisibleAgentResult(response: AgentToolResponse): {

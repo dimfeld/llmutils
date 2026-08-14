@@ -31,13 +31,21 @@ import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js
 import { getDatabase } from '../../db/database.js';
 import { getPermissions } from '../../db/permission.js';
 import { getOrCreateProject } from '../../db/project.js';
-import { setupPermissionsMcp } from './permissions_mcp_setup.js';
-import {
-  CLAUDE_APPROVAL_MCP_TOOL_ID,
-  getClaudeAgentMcpToolId,
-  type ClaudeAgentToolContext,
-  type ClaudePermissionPromptCoordinator,
+import type {
+  ClaudeAgentToolContext,
+  ClaudePermissionPromptCoordinator,
 } from './claude_mcp_protocol.js';
+import {
+  applyClaudeMcpLaunchArgs,
+  prepareClaudeMcpLaunch,
+  type ClaudeMcpLaunchResult,
+} from './claude_mcp_launch.js';
+export {
+  getAgentToolIds,
+  resolveClaudeMcpCapabilities,
+  validateAgentToolDisallowConflict,
+} from './claude_mcp_launch.js';
+export type { ClaudeMcpCapabilities } from './claude_mcp_launch.js';
 import type { TimConfig } from '../../configSchema.js';
 
 const DEFAULT_CLAUDE_MODEL = 'opus';
@@ -245,51 +253,6 @@ async function loadSharedPermissions(): Promise<string[]> {
   }
 }
 
-export function getAgentToolIds(context: ClaudeAgentToolContext | undefined): string[] {
-  return context === undefined ? [] : [...context.allowedTools].map(getClaudeAgentMcpToolId);
-}
-
-export function validateAgentToolDisallowConflict(
-  context: ClaudeAgentToolContext | undefined,
-  disallowedTools: readonly string[] | undefined
-): void {
-  if (context === undefined || disallowedTools === undefined) return;
-  const disallowed = new Set(disallowedTools);
-  const conflictingTools = getAgentToolIds(context).filter((toolName) => disallowed.has(toolName));
-  if (conflictingTools.length > 0) {
-    throw new Error(
-      `Claude disallowedTools prevents required agent tools: ${conflictingTools.join(', ')}`
-    );
-  }
-}
-
-export interface ClaudeMcpCapabilities {
-  readonly interactiveApprovalEnabled: boolean;
-  readonly agentToolsEnabled: boolean;
-  readonly internalMcpNeeded: boolean;
-  readonly agentToolIds: string[];
-}
-
-export function resolveClaudeMcpCapabilities(options: {
-  readonly interactiveApprovalRequested: boolean;
-  readonly allowAllTools: boolean;
-  readonly noninteractive: boolean;
-  readonly agentToolContext: ClaudeAgentToolContext | undefined;
-  readonly disallowedTools: readonly string[] | undefined;
-}): ClaudeMcpCapabilities {
-  const interactiveApprovalEnabled =
-    options.interactiveApprovalRequested && !options.allowAllTools && !options.noninteractive;
-  const agentToolsEnabled = options.agentToolContext !== undefined;
-  const agentToolIds = getAgentToolIds(options.agentToolContext);
-  validateAgentToolDisallowConflict(options.agentToolContext, options.disallowedTools);
-  return {
-    interactiveApprovalEnabled,
-    agentToolsEnabled,
-    internalMcpNeeded: interactiveApprovalEnabled || agentToolsEnabled,
-    agentToolIds,
-  };
-}
-
 /**
  * Runs a Claude Code subprocess with the standard setup pattern:
  * permissions MCP, tunnel server, CLI args, streaming stdout parsing, and cleanup.
@@ -331,7 +294,7 @@ export async function runClaudeSubprocess(
 
   // Load shared permissions and build final tools list
   const sharedPermissions = await loadSharedPermissions();
-  const allowedTools = buildAllowedToolsList({
+  const baseAllowedTools = buildAllowedToolsList({
     includeDefaultTools: claudeCodeOptions.includeDefaultTools,
     configAllowedTools: claudeCodeOptions.allowedTools,
     extraAllowedTools: claudeCodeOptions.extraAllowedTools,
@@ -345,52 +308,39 @@ export async function runClaudeSubprocess(
     interactiveApprovalEnabled = process.env.CLAUDE_CODE_MCP === 'true';
   }
   const agentToolContext = claudeCodeOptions.agentToolContext;
-  const capabilities = resolveClaudeMcpCapabilities({
-    interactiveApprovalRequested: interactiveApprovalEnabled,
-    allowAllTools,
-    noninteractive,
-    agentToolContext,
-    disallowedTools: claudeCodeOptions.disallowedTools,
-  });
+  let mcpLaunch: ClaudeMcpLaunchResult;
+  try {
+    mcpLaunch = await prepareClaudeMcpLaunch({
+      cwd,
+      allowedTools: baseAllowedTools,
+      mcpConfigFile: claudeCodeOptions.mcpConfigFile,
+      interactiveApprovalRequested: interactiveApprovalEnabled,
+      allowAllTools,
+      noninteractive,
+      disallowedTools: claudeCodeOptions.disallowedTools,
+      permissionsMcp: claudeCodeOptions.permissionsMcp,
+      trackedFiles,
+      agentToolContext,
+      permissionPromptCoordinator: claudeCodeOptions.permissionPromptCoordinator,
+    });
+  } catch (err) {
+    if (agentToolContext !== undefined || claudeCodeOptions.mcpConfigFile !== undefined) throw err;
+    error(`Could not set up permissions MCP for ${label}:`, err);
+    mcpLaunch = {
+      capabilities: {
+        interactiveApprovalEnabled: false,
+        agentToolsEnabled: false,
+        internalMcpNeeded: false,
+        agentToolIds: [],
+      },
+      allowedTools: baseAllowedTools,
+    };
+  }
+  const { capabilities } = mcpLaunch;
   interactiveApprovalEnabled = capabilities.interactiveApprovalEnabled;
-  const { agentToolsEnabled, agentToolIds, internalMcpNeeded } = capabilities;
-
-  if (agentToolIds.length > 0) {
-    allowedTools.push(...agentToolIds);
-  }
-
-  // Set up permissions MCP if enabled
-  let permissionsMcpCleanup: (() => Promise<void>) | undefined;
-  let permissionsMcpConfigFile: string | undefined;
-  let permissionsMcpTempDir: string | undefined;
-
-  if (internalMcpNeeded) {
-    try {
-      const result = await setupPermissionsMcp({
-        allowedTools,
-        defaultResponse: claudeCodeOptions.permissionsMcp?.defaultResponse,
-        timeout: claudeCodeOptions.permissionsMcp?.timeout,
-        autoApproveCreatedFileDeletion:
-          claudeCodeOptions.permissionsMcp?.autoApproveCreatedFileDeletion,
-        trackedFiles,
-        workingDirectory: cwd,
-        mcpConfigFile:
-          claudeCodeOptions.mcpConfigFile === undefined
-            ? undefined
-            : path.resolve(cwd, claudeCodeOptions.mcpConfigFile),
-        interactiveApprovalEnabled,
-        agentToolContext,
-        permissionPromptCoordinator: claudeCodeOptions.permissionPromptCoordinator,
-      });
-      permissionsMcpConfigFile = result.mcpConfigFile;
-      permissionsMcpTempDir = result.tempDir;
-      permissionsMcpCleanup = result.cleanup;
-    } catch (err) {
-      if (agentToolsEnabled || claudeCodeOptions.mcpConfigFile !== undefined) throw err;
-      error(`Could not set up permissions MCP for ${label}:`, err);
-      interactiveApprovalEnabled = false;
-    }
-  }
+  const allowedTools = mcpLaunch.allowedTools;
+  const permissionsMcpCleanup = mcpLaunch.cleanup;
+  const permissionsMcpTempDir = mcpLaunch.tempDir;
 
   // Set up tunneling for intermediate output
   let tunnelServer: TunnelServer | undefined;
@@ -417,15 +367,7 @@ export async function runClaudeSubprocess(
   try {
     const args = ['claude', '--no-session-persistence', '--permission-mode', 'auto'];
 
-    // The generated config already contains the user's servers when the internal bridge is used.
-    if (internalMcpNeeded && permissionsMcpConfigFile) {
-      args.push('--mcp-config', permissionsMcpConfigFile);
-      if (interactiveApprovalEnabled) {
-        args.push('--permission-prompt-tool', CLAUDE_APPROVAL_MCP_TOOL_ID);
-      }
-    } else if (claudeCodeOptions.mcpConfigFile) {
-      args.push('--mcp-config', claudeCodeOptions.mcpConfigFile);
-    }
+    applyClaudeMcpLaunchArgs(args, mcpLaunch, claudeCodeOptions.mcpConfigFile);
 
     // Add allowed tools
     if (allowedTools.length && !allowAllTools) {
