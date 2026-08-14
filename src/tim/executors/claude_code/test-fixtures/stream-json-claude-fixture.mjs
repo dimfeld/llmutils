@@ -64,17 +64,6 @@ async function handleUserRecord(record) {
     return;
   }
 
-  if (content.startsWith('bulk:')) {
-    // Keep the real stdin pipe unread briefly. Large concurrent writes then
-    // exercise the provider's temporary-unavailability result and the shared
-    // AgentManager mailbox FIFO, without adding a provider-local queue.
-    await delay(500);
-    const bulkToken = content.split(':', 3)[1] ?? 'unknown';
-    emitAssistant(`${sessionId}:bulk:${bulkToken}`);
-    emitResult(`${sessionId}:bulk:${bulkToken}`);
-    return;
-  }
-
   if (content === 'finish-hold') {
     emitAssistant(`${sessionId}:finish-pending`);
     await delay(300);

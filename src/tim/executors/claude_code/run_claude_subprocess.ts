@@ -63,20 +63,6 @@ import type {
   ClaudePersistentAgentLaunchHandle,
   ClaudePersistentAgentMode,
 } from './persistent_agent_contract.js';
-export {
-  CLAUDE_PERSISTENT_AGENT_MODE,
-  CLAUDE_PERSISTENT_AGENT_STATES,
-  isClaudePersistentAgentMode,
-  isClaudePersistentAgentState,
-  validateClaudePersistentAgentLaunchHandle,
-} from './persistent_agent_contract.js';
-export type {
-  ClaudePersistentAgentCompletion,
-  ClaudePersistentAgentLaunchHandle,
-  ClaudePersistentAgentMode,
-  ClaudePersistentAgentState,
-} from './persistent_agent_contract.js';
-
 const DEFAULT_CLAUDE_MODEL = 'opus';
 
 const JS_TASK_RUNNERS = ['npm', 'pnpm', 'yarn', 'bun'];
@@ -285,9 +271,6 @@ export type ClaudeSubprocessExecutionOptions =
 
 /** The result type returned by the future persistent launch branch. */
 export type ClaudePersistentAgentLaunchResult = ClaudePersistentAgentLaunchHandle;
-
-/** The completion type used by a persistent Claude provider. */
-export type ClaudePersistentAgentCompletionResult = ClaudePersistentAgentCompletion;
 
 export interface RunClaudeSubprocessResult {
   /** Whether a successful result message was accepted as final completion. */

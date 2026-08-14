@@ -145,6 +145,9 @@ export interface ExecuteWithTerminalInputOptions {
   keepInteractiveInputOpenOnResult?: boolean;
   /** Explicit persistent-agent policy. Omitted means the existing one-shot path. */
   persistentAgent?: Omit<PersistentClaudeTurnControllerOptions, 'stdin' | 'debugLog'>;
+  /** Timer hooks used by the one-shot background-activity tracker. */
+  setTimeoutFn?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutFn?: (handle: ReturnType<typeof setTimeout>) => void;
 }
 
 export interface ExecuteWithTerminalInputResult {
@@ -184,6 +187,8 @@ export function executeWithTerminalInput(
     tunnelForwardingEnabled,
     keepInteractiveInputOpenOnResult = false,
     persistentAgent,
+    setTimeoutFn,
+    clearTimeoutFn,
   } = options;
 
   const persistentController =
@@ -235,6 +240,8 @@ export function executeWithTerminalInput(
     persistentController === undefined
       ? new BackgroundActivityTracker({
           onClose: closeForResult,
+          setTimeoutFn,
+          clearTimeoutFn,
         })
       : undefined;
 
@@ -259,9 +266,15 @@ export function executeWithTerminalInput(
   };
   process.on('SIGTERM', handleProcessSigterm);
 
-  // Wire tunnel user input handler if running as a tunnel client
+  // Persistent AgentManager sessions own their input and lifecycle controls.
+  // Tunnel and headless adapters have process-global single-slot handlers, so
+  // persistent providers must not register or clear those slots.
   const loggerAdapter = getLoggerAdapter();
-  if (tunnelForwardingEnabled && loggerAdapter instanceof TunnelAdapter) {
+  if (
+    persistentController === undefined &&
+    tunnelForwardingEnabled &&
+    loggerAdapter instanceof TunnelAdapter
+  ) {
     let tunnelHandlerActive = true;
     tunnelUserInputHandlerRegistered = true;
     loggerAdapter.setUserInputHandler((content) => {
@@ -282,7 +295,7 @@ export function executeWithTerminalInput(
   }
 
   // Wire headless user input handler if running via headless websocket.
-  if (loggerAdapter instanceof HeadlessAdapter) {
+  if (persistentController === undefined && loggerAdapter instanceof HeadlessAdapter) {
     let headlessHandlerActive = true;
     headlessUserInputHandlerRegistered = true;
     loggerAdapter.setUserInputHandler((content) => {
@@ -461,7 +474,7 @@ export function executeWithTerminalInput(
       backgroundActivityTracker?.cancel();
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();
-      if (loggerAdapter instanceof HeadlessAdapter) {
+      if (persistentController === undefined && loggerAdapter instanceof HeadlessAdapter) {
         loggerAdapter.setEndSessionHandler(undefined);
         loggerAdapter.setForceEndSessionHandler(undefined);
       }

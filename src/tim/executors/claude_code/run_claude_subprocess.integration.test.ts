@@ -25,10 +25,8 @@ import type {
   PreparedAgentExecution,
 } from '../../agent_messaging/agent_manager_types.js';
 import type { FormattedClaudeMessage } from './format.js';
-import {
-  runClaudeSubprocess,
-  type ClaudePersistentAgentLaunchHandle,
-} from './run_claude_subprocess.js';
+import { runClaudeSubprocess } from './run_claude_subprocess.js';
+import type { ClaudePersistentAgentLaunchHandle } from './persistent_agent_contract.js';
 
 const fixturePath = fileURLToPath(
   new URL('./test-fixtures/stream-json-claude-fixture.mjs', import.meta.url)
@@ -395,5 +393,48 @@ describeUnix('persistent Claude real-process integration', () => {
       /^tim-claude-(a|b|exit)-/.test(entry)
     );
     expect(remainingClaudeTempDirs).toEqual([]);
+  }, 60_000);
+
+  test('gracefully stops a real Claude fixture and settles provider completion', async () => {
+    const { rootCaller } = await createManager();
+    const agent = await manager!.startAgent(rootCaller, {
+      name: 'claude-graceful',
+      type: 'implementer',
+      executor: 'claude-code',
+      initialMessage: 'hold',
+    });
+
+    await waitFor(
+      () =>
+        manager!.listAgents().agents.find((entry) => entry.name === 'claude-graceful')?.state ===
+        'running-active',
+      'the graceful-stop fixture turn to be active'
+    );
+
+    await expect(
+      manager!.stopAgent(rootCaller, {
+        name: 'claude-graceful',
+        message: 'Report the final fixture status before stopping.',
+      })
+    ).resolves.toMatchObject({
+      mode: 'graceful-requested',
+      state: 'stopping',
+    });
+
+    await manager!.waitForAgentTerminal(agent.id);
+
+    expect(assistantTexts('claude-graceful')).toEqual(
+      expect.arrayContaining([expect.stringMatching(/:held$/), expect.stringMatching(/:shutdown$/)])
+    );
+    await expect(records.get('claude-graceful')?.handle?.completion).resolves.toMatchObject({
+      exitCode: 0,
+      resultText: expect.stringMatching(/:shutdown$/),
+      lastCompletedAssistantMessage: expect.stringMatching(/:shutdown$/),
+    });
+
+    expect(manager!.listAgents().agents).toEqual([
+      expect.objectContaining({ name: 'orchestrator' }),
+    ]);
+    await manager!.close();
   }, 60_000);
 });
