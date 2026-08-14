@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createOrderedClaudeCleanup } from './claude_execution_cleanup.ts';
 
 describe('createOrderedClaudeCleanup', () => {
-  it('runs every step in order, shares cleanup, and reports the first error', async () => {
+  it('runs Claude resources in order, continues after errors, and shares cleanup', async () => {
     const events: string[] = [];
     const firstError = new Error('first cleanup failure');
     const cleanup = createOrderedClaudeCleanup([
@@ -10,8 +10,17 @@ describe('createOrderedClaudeCleanup', () => {
         events.push('input');
         throw firstError;
       },
+      (): void => {
+        events.push('process');
+      },
       async (): Promise<void> => {
         events.push('monitor');
+      },
+      (): void => {
+        events.push('tunnel');
+      },
+      async (): Promise<void> => {
+        events.push('tunnel directory');
       },
       (): void => {
         events.push('mcp');
@@ -24,7 +33,7 @@ describe('createOrderedClaudeCleanup', () => {
     expect(cleanup.started).toBe(true);
     expect(first).toBe(second);
     await expect(first).rejects.toBe(firstError);
-    expect(events).toEqual(['input', 'monitor', 'mcp']);
+    expect(events).toEqual(['input', 'process', 'monitor', 'tunnel', 'tunnel directory', 'mcp']);
   });
 
   it('continues after an asynchronous failure and does not rerun steps', async () => {

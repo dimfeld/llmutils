@@ -112,6 +112,25 @@ describe('PersistentClaudeTurnController', () => {
     controller.cleanup();
   });
 
+  it('restores idle after a claimed idle turn is temporarily unavailable', () => {
+    const stdin = new FakeStdin();
+    const controller = makeController(stdin, { initialPrompt: undefined });
+    controller.start();
+    expect(controller.state).toBe('idle');
+
+    const writeUserMessage = vi
+      .spyOn(controller.inputWriter, 'writeUserMessage')
+      .mockReturnValue({ status: 'temporarily-unavailable', reason: 'write-in-progress' });
+
+    expect(controller.deliver(message('retry later'))).toBe('temporarily-unavailable');
+    expect(controller.state).toBe('idle');
+    expect(controller.generation).toBe(1);
+    expect(writeUserMessage).toHaveBeenCalledOnce();
+
+    writeUserMessage.mockRestore();
+    controller.cleanup();
+  });
+
   it('waits for background drain grace and becomes idle without closing stdin', () => {
     vi.useFakeTimers();
     const stdin = new FakeStdin();

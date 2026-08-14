@@ -41,6 +41,7 @@ import {
   type ClaudeMcpLaunchResult,
 } from './claude_code/claude_mcp_launch.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
+import { createOrderedClaudeCleanup } from './claude_code/claude_execution_cleanup.js';
 import {
   FAST_NOOP_ORCHESTRATOR_RETRY_MS,
   shouldRetryFastNoopOrchestratorTurn,
@@ -688,59 +689,26 @@ export class ClaudeCodeExecutor implements Executor {
     let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
     let monitorHandle: SubprocessMonitorHandle | undefined;
     let sessionProcessLifecycle: SessionExecutorLifecycle | undefined;
-    let cleanupPromise: Promise<void> | undefined;
-
-    const cleanup = async (): Promise<void> => {
-      cleanupPromise ??= (async (): Promise<void> => {
-        let firstError: unknown;
-
-        try {
-          // Close the shared input owner before removing the process and
-          // transport handlers. Late provider output must not enqueue input
-          // while the rest of this execution is being torn down.
-          terminalInputResult?.cleanup();
-        } catch (error) {
-          firstError ??= error;
+    const cleanupState = createOrderedClaudeCleanup([
+      (): void => {
+        // Close the shared input owner before removing the process and
+        // transport handlers. Late provider output must not enqueue input
+        // while the rest of this execution is being torn down.
+        terminalInputResult?.cleanup();
+      },
+      (): void => sessionProcessLifecycle?.setGracefulEndHandler(undefined),
+      (): void => monitorHandle?.stop(),
+      (): void => tunnelServer?.close(),
+      async (): Promise<void> => {
+        if (!tempMcpConfigDir && tunnelTempDir !== undefined) {
+          await fs.rm(tunnelTempDir, { recursive: true, force: true });
         }
-
-        try {
-          sessionProcessLifecycle?.setGracefulEndHandler(undefined);
-        } catch (error) {
-          firstError ??= error;
-        }
-
-        try {
-          monitorHandle?.stop();
-        } catch (error) {
-          firstError ??= error;
-        }
-
-        try {
-          tunnelServer?.close();
-        } catch (error) {
-          firstError ??= error;
-        }
-
-        try {
-          if (permissionsMcpCleanup) {
-            await permissionsMcpCleanup();
-          }
-        } catch (error) {
-          firstError ??= error;
-        }
-
-        try {
-          if (!tempMcpConfigDir && tunnelTempDir !== undefined) {
-            await fs.rm(tunnelTempDir, { recursive: true, force: true });
-          }
-        } catch (error) {
-          firstError ??= error;
-        }
-
-        if (firstError !== undefined) throw firstError;
-      })();
-      return cleanupPromise;
-    };
+      },
+      async (): Promise<void> => {
+        await permissionsMcpCleanup?.();
+      },
+    ]);
+    const cleanup = (): Promise<void> => cleanupState.cleanup();
 
     try {
       tunnelTempDir = tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));

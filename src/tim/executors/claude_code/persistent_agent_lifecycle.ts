@@ -377,7 +377,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     delivery: AgentInputDelivery
   ): void {
     if (generation === undefined || delivery !== 'temporarily-unavailable') return;
-    if (this.turnGenerationValue !== generation || this.stateValue !== 'idle') return;
+    if (this.turnGenerationValue !== generation || this.stateValue !== 'active') return;
     this.currentTracker?.cancel();
     this.turnSettled = true;
     this.setState('idle');
