@@ -263,6 +263,33 @@ export function validateAgentToolDisallowConflict(
   }
 }
 
+export interface ClaudeMcpCapabilities {
+  readonly interactiveApprovalEnabled: boolean;
+  readonly agentToolsEnabled: boolean;
+  readonly internalMcpNeeded: boolean;
+  readonly agentToolIds: string[];
+}
+
+export function resolveClaudeMcpCapabilities(options: {
+  readonly interactiveApprovalRequested: boolean;
+  readonly allowAllTools: boolean;
+  readonly noninteractive: boolean;
+  readonly agentToolContext: ClaudeAgentToolContext | undefined;
+  readonly disallowedTools: readonly string[] | undefined;
+}): ClaudeMcpCapabilities {
+  const interactiveApprovalEnabled =
+    options.interactiveApprovalRequested && !options.allowAllTools && !options.noninteractive;
+  const agentToolsEnabled = options.agentToolContext !== undefined;
+  const agentToolIds = getAgentToolIds(options.agentToolContext);
+  validateAgentToolDisallowConflict(options.agentToolContext, options.disallowedTools);
+  return {
+    interactiveApprovalEnabled,
+    agentToolsEnabled,
+    internalMcpNeeded: interactiveApprovalEnabled || agentToolsEnabled,
+    agentToolIds,
+  };
+}
+
 /**
  * Runs a Claude Code subprocess with the standard setup pattern:
  * permissions MCP, tunnel server, CLI args, streaming stdout parsing, and cleanup.
@@ -317,14 +344,16 @@ export async function runClaudeSubprocess(
   if (process.env.CLAUDE_CODE_MCP) {
     interactiveApprovalEnabled = process.env.CLAUDE_CODE_MCP === 'true';
   }
-  if (allowAllTools || noninteractive) {
-    interactiveApprovalEnabled = false;
-  }
   const agentToolContext = claudeCodeOptions.agentToolContext;
-  const agentToolsEnabled = agentToolContext !== undefined;
-  const agentToolIds = getAgentToolIds(agentToolContext);
-  validateAgentToolDisallowConflict(agentToolContext, claudeCodeOptions.disallowedTools);
-  const internalMcpNeeded = interactiveApprovalEnabled || agentToolsEnabled;
+  const capabilities = resolveClaudeMcpCapabilities({
+    interactiveApprovalRequested: interactiveApprovalEnabled,
+    allowAllTools,
+    noninteractive,
+    agentToolContext,
+    disallowedTools: claudeCodeOptions.disallowedTools,
+  });
+  interactiveApprovalEnabled = capabilities.interactiveApprovalEnabled;
+  const { agentToolsEnabled, agentToolIds, internalMcpNeeded } = capabilities;
 
   if (agentToolIds.length > 0) {
     allowedTools.push(...agentToolIds);
@@ -345,7 +374,10 @@ export async function runClaudeSubprocess(
           claudeCodeOptions.permissionsMcp?.autoApproveCreatedFileDeletion,
         trackedFiles,
         workingDirectory: cwd,
-        mcpConfigFile: claudeCodeOptions.mcpConfigFile,
+        mcpConfigFile:
+          claudeCodeOptions.mcpConfigFile === undefined
+            ? undefined
+            : path.resolve(cwd, claudeCodeOptions.mcpConfigFile),
         interactiveApprovalEnabled,
         agentToolContext,
         permissionPromptCoordinator: claudeCodeOptions.permissionPromptCoordinator,

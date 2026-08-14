@@ -382,6 +382,24 @@ describe('subagent claude permissions MCP integration', () => {
     expect(capturedPermissionsMcpSetupOptions.mcpConfigFile).toBe('/path/to/user-mcp-config.json');
   });
 
+  test('resolves a relative user MCP config against the Claude execution cwd', async () => {
+    await runClaudeSubprocess({
+      prompt: 'test prompt',
+      cwd: tempDir,
+      claudeCodeOptions: {
+        mcpConfigFile: 'config/user-mcp.json',
+        permissionsMcp: { enabled: true },
+      },
+      noninteractive: false,
+      label: 'subagent',
+      processFormattedMessages: vi.fn(),
+    });
+
+    expect(capturedPermissionsMcpSetupOptions.mcpConfigFile).toBe(
+      path.join(tempDir, 'config/user-mcp.json')
+    );
+  });
+
   test('disables permissions MCP when allowAllTools is true', async () => {
     await runClaudeSubprocess({
       prompt: 'test prompt',

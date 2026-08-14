@@ -203,7 +203,7 @@ Create a `mcp-config.json` file to define the MCP server for stdio:
 ```json
 {
   "mcpServers": {
-    "permissions": {
+    "tim": {
       "type": "stdio",
       "command": ["node", "dist/permissions-server.js", "/path/to/unix/socket"]
     }
@@ -261,7 +261,7 @@ To demonstrate with a filesystem MCP server, ensure your `mcp-config.json` inclu
 ```json
 {
   "mcpServers": {
-    "permissions": {
+    "tim": {
       "type": "stdio",
       "command": ["node", "dist/permissions-server.js", "/path/to/unix/socket"]
     }

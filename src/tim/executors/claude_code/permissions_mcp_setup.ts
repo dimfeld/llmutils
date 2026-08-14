@@ -240,17 +240,73 @@ function writeAgentToolError(socket: net.Socket, requestId: string, error: unkno
   });
 }
 
-function createBoundedLineSplitter(): (input: string) => string[] {
+type ClaudeMcpFrame =
+  | { readonly kind: 'line'; readonly value: string }
+  | { readonly kind: 'oversized'; readonly prefix: string };
+
+function createBoundedLineSplitter(): (input: string) => ClaudeMcpFrame[] {
   let fragment = '';
-  return (input: string): string[] => {
-    const lines = (fragment + input).split('\n');
-    fragment = lines.pop() ?? '';
-    if (fragment.length > MAX_CLAUDE_MCP_JSON_SIZE) {
-      fragment = '';
-      throw new Error('Claude MCP request exceeded the maximum JSON line size');
+  let oversizedPrefix: string | undefined;
+  return (input: string): ClaudeMcpFrame[] => {
+    const frames: ClaudeMcpFrame[] = [];
+    let remaining = input;
+
+    if (oversizedPrefix !== undefined) {
+      const newlineIndex = remaining.indexOf('\n');
+      if (newlineIndex === -1) return frames;
+      frames.push({ kind: 'oversized', prefix: oversizedPrefix });
+      oversizedPrefix = undefined;
+      remaining = remaining.slice(newlineIndex + 1);
     }
-    return lines.filter((line) => line.length <= MAX_CLAUDE_MCP_JSON_SIZE);
+
+    const lines = (fragment + remaining).split('\n');
+    fragment = lines.pop() ?? '';
+    for (const line of lines) {
+      frames.push(
+        line.length <= MAX_CLAUDE_MCP_JSON_SIZE
+          ? { kind: 'line', value: line }
+          : { kind: 'oversized', prefix: line.slice(0, 4096) }
+      );
+    }
+
+    if (fragment.length > MAX_CLAUDE_MCP_JSON_SIZE) {
+      oversizedPrefix = fragment.slice(0, 4096);
+      fragment = '';
+    }
+    return frames;
   };
+}
+
+function parseJsonStringCapture(capture: string | undefined): string | undefined {
+  if (capture === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(`"${capture}"`);
+    return typeof parsed === 'string' ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function handleOversizedFrame(prefix: string, socket: net.Socket): void {
+  const requestId = parseJsonStringCapture(
+    /"requestId"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(prefix)?.[1]
+  );
+  const type = /"type"\s*:\s*"(permission_request|agent_tool_request)"/.exec(prefix)?.[1];
+  log(chalk.yellow('Claude MCP rejected an oversized request frame'));
+  if (requestId === undefined) return;
+  if (type === 'permission_request') {
+    writeSocketMessage(socket, {
+      type: 'permission_response',
+      requestId,
+      approved: false,
+    });
+  } else if (type === 'agent_tool_request') {
+    writeAgentToolError(
+      socket,
+      requestId,
+      'Claude MCP request exceeded the maximum JSON line size'
+    );
+  }
 }
 
 async function enqueueInteractivePrompt<T>(
@@ -686,7 +742,7 @@ async function handleAskUserQuestion(
 }
 
 async function handlePermissionLine(
-  line: string,
+  rawMessage: unknown,
   socket: net.Socket,
   allowedToolsMap: Map<string, true | string[]>,
   requester: { readonly name: string; readonly token: string },
@@ -700,14 +756,6 @@ async function handlePermissionLine(
     | 'permissionPromptCoordinator'
   >
 ): Promise<void> {
-  let rawMessage: unknown;
-  try {
-    rawMessage = JSON.parse(line);
-  } catch (error) {
-    debugLog('Failed to parse permission request JSON:', error);
-    return;
-  }
-
   if (!isRecord(rawMessage) || rawMessage.type !== 'permission_request') {
     return;
   }
@@ -919,18 +967,10 @@ async function handlePermissionLine(
 }
 
 async function handleAgentToolLine(
-  line: string,
+  rawMessage: unknown,
   socket: net.Socket,
   context: ClaudeAgentToolContext | undefined
 ): Promise<void> {
-  let rawMessage: unknown;
-  try {
-    rawMessage = JSON.parse(line);
-  } catch (error) {
-    debugLog('Failed to parse agent tool request JSON:', error);
-    return;
-  }
-
   if (!isRecord(rawMessage) || rawMessage.type !== 'agent_tool_request') return;
 
   const requestId = getRequestId(rawMessage);
@@ -1035,12 +1075,12 @@ async function handleClaudeMcpLine(
       }
       return;
     }
-    await handlePermissionLine(line, socket, allowedToolsMap, requester, options);
+    await handlePermissionLine(rawMessage, socket, allowedToolsMap, requester, options);
     return;
   }
 
   if (rawMessage.type === 'agent_tool_request') {
-    await handleAgentToolLine(line, socket, options.agentToolContext);
+    await handleAgentToolLine(rawMessage, socket, options.agentToolContext);
   }
 }
 
@@ -1080,17 +1120,13 @@ function createPermissionSocketServer(
       const splitLines = createBoundedLineSplitter();
 
       socket.on('data', (data) => {
-        let lines: string[];
-        try {
-          lines = splitLines(data.toString());
-        } catch (error) {
-          debugLog('Claude MCP client sent an oversized JSON line:', error);
-          socket.destroy();
-          return;
-        }
-        for (const line of lines) {
-          if (!line) continue;
-          void handleClaudeMcpLine(line, socket, allowedToolsMap, requester, options).catch(
+        for (const frame of splitLines(data.toString())) {
+          if (frame.kind === 'oversized') {
+            handleOversizedFrame(frame.prefix, socket);
+            continue;
+          }
+          if (!frame.value) continue;
+          void handleClaudeMcpLine(frame.value, socket, allowedToolsMap, requester, options).catch(
             (error) => {
               debugLog('Claude MCP request handler failed:', error);
             }

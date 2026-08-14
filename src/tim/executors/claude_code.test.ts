@@ -895,6 +895,43 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
   });
 
+  test('resolves a relative user MCP config against the executor working directory', async () => {
+    const harness = await setupHarness({
+      claudeOptions: {
+        mcpConfigFile: 'config/user-mcp.json',
+        permissionsMcp: { enabled: true },
+      },
+    });
+
+    await harness.execute();
+
+    expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+      expect.objectContaining({ mcpConfigFile: `${tempDir}/config/user-mcp.json` })
+    );
+  });
+
+  test('rejects disallowed agent tools before the executor allocates the bridge or provider', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set(['StartAgent']),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      claudeOptions: { disallowedTools: ['mcp__tim__StartAgent'] },
+      sharedOptions: { claudeAgentToolContext: context, noninteractive: true },
+    });
+
+    await expect(harness.execute()).rejects.toThrow('mcp__tim__StartAgent');
+    expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+    expect(harness.spawnWithStreamingIOMock).not.toHaveBeenCalled();
+  });
+
   test.each(['review', 'planning', 'bare'] as const)(
     'keeps %s execution without a trusted agent context free of the internal MCP bridge',
     async (executionMode) => {

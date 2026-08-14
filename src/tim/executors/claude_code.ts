@@ -37,8 +37,7 @@ import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
 import {
   runClaudeSubprocess,
   buildAllowedToolsList,
-  getAgentToolIds,
-  validateAgentToolDisallowConflict,
+  resolveClaudeMcpCapabilities,
 } from './claude_code/run_claude_subprocess.js';
 import { CLAUDE_APPROVAL_MCP_TOOL_ID } from './claude_code/claude_mcp_protocol.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
@@ -644,16 +643,16 @@ export class ClaudeCodeExecutor implements Executor {
       allowAllTools = envAllowAllTools;
     }
 
-    if (allowAllTools || this.sharedOptions.noninteractive) {
-      // Interactive approval does not make sense in allow-all or noninteractive mode.
-      interactiveApprovalEnabled = false;
-    }
-
     const agentToolContext = this.sharedOptions.claudeAgentToolContext;
-    const agentToolsEnabled = agentToolContext !== undefined;
-    const agentToolIds = getAgentToolIds(agentToolContext);
-    validateAgentToolDisallowConflict(agentToolContext, disallowedTools);
-    const internalMcpNeeded = interactiveApprovalEnabled || agentToolsEnabled;
+    const capabilities = resolveClaudeMcpCapabilities({
+      interactiveApprovalRequested: interactiveApprovalEnabled,
+      allowAllTools,
+      noninteractive: this.sharedOptions.noninteractive === true,
+      agentToolContext,
+      disallowedTools,
+    });
+    interactiveApprovalEnabled = capabilities.interactiveApprovalEnabled;
+    const { agentToolIds, internalMcpNeeded } = capabilities;
 
     let tempMcpConfigDir: string | undefined = undefined;
     let dynamicMcpConfigFile: string | undefined;
@@ -684,7 +683,8 @@ export class ClaudeCodeExecutor implements Executor {
         autoApproveCreatedFileDeletion: this.options.permissionsMcp?.autoApproveCreatedFileDeletion,
         trackedFiles: this.trackedFiles,
         workingDirectory: gitRoot,
-        mcpConfigFile,
+        mcpConfigFile:
+          mcpConfigFile === undefined ? undefined : path.resolve(gitRoot, mcpConfigFile),
         interactiveApprovalEnabled,
         agentToolContext,
         permissionPromptCoordinator: this.sharedOptions.claudePermissionPromptCoordinator,

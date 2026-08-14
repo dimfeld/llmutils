@@ -246,7 +246,9 @@ async function requestParent<T extends ClaudeMcpResponse>(
   }
 
   const requestId = generateRequestId();
-  const fullRequest = { ...request, requestId };
+  // Keep correlation metadata before potentially large tool input so the parent
+  // can return a bounded, correlated error for an oversized frame.
+  const fullRequest = { requestId, ...request };
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       rejectPendingRequest(requestId, new Error('MCP request timed out'));
