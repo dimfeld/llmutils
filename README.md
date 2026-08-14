@@ -87,6 +87,11 @@ Local, per-developer overrides can live next to it:
 .tim/config/tim.local.yml
 ```
 
+Workspace setup adds `.tim` to the repository's local `.git/info/exclude` file.
+This keeps temporary tim files out of normal Git status output. It does not hide
+changes to files that Git already tracks. If you intentionally add a new shared
+file under `.tim`, use `git add -f` for that file.
+
 You can also place a global configuration in `~/.config/tim/config.yml`.
 
 Common project settings:

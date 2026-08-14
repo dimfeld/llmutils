@@ -22,7 +22,11 @@ import { getDatabase } from '../db/database.js';
 import type { PlanBaseTrackingUpdate } from '../db/plan.js';
 import { setPlanBaseTracking } from '../db/plan.js';
 import { updateHeadlessSessionInfo } from '../headless.js';
-import { materializePlan, resolveProjectContext } from '../plan_materialize.js';
+import {
+  ensureMaterializeDir,
+  materializePlan,
+  resolveProjectContext,
+} from '../plan_materialize.js';
 import { readPlanFile, resolvePlanByNumericId } from '../plans.js';
 import {
   resolveBasePlanBranch,
@@ -512,6 +516,8 @@ export async function setupWorkspace(
       };
 
       try {
+        await ensureMaterializeDir(workspace.path);
+
         const status = await getWorkingCopyStatus(workspace.path);
         if (status.checkFailed) {
           throw new Error(

@@ -24,8 +24,6 @@ import {
 import { getOrCreateProject } from './db/project.js';
 import { SQL_NOW_ISO_UTC } from './db/sql_utils.js';
 import { generatePlanFileContent, readPlanFile } from './plans.js';
-import { ISSUE_DOCS_DIR } from './issue_docs.js';
-import { REFERENCE_ARTIFACTS_DIR } from './reference_artifacts_paths.js';
 import {
   normalizeContainerToEpic,
   phaseSchema,
@@ -52,12 +50,9 @@ import { beginSyncBatch, getProjectUuidForId } from './sync/write_router.js';
 import { resolveWriteMode } from './sync/write_mode.js';
 import type { SyncPlanListName, SyncReviewIssueValue } from './sync/types.js';
 import { SyncWriteConflictError } from './sync/errors.js';
-import { DEFAULT_WORKSPACE_CLONE_LOCATION } from './workspace/workspace_paths.js';
 
 export const MATERIALIZED_DIR = path.join('.tim', 'plans');
 export const TMP_DIR = path.join('.tim', 'tmp');
-const LOGS_DIR = path.join('.tim', 'logs');
-const PROOFS_DIR = path.join('.tim', 'proofs');
 
 export function parsePlanId(planId: string): number {
   const parsed = Number(planId);
@@ -1118,29 +1113,16 @@ export async function ensureMaterializeDir(repoRoot: string): Promise<string> {
   }
 
   const existingLines = existingContent.split('\n').map((l) => l.trim());
-  const managedDirs = [
-    MATERIALIZED_DIR,
-    LOGS_DIR,
-    TMP_DIR,
-    ISSUE_DOCS_DIR,
-    REFERENCE_ARTIFACTS_DIR,
-    PROOFS_DIR,
-    DEFAULT_WORKSPACE_CLONE_LOCATION,
-  ];
-  const managedFiles = [path.join('.tim', 'config', 'tim.local.yml')];
-  const sharedIgnoreMatches = await Promise.all([
-    ...managedDirs.map(async (managedDir) => {
+  const managedDirs = ['.tim'];
+  const sharedIgnoreMatches = await Promise.all(
+    managedDirs.map(async (managedDir) => {
       const isIgnored = await isIgnoredByGitSharedExcludes(
         repoRoot,
         path.join(managedDir, '__tim_materialize_probe__')
       );
       return { entry: managedDir, isIgnored };
-    }),
-    ...managedFiles.map(async (managedFile) => {
-      const isIgnored = await isIgnoredByGitSharedExcludes(repoRoot, managedFile);
-      return { entry: managedFile, isIgnored };
-    }),
-  ]);
+    })
+  );
   const dirsToExclude = sharedIgnoreMatches
     .filter(({ entry, isIgnored }) => !isIgnored && !existingLines.includes(entry))
     .map(({ entry }) => entry);

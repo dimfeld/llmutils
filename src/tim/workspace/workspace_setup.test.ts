@@ -833,6 +833,9 @@ describe('setupWorkspace', () => {
     await fs.mkdir(existingWorkspacePath, { recursive: true });
     await seedWorkspace(existingWorkspacePath, 'task-existing-prep');
     const copiedPlanFile = path.join(existingWorkspacePath, path.basename(planFile));
+    const ensureMaterializeDirSpy = vi
+      .spyOn(planMaterialize, 'ensureMaterializeDir')
+      .mockResolvedValue(path.join(existingWorkspacePath, '.tim', 'plans'));
 
     const callOrder: string[] = [];
     vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
@@ -877,6 +880,7 @@ describe('setupWorkspace', () => {
       copiedPlanFile,
       expect.any(Object)
     );
+    expect(ensureMaterializeDirSpy).toHaveBeenCalledWith(existingWorkspacePath);
     expect(callOrder).toEqual(['prepare', 'update']);
     expect(result.baseDir).toBe(existingWorkspacePath);
   });

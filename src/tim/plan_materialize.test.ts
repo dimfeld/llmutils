@@ -305,11 +305,7 @@ describe('tim plan_materialize', () => {
     const materializeDir = await ensureMaterializeDir(repoDir);
     const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
     const excludeContent = await fs.readFile(infoExcludePath, 'utf8');
-    expect(excludeContent).toContain('.tim/plans\n');
-    expect(excludeContent).toContain('.tim/logs\n');
-    expect(excludeContent).toContain('.tim/proofs\n');
-    expect(excludeContent).toContain('.tim/issue-docs\n');
-    expect(excludeContent).toContain('.tim/config/tim.local.yml\n');
+    expect(excludeContent).toContain('.tim\n');
     await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -472,9 +468,9 @@ Details
     );
   });
 
-  test('ensureMaterializeDir does not duplicate .tim/plans or .tim/logs in .git/info/exclude', async () => {
+  test('ensureMaterializeDir does not duplicate .tim in .git/info/exclude', async () => {
     const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
-    await fs.appendFile(infoExcludePath, '\n.tim/plans\n.tim/logs\n');
+    await fs.appendFile(infoExcludePath, '\n.tim\n');
 
     await ensureMaterializeDir(repoDir);
 
@@ -482,46 +478,7 @@ Details
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean);
-    expect(lines.filter((line) => line === '.tim/plans')).toHaveLength(1);
-    expect(lines.filter((line) => line === '.tim/logs')).toHaveLength(1);
-  });
-
-  test('ensureMaterializeDir does not duplicate .tim/issue-docs in .git/info/exclude', async () => {
-    const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
-    await fs.appendFile(infoExcludePath, '\n.tim/issue-docs\n');
-
-    await ensureMaterializeDir(repoDir);
-
-    const lines = (await fs.readFile(infoExcludePath, 'utf8'))
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-    expect(lines.filter((line) => line === '.tim/issue-docs')).toHaveLength(1);
-  });
-
-  test('ensureMaterializeDir registers .tim/reference-artifacts in .git/info/exclude', async () => {
-    const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
-
-    await ensureMaterializeDir(repoDir);
-
-    const lines = (await fs.readFile(infoExcludePath, 'utf8'))
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-    expect(lines.filter((line) => line === '.tim/reference-artifacts')).toHaveLength(1);
-  });
-
-  test('ensureMaterializeDir does not duplicate .tim/reference-artifacts in .git/info/exclude', async () => {
-    const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
-    await fs.appendFile(infoExcludePath, '\n.tim/reference-artifacts\n');
-
-    await ensureMaterializeDir(repoDir);
-
-    const lines = (await fs.readFile(infoExcludePath, 'utf8'))
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-    expect(lines.filter((line) => line === '.tim/reference-artifacts')).toHaveLength(1);
+    expect(lines.filter((line) => line === '.tim')).toHaveLength(1);
   });
 
   test('ensureMaterializeDir only adds dirs not already covered by core.excludesfile', async () => {
@@ -529,21 +486,14 @@ Details
     await fs.writeFile(globalExcludePath, '.tim/plans\n', 'utf8');
     await Bun.$`git config core.excludesfile ${globalExcludePath}`.cwd(repoDir).quiet();
     const infoExcludePath = path.join(repoDir, '.git', 'info', 'exclude');
-    const before = await fs.readFile(infoExcludePath, 'utf8');
-
     const materializeDir = await ensureMaterializeDir(repoDir);
 
     expect(materializeDir).toBe(path.join(repoDir, '.tim', 'plans'));
-    // .tim/plans is globally excluded so it should not be added, but the other managed dirs should be
+    // A narrower global rule does not cover the complete .tim directory, so the local
+    // repository exclude should still add the broader rule.
     const after = await fs.readFile(infoExcludePath, 'utf8');
     expect(after).not.toContain('.tim/plans');
-    expect(after).toContain('.tim/logs');
-    expect(after).toContain('.tim/tmp');
-    expect(after).toContain('.tim/issue-docs');
-    expect(after).toContain('.tim/reference-artifacts');
-    expect(after).toContain('.tim/proofs');
-    expect(after).toContain('.tim/workspaces');
-    expect(after).toContain('.tim/config/tim.local.yml');
+    expect(after).toContain('.tim\n');
     await expect(fs.access(path.join(materializeDir, '.gitignore'))).rejects.toMatchObject({
       code: 'ENOENT',
     });

@@ -225,6 +225,6 @@ describe('batch_review_cache', () => {
       path.join(tempDir, '.git', 'info', 'exclude'),
       'utf8'
     );
-    expect(excludeContents).toContain(TMP_DIR);
+    expect(excludeContents).toContain('.tim\n');
   });
 });

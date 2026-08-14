@@ -509,7 +509,7 @@ describe('reference_artifacts', () => {
     ).resolves.toBe('child notes content');
   });
 
-  test('materializeReferenceArtifactsForExecution registers .tim/reference-artifacts in .git/info/exclude in a fresh repo', async () => {
+  test('materializeReferenceArtifactsForExecution registers .tim in .git/info/exclude in a fresh repo', async () => {
     // Plan materialization was never run in this repo before, so ensureMaterializeDir
     // must be invoked by materializeReferenceArtifactsForExecution itself.
     await Bun.$`git init`.cwd(repoRoot).quiet();
@@ -524,7 +524,7 @@ describe('reference_artifacts', () => {
       .split('\n')
       .map((line) => line.trim())
       .filter(Boolean);
-    expect(lines.filter((line) => line === '.tim/reference-artifacts')).toHaveLength(1);
+    expect(lines.filter((line) => line === '.tim')).toHaveLength(1);
   });
 
   test('addArtifact via numeric planId with reference marker is collected the same as addArtifactByPlanUuid', async () => {
