@@ -803,6 +803,83 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     expect(mcpToolIds).toEqual(tools.map((toolName) => `mcp__tim__${toolName}`));
   });
 
+  test.each([
+    {
+      name: 'not installed',
+      claudeOptions: {},
+      sharedOptions: { noninteractive: true },
+      setupExpected: false,
+      approvalExpected: false,
+    },
+    {
+      name: 'permission-only',
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      sharedOptions: {},
+      setupExpected: true,
+      approvalExpected: true,
+    },
+    {
+      name: 'tools-only',
+      claudeOptions: {},
+      sharedOptions: {
+        noninteractive: true,
+        claudeAgentToolContext: {
+          caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+          allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+          dispatcher: {
+            startAgent: vi.fn(),
+            listAgents: vi.fn(),
+            sendAgentMessage: vi.fn(),
+            stopAgent: vi.fn(),
+            finishAgent: vi.fn(),
+          },
+        },
+      },
+      setupExpected: true,
+      approvalExpected: false,
+    },
+    {
+      name: 'combined',
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      sharedOptions: {
+        claudeAgentToolContext: {
+          caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+          allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+          dispatcher: {
+            startAgent: vi.fn(),
+            listAgents: vi.fn(),
+            sendAgentMessage: vi.fn(),
+            stopAgent: vi.fn(),
+            finishAgent: vi.fn(),
+          },
+        },
+      },
+      setupExpected: true,
+      approvalExpected: true,
+    },
+  ])(
+    'installs the $name Claude MCP capability state with independent approval flags',
+    async ({ claudeOptions, sharedOptions, setupExpected, approvalExpected }) => {
+      const harness = await setupHarness({ claudeOptions, sharedOptions });
+
+      await harness.execute();
+
+      const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+      expect(harness.setupPermissionsMcpMock).toHaveBeenCalledTimes(setupExpected ? 1 : 0);
+      expect(args.includes('--mcp-config')).toBe(setupExpected);
+      const permissionFlagIndex = args.indexOf('--permission-prompt-tool');
+      expect(permissionFlagIndex >= 0).toBe(approvalExpected);
+      if (approvalExpected) {
+        expect(args[permissionFlagIndex + 1]).toBe('mcp__tim__approval_prompt');
+      }
+      if (setupExpected) {
+        expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+          expect.objectContaining({ interactiveApprovalEnabled: approvalExpected })
+        );
+      }
+    }
+  );
+
   test('passes the original user MCP config directly when no internal bridge is needed', async () => {
     const harness = await setupHarness({
       claudeOptions: { mcpConfigFile: '/path/to/user-mcp-config.json' },

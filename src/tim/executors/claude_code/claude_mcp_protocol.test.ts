@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as net from 'node:net';
 import { cleanupForTests, createClaudeMcpServer, setParentSocket } from './tim_mcp.js';
 import {
+  CLAUDE_AGENT_ARGUMENT_SCHEMAS,
   agentToolRequestSchema,
   agentToolResponseSchema,
   CLAUDE_ORCHESTRATOR_TOOL_NAMES,
@@ -190,6 +191,31 @@ describe('Claude tim MCP child server', () => {
     ).toBe(false);
   });
 
+  test.each([
+    {
+      toolName: 'StartAgent' as const,
+      input: { type: 'tester', executor: 'claude-code', initialMessage: 'check this' },
+    },
+    { toolName: 'ListAgents' as const, input: {} },
+    {
+      toolName: 'SendAgentMessage' as const,
+      input: { name: 'orchestrator', message: 'status' },
+    },
+    { toolName: 'StopAgent' as const, input: { name: 'worker-a', force: true } },
+    { toolName: 'FinishAgent' as const, input: { message: 'complete' } },
+  ])('$toolName uses the shared strict argument schema', ({ toolName, input }) => {
+    const schema = CLAUDE_AGENT_ARGUMENT_SCHEMAS[toolName];
+
+    expect(schema.safeParse(input).success).toBe(true);
+    expect(schema.safeParse({ ...input, source: 'forged-caller' }).success).toBe(false);
+  });
+
+  test('does not allow FinishAgent to target another agent', () => {
+    expect(CLAUDE_AGENT_ARGUMENT_SCHEMAS.FinishAgent.safeParse({ name: 'worker-a' }).success).toBe(
+      false
+    );
+  });
+
   test('correlates concurrent calls by request ID even when responses arrive out of order', async () => {
     const result = createClaudeMcpServer({
       interactiveApprovalEnabled: false,
@@ -266,6 +292,47 @@ describe('Claude tim MCP child server', () => {
       });
       expect(sendResult).toEqual({
         content: [{ type: 'text', text: JSON.stringify({ responseFor: 'SendAgentMessage' }) }],
+      });
+    } finally {
+      socket.destroy();
+      await closeServer(parentServer);
+    }
+  });
+
+  test('accepts parent responses split across chunks without mixing response kinds', async () => {
+    const result = createClaudeMcpServer({
+      interactiveApprovalEnabled: false,
+      agentToolNames: ['ListAgents'],
+    });
+    const listAgents = result.toolExecutors.get('ListAgents');
+    expect(listAgents).toBeDefined();
+
+    const parentServer = net.createServer((socket) => {
+      socket.once('data', (data) => {
+        const request = JSON.parse(data.toString()) as { requestId: string };
+        const response = JSON.stringify({
+          type: 'agent_tool_response',
+          requestId: request.requestId,
+          success: true,
+          result: { agents: [] },
+        });
+        const midpoint = Math.floor(response.length / 2);
+        socket.write(response.slice(0, midpoint));
+        socket.write(`${response.slice(midpoint)}\n`);
+      });
+    });
+
+    await listen(parentServer);
+    const address = parentServer.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('Parent server did not listen');
+    }
+    const socket = net.createConnection(address.port, '127.0.0.1');
+    try {
+      await onceConnected(socket);
+      setParentSocket(socket);
+      await expect(listAgents!({})).resolves.toEqual({
+        content: [{ type: 'text', text: JSON.stringify({ agents: [] }) }],
       });
     } finally {
       socket.destroy();

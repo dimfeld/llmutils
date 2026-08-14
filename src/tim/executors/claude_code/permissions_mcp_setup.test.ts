@@ -165,6 +165,16 @@ function makeSubagentToolContext(name: string) {
 }
 
 describe('Claude MCP config validation and merging', () => {
+  test('rejects a missing user MCP config before allocating a temp directory', async () => {
+    const missingConfigPath = path.join(os.tmpdir(), `tim-mcp-missing-${Date.now()}.json`);
+    const mkdtempCallsBefore = vi.mocked(fs.mkdtemp).mock.calls.length;
+
+    await expect(
+      setupPermissionsMcp({ allowedTools: [], mcpConfigFile: missingConfigPath })
+    ).rejects.toThrow(`Could not read Claude MCP config file ${missingConfigPath}`);
+    expect(vi.mocked(fs.mkdtemp)).toHaveBeenCalledTimes(mkdtempCallsBefore);
+  });
+
   test('preserves user servers and root fields while adding the tim server', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-mcp-config-'));
     const userConfigPath = path.join(tempRoot, 'user.json');

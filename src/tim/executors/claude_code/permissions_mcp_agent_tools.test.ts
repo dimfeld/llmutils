@@ -6,9 +6,11 @@ import {
   CLAUDE_AGENT_TOOL_NAMES,
   CLAUDE_ORCHESTRATOR_TOOL_NAMES,
   CLAUDE_SUBAGENT_TOOL_NAMES,
+  createClaudeAgentToolDispatcher,
   type ClaudeAgentToolName,
   type ClaudeAgentToolContext,
 } from './claude_mcp_protocol.js';
+import type { AgentManager } from '../../agent_messaging/agent_manager.js';
 import type { AgentId, AgentName } from '../../agent_messaging/agent_names.js';
 
 type TestSocket = {
@@ -173,6 +175,80 @@ describe('Claude MCP parent agent-tool router', () => {
       { type: 'tester', executor: 'claude-code', initialMessage: 'test this' }
     );
     expect(dispatcher.startAgent.mock.calls[0]?.[1]).not.toHaveProperty('source');
+    client.socket.destroy();
+  });
+
+  test('routes a real Unix-socket request through the AgentManager adapter', async () => {
+    const manager = {
+      startAgent: vi.fn().mockResolvedValue({
+        name: 'worker-a',
+        id: 'worker-id',
+        type: 'tester',
+        executor: 'claude-code',
+        state: 'starting',
+      }),
+      listAgents: vi.fn().mockResolvedValue({ agents: [] }),
+      sendAgentMessage: vi.fn().mockResolvedValue({
+        name: 'worker-a',
+        messageId: 'message-id',
+        delivery: 'steered',
+      }),
+      stopAgent: vi.fn().mockResolvedValue({
+        name: 'worker-a',
+        mode: 'graceful-requested',
+        state: 'stopping',
+      }),
+      finishAgent: vi.fn().mockResolvedValue({ state: 'finishing' }),
+    } as unknown as Pick<
+      AgentManager,
+      'startAgent' | 'listAgents' | 'sendAgentMessage' | 'stopAgent' | 'finishAgent'
+    >;
+    const context: ClaudeAgentToolContext = {
+      caller: identity('orchestrator'),
+      allowedTools: new Set(CLAUDE_ORCHESTRATOR_TOOL_NAMES),
+      dispatcher: createClaudeAgentToolDispatcher(manager),
+    };
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: false,
+      agentToolContext: context,
+    });
+    cleanups.push(result.cleanup);
+
+    const client = await connectAndSend(pathFor(result), [
+      {
+        type: 'agent_tool_request',
+        requestId: 'adapter-list',
+        tool_name: 'ListAgents',
+        input: {},
+      },
+      {
+        type: 'agent_tool_request',
+        requestId: 'adapter-send',
+        tool_name: 'SendAgentMessage',
+        input: { name: 'worker-a', message: 'hello' },
+      },
+    ]);
+    const responses = await client.responses;
+    const responseById = new Map(responses.map((response) => [response.requestId, response]));
+
+    expect(responseById.get('adapter-list')).toMatchObject({
+      type: 'agent_tool_response',
+      requestId: 'adapter-list',
+      success: true,
+      result: { agents: [] },
+    });
+    expect(responseById.get('adapter-send')).toMatchObject({
+      type: 'agent_tool_response',
+      requestId: 'adapter-send',
+      success: true,
+      result: { name: 'worker-a', delivery: 'steered' },
+    });
+    expect(manager.listAgents).toHaveBeenCalledOnce();
+    expect(manager.sendAgentMessage).toHaveBeenCalledWith(
+      { id: 'orchestrator-id', role: 'orchestrator' },
+      { name: 'worker-a', message: 'hello' }
+    );
     client.socket.destroy();
   });
 
@@ -413,6 +489,58 @@ describe('Claude MCP parent agent-tool router', () => {
       { name: 'worker-a', message: 'hello' }
     );
     expect(coordinator.enqueue).not.toHaveBeenCalled();
+    client.socket.destroy();
+  });
+
+  test('interleaves an auto-approved permission request with an agent-tool request', async () => {
+    const dispatcher = {
+      startAgent: vi.fn(),
+      listAgents: vi.fn(async () => ({ agents: [] })),
+      sendAgentMessage: vi.fn(),
+      stopAgent: vi.fn(),
+      finishAgent: vi.fn(),
+    };
+    const context: ClaudeAgentToolContext = {
+      caller: identity('orchestrator'),
+      allowedTools: new Set(CLAUDE_ORCHESTRATOR_TOOL_NAMES),
+      dispatcher,
+    };
+    const result = await setupPermissionsMcp({
+      allowedTools: ['Read'],
+      interactiveApprovalEnabled: true,
+      agentToolContext: context,
+    });
+    cleanups.push(result.cleanup);
+
+    const client = await connectAndSend(pathFor(result), [
+      {
+        type: 'agent_tool_request',
+        requestId: 'interleave-agent',
+        tool_name: 'ListAgents',
+        input: {},
+      },
+      {
+        type: 'permission_request',
+        requestId: 'interleave-permission',
+        tool_name: 'Read',
+        input: {},
+      },
+    ]);
+    const responses = await client.responses;
+    const responseById = new Map(responses.map((response) => [response.requestId, response]));
+
+    expect(responseById.get('interleave-agent')).toEqual({
+      type: 'agent_tool_response',
+      requestId: 'interleave-agent',
+      success: true,
+      result: { agents: [] },
+    });
+    expect(responseById.get('interleave-permission')).toEqual({
+      type: 'permission_response',
+      requestId: 'interleave-permission',
+      approved: true,
+    });
+    expect(dispatcher.listAgents).toHaveBeenCalledOnce();
     client.socket.destroy();
   });
 

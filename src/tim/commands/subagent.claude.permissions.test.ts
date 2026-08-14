@@ -247,6 +247,88 @@ describe('subagent claude permissions MCP integration', () => {
     expect(capturedClaudeSpawnArgs!).toContain('/tmp/mock-mcp-config.json');
   });
 
+  test.each([
+    {
+      name: 'not installed',
+      claudeCodeOptions: {},
+      noninteractive: true,
+      setupExpected: false,
+      approvalExpected: false,
+    },
+    {
+      name: 'permission-only',
+      claudeCodeOptions: { permissionsMcp: { enabled: true } },
+      noninteractive: false,
+      setupExpected: true,
+      approvalExpected: true,
+    },
+    {
+      name: 'tools-only',
+      claudeCodeOptions: {
+        agentToolContext: {
+          caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+          allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+          dispatcher: {
+            startAgent: vi.fn(),
+            listAgents: vi.fn(),
+            sendAgentMessage: vi.fn(),
+            stopAgent: vi.fn(),
+            finishAgent: vi.fn(),
+          },
+        },
+      },
+      noninteractive: true,
+      setupExpected: true,
+      approvalExpected: false,
+    },
+    {
+      name: 'combined',
+      claudeCodeOptions: {
+        permissionsMcp: { enabled: true },
+        agentToolContext: {
+          caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+          allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+          dispatcher: {
+            startAgent: vi.fn(),
+            listAgents: vi.fn(),
+            sendAgentMessage: vi.fn(),
+            stopAgent: vi.fn(),
+            finishAgent: vi.fn(),
+          },
+        },
+      },
+      noninteractive: false,
+      setupExpected: true,
+      approvalExpected: true,
+    },
+  ])(
+    'installs the $name Claude MCP capability state with independent approval flags',
+    async ({ claudeCodeOptions, noninteractive, setupExpected, approvalExpected }) => {
+      await runClaudeSubprocess({
+        prompt: 'test prompt',
+        cwd: tempDir,
+        claudeCodeOptions,
+        noninteractive,
+        label: 'subagent',
+        processFormattedMessages: vi.fn(),
+      });
+
+      const args = capturedClaudeSpawnArgs!;
+      expect(mocks.setupPermissionsMcp).toHaveBeenCalledTimes(setupExpected ? 1 : 0);
+      expect(args.includes('--mcp-config')).toBe(setupExpected);
+      const permissionFlagIndex = args.indexOf('--permission-prompt-tool');
+      expect(permissionFlagIndex >= 0).toBe(approvalExpected);
+      if (approvalExpected) {
+        expect(args[permissionFlagIndex + 1]).toBe('mcp__tim__approval_prompt');
+      }
+      if (setupExpected) {
+        expect(capturedPermissionsMcpSetupOptions.interactiveApprovalEnabled).toBe(
+          approvalExpected
+        );
+      }
+    }
+  );
+
   test('does not include --permission-prompt-tool when permissionsMcp is not enabled', async () => {
     await runClaudeSubprocess({
       prompt: 'test prompt',
