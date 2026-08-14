@@ -16,15 +16,15 @@ rest of the `experimental.agentMessaging` stack.
 
 ## Module layout
 
-| File                                       | Contents                                                                        |
-| ------------------------------------------ | ------------------------------------------------------------------------------- |
-| `persistent_agent_contract.ts`             | Mode constant, provider-local states, completion facts, launch handle, validators |
-| `streaming_input.ts`                       | `PersistentClaudeInputWriter`: one serialized, failure-aware stream-json writer  |
-| `persistent_agent_lifecycle.ts`            | `PersistentClaudeTurnController`: turn boundary and `AgentInputAdapter`          |
-| `persistent_terminal_input_lifecycle.ts`   | The persistent branch of `executeWithTerminalInput()`                            |
-| `persistent_claude_session.ts`             | `PersistentClaudeSessionRuntime`: lifecycle controls, completion, finalization   |
-| `claude_execution_cleanup.ts`              | `createOrderedClaudeCleanup()`: ordered, run-once resource release               |
-| `test-fixtures/stream-json-claude-fixture.mjs` | Local stream-json subprocess used by integration tests                      |
+| File                                           | Contents                                                                          |
+| ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| `persistent_agent_contract.ts`                 | Mode constant, provider-local states, completion facts, launch handle, validators |
+| `streaming_input.ts`                           | `PersistentClaudeInputWriter`: one serialized, failure-aware stream-json writer   |
+| `persistent_agent_lifecycle.ts`                | `PersistentClaudeTurnController`: turn boundary and `AgentInputAdapter`           |
+| `persistent_terminal_input_lifecycle.ts`       | The persistent branch of `executeWithTerminalInput()`                             |
+| `persistent_claude_session.ts`                 | `PersistentClaudeSessionRuntime`: lifecycle controls, completion, finalization    |
+| `claude_execution_cleanup.ts`                  | `createOrderedClaudeCleanup()`: ordered, run-once resource release                |
+| `test-fixtures/stream-json-claude-fixture.mjs` | Local stream-json subprocess used by integration tests                            |
 
 ## Mode selection
 
