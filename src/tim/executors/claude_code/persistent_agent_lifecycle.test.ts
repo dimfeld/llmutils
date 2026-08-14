@@ -249,4 +249,174 @@ describe('PersistentClaudeTurnController', () => {
     expect(controller.state).toBe('exited');
     expect(stdin.endCalls).toBe(0);
   });
+
+  it('starts idle when no initial prompt is supplied and claims the first turn on delivery', () => {
+    const stdin = new FakeStdin();
+    const controller = makeController(stdin, { initialPrompt: undefined });
+
+    controller.start();
+    expect(controller.state).toBe('idle');
+    expect(stdin.writes).toHaveLength(0);
+
+    expect(controller.deliver(message('first message'))).toBe('started-idle-turn');
+    expect(controller.state).toBe('active');
+    expect(stdin.writes).toHaveLength(1);
+
+    controller.cleanup();
+  });
+
+  it('rejects requestCloseAfterCurrentResult when there is no active turn', () => {
+    const stdin = new FakeStdin();
+    const controller = makeController(stdin, { initialPrompt: undefined });
+    controller.start();
+
+    expect(() => controller.requestCloseAfterCurrentResult()).toThrow(
+      'no active turn to close'
+    );
+
+    controller.cleanup();
+  });
+
+  it('rejects requestCloseAfterCurrentResult once a turn has already settled idle', () => {
+    const stdin = new FakeStdin();
+    const controller = makeController(stdin);
+    controller.start();
+    controller.onResultMessage(true);
+    expect(controller.state).toBe('idle');
+
+    expect(() => controller.requestCloseAfterCurrentResult()).toThrow(
+      'no active turn to close'
+    );
+
+    controller.cleanup();
+  });
+
+  it('is idempotent when requestCloseAfterCurrentResult is called twice for the same turn', () => {
+    const stdin = new FakeStdin();
+    const completed = vi.fn();
+    const controller = makeController(stdin, { onTurnComplete: completed });
+    controller.start();
+
+    controller.requestCloseAfterCurrentResult();
+    expect(controller.state).toBe('finish-after-result');
+    controller.requestCloseAfterCurrentResult();
+    expect(controller.state).toBe('finish-after-result');
+
+    controller.onResultMessage(true);
+    expect(controller.state).toBe('closing');
+    expect(stdin.endCalls).toBe(1);
+    expect(completed).toHaveBeenCalledOnce();
+
+    controller.cleanup();
+    expect(stdin.endCalls).toBe(1);
+  });
+
+  it('closes after a settled background-pending result once close-after-result is requested', () => {
+    vi.useFakeTimers();
+    const stdin = new FakeStdin();
+    const completed = vi.fn();
+    const controller = makeController(stdin, { graceMs: 10, stallTimeoutMs: 100, onTurnComplete: completed });
+    controller.start();
+
+    controller.observeFormattedMessage({
+      type: 'system',
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
+    });
+    controller.onResultMessage(true);
+    expect(controller.state).toBe('result-pending-background');
+
+    controller.requestCloseAfterCurrentResult();
+    expect(controller.state).toBe('finish-after-result');
+    expect(stdin.endCalls).toBe(0);
+
+    controller.observeFormattedMessage({
+      type: 'system',
+      backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
+    });
+    vi.advanceTimersByTime(10);
+
+    expect(controller.state).toBe('closing');
+    expect(stdin.endCalls).toBe(1);
+    expect(completed).toHaveBeenCalledOnce();
+
+    controller.cleanup();
+    expect(stdin.endCalls).toBe(1);
+  });
+
+  it('closes stdin exactly once across repeated cleanup and forceCloseInputNow calls', () => {
+    const stdin = new FakeStdin();
+    const controller = makeController(stdin);
+    controller.start();
+
+    controller.forceCloseInputNow();
+    expect(controller.state).toBe('closing');
+    expect(stdin.endCalls).toBe(1);
+
+    // Further terminal-transition attempts must not close stdin again.
+    controller.forceCloseInputNow();
+    controller.cleanup();
+    controller.cleanup();
+    expect(stdin.endCalls).toBe(1);
+  });
+
+  it('rejects delivery once forceCloseInputNow has closed the input stream', () => {
+    const stdin = new FakeStdin();
+    const controller = makeController(stdin);
+    controller.start();
+    controller.forceCloseInputNow();
+
+    expect(() => controller.deliver(message('too late'))).toThrow('cannot accept input');
+    expect(stdin.endCalls).toBe(1);
+  });
+
+  it('is idempotent when markProviderExited or markProviderFailed run more than once', () => {
+    const stdin = new FakeStdin();
+    const controller = makeController(stdin);
+    controller.start();
+
+    controller.markProviderExited();
+    expect(controller.state).toBe('exited');
+
+    // A later failure signal must not override an already-settled exit.
+    controller.markProviderFailed(new Error('late failure'));
+    expect(controller.state).toBe('exited');
+
+    controller.markProviderExited();
+    expect(controller.state).toBe('exited');
+    expect(stdin.endCalls).toBe(0);
+  });
+
+  it('notifies availability listeners registered on the controller as writes settle', async () => {
+    const stdin = new FakeStdin();
+    let resolveWrite: ((value: number) => void) | undefined;
+    stdin.nextWrite = (): Promise<number> =>
+      new Promise<number>((resolve) => {
+        resolveWrite = resolve;
+      });
+    const controller = makeController(stdin, { initialPrompt: undefined });
+    controller.start();
+
+    let events = 0;
+    const unsubscribe = controller.onAvailabilityChange(() => {
+      events += 1;
+    });
+
+    const delivery = controller.deliver(message('claim idle'));
+    // The idle claim happens synchronously inside the writer's write() call,
+    // before the FileSink promise settles, so no notification fires yet.
+    expect(events).toBe(0);
+
+    resolveWrite?.(1);
+    await delivery;
+    // The write settling (accepted, active) must reach controller-level
+    // listeners, not just internal writer state.
+    expect(events).toBe(1);
+
+    unsubscribe();
+    controller.onResultMessage(true);
+    // The unsubscribed listener must not observe the later idle transition.
+    expect(events).toBe(1);
+
+    controller.cleanup();
+  });
 });
