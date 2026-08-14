@@ -13,6 +13,8 @@ Claude Code reads stdin until EOF when using `--input-format stream-json`. This 
 
 ## Explicit Persistent Claude Agent Mode
 
+The full provider design is in [persistent-claude-agent.md](persistent-claude-agent.md). The stdin rules below are binding for both documents.
+
 The AgentManager can select `mode: 'persistent-agent'` for a Claude provider launch. This is an explicit provider mode. An input source, MCP configuration, process label, or environment variable must not enable it by accident.
 
 - The runner returns a launch handle after the subprocess and its stream-json input are ready. The handle's `completion` promise settles only when the Claude provider exits or fails. A Claude `result` record completes one turn; it does not complete the provider session.

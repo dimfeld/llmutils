@@ -31,8 +31,11 @@ domain service, not on a Commander handler.
 The launch handle is **not** an agent session. It has no send, idle-turn, or
 stop operation, and it does not keep a persistent provider session. Do not add
 no-op lifecycle methods to make the type look complete; real lifecycle work
-belongs to the later agent-manager plans (see
-[agent-messaging.md](agent-messaging.md)).
+belongs to the agent-manager layer (see
+[agent-messaging.md](agent-messaging.md)). The separate Claude persistent
+handle, with its input adapter and lifecycle controls, is documented in
+[persistent-claude-agent.md](persistent-claude-agent.md); it comes from
+`runClaudeSubprocess()` in `persistent-agent` mode, not from this service.
 
 ## Input policy
 

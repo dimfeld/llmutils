@@ -40,6 +40,9 @@ ordinary routing, and parallel root fan-out.
 The manager does **not** own provider tool installation, orchestration prompts,
 or any persistent Claude or Codex provider loop. Provider adapters translate
 those provider-specific operations into the lifecycle controls described here.
+The Claude adapter that implements those controls over one long-lived
+stream-json subprocess is documented in
+[persistent-claude-agent.md](persistent-claude-agent.md).
 
 ## Module layout
 

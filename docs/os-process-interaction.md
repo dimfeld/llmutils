@@ -67,7 +67,10 @@ the OS PID is never the UI control key.
 (see [agent-manager.md](agent-manager.md)). It never holds or signals a PID, so
 a provider adapter that owns a real child process must run these identity
 checks itself behind `requestForcedShutdown()`. A logical provider without an
-OS process implements the same control without any signal.
+OS process implements the same control without any signal. The persistent Claude
+adapter follows this rule: it captures the `SessionExecutorLifecycle` capability
+at spawn and forces shutdown through that owner only (see
+[persistent-claude-agent.md](persistent-claude-agent.md)).
 
 ## Explicit session process tracking
 

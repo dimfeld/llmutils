@@ -9,7 +9,9 @@ finish, stop, and terminal lifecycle — is documented in
 and launch service it uses is documented in
 [subagent-launch-service.md](subagent-launch-service.md). The Claude MCP
 transport that exposes these tools to a model is documented in
-[claude-mcp-bridge.md](claude-mcp-bridge.md).
+[claude-mcp-bridge.md](claude-mcp-bridge.md), and the Claude provider that keeps
+one subprocess alive across turns is documented in
+[persistent-claude-agent.md](persistent-claude-agent.md).
 
 The shared contracts let an orchestrator address, message, and stop its
 subagents. The transport gives one trusted session runtime a private namespace
