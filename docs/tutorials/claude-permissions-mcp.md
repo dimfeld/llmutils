@@ -2,6 +2,8 @@
 
 This tutorial guides you through implementing a Model Context Protocol (MCP) permissions server for the Claude Code SDK using the FastMCP framework in TypeScript, configured to use stdio transport for direct communication with Claude Code. The permissions MCP will handle tool permission prompts, allowing or denying tool invocations based on user confirmation via Unix sockets.
 
+> **Note:** In this repository, the permission server is now one capability of the shared `tim` MCP bridge, which also carries role-scoped agent-management tools. For how the shipped bridge is installed, authorized, merged with user MCP config, and serialized across concurrent agents, read [../claude-mcp-bridge.md](../claude-mcp-bridge.md). This tutorial remains the background explanation of the approval protocol itself.
+
 ## Prerequisites
 
 - Node.js and npm installed

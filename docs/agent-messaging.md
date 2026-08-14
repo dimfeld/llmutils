@@ -7,7 +7,9 @@ adapters. The manager core built on this transport — Start/List/Send plus the
 finish, stop, and terminal lifecycle — is documented in
 [agent-manager.md](agent-manager.md), and the reusable one-shot preparation
 and launch service it uses is documented in
-[subagent-launch-service.md](subagent-launch-service.md).
+[subagent-launch-service.md](subagent-launch-service.md). The Claude MCP
+transport that exposes these tools to a model is documented in
+[claude-mcp-bridge.md](claude-mcp-bridge.md).
 
 The shared contracts let an orchestrator address, message, and stop its
 subagents. The transport gives one trusted session runtime a private namespace

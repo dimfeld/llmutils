@@ -12,9 +12,10 @@ It builds on two lower layers:
 - The reusable one-shot preparation and launch service in
   [subagent-launch-service.md](subagent-launch-service.md).
 
-Later provider adapters (Claude MCP tools, Codex dynamic tools) must translate
-tool arguments into these methods only. They must not repeat naming, capacity,
-authorization, or delivery policy.
+Provider adapters must translate tool arguments into these methods only. They
+must not repeat naming, capacity, authorization, or delivery policy. The Claude
+MCP adapter is documented in [claude-mcp-bridge.md](claude-mcp-bridge.md); the
+Codex dynamic-tool adapter is still to come.
 
 ## Scope
 

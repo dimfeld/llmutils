@@ -39,6 +39,7 @@ Read the relevant doc before working in these areas:
 - **Agent messaging** (`experimental.agentMessaging`, contracts, identity vars, mailbox transport) → `docs/agent-messaging.md`
 - **Agent manager** (orchestrator authorization, naming, capacity, StartAgent/ListAgents/SendAgentMessage, FinishAgent/StopAgent lifecycle) → `docs/agent-manager.md`
 - **Subagent launch service** (reusable preparation/launch contracts, execution-scoped Claude formatters) → `docs/subagent-launch-service.md`
+- **Claude `tim` MCP bridge** (approval + role-scoped agent tools, config merge, prompt FIFO) → `docs/claude-mcp-bridge.md`
 - **Parent-child plan relationships** → `docs/parent-child-relationships.md`
 - **Planning workflow** → `docs/planning.md`
 - **Batch tasks** → `docs/batch-tasks-feature.md`
