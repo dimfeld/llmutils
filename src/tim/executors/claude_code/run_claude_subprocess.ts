@@ -32,6 +32,12 @@ import { getDatabase } from '../../db/database.js';
 import { getPermissions } from '../../db/permission.js';
 import { getOrCreateProject } from '../../db/project.js';
 import { setupPermissionsMcp } from './permissions_mcp_setup.js';
+import {
+  CLAUDE_APPROVAL_MCP_TOOL_ID,
+  getClaudeAgentMcpToolId,
+  type ClaudeAgentToolContext,
+  type ClaudePermissionPromptCoordinator,
+} from './claude_mcp_protocol.js';
 import type { TimConfig } from '../../configSchema.js';
 
 const DEFAULT_CLAUDE_MODEL = 'opus';
@@ -143,6 +149,10 @@ export interface ClaudeCodeSubprocessOptions {
     timeout?: number;
     autoApproveCreatedFileDeletion?: boolean;
   };
+  /** Trusted parent-bound Claude agent tools for this execution. */
+  agentToolContext?: ClaudeAgentToolContext;
+  /** Root-owned coordinator for interactive permission requests. */
+  permissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
 }
 
 export interface RunClaudeSubprocessOptions {
@@ -235,6 +245,24 @@ async function loadSharedPermissions(): Promise<string[]> {
   }
 }
 
+export function getAgentToolIds(context: ClaudeAgentToolContext | undefined): string[] {
+  return context === undefined ? [] : [...context.allowedTools].map(getClaudeAgentMcpToolId);
+}
+
+export function validateAgentToolDisallowConflict(
+  context: ClaudeAgentToolContext | undefined,
+  disallowedTools: readonly string[] | undefined
+): void {
+  if (context === undefined || disallowedTools === undefined) return;
+  const disallowed = new Set(disallowedTools);
+  const conflictingTools = getAgentToolIds(context).filter((toolName) => disallowed.has(toolName));
+  if (conflictingTools.length > 0) {
+    throw new Error(
+      `Claude disallowedTools prevents required agent tools: ${conflictingTools.join(', ')}`
+    );
+  }
+}
+
 /**
  * Runs a Claude Code subprocess with the standard setup pattern:
  * permissions MCP, tunnel server, CLI args, streaming stdout parsing, and cleanup.
@@ -284,13 +312,22 @@ export async function runClaudeSubprocess(
     sharedPermissions,
   });
 
-  // Determine if permissions MCP should be enabled
-  let isPermissionsMcpEnabled = claudeCodeOptions.permissionsMcp?.enabled === true;
+  // Approval prompting and trusted agent tools are independent capabilities.
+  let interactiveApprovalEnabled = claudeCodeOptions.permissionsMcp?.enabled === true;
   if (process.env.CLAUDE_CODE_MCP) {
-    isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
+    interactiveApprovalEnabled = process.env.CLAUDE_CODE_MCP === 'true';
   }
   if (allowAllTools || noninteractive) {
-    isPermissionsMcpEnabled = false;
+    interactiveApprovalEnabled = false;
+  }
+  const agentToolContext = claudeCodeOptions.agentToolContext;
+  const agentToolsEnabled = agentToolContext !== undefined;
+  const agentToolIds = getAgentToolIds(agentToolContext);
+  validateAgentToolDisallowConflict(agentToolContext, claudeCodeOptions.disallowedTools);
+  const internalMcpNeeded = interactiveApprovalEnabled || agentToolsEnabled;
+
+  if (agentToolIds.length > 0) {
+    allowedTools.push(...agentToolIds);
   }
 
   // Set up permissions MCP if enabled
@@ -298,7 +335,7 @@ export async function runClaudeSubprocess(
   let permissionsMcpConfigFile: string | undefined;
   let permissionsMcpTempDir: string | undefined;
 
-  if (isPermissionsMcpEnabled) {
+  if (internalMcpNeeded) {
     try {
       const result = await setupPermissionsMcp({
         allowedTools,
@@ -308,13 +345,18 @@ export async function runClaudeSubprocess(
           claudeCodeOptions.permissionsMcp?.autoApproveCreatedFileDeletion,
         trackedFiles,
         workingDirectory: cwd,
+        mcpConfigFile: claudeCodeOptions.mcpConfigFile,
+        interactiveApprovalEnabled,
+        agentToolContext,
+        permissionPromptCoordinator: claudeCodeOptions.permissionPromptCoordinator,
       });
       permissionsMcpConfigFile = result.mcpConfigFile;
       permissionsMcpTempDir = result.tempDir;
       permissionsMcpCleanup = result.cleanup;
     } catch (err) {
+      if (agentToolsEnabled || claudeCodeOptions.mcpConfigFile !== undefined) throw err;
       error(`Could not set up permissions MCP for ${label}:`, err);
-      isPermissionsMcpEnabled = false;
+      interactiveApprovalEnabled = false;
     }
   }
 
@@ -343,10 +385,12 @@ export async function runClaudeSubprocess(
   try {
     const args = ['claude', '--no-session-persistence', '--permission-mode', 'auto'];
 
-    // Add MCP config: permissions MCP takes priority, then user's mcpConfigFile
-    if (isPermissionsMcpEnabled && permissionsMcpConfigFile) {
+    // The generated config already contains the user's servers when the internal bridge is used.
+    if (internalMcpNeeded && permissionsMcpConfigFile) {
       args.push('--mcp-config', permissionsMcpConfigFile);
-      args.push('--permission-prompt-tool', 'mcp__permissions__approval_prompt');
+      if (interactiveApprovalEnabled) {
+        args.push('--permission-prompt-tool', CLAUDE_APPROVAL_MCP_TOOL_ID);
+      }
     } else if (claudeCodeOptions.mcpConfigFile) {
       args.push('--mcp-config', claudeCodeOptions.mcpConfigFile);
     }
@@ -405,7 +449,7 @@ export async function runClaudeSubprocess(
     const streamFormatter = createClaudeOutputStreamFormatter(modelToUse);
 
     if (logModelSelection) {
-      log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
+      log(`Interactive permissions MCP is`, interactiveApprovalEnabled ? 'enabled' : 'disabled');
     }
 
     const streaming = await spawnWithStreamingIO(args, {

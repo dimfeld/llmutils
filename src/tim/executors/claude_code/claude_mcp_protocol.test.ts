@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as net from 'node:net';
-import { cleanupForTests, createClaudeMcpServer, setParentSocket } from './permissions_mcp.js';
+import { cleanupForTests, createClaudeMcpServer, setParentSocket } from './tim_mcp.js';
 import {
   agentToolRequestSchema,
   agentToolResponseSchema,

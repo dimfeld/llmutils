@@ -242,7 +242,7 @@ describe('subagent claude permissions MCP integration', () => {
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).toContain('--permission-prompt-tool');
-    expect(capturedClaudeSpawnArgs!).toContain('mcp__permissions__approval_prompt');
+    expect(capturedClaudeSpawnArgs!).toContain('mcp__tim__approval_prompt');
     expect(capturedClaudeSpawnArgs!).toContain('--mcp-config');
     expect(capturedClaudeSpawnArgs!).toContain('/tmp/mock-mcp-config.json');
   });
@@ -261,7 +261,26 @@ describe('subagent claude permissions MCP integration', () => {
     expect(capturedClaudeSpawnArgs!).not.toContain('--permission-prompt-tool');
   });
 
-  test('permissions MCP config takes priority over mcpConfigFile', async () => {
+  test('passes the original user MCP config directly when no internal bridge is needed', async () => {
+    await runClaudeSubprocess({
+      prompt: 'test prompt',
+      cwd: tempDir,
+      claudeCodeOptions: {
+        mcpConfigFile: '/path/to/user-mcp-config.json',
+      },
+      noninteractive: true,
+      label: 'subagent',
+      processFormattedMessages: vi.fn(),
+    });
+
+    expect(capturedClaudeSpawnArgs).toBeDefined();
+    const mcpConfigIndex = capturedClaudeSpawnArgs!.indexOf('--mcp-config');
+    expect(mcpConfigIndex).toBeGreaterThan(-1);
+    expect(capturedClaudeSpawnArgs![mcpConfigIndex + 1]).toBe('/path/to/user-mcp-config.json');
+    expect(mocks.setupPermissionsMcp).not.toHaveBeenCalled();
+  });
+
+  test('passes the user MCP config to the internal bridge for merging', async () => {
     await runClaudeSubprocess({
       prompt: 'test prompt',
       cwd: tempDir,
@@ -278,7 +297,7 @@ describe('subagent claude permissions MCP integration', () => {
 
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).toContain('/tmp/mock-mcp-config.json');
-    expect(capturedClaudeSpawnArgs!).not.toContain('/path/to/user-mcp-config.json');
+    expect(capturedPermissionsMcpSetupOptions.mcpConfigFile).toBe('/path/to/user-mcp-config.json');
   });
 
   test('disables permissions MCP when allowAllTools is true', async () => {
@@ -299,6 +318,100 @@ describe('subagent claude permissions MCP integration', () => {
     expect(capturedClaudeSpawnArgs).toBeDefined();
     expect(capturedClaudeSpawnArgs!).not.toContain('--permission-prompt-tool');
     expect(capturedClaudeSpawnArgs!).toContain('--dangerously-skip-permissions');
+  });
+
+  test('installs explicit agent tools in noninteractive mode without approval prompting', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+
+    await runClaudeSubprocess({
+      prompt: 'test prompt',
+      cwd: tempDir,
+      claudeCodeOptions: { agentToolContext: context },
+      noninteractive: true,
+      label: 'orchestrator',
+      processFormattedMessages: vi.fn(),
+    });
+
+    expect(capturedPermissionsMcpSetupOptions).toMatchObject({
+      interactiveApprovalEnabled: false,
+      agentToolContext: context,
+    });
+    expect(capturedClaudeSpawnArgs).toContain('--mcp-config');
+    expect(capturedClaudeSpawnArgs).not.toContain('--permission-prompt-tool');
+    const allowedToolsIndex = capturedClaudeSpawnArgs!.indexOf('--allowedTools');
+    expect(allowedToolsIndex).toBeGreaterThan(-1);
+    expect(capturedClaudeSpawnArgs![allowedToolsIndex + 1]).toContain('mcp__tim__StartAgent');
+    expect(capturedClaudeSpawnArgs![allowedToolsIndex + 1]).toContain('mcp__tim__ListAgents');
+    expect(capturedClaudeSpawnArgs![allowedToolsIndex + 1]).toContain('mcp__tim__SendAgentMessage');
+    expect(capturedClaudeSpawnArgs![allowedToolsIndex + 1]).toContain('mcp__tim__StopAgent');
+  });
+
+  test('keeps explicit agent tools installed in allow-all mode', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+
+    await runClaudeSubprocess({
+      prompt: 'test prompt',
+      cwd: tempDir,
+      claudeCodeOptions: { allowAllTools: true, agentToolContext: context },
+      noninteractive: false,
+      label: 'orchestrator',
+      processFormattedMessages: vi.fn(),
+    });
+
+    expect(capturedPermissionsMcpSetupOptions.interactiveApprovalEnabled).toBe(false);
+    expect(capturedClaudeSpawnArgs).toContain('--mcp-config');
+    expect(capturedClaudeSpawnArgs).not.toContain('--permission-prompt-tool');
+    expect(capturedClaudeSpawnArgs).toContain('--dangerously-skip-permissions');
+  });
+
+  test('rejects disallowed agent tools before spawning Claude', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set(['StartAgent']),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+
+    await expect(
+      runClaudeSubprocess({
+        prompt: 'test prompt',
+        cwd: tempDir,
+        claudeCodeOptions: {
+          agentToolContext: context,
+          disallowedTools: ['mcp__tim__StartAgent'],
+        },
+        noninteractive: true,
+        label: 'orchestrator',
+        processFormattedMessages: vi.fn(),
+      })
+    ).rejects.toThrow('mcp__tim__StartAgent');
+    expect(mocks.setupPermissionsMcp).not.toHaveBeenCalled();
+    expect(mocks.spawnWithStreamingIO).not.toHaveBeenCalled();
   });
 
   test('passes autoApproveCreatedFileDeletion and tracked files into permissions MCP setup', async () => {

@@ -242,7 +242,7 @@ Run Claude Code with the permissions MCP, specifying the `approval_prompt` tool:
 ```bash
 claude -p "Test tool invocation with allow in input" \
   --mcp-config mcp-config.json \
-  --permission-prompt-tool mcp__permissions__approval_prompt \
+  --permission-prompt-tool mcp__tim__approval_prompt \
   --allowedTools "mcp__test__sample_tool"
 ```
 
@@ -274,7 +274,7 @@ Run Claude Code to use a filesystem tool with permission checks:
 ```bash
 claude -p "Read file with allow in input" \
   --mcp-config mcp-config.json \
-  --permission-prompt-tool mcp__permissions__approval_prompt \
+  --permission-prompt-tool mcp__tim__approval_prompt \
   --allowedTools "mcp__filesystem__read_file"
 ```
 
@@ -514,7 +514,7 @@ socket.on('data', (data) => {
 
 ### Testing the MCP Server
 
-The `permissions_mcp.ts` MCP server side is hard to unit test directly because it requires a full FastMCP setup. The most practical coverage comes from testing through the Unix socket protocol on the `permissions_mcp_setup.ts` side — mock the prompt functions, send messages through the socket, and verify the response messages. This validates the full request/response flow without needing to stand up the MCP transport.
+The `tim_mcp.ts` MCP server side is hard to unit test directly because it requires a full FastMCP setup. The most practical coverage comes from testing through the Unix socket protocol on the `permissions_mcp_setup.ts` side — mock the prompt functions, send messages through the socket, and verify the response messages. This validates the full request/response flow without needing to stand up the MCP transport.
 
 ## Conclusion
 

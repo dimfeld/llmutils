@@ -5,7 +5,7 @@
  * the ClaudeCodeExecutor class and the standalone `tim subagent` command. It handles:
  * - Parsing allowed tools into an efficient lookup structure
  * - Creating a Unix socket server for permission request handling
- * - Generating the MCP config file pointing to the permissions_mcp.ts script
+ * - Generating the MCP config file pointing to the tim_mcp.ts script
  * - Interactive user prompting for non-allowed tools
  */
 
@@ -32,6 +32,7 @@ import { getOrCreateProject } from '../../db/project.js';
 import { addPermission } from '../../db/permission.js';
 import {
   CLAUDE_AGENT_TOOL_NAMES,
+  CLAUDE_MCP_SERVER_NAME,
   agentToolRequestSchema,
   callerIdentityFromAgent,
   getClaudeAgentArgumentSchema,
@@ -83,6 +84,86 @@ export interface PermissionsMcpOptions {
   agentToolContext?: ClaudeAgentToolContext;
   /** Shared root-session coordinator for interactive prompt cancellation. */
   permissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
+  /** Optional user MCP config to preserve when installing the internal bridge. */
+  mcpConfigFile?: string;
+}
+
+export interface ClaudeMcpConfig {
+  readonly [key: string]: unknown;
+  readonly mcpServers?: Record<string, unknown>;
+}
+
+export interface ClaudeMcpServerDefinition {
+  readonly type: 'stdio';
+  readonly command: string;
+  readonly args: readonly string[];
+}
+
+/**
+ * Read and validate a user MCP config before the bridge allocates any resources.
+ * The returned object is a new value so setup never mutates the user's file.
+ */
+export async function readUserMcpConfig(
+  mcpConfigFile: string | undefined
+): Promise<ClaudeMcpConfig> {
+  if (mcpConfigFile === undefined) return {};
+
+  let content: string;
+  try {
+    content = await fs.readFile(mcpConfigFile, 'utf8');
+  } catch (error) {
+    throw new Error(
+      `Could not read Claude MCP config file ${mcpConfigFile}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error }
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch (error) {
+    throw new Error(
+      `Claude MCP config file ${mcpConfigFile} contains invalid JSON: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error }
+    );
+  }
+
+  if (!isRecord(parsed)) {
+    throw new Error(`Claude MCP config file ${mcpConfigFile} must contain a JSON object`);
+  }
+  if (parsed.mcpServers !== undefined && !isRecord(parsed.mcpServers)) {
+    throw new Error(`Claude MCP config file ${mcpConfigFile} must define mcpServers as an object`);
+  }
+
+  return parsed;
+}
+
+export function mergeClaudeMcpConfig(
+  userConfig: ClaudeMcpConfig,
+  internalServer: ClaudeMcpServerDefinition
+): ClaudeMcpConfig {
+  const userServers = userConfig.mcpServers ?? {};
+  assertClaudeMcpServerNameAvailable(userServers);
+
+  return {
+    ...userConfig,
+    mcpServers: {
+      ...userServers,
+      [CLAUDE_MCP_SERVER_NAME]: internalServer,
+    },
+  };
+}
+
+function assertClaudeMcpServerNameAvailable(userServers: Record<string, unknown>): void {
+  if (Object.prototype.hasOwnProperty.call(userServers, CLAUDE_MCP_SERVER_NAME)) {
+    throw new Error(
+      `Claude MCP server name collision: ${CLAUDE_MCP_SERVER_NAME} is reserved for tim's internal bridge`
+    );
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -196,11 +277,11 @@ export async function resolvePermissionsMcpPath(
     (import.meta as { dir?: string; dirname?: string }).dir ??
     (import.meta as { dirname?: string }).dirname ??
     path.dirname(new URL(import.meta.url).pathname);
-  const distPath = './claude_code/permissions_mcp.js';
+  const distPath = './claude_code/tim_mcp.js';
   const candidates: string[] = [
     path.resolve(executableDir, distPath),
     path.resolve(path.dirname(process.argv0), distPath),
-    path.resolve(currentDir, './permissions_mcp.ts'),
+    path.resolve(currentDir, './tim_mcp.ts'),
   ];
 
   for (const candidate of candidates) {
@@ -1003,13 +1084,17 @@ function createPermissionSocketServer(
  *
  * Creates a temporary directory with:
  * - A Unix socket for permission request handling
- * - An MCP config file pointing to the permissions_mcp.ts script
+ * - An MCP config file pointing to the tim_mcp.ts script
  *
  * Returns the config file path and a cleanup function.
  */
 export async function setupPermissionsMcp(
   options: PermissionsMcpOptions
 ): Promise<PermissionsMcpSetupResult> {
+  // Validate and load the user configuration before creating sockets or temp directories.
+  const userMcpConfig = await readUserMcpConfig(options.mcpConfigFile);
+  assertClaudeMcpServerNameAvailable(userMcpConfig.mcpServers ?? {});
+
   if (options.agentToolContext !== undefined) {
     validateClaudeAgentToolContext(options.agentToolContext);
   }
@@ -1026,7 +1111,7 @@ export async function setupPermissionsMcp(
   // Create a temporary directory for the MCP config and socket
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-subagent-mcp-'));
   const socketPath = path.join(tempDir, 'permissions.sock');
-  const logFile = path.join(tempDir, 'permissions-mcp.log');
+  const logFile = path.join(tempDir, 'tim-mcp.log');
 
   let resources: PermissionSocketServerResources | undefined;
   try {
@@ -1041,8 +1126,8 @@ export async function setupPermissionsMcp(
       agentToolContext: trustedAgentToolContext,
     });
 
-    const permissionsMcpPath = await resolvePermissionsMcpPath();
-    const childArgs = [permissionsMcpPath, socketPath, logFile];
+    const timMcpPath = await resolvePermissionsMcpPath();
+    const childArgs = [timMcpPath, socketPath, logFile];
     if (trustedAgentToolContext !== undefined || options.interactiveApprovalEnabled === false) {
       childArgs.push(
         JSON.stringify({
@@ -1052,20 +1137,16 @@ export async function setupPermissionsMcp(
       );
     }
 
-    const mcpConfig = {
-      mcpServers: {
-        permissions: {
-          type: 'stdio',
-          command: 'bun',
-          args: childArgs,
-        },
-      },
-    };
+    const mcpConfig = mergeClaudeMcpConfig(userMcpConfig, {
+      type: 'stdio',
+      command: 'bun',
+      args: childArgs,
+    });
 
     const mcpConfigFile = path.join(tempDir, 'mcp-config.json');
     const mcpConfigContent = JSON.stringify(mcpConfig, null, 2);
     debugLog('MCP config file content:', mcpConfigContent);
-    log(`Permissions MCP log file: ${logFile}`);
+    log(`tim MCP log file: ${logFile}`);
     await fs.writeFile(mcpConfigFile, mcpConfigContent);
 
     let cleanupPromise: Promise<void> | undefined;

@@ -1,6 +1,10 @@
 import type { z } from 'zod/v4';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import type { TimConfig } from '../configSchema';
+import type {
+  ClaudeAgentToolContext,
+  ClaudePermissionPromptCoordinator,
+} from './claude_code/claude_mcp_protocol.js';
 
 /**
  * Shared options/state from the agent command, passed to the executor.
@@ -56,6 +60,10 @@ export interface ExecutorCommonOptions {
    * Explicit executor env values remain the final override layer.
    */
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** Trusted Claude agent-tool context installed for this execution, when enabled. */
+  claudeAgentToolContext?: ClaudeAgentToolContext;
+  /** Root-owned coordinator shared by Claude permission bridges in one session. */
+  claudePermissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
 }
 
 /**

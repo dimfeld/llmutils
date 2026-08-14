@@ -64,14 +64,97 @@ vi.mock('../../../common/input.js', () => ({
     (err.name === 'AbortPromptError' || err.message.startsWith('Prompt request timed out')),
 }));
 
-const { resolvePermissionsMcpPath, setupPermissionsMcp } =
+const { mergeClaudeMcpConfig, readUserMcpConfig, resolvePermissionsMcpPath, setupPermissionsMcp } =
   await import('./permissions_mcp_setup.js');
 
+describe('Claude MCP config validation and merging', () => {
+  test('preserves user servers and root fields while adding the tim server', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-mcp-config-'));
+    const userConfigPath = path.join(tempRoot, 'user.json');
+    const userConfig = {
+      customRootField: { enabled: true },
+      mcpServers: {
+        github: { command: './github-server', args: ['--repo', 'example'] },
+        local: { type: 'sse', url: 'http://127.0.0.1:8123' },
+      },
+    };
+
+    try {
+      await fs.writeFile(userConfigPath, JSON.stringify(userConfig));
+      const result = await setupPermissionsMcp({
+        allowedTools: [],
+        interactiveApprovalEnabled: false,
+        mcpConfigFile: userConfigPath,
+      });
+
+      const generated = JSON.parse(await fs.readFile(result.mcpConfigFile, 'utf8')) as {
+        customRootField: unknown;
+        mcpServers: Record<string, unknown>;
+      };
+      expect(generated.customRootField).toEqual(userConfig.customRootField);
+      expect(generated.mcpServers.github).toEqual(userConfig.mcpServers.github);
+      expect(generated.mcpServers.local).toEqual(userConfig.mcpServers.local);
+      expect(generated.mcpServers.tim).toMatchObject({
+        type: 'stdio',
+        command: 'bun',
+      });
+      expect(JSON.parse(await fs.readFile(userConfigPath, 'utf8'))).toEqual(userConfig);
+      await result.cleanup();
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects a reserved tim server collision', async () => {
+    const userConfig = await readUserMcpConfig(undefined);
+    expect(() =>
+      mergeClaudeMcpConfig(
+        { ...userConfig, mcpServers: { tim: { command: 'user-server' } } },
+        { type: 'stdio', command: 'bun', args: [] }
+      )
+    ).toThrow('reserved for tim');
+  });
+
+  test('setup rejects a reserved tim server collision before creating a temp directory', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-mcp-config-'));
+    const userConfigPath = path.join(tempRoot, 'user.json');
+    try {
+      await fs.writeFile(
+        userConfigPath,
+        JSON.stringify({ mcpServers: { tim: { command: 'user-server' } } })
+      );
+      await expect(
+        setupPermissionsMcp({
+          allowedTools: [],
+          mcpConfigFile: userConfigPath,
+        })
+      ).rejects.toThrow('reserved for tim');
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    ['invalid JSON', '{'],
+    ['non-object root', '[]'],
+    ['invalid mcpServers', JSON.stringify({ mcpServers: [] })],
+  ])('rejects %s before setup allocation', async (_name, content) => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-mcp-config-'));
+    const userConfigPath = path.join(tempRoot, 'user.json');
+    try {
+      await fs.writeFile(userConfigPath, content);
+      await expect(readUserMcpConfig(userConfigPath)).rejects.toThrow(/Claude MCP config file/);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('permissions MCP path resolution', () => {
-  test('prefers the compiled permissions_mcp.js under the executable directory', async () => {
+  test('prefers the compiled tim_mcp.js under the executable directory', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-permissions-path-'));
     const execDir = path.join(tempRoot, 'exec');
-    const jsPath = path.join(execDir, 'claude_code', 'permissions_mcp.js');
+    const jsPath = path.join(execDir, 'claude_code', 'tim_mcp.js');
 
     try {
       await fs.mkdir(path.dirname(jsPath), { recursive: true });
@@ -83,13 +166,10 @@ describe('permissions MCP path resolution', () => {
     }
   });
 
-  test('falls back to the local permissions_mcp.ts when compiled script is missing', async () => {
+  test('falls back to the local tim_mcp.ts when compiled script is missing', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-permissions-path-'));
     const execDir = path.join(tempRoot, 'exec');
-    const localSourcePath = path.join(
-      path.dirname(fileURLToPath(import.meta.url)),
-      'permissions_mcp.ts'
-    );
+    const localSourcePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'tim_mcp.ts');
 
     try {
       await fs.mkdir(execDir, { recursive: true });
@@ -180,9 +260,9 @@ describe('permissions socket server line buffering', () => {
     cleanups.push(result.cleanup);
 
     const config = JSON.parse(await fs.readFile(result.mcpConfigFile, 'utf8'));
-    const args = config.mcpServers.permissions.args;
+    const args = config.mcpServers.tim.args;
 
-    expect(result.logFile).toBe(path.join(result.tempDir, 'permissions-mcp.log'));
+    expect(result.logFile).toBe(path.join(result.tempDir, 'tim-mcp.log'));
     expect(args.at(-2)).toBe(path.join(result.tempDir, 'permissions.sock'));
     expect(args.at(-1)).toBe(result.logFile);
   });

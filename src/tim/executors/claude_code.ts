@@ -34,7 +34,13 @@ import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tun
 import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import { setupPermissionsMcp } from './claude_code/permissions_mcp_setup.js';
-import { runClaudeSubprocess, buildAllowedToolsList } from './claude_code/run_claude_subprocess.js';
+import {
+  runClaudeSubprocess,
+  buildAllowedToolsList,
+  getAgentToolIds,
+  validateAgentToolDisallowConflict,
+} from './claude_code/run_claude_subprocess.js';
+import { CLAUDE_APPROVAL_MCP_TOOL_ID } from './claude_code/claude_mcp_protocol.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
 import {
   FAST_NOOP_ORCHESTRATOR_RETRY_MS,
@@ -627,9 +633,9 @@ export class ClaudeCodeExecutor implements Executor {
     // Get git root for agent instructions and other operations
     const gitRoot = await getGitRoot(this.sharedOptions.baseDir);
 
-    let isPermissionsMcpEnabled = this.options.permissionsMcp?.enabled === true;
+    let interactiveApprovalEnabled = this.options.permissionsMcp?.enabled === true;
     if (process.env.CLAUDE_CODE_MCP) {
-      isPermissionsMcpEnabled = process.env.CLAUDE_CODE_MCP === 'true';
+      interactiveApprovalEnabled = process.env.CLAUDE_CODE_MCP === 'true';
     }
 
     if (allowAllTools == null) {
@@ -639,9 +645,15 @@ export class ClaudeCodeExecutor implements Executor {
     }
 
     if (this.sharedOptions.noninteractive) {
-      // permissions MCP doesn't make sense in noninteractive mode
-      isPermissionsMcpEnabled = false;
+      // Interactive approval does not make sense in noninteractive mode.
+      interactiveApprovalEnabled = false;
     }
+
+    const agentToolContext = this.sharedOptions.claudeAgentToolContext;
+    const agentToolsEnabled = agentToolContext !== undefined;
+    const agentToolIds = getAgentToolIds(agentToolContext);
+    validateAgentToolDisallowConflict(agentToolContext, disallowedTools);
+    const internalMcpNeeded = interactiveApprovalEnabled || agentToolsEnabled;
 
     let tempMcpConfigDir: string | undefined = undefined;
     let dynamicMcpConfigFile: string | undefined;
@@ -657,11 +669,14 @@ export class ClaudeCodeExecutor implements Executor {
       disallowedTools,
       sharedPermissions,
     });
+    if (agentToolIds.length > 0) {
+      allowedTools.push(...agentToolIds);
+    }
 
     // Parse allowedTools into efficient lookup structure for auto-approval
     this.parseAllowedTools(allowedTools);
 
-    if (isPermissionsMcpEnabled) {
+    if (internalMcpNeeded) {
       const result = await setupPermissionsMcp({
         allowedTools,
         defaultResponse: this.options.permissionsMcp?.defaultResponse,
@@ -669,6 +684,10 @@ export class ClaudeCodeExecutor implements Executor {
         autoApproveCreatedFileDeletion: this.options.permissionsMcp?.autoApproveCreatedFileDeletion,
         trackedFiles: this.trackedFiles,
         workingDirectory: gitRoot,
+        mcpConfigFile,
+        interactiveApprovalEnabled,
+        agentToolContext,
+        permissionPromptCoordinator: this.sharedOptions.claudePermissionPromptCoordinator,
       });
       tempMcpConfigDir = result.tempDir;
       dynamicMcpConfigFile = result.mcpConfigFile;
@@ -721,9 +740,11 @@ export class ClaudeCodeExecutor implements Executor {
         args.push('--disallowedTools', disallowedTools.join(','));
       }
 
-      if (isPermissionsMcpEnabled && dynamicMcpConfigFile) {
+      if (internalMcpNeeded && dynamicMcpConfigFile) {
         args.push('--mcp-config', dynamicMcpConfigFile);
-        args.push('--permission-prompt-tool', 'mcp__permissions__approval_prompt');
+        if (interactiveApprovalEnabled) {
+          args.push('--permission-prompt-tool', CLAUDE_APPROVAL_MCP_TOOL_ID);
+        }
       } else if (mcpConfigFile) {
         args.push('--mcp-config', mcpConfigFile);
       }
@@ -768,7 +789,7 @@ export class ClaudeCodeExecutor implements Executor {
         ? await getWorkingCopyStatus(gitRoot)
         : undefined;
 
-      log(`Interactive permissions MCP is`, isPermissionsMcpEnabled ? 'enabled' : 'disabled');
+      log(`Interactive permissions MCP is`, interactiveApprovalEnabled ? 'enabled' : 'disabled');
       const disableInactivityTimeout = this.sharedOptions.disableInactivityTimeout !== false;
       const executionTimeoutMs = 60 * 60 * 1000; // 60 minutes
       let killedByTimeout = false;

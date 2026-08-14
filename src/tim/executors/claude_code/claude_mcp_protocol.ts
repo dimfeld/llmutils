@@ -20,6 +20,7 @@ import type { AgentManager } from '../../agent_messaging/agent_manager.js';
 
 export const CLAUDE_MCP_SERVER_NAME = 'tim';
 export const CLAUDE_APPROVAL_TOOL_NAME = 'approval_prompt';
+export const CLAUDE_APPROVAL_MCP_TOOL_ID = `mcp__${CLAUDE_MCP_SERVER_NAME}__${CLAUDE_APPROVAL_TOOL_NAME}`;
 
 export const CLAUDE_AGENT_TOOL_NAMES = [
   'StartAgent',
@@ -47,6 +48,10 @@ export function getClaudeAgentToolNames(
   role: AgentIdentity['role']
 ): readonly ClaudeAgentToolName[] {
   return role === 'orchestrator' ? CLAUDE_ORCHESTRATOR_TOOL_NAMES : CLAUDE_SUBAGENT_TOOL_NAMES;
+}
+
+export function getClaudeAgentMcpToolId(toolName: ClaudeAgentToolName): string {
+  return `mcp__${CLAUDE_MCP_SERVER_NAME}__${toolName}`;
 }
 
 export const claudeRequestIdSchema = z.string().min(1).max(200);

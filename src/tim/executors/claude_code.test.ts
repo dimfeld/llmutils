@@ -539,6 +539,8 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     streaming?: ReturnType<typeof createStreamingProcessMock>;
     normalizeThrows?: Error;
     tunnelActive?: boolean;
+    claudeOptions?: Record<string, unknown>;
+    sharedOptions?: Record<string, unknown>;
   }) {
     const streaming = options?.streaming ?? createStreamingProcessMock({ pid: 24680 });
     const spawnWithStreamingIOMock = vi.fn(async () => streaming);
@@ -617,8 +619,12 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
 
     const { ClaudeCodeExecutor } = await import('./claude_code.js');
     const executor = new ClaudeCodeExecutor(
-      { permissionsMcp: { enabled: false } } as any,
-      { baseDir: tempDir, timEnvironment: options?.timEnvironment } as any,
+      { permissionsMcp: { enabled: false }, ...options?.claudeOptions } as any,
+      {
+        baseDir: tempDir,
+        timEnvironment: options?.timEnvironment,
+        ...options?.sharedOptions,
+      } as any,
       options?.timConfig ?? ({} as any)
     );
 
@@ -661,6 +667,44 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
     expect(harness.createTunnelServerMock).not.toHaveBeenCalled();
     expect(harness.spawnWithStreamingIOMock).not.toHaveBeenCalled();
+  });
+
+  test('installs trusted agent tools in noninteractive mode without approval prompting', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      sharedOptions: {
+        noninteractive: true,
+        claudeAgentToolContext: context,
+      },
+    });
+
+    await harness.execute();
+
+    const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+    expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interactiveApprovalEnabled: false,
+        agentToolContext: context,
+      })
+    );
+    expect(args).toContain('--mcp-config');
+    expect(args).not.toContain('--permission-prompt-tool');
+    const allowedToolsIndex = args.indexOf('--allowedTools');
+    expect(allowedToolsIndex).toBeGreaterThan(-1);
+    expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__StartAgent');
+    expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__ListAgents');
+    expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__SendAgentMessage');
+    expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__StopAgent');
   });
 
   test('starts and stops monitor with spawned Claude PID when rules are configured', async () => {

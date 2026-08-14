@@ -54,7 +54,7 @@ const output = await Promise.all([
   }),
   buildOne({
     outdir: 'dist/claude_code',
-    entrypoints: ['./src/tim/executors/claude_code/permissions_mcp.ts'],
+    entrypoints: ['./src/tim/executors/claude_code/tim_mcp.ts'],
     target: 'bun',
     minify: true,
   }),
