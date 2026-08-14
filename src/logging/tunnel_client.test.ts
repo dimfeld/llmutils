@@ -796,6 +796,40 @@ describe('TunnelAdapter bidirectional transport', () => {
     await expect(resultPromise).rejects.toThrow(/timed out/i);
   });
 
+  it('should reject and remove a pending prompt when an external signal aborts', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const controller = new AbortController();
+    const resultPromise = adapter.sendPromptRequest(
+      makePromptRequest('req-external-cancel'),
+      undefined,
+      controller.signal
+    );
+
+    await waitForMessages(testServer.getMessages, 1);
+    controller.abort();
+
+    await expect(resultPromise).rejects.toThrow(/cancelled/i);
+    expect(
+      (adapter as unknown as { pendingPrompts: Map<string, unknown> }).pendingPrompts.size
+    ).toBe(0);
+
+    // A late answer must not resolve another request or recreate the cancelled entry.
+    const sockets = testServer.getSockets();
+    sockets[0]?.write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId: 'req-external-cancel',
+        value: 'late answer',
+      }) + '\n'
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      (adapter as unknown as { pendingPrompts: Map<string, unknown> }).pendingPrompts.size
+    ).toBe(0);
+  });
+
   it('should reject all pending requests when connection is lost', async () => {
     testServer = await createBidirectionalTestServer(socketPath);
     adapter = await createTunnelAdapter(socketPath);

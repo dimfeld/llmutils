@@ -393,6 +393,42 @@ describe('prompt wrappers', () => {
       const secondArg = callArgs(mockConfirm, 0)[1];
       expect(secondArg).toBeUndefined();
     });
+
+    it('cancels a direct prompt with an external signal and emits prompt_cancelled', async () => {
+      const { adapter, calls } = createRecordingAdapter();
+      const controller = new AbortController();
+      mockConfirm.mockImplementation(
+        (_config: unknown, options?: { signal?: AbortSignal }) =>
+          new Promise<boolean>((_resolve, reject) => {
+            const signal = options?.signal;
+            if (signal === undefined) {
+              reject(new Error('Expected an abort signal'));
+              return;
+            }
+            const onAbort = () => {
+              const error = new Error('Prompt was aborted');
+              error.name = 'AbortPromptError';
+              reject(error);
+            };
+            if (signal.aborted) {
+              onAbort();
+              return;
+            }
+            signal.addEventListener('abort', onAbort, { once: true });
+          })
+      );
+
+      const prompt = runWithLogger(adapter, () =>
+        promptConfirm({ message: 'Cancel me', signal: controller.signal })
+      );
+      controller.abort();
+
+      await expect(prompt).rejects.toMatchObject({ name: 'PromptCancelledError' });
+      const structured = calls.filter((call) => call.method === 'sendStructured');
+      expect(structured.at(-1)?.args[0]).toMatchObject({
+        type: 'prompt_cancelled',
+      });
+    });
   });
 
   describe('tunneled path (via TunnelAdapter)', () => {

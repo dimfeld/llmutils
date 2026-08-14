@@ -45,6 +45,14 @@ export function isPromptTimeoutError(err: unknown): boolean {
   return false;
 }
 
+/** Error used when a caller cancels an interactive prompt before it is answered. */
+export class PromptCancelledError extends Error {
+  public constructor(message = 'Prompt cancelled') {
+    super(message);
+    this.name = 'PromptCancelledError';
+  }
+}
+
 /**
  * Builds a PromptRequestMessage with a unique requestId.
  */
@@ -85,6 +93,29 @@ function createTimeoutSignal(timeoutMs: number): {
   return {
     signal: controller.signal,
     cleanup: () => clearTimeout(timer),
+  };
+}
+
+function createPromptSignal(
+  externalSignal: AbortSignal | undefined,
+  timeoutMs: number | undefined
+): { signal: AbortSignal | undefined; cleanup: () => void } {
+  let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
+  if (timeoutMs != null && timeoutMs > 0) {
+    timeout = createTimeoutSignal(timeoutMs);
+  }
+
+  const signals = [externalSignal, timeout?.signal].filter(
+    (signal): signal is AbortSignal => signal !== undefined
+  );
+  return {
+    signal:
+      signals.length === 0
+        ? undefined
+        : signals.length === 1
+          ? signals[0]
+          : AbortSignal.any(signals),
+    cleanup: () => timeout?.cleanup(),
   };
 }
 
@@ -142,7 +173,8 @@ async function raceWithWebSocket<T>(
   headlessAdapter: HeadlessAdapter,
   promptMessage: PromptRequestMessage,
   runInquirer: (signal?: AbortSignal) => Promise<T>,
-  timeoutMs?: number
+  timeoutMs?: number,
+  externalSignal?: AbortSignal
 ): Promise<T> {
   const { promise: wsPromise, cancel: cancelWs } = headlessAdapter.waitForPromptResponse(
     promptMessage.requestId
@@ -160,6 +192,9 @@ async function raceWithWebSocket<T>(
   // Combine ws-abort signal with optional timeout signal
   let timeoutCleanup: (() => void) | undefined;
   const signals: AbortSignal[] = [wsAbortController.signal];
+  if (externalSignal !== undefined) {
+    signals.push(externalSignal);
+  }
   if (timeoutMs != null && timeoutMs > 0) {
     const timeout = createTimeoutSignal(timeoutMs);
     signals.push(timeout.signal);
@@ -170,6 +205,11 @@ async function raceWithWebSocket<T>(
   try {
     // Attempt terminal prompt -- may complete or be aborted by ws/timeout
     const value = await runInquirer(combinedSignal);
+    if (externalSignal?.aborted) {
+      cancelWs();
+      sendPromptCancelled(promptMessage);
+      throw new PromptCancelledError();
+    }
     // Terminal won
     cancelWs();
     sendPromptAnswered(promptMessage, value, 'terminal');
@@ -177,6 +217,10 @@ async function raceWithWebSocket<T>(
   } catch (err) {
     // Terminal was aborted. Was it because ws responded?
     cancelWs(); // Clean up ws regardless
+    if (externalSignal?.aborted) {
+      sendPromptCancelled(promptMessage);
+      throw new PromptCancelledError();
+    }
     try {
       const wsValue = await wsPromise;
       // WS won (promise already resolved before cancel was called)
@@ -185,6 +229,9 @@ async function raceWithWebSocket<T>(
     } catch {
       // WS was also cancelled/failed -- broadcast cancellation before rethrowing.
       sendPromptCancelled(promptMessage);
+      if (externalSignal?.aborted) {
+        throw new PromptCancelledError();
+      }
       throw err;
     }
   } finally {
@@ -202,8 +249,9 @@ export async function promptConfirm(options: {
   message: string;
   default?: boolean;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }): Promise<boolean> {
-  const { message, default: defaultValue, timeoutMs } = options;
+  const { message, default: defaultValue, timeoutMs, signal: externalSignal } = options;
   const tunnelAdapter = getTunnelAdapter();
 
   const promptMessage = buildPromptRequest(
@@ -216,7 +264,11 @@ export async function promptConfirm(options: {
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(promptMessage, timeoutMs)) as boolean;
+    return (await tunnelAdapter.sendPromptRequest(
+      promptMessage,
+      timeoutMs,
+      externalSignal
+    )) as boolean;
   }
 
   sendStructured(promptMessage);
@@ -230,26 +282,30 @@ export async function promptConfirm(options: {
         withTerminalInputPaused(() =>
           inquirerConfirm({ message, default: defaultValue }, { signal })
         ),
-      timeoutMs
+      timeoutMs,
+      externalSignal
     );
   }
 
-  let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
-  if (timeoutMs != null && timeoutMs > 0) {
-    timeout = createTimeoutSignal(timeoutMs);
-  }
+  const promptSignal = createPromptSignal(externalSignal, timeoutMs);
 
   try {
     const value = await withTerminalInputPaused(() =>
       inquirerConfirm(
         { message, default: defaultValue },
-        timeout ? { signal: timeout.signal } : undefined
+        promptSignal.signal ? { signal: promptSignal.signal } : undefined
       )
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
+  } catch (error) {
+    if (externalSignal?.aborted) {
+      sendPromptCancelled(promptMessage);
+      throw new PromptCancelledError();
+    }
+    throw error;
   } finally {
-    timeout?.cleanup();
+    promptSignal.cleanup();
   }
 }
 
@@ -267,6 +323,7 @@ export async function promptSelect<Value extends string | number | boolean>(opti
   default?: Value;
   pageSize?: number;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }): Promise<Value> {
   const {
     message,
@@ -276,6 +333,7 @@ export async function promptSelect<Value extends string | number | boolean>(opti
     default: defaultValue,
     pageSize,
     timeoutMs,
+    signal: externalSignal,
   } = options;
   const tunnelAdapter = getTunnelAdapter();
 
@@ -297,7 +355,11 @@ export async function promptSelect<Value extends string | number | boolean>(opti
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(promptMessage, timeoutMs)) as Value;
+    return (await tunnelAdapter.sendPromptRequest(
+      promptMessage,
+      timeoutMs,
+      externalSignal
+    )) as Value;
   }
 
   sendStructured(promptMessage);
@@ -311,26 +373,30 @@ export async function promptSelect<Value extends string | number | boolean>(opti
         withTerminalInputPaused(() =>
           inquirerSelect<Value>({ message, choices, default: defaultValue, pageSize }, { signal })
         ),
-      timeoutMs
+      timeoutMs,
+      externalSignal
     );
   }
 
-  let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
-  if (timeoutMs != null && timeoutMs > 0) {
-    timeout = createTimeoutSignal(timeoutMs);
-  }
+  const promptSignal = createPromptSignal(externalSignal, timeoutMs);
 
   try {
     const value = await withTerminalInputPaused(() =>
       inquirerSelect<Value>(
         { message, choices, default: defaultValue, pageSize },
-        timeout ? { signal: timeout.signal } : undefined
+        promptSignal.signal ? { signal: promptSignal.signal } : undefined
       )
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
+  } catch (error) {
+    if (externalSignal?.aborted) {
+      sendPromptCancelled(promptMessage);
+      throw new PromptCancelledError();
+    }
+    throw error;
   } finally {
-    timeout?.cleanup();
+    promptSignal.cleanup();
   }
 }
 
@@ -345,8 +411,15 @@ export async function promptInput(options: {
   default?: string;
   validationHint?: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }): Promise<string> {
-  const { message, default: defaultValue, validationHint, timeoutMs } = options;
+  const {
+    message,
+    default: defaultValue,
+    validationHint,
+    timeoutMs,
+    signal: externalSignal,
+  } = options;
   const tunnelAdapter = getTunnelAdapter();
 
   const promptMessage = buildPromptRequest(
@@ -360,7 +433,11 @@ export async function promptInput(options: {
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(promptMessage, timeoutMs)) as string;
+    return (await tunnelAdapter.sendPromptRequest(
+      promptMessage,
+      timeoutMs,
+      externalSignal
+    )) as string;
   }
 
   sendStructured(promptMessage);
@@ -374,26 +451,30 @@ export async function promptInput(options: {
         withTerminalInputPaused(() =>
           inquirerInput({ message, default: defaultValue }, { signal })
         ),
-      timeoutMs
+      timeoutMs,
+      externalSignal
     );
   }
 
-  let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
-  if (timeoutMs != null && timeoutMs > 0) {
-    timeout = createTimeoutSignal(timeoutMs);
-  }
+  const promptSignal = createPromptSignal(externalSignal, timeoutMs);
 
   try {
     const value = await withTerminalInputPaused(() =>
       inquirerInput(
         { message, default: defaultValue },
-        timeout ? { signal: timeout.signal } : undefined
+        promptSignal.signal ? { signal: promptSignal.signal } : undefined
       )
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
+  } catch (error) {
+    if (externalSignal?.aborted) {
+      sendPromptCancelled(promptMessage);
+      throw new PromptCancelledError();
+    }
+    throw error;
   } finally {
-    timeout?.cleanup();
+    promptSignal.cleanup();
   }
 }
 
@@ -410,8 +491,17 @@ export async function promptCheckbox<Value extends string | number | boolean>(op
   choices: Array<{ name: string; value: Value; description?: string; checked?: boolean }>;
   pageSize?: number;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }): Promise<Value[]> {
-  const { message, header, question, choices, pageSize, timeoutMs } = options;
+  const {
+    message,
+    header,
+    question,
+    choices,
+    pageSize,
+    timeoutMs,
+    signal: externalSignal,
+  } = options;
   const tunnelAdapter = getTunnelAdapter();
 
   const promptMessage = buildPromptRequest(
@@ -432,7 +522,11 @@ export async function promptCheckbox<Value extends string | number | boolean>(op
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(promptMessage, timeoutMs)) as Value[];
+    return (await tunnelAdapter.sendPromptRequest(
+      promptMessage,
+      timeoutMs,
+      externalSignal
+    )) as Value[];
   }
 
   sendStructured(promptMessage);
@@ -446,26 +540,30 @@ export async function promptCheckbox<Value extends string | number | boolean>(op
         withTerminalInputPaused(() =>
           inquirerCheckbox<Value>({ message, choices, pageSize }, { signal })
         ),
-      timeoutMs
+      timeoutMs,
+      externalSignal
     );
   }
 
-  let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
-  if (timeoutMs != null && timeoutMs > 0) {
-    timeout = createTimeoutSignal(timeoutMs);
-  }
+  const promptSignal = createPromptSignal(externalSignal, timeoutMs);
 
   try {
     const value = await withTerminalInputPaused(() =>
       inquirerCheckbox<Value>(
         { message, choices, pageSize },
-        timeout ? { signal: timeout.signal } : undefined
+        promptSignal.signal ? { signal: promptSignal.signal } : undefined
       )
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
+  } catch (error) {
+    if (externalSignal?.aborted) {
+      sendPromptCancelled(promptMessage);
+      throw new PromptCancelledError();
+    }
+    throw error;
   } finally {
-    timeout?.cleanup();
+    promptSignal.cleanup();
   }
 }
 
@@ -479,8 +577,9 @@ export async function promptPrefixSelect(options: {
   message: string;
   command: string;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }): Promise<PrefixPromptResult> {
-  const { message, command, timeoutMs } = options;
+  const { message, command, timeoutMs, signal: externalSignal } = options;
   const tunnelAdapter = getTunnelAdapter();
 
   const promptMessage = buildPromptRequest(
@@ -493,7 +592,11 @@ export async function promptPrefixSelect(options: {
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(promptMessage, timeoutMs)) as PrefixPromptResult;
+    return (await tunnelAdapter.sendPromptRequest(
+      promptMessage,
+      timeoutMs,
+      externalSignal
+    )) as PrefixPromptResult;
   }
 
   sendStructured(promptMessage);
@@ -504,22 +607,29 @@ export async function promptPrefixSelect(options: {
       headlessAdapter,
       promptMessage,
       (signal) => withTerminalInputPaused(() => runPrefixPrompt({ message, command }, { signal })),
-      timeoutMs
+      timeoutMs,
+      externalSignal
     );
   }
 
-  let timeout: { signal: AbortSignal; cleanup: () => void } | undefined;
-  if (timeoutMs != null && timeoutMs > 0) {
-    timeout = createTimeoutSignal(timeoutMs);
-  }
+  const promptSignal = createPromptSignal(externalSignal, timeoutMs);
 
   try {
     const value = await withTerminalInputPaused(() =>
-      runPrefixPrompt({ message, command }, timeout ? { signal: timeout.signal } : undefined)
+      runPrefixPrompt(
+        { message, command },
+        promptSignal.signal ? { signal: promptSignal.signal } : undefined
+      )
     );
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
+  } catch (error) {
+    if (externalSignal?.aborted) {
+      sendPromptCancelled(promptMessage);
+      throw new PromptCancelledError();
+    }
+    throw error;
   } finally {
-    timeout?.cleanup();
+    promptSignal.cleanup();
   }
 }

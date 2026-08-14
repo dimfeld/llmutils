@@ -35,6 +35,7 @@ interface PendingPromptRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer?: ReturnType<typeof setTimeout>;
+  removeAbortListener?: () => void;
 }
 
 /**
@@ -155,6 +156,7 @@ export class TunnelAdapter implements LoggerAdapter {
         if (pending.timer) {
           clearTimeout(pending.timer);
         }
+        pending.removeAbortListener?.();
         if (message.error) {
           pending.reject(new Error(message.error));
         } else {
@@ -222,6 +224,7 @@ export class TunnelAdapter implements LoggerAdapter {
       if (pending.timer) {
         clearTimeout(pending.timer);
       }
+      pending.removeAbortListener?.();
       pending.reject(error);
       this.pendingPrompts.delete(requestId);
     }
@@ -236,10 +239,18 @@ export class TunnelAdapter implements LoggerAdapter {
    *   this time, the promise rejects with a timeout error.
    * @returns The prompt result value from the server
    */
-  sendPromptRequest(message: PromptRequestMessage, timeoutMs?: number): Promise<unknown> {
+  sendPromptRequest(
+    message: PromptRequestMessage,
+    timeoutMs?: number,
+    signal?: AbortSignal
+  ): Promise<unknown> {
     return new Promise<unknown>((resolve, reject) => {
       if (!this.connected) {
         reject(new Error('Tunnel is not connected'));
+        return;
+      }
+      if (signal?.aborted) {
+        reject(new Error('Prompt request cancelled'));
         return;
       }
 
@@ -248,8 +259,22 @@ export class TunnelAdapter implements LoggerAdapter {
       if (timeoutMs != null && timeoutMs > 0) {
         entry.timer = setTimeout(() => {
           this.pendingPrompts.delete(message.requestId);
+          entry.removeAbortListener?.();
           reject(new Error(`Prompt request timed out after ${timeoutMs}ms`));
         }, timeoutMs);
+      }
+
+      if (signal !== undefined) {
+        const onAbort = () => {
+          if (!this.pendingPrompts.delete(message.requestId)) return;
+          if (entry.timer) {
+            clearTimeout(entry.timer);
+          }
+          entry.removeAbortListener = undefined;
+          reject(new Error('Prompt request cancelled'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        entry.removeAbortListener = () => signal.removeEventListener('abort', onAbort);
       }
 
       this.pendingPrompts.set(message.requestId, entry);
@@ -263,6 +288,7 @@ export class TunnelAdapter implements LoggerAdapter {
         if (entry.timer) {
           clearTimeout(entry.timer);
         }
+        entry.removeAbortListener?.();
         reject(new Error('Failed to send prompt request over tunnel'));
       }
     });

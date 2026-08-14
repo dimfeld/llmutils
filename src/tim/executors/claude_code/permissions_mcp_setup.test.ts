@@ -71,6 +71,8 @@ vi.mock('../../../common/input.js', () => ({
 
 const { mergeClaudeMcpConfig, readUserMcpConfig, resolvePermissionsMcpPath, setupPermissionsMcp } =
   await import('./permissions_mcp_setup.js');
+const { FifoClaudePermissionPromptCoordinator } =
+  await import('./claude_permission_prompt_coordinator.js');
 
 describe('Claude MCP config validation and merging', () => {
   test('preserves user servers and root fields while adding the tim server', async () => {
@@ -252,6 +254,284 @@ describe('permissions MCP path resolution', () => {
       await expect(resolvePermissionsMcpPath(execDir)).resolves.toBe(localSourcePath);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('shared permission prompt coordination over real MCP sockets', () => {
+  test('serializes prompts by arrival order and uses the trusted requester label', async () => {
+    const coordinator = new FifoClaudePermissionPromptCoordinator();
+    const promptMessages: string[] = [];
+    let releaseFirstPrompt!: () => void;
+    let firstShownResolve!: () => void;
+    const firstShown = new Promise<void>((resolve) => {
+      firstShownResolve = resolve;
+    });
+    const firstPromptGate = new Promise<void>((resolve) => {
+      releaseFirstPrompt = resolve;
+    });
+
+    mockPromptSelect.mockImplementation(async (...args: unknown[]) => {
+      const options = args[0] as { message: string };
+      promptMessages.push(options.message);
+      if (promptMessages.length === 1) {
+        firstShownResolve();
+        await firstPromptGate;
+      }
+      return 'allow';
+    });
+
+    const setup = async (name: string) =>
+      setupPermissionsMcp({
+        allowedTools: [],
+        interactiveApprovalEnabled: true,
+        permissionPromptCoordinator: coordinator,
+        agentToolContext: {
+          caller: { id: `${name}-id`, name, role: 'subagent' },
+          allowedTools: new Set(['ListAgents']),
+          dispatcher: {
+            startAgent: vi.fn(),
+            listAgents: vi.fn(),
+            sendAgentMessage: vi.fn(),
+            stopAgent: vi.fn(),
+            finishAgent: vi.fn(),
+          },
+        },
+      });
+
+    const firstSetup = await setup('implementer-api');
+    const secondSetup = await setup('tester-api');
+
+    const sendPermission = (
+      socketPath: string,
+      requestId: string
+    ): Promise<Record<string, unknown>> =>
+      new Promise((resolve, reject) => {
+        const socket = net.createConnection(socketPath, () => {
+          socket.write(
+            `${JSON.stringify({
+              type: 'permission_request',
+              requestId,
+              tool_name: 'Read',
+              input: {},
+            })}\n`
+          );
+        });
+        let buffer = '';
+        const timer = setTimeout(() => {
+          socket.destroy();
+          reject(new Error('Timed out waiting for permission response'));
+        }, 5000);
+        socket.on('data', (data) => {
+          buffer += data.toString();
+          const newline = buffer.indexOf('\n');
+          if (newline === -1) return;
+          clearTimeout(timer);
+          const response = JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>;
+          socket.end();
+          resolve(response);
+        });
+        socket.once('error', (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+      });
+
+    try {
+      const firstResponse = sendPermission(
+        path.join(firstSetup.tempDir, 'permissions.sock'),
+        'fifo-first'
+      );
+      await firstShown;
+      const secondResponse = sendPermission(
+        path.join(secondSetup.tempDir, 'permissions.sock'),
+        'fifo-second'
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(promptMessages).toHaveLength(1);
+      expect(promptMessages[0]).toContain('Claude agent implementer-api');
+
+      releaseFirstPrompt();
+      await expect(firstResponse).resolves.toMatchObject({
+        type: 'permission_response',
+        requestId: 'fifo-first',
+        approved: true,
+      });
+      await expect(secondResponse).resolves.toMatchObject({
+        type: 'permission_response',
+        requestId: 'fifo-second',
+        approved: true,
+      });
+      expect(promptMessages).toHaveLength(2);
+      expect(promptMessages[1]).toContain('Claude agent tester-api');
+    } finally {
+      await firstSetup.cleanup();
+      await secondSetup.cleanup();
+      await coordinator.dispose();
+      mockPromptSelect.mockImplementation(async () => {
+        const next = selectResponses.shift();
+        if (next instanceof Error) throw next;
+        if (typeof next !== 'string') throw new Error('No queued select response');
+        return next;
+      });
+    }
+  });
+
+  test('does not enqueue an automatically approved permission request', async () => {
+    const enqueue = vi.fn();
+    const coordinator = {
+      enqueue,
+      cancelRequester: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const result = await setupPermissionsMcp({
+      allowedTools: ['Read'],
+      permissionPromptCoordinator: coordinator,
+    });
+    const socket = net.createConnection(path.join(result.tempDir, 'permissions.sock'));
+
+    try {
+      const response = await new Promise<Record<string, unknown>>((resolve, reject) => {
+        socket.once('error', reject);
+        socket.once('connect', () => {
+          socket.write(
+            `${JSON.stringify({
+              type: 'permission_request',
+              requestId: 'auto-approved',
+              tool_name: 'Read',
+              input: {},
+            })}\n`
+          );
+        });
+        let buffer = '';
+        socket.on('data', (data) => {
+          buffer += data.toString();
+          const newline = buffer.indexOf('\n');
+          if (newline === -1) return;
+          resolve(JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>);
+        });
+      });
+
+      expect(response).toEqual({
+        type: 'permission_response',
+        requestId: 'auto-approved',
+        approved: true,
+      });
+      expect(enqueue).not.toHaveBeenCalled();
+    } finally {
+      socket.destroy();
+      await result.cleanup();
+    }
+  });
+
+  test('holds one queue slot across every AskUserQuestion subprompt', async () => {
+    const coordinator = new FifoClaudePermissionPromptCoordinator();
+    let secondQuestionShown!: () => void;
+    const secondQuestion = new Promise<void>((resolve) => {
+      secondQuestionShown = resolve;
+    });
+    let releaseSecondQuestion!: () => void;
+    const secondQuestionGate = new Promise<void>((resolve) => {
+      releaseSecondQuestion = resolve;
+    });
+    let promptCount = 0;
+    mockPromptSelect.mockImplementation(async () => {
+      promptCount += 1;
+      if (promptCount === 2) {
+        secondQuestionShown();
+        await secondQuestionGate;
+        return 'Option B';
+      }
+      return promptCount === 1 ? 'Option A' : 'allow';
+    });
+
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+    });
+    const socket = net.createConnection(path.join(result.tempDir, 'permissions.sock'));
+    let buffer = '';
+    const responses: Record<string, unknown>[] = [];
+    socket.on('data', (data) => {
+      buffer += data.toString();
+      let newline = buffer.indexOf('\n');
+      while (newline !== -1) {
+        responses.push(JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>);
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf('\n');
+      }
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.once('error', reject);
+        socket.once('connect', () => {
+          socket.write(
+            `${JSON.stringify({
+              type: 'permission_request',
+              requestId: 'ask-first',
+              tool_name: 'AskUserQuestion',
+              input: {
+                questions: [
+                  {
+                    header: 'First',
+                    question: 'First question?',
+                    options: [{ label: 'Option A' }, { label: 'Option B' }],
+                  },
+                  {
+                    header: 'Second',
+                    question: 'Second question?',
+                    options: [{ label: 'Option A' }, { label: 'Option B' }],
+                  },
+                ],
+              },
+            })}\n`
+          );
+          resolve();
+        });
+      });
+      await secondQuestion;
+
+      socket.write(
+        `${JSON.stringify({
+          type: 'permission_request',
+          requestId: 'ask-second',
+          tool_name: 'Read',
+          input: {},
+        })}\n`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(promptCount).toBe(2);
+
+      releaseSecondQuestion();
+      const deadline = Date.now() + 2000;
+      while (responses.length < 2 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(responses).toHaveLength(2);
+      expect(responses[0]).toMatchObject({
+        type: 'permission_response',
+        requestId: 'ask-first',
+        approved: true,
+      });
+      expect(responses[1]).toMatchObject({
+        type: 'permission_response',
+        requestId: 'ask-second',
+        approved: true,
+      });
+      expect(promptCount).toBe(3);
+    } finally {
+      socket.destroy();
+      await result.cleanup();
+      await coordinator.dispose();
+      mockPromptSelect.mockImplementation(async () => {
+        const next = selectResponses.shift();
+        if (next instanceof Error) throw next;
+        if (typeof next !== 'string') throw new Error('No queued select response');
+        return next;
+      });
     }
   });
 });

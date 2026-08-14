@@ -41,6 +41,7 @@ import {
   type ClaudeAgentToolContext,
   type ClaudePermissionPromptCoordinator,
 } from './claude_mcp_protocol.js';
+import { isClaudePermissionPromptCancelledError } from './claude_permission_prompt_coordinator.js';
 import type { AgentIdentity } from '../../agent_messaging/agent_manager_types.js';
 
 const BASH_TOOL_NAME = 'Bash';
@@ -253,17 +254,19 @@ function createBoundedLineSplitter(): (input: string) => string[] {
 }
 
 async function enqueueInteractivePrompt<T>(
-  operation: () => Promise<T>,
+  operation: (signal: AbortSignal) => Promise<T>,
   options: Pick<PermissionsMcpOptions, 'permissionPromptCoordinator'>,
   requester: { readonly name: string; readonly token: string },
   requestId: string
 ): Promise<T> {
-  if (options.permissionPromptCoordinator === undefined) return operation();
+  if (options.permissionPromptCoordinator === undefined) {
+    return operation(new AbortController().signal);
+  }
   return options.permissionPromptCoordinator.enqueue({
     requesterName: requester.name,
     requesterToken: requester.token,
     requestId,
-    run: async () => operation(),
+    run: operation,
   });
 }
 
@@ -526,7 +529,8 @@ async function handleBashPrefixApproval(
   sessionMessage: string,
   persistentMessage: string,
   timeout?: number,
-  workingDirectory?: string
+  workingDirectory?: string,
+  signal?: AbortSignal
 ): Promise<void> {
   const command = input.command as string;
   const selectedPrefix = await promptPrefixSelect({
@@ -535,6 +539,7 @@ async function handleBashPrefixApproval(
       : 'Select the command prefix to allow for this session:',
     command,
     timeoutMs: timeout,
+    signal,
   });
 
   const wasAdded = addBashPrefixSafely(allowedToolsMap, selectedPrefix.command);
@@ -552,7 +557,9 @@ async function handleBashPrefixApproval(
 
 async function handleAskUserQuestion(
   message: { requestId: string; tool_name: string; input: Record<string, unknown> },
-  socket: net.Socket
+  socket: net.Socket,
+  requesterName: string,
+  signal: AbortSignal
 ): Promise<void> {
   const requestId = message.requestId;
   const questions = Array.isArray(message.input?.questions) ? message.input.questions : [];
@@ -568,6 +575,9 @@ async function handleAskUserQuestion(
   }
 
   process.stdout.write('\x07');
+  if (requesterName) {
+    console.log(`\nClaude agent ${requesterName} wants to answer questions:`);
+  }
   const answers: Record<string, string> = {};
 
   try {
@@ -608,12 +618,14 @@ async function handleAskUserQuestion(
           header: promptHeader,
           question: promptQuestion,
           choices,
+          signal,
         });
 
         const selectedAnswers = selectedValues.filter((value) => value !== FREE_TEXT_VALUE);
         if (selectedValues.includes(FREE_TEXT_VALUE)) {
           const freeTextValue = await promptInput({
             message: 'Enter custom answer',
+            signal,
           });
           selectedAnswers.push(freeTextValue);
         }
@@ -625,11 +637,13 @@ async function handleAskUserQuestion(
           header: promptHeader,
           question: promptQuestion,
           choices,
+          signal,
         });
 
         if (selectedValue === FREE_TEXT_VALUE) {
           answers[promptQuestion] = await promptInput({
             message: 'Enter custom answer',
+            signal,
           });
         } else {
           answers[promptQuestion] = selectedValue;
@@ -637,6 +651,9 @@ async function handleAskUserQuestion(
       }
     }
   } catch (err) {
+    if (signal.aborted) {
+      throw err;
+    }
     if (isPromptTimeoutError(err)) {
       log('\nAskUserQuestion prompt timed out; denying request');
     } else {
@@ -710,8 +727,12 @@ async function handlePermissionLine(
   try {
     if (tool_name === 'AskUserQuestion') {
       // AskUserQuestion must always wait for explicit user input and never auto-timeout.
+      if (!Array.isArray(input.questions) || input.questions.length === 0) {
+        await handleAskUserQuestion(message, socket, requester.name, new AbortController().signal);
+        return;
+      }
       await enqueueInteractivePrompt(
-        () => handleAskUserQuestion(message, socket),
+        (signal) => handleAskUserQuestion(message, socket, requester.name, signal),
         options,
         requester,
         message.requestId
@@ -795,7 +816,7 @@ async function handlePermissionLine(
     let approved: boolean;
     try {
       approved = await enqueueInteractivePrompt(
-        async (): Promise<boolean> => {
+        async (signal: AbortSignal): Promise<boolean> => {
           process.stdout.write('\x07');
           try {
             const userChoice = await promptSelect({
@@ -807,6 +828,7 @@ async function handlePermissionLine(
                 { name: 'Disallow', value: USER_CHOICE_DISALLOW },
               ],
               timeoutMs: options.timeout,
+              signal,
             });
 
             const promptApproved =
@@ -823,7 +845,8 @@ async function handlePermissionLine(
                   '',
                   `${BASH_TOOL_NAME} prefix "{prefix}" added to always allowed list`,
                   options.timeout,
-                  options.workingDirectory
+                  options.workingDirectory,
+                  signal
                 );
               } else {
                 allowedToolsMap.set(tool_name, true);
@@ -841,7 +864,8 @@ async function handlePermissionLine(
                   `${BASH_TOOL_NAME} prefix "{prefix}" added to allowed list for current session only`,
                   '',
                   options.timeout,
-                  options.workingDirectory
+                  options.workingDirectory,
+                  signal
                 );
               } else {
                 allowedToolsMap.set(tool_name, true);
@@ -850,6 +874,9 @@ async function handlePermissionLine(
             }
             return promptApproved;
           } catch (error) {
+            if (signal.aborted) {
+              throw error;
+            }
             if (isPromptTimeoutError(error)) {
               const defaultResp = options.defaultResponse ?? 'no';
               log(`\nPermission prompt timed out, using default: ${defaultResp}`);
@@ -864,6 +891,7 @@ async function handlePermissionLine(
         message.requestId
       );
     } catch (error) {
+      if (isClaudePermissionPromptCancelledError(error)) return;
       approved = false;
       debugLog('Permission prompt coordination failed:', error);
     }
@@ -875,6 +903,7 @@ async function handlePermissionLine(
     };
     writeSocketMessage(socket, response);
   } catch (err) {
+    if (isClaudePermissionPromptCancelledError(err)) return;
     debugLog('Permission handler failed:', err);
     const response = {
       type: 'permission_response',
