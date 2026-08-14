@@ -830,6 +830,39 @@ describe('TunnelAdapter bidirectional transport', () => {
     ).toBe(0);
   });
 
+  it('does not let an older timeout remove a newer prompt with the same request ID', async () => {
+    testServer = await createBidirectionalTestServer(socketPath);
+    adapter = await createTunnelAdapter(socketPath);
+
+    const requestId = 'req-reused-id';
+    const first = adapter
+      .sendPromptRequest(makePromptRequest(requestId), 50)
+      .catch((error) => error);
+    await waitForMessages(testServer.getMessages, 1);
+
+    const second = adapter.sendPromptRequest(makePromptRequest(requestId));
+    await waitForMessages(testServer.getMessages, 2);
+
+    const firstResult = await first;
+    expect(firstResult).toBeInstanceOf(Error);
+    expect((firstResult as Error).message).toMatch(/superseded/i);
+    expect(
+      (adapter as unknown as { pendingPrompts: Map<string, unknown> }).pendingPrompts.size
+    ).toBe(1);
+
+    const sockets = testServer.getSockets();
+    expect(sockets).toHaveLength(1);
+    sockets[0].write(
+      JSON.stringify({
+        type: 'prompt_response',
+        requestId,
+        value: 'new answer',
+      }) + '\n'
+    );
+
+    await expect(second).resolves.toBe('new answer');
+  });
+
   it('should reject all pending requests when connection is lost', async () => {
     testServer = await createBidirectionalTestServer(socketPath);
     adapter = await createTunnelAdapter(socketPath);

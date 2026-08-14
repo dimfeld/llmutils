@@ -164,6 +164,34 @@ function sendPromptCancelled(promptMessage: PromptRequestMessage): void {
   });
 }
 
+function throwIfPromptWasCancelled(
+  promptMessage: PromptRequestMessage,
+  externalSignal: AbortSignal | undefined
+): void {
+  if (!externalSignal?.aborted) return;
+  sendPromptCancelled(promptMessage);
+  throw new PromptCancelledError();
+}
+
+async function sendTunneledPrompt<T>(
+  tunnelAdapter: TunnelAdapter,
+  promptMessage: PromptRequestMessage,
+  timeoutMs: number | undefined,
+  externalSignal: AbortSignal | undefined
+): Promise<T> {
+  try {
+    const value = await tunnelAdapter.sendPromptRequest(promptMessage, timeoutMs, externalSignal);
+    throwIfPromptWasCancelled(promptMessage, externalSignal);
+    return value as T;
+  } catch (error) {
+    if (!externalSignal?.aborted) throw error;
+    if (!(error instanceof PromptCancelledError)) {
+      sendPromptCancelled(promptMessage);
+    }
+    throw error instanceof PromptCancelledError ? error : new PromptCancelledError();
+  }
+}
+
 /**
  * Races a terminal inquirer prompt against a websocket prompt response.
  * Whichever channel responds first wins; the loser is cancelled.
@@ -264,11 +292,7 @@ export async function promptConfirm(options: {
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(
-      promptMessage,
-      timeoutMs,
-      externalSignal
-    )) as boolean;
+    return sendTunneledPrompt<boolean>(tunnelAdapter, promptMessage, timeoutMs, externalSignal);
   }
 
   sendStructured(promptMessage);
@@ -296,12 +320,15 @@ export async function promptConfirm(options: {
         promptSignal.signal ? { signal: promptSignal.signal } : undefined
       )
     );
+    throwIfPromptWasCancelled(promptMessage, externalSignal);
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
   } catch (error) {
     if (externalSignal?.aborted) {
-      sendPromptCancelled(promptMessage);
-      throw new PromptCancelledError();
+      if (!(error instanceof PromptCancelledError)) {
+        sendPromptCancelled(promptMessage);
+      }
+      throw error instanceof PromptCancelledError ? error : new PromptCancelledError();
     }
     throw error;
   } finally {
@@ -355,11 +382,7 @@ export async function promptSelect<Value extends string | number | boolean>(opti
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(
-      promptMessage,
-      timeoutMs,
-      externalSignal
-    )) as Value;
+    return sendTunneledPrompt<Value>(tunnelAdapter, promptMessage, timeoutMs, externalSignal);
   }
 
   sendStructured(promptMessage);
@@ -387,12 +410,15 @@ export async function promptSelect<Value extends string | number | boolean>(opti
         promptSignal.signal ? { signal: promptSignal.signal } : undefined
       )
     );
+    throwIfPromptWasCancelled(promptMessage, externalSignal);
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
   } catch (error) {
     if (externalSignal?.aborted) {
-      sendPromptCancelled(promptMessage);
-      throw new PromptCancelledError();
+      if (!(error instanceof PromptCancelledError)) {
+        sendPromptCancelled(promptMessage);
+      }
+      throw error instanceof PromptCancelledError ? error : new PromptCancelledError();
     }
     throw error;
   } finally {
@@ -433,11 +459,7 @@ export async function promptInput(options: {
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(
-      promptMessage,
-      timeoutMs,
-      externalSignal
-    )) as string;
+    return sendTunneledPrompt<string>(tunnelAdapter, promptMessage, timeoutMs, externalSignal);
   }
 
   sendStructured(promptMessage);
@@ -465,12 +487,15 @@ export async function promptInput(options: {
         promptSignal.signal ? { signal: promptSignal.signal } : undefined
       )
     );
+    throwIfPromptWasCancelled(promptMessage, externalSignal);
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
   } catch (error) {
     if (externalSignal?.aborted) {
-      sendPromptCancelled(promptMessage);
-      throw new PromptCancelledError();
+      if (!(error instanceof PromptCancelledError)) {
+        sendPromptCancelled(promptMessage);
+      }
+      throw error instanceof PromptCancelledError ? error : new PromptCancelledError();
     }
     throw error;
   } finally {
@@ -522,11 +547,7 @@ export async function promptCheckbox<Value extends string | number | boolean>(op
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(
-      promptMessage,
-      timeoutMs,
-      externalSignal
-    )) as Value[];
+    return sendTunneledPrompt<Value[]>(tunnelAdapter, promptMessage, timeoutMs, externalSignal);
   }
 
   sendStructured(promptMessage);
@@ -554,12 +575,15 @@ export async function promptCheckbox<Value extends string | number | boolean>(op
         promptSignal.signal ? { signal: promptSignal.signal } : undefined
       )
     );
+    throwIfPromptWasCancelled(promptMessage, externalSignal);
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
   } catch (error) {
     if (externalSignal?.aborted) {
-      sendPromptCancelled(promptMessage);
-      throw new PromptCancelledError();
+      if (!(error instanceof PromptCancelledError)) {
+        sendPromptCancelled(promptMessage);
+      }
+      throw error instanceof PromptCancelledError ? error : new PromptCancelledError();
     }
     throw error;
   } finally {
@@ -592,11 +616,12 @@ export async function promptPrefixSelect(options: {
   );
 
   if (tunnelAdapter) {
-    return (await tunnelAdapter.sendPromptRequest(
+    return sendTunneledPrompt<PrefixPromptResult>(
+      tunnelAdapter,
       promptMessage,
       timeoutMs,
       externalSignal
-    )) as PrefixPromptResult;
+    );
   }
 
   sendStructured(promptMessage);
@@ -621,12 +646,15 @@ export async function promptPrefixSelect(options: {
         promptSignal.signal ? { signal: promptSignal.signal } : undefined
       )
     );
+    throwIfPromptWasCancelled(promptMessage, externalSignal);
     sendPromptAnswered(promptMessage, value, 'terminal');
     return value;
   } catch (error) {
     if (externalSignal?.aborted) {
-      sendPromptCancelled(promptMessage);
-      throw new PromptCancelledError();
+      if (!(error instanceof PromptCancelledError)) {
+        sendPromptCancelled(promptMessage);
+      }
+      throw error instanceof PromptCancelledError ? error : new PromptCancelledError();
     }
     throw error;
   } finally {

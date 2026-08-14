@@ -258,6 +258,7 @@ export class TunnelAdapter implements LoggerAdapter {
 
       if (timeoutMs != null && timeoutMs > 0) {
         entry.timer = setTimeout(() => {
+          if (this.pendingPrompts.get(message.requestId) !== entry) return;
           this.pendingPrompts.delete(message.requestId);
           entry.removeAbortListener?.();
           reject(new Error(`Prompt request timed out after ${timeoutMs}ms`));
@@ -266,6 +267,7 @@ export class TunnelAdapter implements LoggerAdapter {
 
       if (signal !== undefined) {
         const onAbort = () => {
+          if (this.pendingPrompts.get(message.requestId) !== entry) return;
           if (!this.pendingPrompts.delete(message.requestId)) return;
           if (entry.timer) {
             clearTimeout(entry.timer);
@@ -277,6 +279,14 @@ export class TunnelAdapter implements LoggerAdapter {
         entry.removeAbortListener = () => signal.removeEventListener('abort', onAbort);
       }
 
+      const previous = this.pendingPrompts.get(message.requestId);
+      if (previous !== undefined) {
+        if (previous.timer) {
+          clearTimeout(previous.timer);
+        }
+        previous.removeAbortListener?.();
+        previous.reject(new Error(`Prompt request ${message.requestId} was superseded`));
+      }
       this.pendingPrompts.set(message.requestId, entry);
 
       // Send the message as a structured tunnel message.
@@ -284,6 +294,7 @@ export class TunnelAdapter implements LoggerAdapter {
       // the pending entry immediately so the promise doesn't hang forever.
       const sent = this.send({ type: 'structured', message });
       if (!sent) {
+        if (this.pendingPrompts.get(message.requestId) !== entry) return;
         this.pendingPrompts.delete(message.requestId);
         if (entry.timer) {
           clearTimeout(entry.timer);

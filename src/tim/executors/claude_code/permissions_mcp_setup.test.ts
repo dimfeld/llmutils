@@ -74,6 +74,96 @@ const { mergeClaudeMcpConfig, readUserMcpConfig, resolvePermissionsMcpPath, setu
 const { FifoClaudePermissionPromptCoordinator } =
   await import('./claude_permission_prompt_coordinator.js');
 
+interface PermissionTestClient {
+  readonly socket: net.Socket;
+  readonly responses: Array<Record<string, unknown>>;
+  send: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
+}
+
+async function connectPermissionTestClient(socketPath: string): Promise<PermissionTestClient> {
+  const socket = await new Promise<net.Socket>((resolve, reject) => {
+    const client = net.createConnection(socketPath);
+    client.once('connect', () => resolve(client));
+    client.once('error', reject);
+  });
+  const responses: Array<Record<string, unknown>> = [];
+  let buffer = '';
+  const waiters = new Map<
+    string,
+    {
+      resolve: (response: Record<string, unknown>) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+    }
+  >();
+
+  socket.on('data', (data) => {
+    buffer += data.toString();
+    let newline = buffer.indexOf('\n');
+    while (newline !== -1) {
+      const response = JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>;
+      buffer = buffer.slice(newline + 1);
+      responses.push(response);
+      const requestId = typeof response.requestId === 'string' ? response.requestId : undefined;
+      const waiter = requestId === undefined ? undefined : waiters.get(requestId);
+      if (waiter !== undefined) {
+        waiters.delete(requestId!);
+        clearTimeout(waiter.timer);
+        waiter.resolve(response);
+      }
+      newline = buffer.indexOf('\n');
+    }
+  });
+  socket.on('error', (error) => {
+    for (const [requestId, waiter] of waiters) {
+      waiters.delete(requestId);
+      clearTimeout(waiter.timer);
+      waiter.reject(error);
+    }
+  });
+  socket.on('close', () => {
+    const error = new Error('Permission test client closed');
+    for (const [requestId, waiter] of waiters) {
+      waiters.delete(requestId);
+      clearTimeout(waiter.timer);
+      waiter.reject(error);
+    }
+  });
+
+  return {
+    socket,
+    responses,
+    send: (message) =>
+      new Promise<Record<string, unknown>>((resolve, reject) => {
+        const requestId = message.requestId;
+        if (typeof requestId !== 'string') {
+          reject(new Error('Permission test messages need a requestId'));
+          return;
+        }
+        const timer = setTimeout(() => {
+          waiters.delete(requestId);
+          reject(new Error(`Timed out waiting for ${requestId}`));
+        }, 5000);
+        waiters.set(requestId, { resolve, reject, timer });
+        socket.write(`${JSON.stringify(message)}\n`);
+      }),
+  };
+}
+
+function makeSubagentToolContext(name: string) {
+  return {
+    caller: { id: `${name}-id`, name, role: 'subagent' as const },
+    allowedTools: new Set(['ListAgents' as const]),
+    dispatcher: {
+      startAgent: vi.fn(),
+      listAgents: vi.fn(),
+      sendAgentMessage: vi.fn(),
+      stopAgent: vi.fn(),
+      finishAgent: vi.fn(),
+    },
+  };
+}
+
 describe('Claude MCP config validation and merging', () => {
   test('preserves user servers and root fields while adding the tim server', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-mcp-config-'));
@@ -530,6 +620,402 @@ describe('shared permission prompt coordination over real MCP sockets', () => {
         const next = selectResponses.shift();
         if (next instanceof Error) throw next;
         if (typeof next !== 'string') throw new Error('No queued select response');
+        return next;
+      });
+    }
+  });
+
+  test('cancels an active requester and immediately advances the next live socket', async () => {
+    const coordinator = new FifoClaudePermissionPromptCoordinator();
+    const promptMessages: string[] = [];
+    let firstShownResolve!: () => void;
+    const firstShown = new Promise<void>((resolve) => {
+      firstShownResolve = resolve;
+    });
+    let firstAbortedResolve!: () => void;
+    const firstAborted = new Promise<void>((resolve) => {
+      firstAbortedResolve = resolve;
+    });
+    let firstOperationFinishedResolve!: () => void;
+    const firstOperationFinished = new Promise<void>((resolve) => {
+      firstOperationFinishedResolve = resolve;
+    });
+
+    mockPromptSelect.mockImplementation(async (...args: unknown[]) => {
+      const options = args[0] as { message: string; signal?: AbortSignal };
+      const promptOptions = options;
+      promptMessages.push(options.message);
+      if (promptMessages.length === 1) {
+        firstShownResolve();
+        await new Promise<void>((resolve) => {
+          promptOptions?.signal?.addEventListener(
+            'abort',
+            () => {
+              firstAbortedResolve();
+              resolve();
+            },
+            { once: true }
+          );
+        });
+        const error = new Error('Prompt was aborted');
+        error.name = 'AbortPromptError';
+        firstOperationFinishedResolve();
+        throw error;
+      }
+      return 'allow';
+    });
+
+    const firstSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('agent-a'),
+    });
+    const secondSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('agent-b'),
+    });
+    const firstClient = await connectPermissionTestClient(
+      path.join(firstSetup.tempDir, 'permissions.sock')
+    );
+    const secondClient = await connectPermissionTestClient(
+      path.join(secondSetup.tempDir, 'permissions.sock')
+    );
+
+    try {
+      const firstResponse = firstClient.send({
+        type: 'permission_request',
+        requestId: 'cancel-active-first',
+        tool_name: 'Read',
+        input: {},
+      });
+      void firstResponse.catch(() => undefined);
+      await firstShown;
+
+      const secondResponse = secondClient.send({
+        type: 'permission_request',
+        requestId: 'cancel-active-second',
+        tool_name: 'Read',
+        input: {},
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      firstClient.socket.end();
+      await firstAborted;
+      await firstOperationFinished;
+
+      await expect(secondResponse).resolves.toEqual({
+        type: 'permission_response',
+        requestId: 'cancel-active-second',
+        approved: true,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(firstClient.responses).toEqual([]);
+      expect(promptMessages).toHaveLength(2);
+      expect(promptMessages[0]).toContain('Claude agent agent-a');
+      expect(promptMessages[1]).toContain('Claude agent agent-b');
+    } finally {
+      secondClient.socket.end();
+      await firstSetup.cleanup();
+      await secondSetup.cleanup();
+      await coordinator.dispose();
+      mockPromptSelect.mockImplementation(async () => {
+        const next = selectResponses.shift();
+        if (next instanceof Error) throw next;
+        if (typeof next !== 'string') throw new Error('No queued select response');
+        return next;
+      });
+    }
+  });
+
+  test('removes a queued requester before display and preserves FIFO order for live sockets', async () => {
+    const coordinator = new FifoClaudePermissionPromptCoordinator();
+    const promptMessages: string[] = [];
+    let firstShownResolve!: () => void;
+    const firstShown = new Promise<void>((resolve) => {
+      firstShownResolve = resolve;
+    });
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    mockPromptSelect.mockImplementation(async (...args: unknown[]) => {
+      const options = args[0] as { message: string };
+      promptMessages.push(options.message);
+      if (promptMessages.length === 1) {
+        firstShownResolve();
+        await firstGate;
+      }
+      return 'allow';
+    });
+
+    const firstSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('agent-a'),
+    });
+    const secondSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('agent-b'),
+    });
+    const thirdSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('agent-c'),
+    });
+    const firstClient = await connectPermissionTestClient(
+      path.join(firstSetup.tempDir, 'permissions.sock')
+    );
+    const secondClient = await connectPermissionTestClient(
+      path.join(secondSetup.tempDir, 'permissions.sock')
+    );
+    const thirdClient = await connectPermissionTestClient(
+      path.join(thirdSetup.tempDir, 'permissions.sock')
+    );
+
+    try {
+      const firstResponse = firstClient.send({
+        type: 'permission_request',
+        requestId: 'queued-first',
+        tool_name: 'Read',
+        input: {},
+      });
+      await firstShown;
+
+      const secondResponse = secondClient.send({
+        type: 'permission_request',
+        requestId: 'queued-cancelled',
+        tool_name: 'Read',
+        input: {},
+      });
+      void secondResponse.catch(() => undefined);
+      const thirdResponse = thirdClient.send({
+        type: 'permission_request',
+        requestId: 'queued-third',
+        tool_name: 'Read',
+        input: {},
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await secondSetup.cleanup();
+      releaseFirst();
+
+      await expect(firstResponse).resolves.toMatchObject({
+        type: 'permission_response',
+        requestId: 'queued-first',
+        approved: true,
+      });
+      await expect(thirdResponse).resolves.toEqual({
+        type: 'permission_response',
+        requestId: 'queued-third',
+        approved: true,
+      });
+      expect(promptMessages).toHaveLength(2);
+      expect(promptMessages[0]).toContain('Claude agent agent-a');
+      expect(promptMessages[1]).toContain('Claude agent agent-c');
+      expect(promptMessages.join('\n')).not.toContain('agent-b');
+      expect(secondClient.responses).toEqual([]);
+    } finally {
+      firstClient.socket.end();
+      thirdClient.socket.destroy();
+      await firstSetup.cleanup();
+      await secondSetup.cleanup();
+      await thirdSetup.cleanup();
+      await coordinator.dispose();
+      mockPromptSelect.mockImplementation(async () => {
+        const next = selectResponses.shift();
+        if (next instanceof Error) throw next;
+        if (typeof next !== 'string') throw new Error('No queued select response');
+        return next;
+      });
+    }
+  });
+
+  test('cancels an active AskUserQuestion exchange without releasing its slot early', async () => {
+    const coordinator = new FifoClaudePermissionPromptCoordinator();
+    let secondQuestionShownResolve!: () => void;
+    const secondQuestionShown = new Promise<void>((resolve) => {
+      secondQuestionShownResolve = resolve;
+    });
+    let promptCount = 0;
+    mockPromptSelect.mockImplementation(async (...args: unknown[]) => {
+      const promptOptions = args[0] as { signal?: AbortSignal } | undefined;
+      promptCount += 1;
+      const callNumber = promptCount;
+      if (callNumber === 1) return 'Option A';
+      if (callNumber === 2) {
+        secondQuestionShownResolve();
+        await new Promise<void>((resolve) => {
+          promptOptions?.signal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        const error = new Error('Prompt was aborted');
+        error.name = 'AbortPromptError';
+        throw error;
+      }
+      return 'allow';
+    });
+
+    const firstSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('agent-questions'),
+    });
+    const secondSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('agent-next'),
+    });
+    const firstClient = await connectPermissionTestClient(
+      path.join(firstSetup.tempDir, 'permissions.sock')
+    );
+    const secondClient = await connectPermissionTestClient(
+      path.join(secondSetup.tempDir, 'permissions.sock')
+    );
+
+    try {
+      const firstResponse = firstClient.send({
+        type: 'permission_request',
+        requestId: 'ask-cancelled',
+        tool_name: 'AskUserQuestion',
+        input: {
+          questions: [
+            {
+              header: 'First',
+              question: 'First question?',
+              options: [{ label: 'Option A' }, { label: 'Option B' }],
+            },
+            {
+              header: 'Second',
+              question: 'Second question?',
+              options: [{ label: 'Option A' }, { label: 'Option B' }],
+            },
+          ],
+        },
+      });
+      void firstResponse.catch(() => undefined);
+      await secondQuestionShown;
+
+      const secondResponse = secondClient.send({
+        type: 'permission_request',
+        requestId: 'ask-next',
+        tool_name: 'Read',
+        input: {},
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      firstClient.socket.end();
+
+      await expect(secondResponse).resolves.toEqual({
+        type: 'permission_response',
+        requestId: 'ask-next',
+        approved: true,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(firstClient.responses).toEqual([]);
+      expect(promptCount).toBe(3);
+    } finally {
+      secondClient.socket.destroy();
+      await firstSetup.cleanup();
+      await secondSetup.cleanup();
+      await coordinator.dispose();
+      mockPromptSelect.mockImplementation(async () => {
+        const next = selectResponses.shift();
+        if (next instanceof Error) throw next;
+        if (typeof next !== 'string') throw new Error('No queued select response');
+        return next;
+      });
+    }
+  });
+
+  test('holds the queue slot through Bash prefix selection and cancels it with the requester', async () => {
+    const coordinator = new FifoClaudePermissionPromptCoordinator();
+    let prefixShownResolve!: () => void;
+    const prefixShown = new Promise<void>((resolve) => {
+      prefixShownResolve = resolve;
+    });
+    let prefixSignal: AbortSignal | undefined;
+
+    mockPromptSelect.mockImplementation(async () => 'session_allow');
+    mockPromptPrefixSelect.mockImplementation(async (...args: unknown[]) => {
+      const options = args[0] as { signal?: AbortSignal };
+      prefixSignal = options.signal;
+      prefixShownResolve();
+      await new Promise<void>((resolve) => {
+        options.signal?.addEventListener('abort', () => resolve(), { once: true });
+      });
+      const error = new Error('Prompt was aborted');
+      error.name = 'AbortPromptError';
+      throw error;
+    });
+
+    const firstSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('agent-prefix'),
+    });
+    const secondSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('agent-after-prefix'),
+    });
+    const firstClient = await connectPermissionTestClient(
+      path.join(firstSetup.tempDir, 'permissions.sock')
+    );
+    const secondClient = await connectPermissionTestClient(
+      path.join(secondSetup.tempDir, 'permissions.sock')
+    );
+
+    try {
+      const firstResponse = firstClient.send({
+        type: 'permission_request',
+        requestId: 'prefix-cancelled',
+        tool_name: 'Bash',
+        input: { command: 'git status --short' },
+      });
+      void firstResponse.catch(() => undefined);
+      await prefixShown;
+
+      const secondResponse = secondClient.send({
+        type: 'permission_request',
+        requestId: 'prefix-next',
+        tool_name: 'Read',
+        input: {},
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      firstClient.socket.end();
+
+      await expect(secondResponse).resolves.toEqual({
+        type: 'permission_response',
+        requestId: 'prefix-next',
+        approved: true,
+      });
+      expect(prefixSignal).toBeDefined();
+      expect(firstClient.responses).toEqual([]);
+    } finally {
+      secondClient.socket.destroy();
+      await firstSetup.cleanup();
+      await secondSetup.cleanup();
+      await coordinator.dispose();
+      mockPromptSelect.mockImplementation(async () => {
+        const next = selectResponses.shift();
+        if (next instanceof Error) throw next;
+        if (typeof next !== 'string') throw new Error('No queued select response');
+        return next;
+      });
+      mockPromptPrefixSelect.mockImplementation(async () => {
+        const next = prefixPromptResponses.shift();
+        if (next instanceof Error) throw next;
+        if (!next) throw new Error('No queued prefix prompt response');
         return next;
       });
     }

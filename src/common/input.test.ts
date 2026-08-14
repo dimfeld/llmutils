@@ -48,8 +48,14 @@ const mockGetActiveInputSource = vi.mocked(getActiveInputSource);
 const mockRunPrefixPrompt = vi.mocked(runPrefixPrompt);
 
 // Import the wrapper AFTER mock setup.
-const { promptConfirm, promptSelect, promptInput, promptCheckbox, promptPrefixSelect } =
-  await import('./input.ts');
+const {
+  promptConfirm,
+  promptSelect,
+  promptInput,
+  promptCheckbox,
+  promptPrefixSelect,
+  PromptCancelledError,
+} = await import('./input.ts');
 
 afterAll(() => {
   vi.clearAllMocks();
@@ -58,6 +64,30 @@ afterAll(() => {
 /** Helper to get the nth call args from a mock, bypassing strict tuple types. */
 function callArgs(fn: { mock: { calls: unknown[][] } }, callIndex: number): unknown[] {
   return fn.mock.calls[callIndex] ?? [];
+}
+
+function getPromptSignal(fn: { mock: { calls: unknown[][] } }): AbortSignal | undefined {
+  const options = callArgs(fn, 0)[1] as { signal?: AbortSignal } | undefined;
+  return options?.signal;
+}
+
+function waitForPromptAbort(signal: AbortSignal | undefined): Promise<never> {
+  return new Promise<never>((_resolve, reject) => {
+    if (signal === undefined) {
+      reject(new Error('Expected an external prompt signal'));
+      return;
+    }
+    const rejectAborted = () => {
+      const error = new Error('Prompt was aborted');
+      error.name = 'AbortPromptError';
+      reject(error);
+    };
+    if (signal.aborted) {
+      rejectAborted();
+      return;
+    }
+    signal.addEventListener('abort', rejectAborted, { once: true });
+  });
 }
 
 const TEMP_BASE = '/tmp/claude';
@@ -429,6 +459,122 @@ describe('prompt wrappers', () => {
         type: 'prompt_cancelled',
       });
     });
+
+    it('passes the external signal to every prompt wrapper and cancels each interaction', async () => {
+      const cases: Array<{
+        name: string;
+        invoke: (signal: AbortSignal) => Promise<unknown>;
+        install: () => void;
+        getSignal: () => AbortSignal | undefined;
+      }> = [
+        {
+          name: 'confirm',
+          invoke: (signal) => promptConfirm({ message: 'Confirm', signal }),
+          install: () =>
+            mockConfirm.mockImplementation((_config, options) =>
+              waitForPromptAbort(options?.signal)
+            ),
+          getSignal: () => getPromptSignal(mockConfirm),
+        },
+        {
+          name: 'select',
+          invoke: (signal) =>
+            promptSelect({
+              message: 'Select',
+              choices: [{ name: 'A', value: 'a' }],
+              signal,
+            }),
+          install: () =>
+            mockSelect.mockImplementation((_config, options) =>
+              waitForPromptAbort(options?.signal)
+            ),
+          getSignal: () => getPromptSignal(mockSelect),
+        },
+        {
+          name: 'input',
+          invoke: (signal) => promptInput({ message: 'Input', signal }),
+          install: () =>
+            mockInput.mockImplementation((_config, options) => waitForPromptAbort(options?.signal)),
+          getSignal: () => getPromptSignal(mockInput),
+        },
+        {
+          name: 'checkbox',
+          invoke: (signal) =>
+            promptCheckbox({
+              message: 'Checkbox',
+              choices: [{ name: 'A', value: 'a' }],
+              signal,
+            }),
+          install: () =>
+            mockCheckbox.mockImplementation((_config, options) =>
+              waitForPromptAbort(options?.signal)
+            ),
+          getSignal: () => getPromptSignal(mockCheckbox),
+        },
+        {
+          name: 'prefix_select',
+          invoke: (signal) =>
+            promptPrefixSelect({ message: 'Prefix', command: 'git status', signal }),
+          install: () =>
+            mockRunPrefixPrompt.mockImplementation((_config, options) =>
+              waitForPromptAbort(options?.signal)
+            ),
+          getSignal: () => getPromptSignal(mockRunPrefixPrompt),
+        },
+      ];
+
+      for (const promptCase of cases) {
+        const controller = new AbortController();
+        const { adapter, calls } = createRecordingAdapter();
+        promptCase.install();
+
+        const prompt = runWithLogger(adapter, () => promptCase.invoke(controller.signal));
+        expect(promptCase.getSignal()).toBe(controller.signal);
+        controller.abort();
+
+        await expect(prompt).rejects.toBeInstanceOf(PromptCancelledError);
+        expect(calls.filter((call) => call.method === 'sendStructured')).toContainEqual(
+          expect.objectContaining({
+            method: 'sendStructured',
+            args: [expect.objectContaining({ type: 'prompt_cancelled' })],
+          })
+        );
+
+        vi.clearAllMocks();
+      }
+    });
+
+    it('ignores a late terminal answer after external cancellation', async () => {
+      let resolveSelect!: (value: string) => void;
+      let passedSignal: AbortSignal | undefined;
+      mockSelect.mockImplementation((_config, options) => {
+        passedSignal = options?.signal;
+        return new Promise<string>((resolve) => {
+          resolveSelect = resolve;
+        });
+      });
+
+      const controller = new AbortController();
+      const { adapter, calls } = createRecordingAdapter();
+      const prompt = runWithLogger(adapter, () =>
+        promptSelect({
+          message: 'Late answer',
+          choices: [{ name: 'Allow', value: 'allow' }],
+          signal: controller.signal,
+        })
+      );
+
+      expect(passedSignal).toBe(controller.signal);
+      controller.abort();
+      resolveSelect('allow');
+
+      await expect(prompt).rejects.toBeInstanceOf(PromptCancelledError);
+      const structured = calls
+        .filter((call) => call.method === 'sendStructured')
+        .map((call) => call.args[0] as { type: string });
+      expect(structured.filter((message) => message.type === 'prompt_answered')).toHaveLength(0);
+      expect(structured.filter((message) => message.type === 'prompt_cancelled')).toHaveLength(1);
+    });
   });
 
   describe('tunneled path (via TunnelAdapter)', () => {
@@ -679,6 +825,52 @@ describe('prompt wrappers', () => {
         clientAdapter = null;
       });
     });
+
+    it('tunneled external cancellation emits one cancellation event and ignores a late answer', async () => {
+      const sp = uniqueSocketPath();
+      const { adapter: serverAdapter, calls } = createRecordingAdapter();
+      let lateRespond:
+        | ((response: { type: 'prompt_response'; requestId: string; value: boolean }) => void)
+        | undefined;
+      let promptRequestId: string | undefined;
+
+      const onPromptRequest: PromptRequestHandler = (message, respond) => {
+        promptRequestId = message.requestId;
+        lateRespond = (response) => respond(response);
+        if (message.promptType !== 'confirm') {
+          throw new Error('Expected a confirm prompt');
+        }
+      };
+
+      await runWithLogger(serverAdapter, async () => {
+        tunnelServer = await createTunnelServer(sp, { onPromptRequest });
+        clientAdapter = await createTunnelAdapter(sp);
+        const controller = new AbortController();
+        const prompt = runWithLogger(clientAdapter, () =>
+          promptConfirm({ message: 'Cancel tunneled prompt', signal: controller.signal })
+        );
+
+        const deadline = Date.now() + 2000;
+        while (lateRespond === undefined && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(lateRespond).toBeDefined();
+        controller.abort();
+
+        await expect(prompt).rejects.toBeInstanceOf(PromptCancelledError);
+        lateRespond?.({
+          type: 'prompt_response',
+          requestId: promptRequestId ?? 'late-response',
+          value: true,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+
+      const structured = calls
+        .filter((call) => call.method === 'sendStructured')
+        .map((call) => call.args[0] as { type: string });
+      expect(structured.filter((message) => message.type === 'prompt_cancelled')).toHaveLength(1);
+    });
   });
 
   describe('headless dual-channel path (embedded server + terminal racing)', () => {
@@ -896,6 +1088,129 @@ describe('prompt wrappers', () => {
         type: 'prompt_cancelled',
         requestId: requestMessage.requestId,
       });
+
+      client.close();
+      await headlessAdapter.destroy();
+    });
+
+    it('external cancellation removes the websocket request and ignores a late answer', async () => {
+      const { adapter: wrapped, calls } = createRecordingAdapter();
+      const headlessAdapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped, {
+        serverPort: 0,
+        serverHostname: '127.0.0.1',
+      });
+      const client = await connectSessionClient(headlessAdapter);
+      const controller = new AbortController();
+
+      mockConfirm.mockImplementation((_config: unknown, opts?: { signal?: AbortSignal }) => {
+        return new Promise<boolean>((_resolve, reject) => {
+          const signal = opts?.signal;
+          if (signal === undefined) {
+            reject(new Error('Expected an abort signal'));
+            return;
+          }
+          const onAbort = () => {
+            const error = new Error('Prompt was aborted');
+            error.name = 'AbortPromptError';
+            reject(error);
+          };
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener('abort', onAbort, { once: true });
+        });
+      });
+
+      const promptPromise = runWithLogger(headlessAdapter, () =>
+        promptConfirm({ message: 'Cancel websocket prompt', signal: controller.signal })
+      );
+      await waitFor(() =>
+        client.messages.some(
+          (message) =>
+            message.type === 'output' &&
+            message.message.type === 'structured' &&
+            message.message.message.type === 'prompt_request'
+        )
+      );
+
+      const promptRequestOutput = client.messages.find(
+        (message): message is Extract<HeadlessMessage, { type: 'output' }> =>
+          message.type === 'output' &&
+          message.message.type === 'structured' &&
+          message.message.message.type === 'prompt_request'
+      );
+      const requestId = (promptRequestOutput!.message as any).message.requestId as string;
+
+      controller.abort();
+      await expect(promptPromise).rejects.toBeInstanceOf(PromptCancelledError);
+      expect((headlessAdapter as any).pendingPrompts.size).toBe(0);
+
+      client.send({ type: 'prompt_response', requestId, value: true });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect((headlessAdapter as any).pendingPrompts.size).toBe(0);
+      expect(
+        calls.filter(
+          (call) =>
+            call.method === 'sendStructured' &&
+            (call.args[0] as { type?: string }).type === 'prompt_answered'
+        )
+      ).toHaveLength(0);
+
+      client.close();
+      await headlessAdapter.destroy();
+    });
+
+    it('rejects a websocket prompt error and removes its pending request', async () => {
+      const { adapter: wrapped } = createRecordingAdapter();
+      const headlessAdapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped, {
+        serverPort: 0,
+        serverHostname: '127.0.0.1',
+      });
+      const client = await connectSessionClient(headlessAdapter);
+
+      mockConfirm.mockImplementation((_config: unknown, opts?: { signal?: AbortSignal }) => {
+        return new Promise<boolean>((_resolve, reject) => {
+          const signal = opts?.signal;
+          if (signal === undefined) {
+            reject(new Error('Expected an abort signal'));
+            return;
+          }
+          const onAbort = () => {
+            const error = new Error('Prompt was aborted');
+            error.name = 'AbortPromptError';
+            reject(error);
+          };
+          if (signal.aborted) {
+            onAbort();
+            return;
+          }
+          signal.addEventListener('abort', onAbort, { once: true });
+        });
+      });
+
+      const promptPromise = runWithLogger(headlessAdapter, () =>
+        promptConfirm({ message: 'Websocket error' })
+      );
+      await waitFor(() =>
+        client.messages.some(
+          (message) =>
+            message.type === 'output' &&
+            message.message.type === 'structured' &&
+            message.message.message.type === 'prompt_request'
+        )
+      );
+      const promptRequestOutput = client.messages.find(
+        (message): message is Extract<HeadlessMessage, { type: 'output' }> =>
+          message.type === 'output' &&
+          message.message.type === 'structured' &&
+          message.message.message.type === 'prompt_request'
+      );
+      const requestId = (promptRequestOutput!.message as any).message.requestId as string;
+
+      client.send({ type: 'prompt_response', requestId, error: 'Server prompt failed' });
+      await expect(promptPromise).rejects.toBeInstanceOf(Error);
+      expect((headlessAdapter as any).pendingPrompts.size).toBe(0);
 
       client.close();
       await headlessAdapter.destroy();

@@ -669,6 +669,10 @@ async function handleAskUserQuestion(
     return;
   }
 
+  if (signal.aborted) {
+    throw new Error('Claude permission prompt was cancelled');
+  }
+
   const response = {
     type: 'permission_response',
     requestId,
@@ -1096,11 +1100,13 @@ function createPermissionSocketServer(
       socket.on('error', (error) => {
         debugLog('Claude MCP client socket failed:', error);
       });
-      socket.on('close', () => {
+      const cancelRequester = (): void => {
         if (sockets.delete(socket)) {
           options.permissionPromptCoordinator?.cancelRequester(requester.token);
         }
-      });
+      };
+      socket.on('end', cancelRequester);
+      socket.on('close', cancelRequester);
     });
 
     server.on('error', reject);

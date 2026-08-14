@@ -340,6 +340,7 @@ export class HeadlessAdapter implements LoggerAdapter {
             `Headless prompt error for ${message.requestId}: ${message.error}`
           );
           this.pendingPrompts.delete(message.requestId);
+          pending.reject(new Error(message.error));
           return;
         }
         this.pendingPrompts.delete(message.requestId);
@@ -655,12 +656,13 @@ export class HeadlessAdapter implements LoggerAdapter {
       reject = rej;
     });
 
-    this.pendingPrompts.set(requestId, { resolve, reject });
+    const pending: PendingPromptRequest = { resolve, reject };
+    this.pendingPrompts.set(requestId, pending);
 
     const cancel = () => {
-      if (this.pendingPrompts.delete(requestId)) {
-        reject(new Error('Prompt cancelled'));
-      }
+      if (this.pendingPrompts.get(requestId) !== pending) return;
+      this.pendingPrompts.delete(requestId);
+      reject(new Error('Prompt cancelled'));
     };
 
     return { promise, cancel };
