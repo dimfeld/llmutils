@@ -261,6 +261,12 @@ export interface RunClaudeSubprocessOptions {
 
   /** Whether to log model selection. Defaults to false. */
   logModelSelection?: boolean;
+
+  /**
+   * Optional Claude executable path used by local stream-json integration
+   * tests. Production callers leave this unset and continue to run `claude`.
+   */
+  claudeExecutable?: string;
 }
 
 /**
@@ -274,6 +280,8 @@ export interface ClaudePersistentAgentRunOptions extends Omit<RunClaudeSubproces
   readonly onOutputActivity?: () => void | Promise<void>;
   /** Optional named process-tree label supplied by AgentManager. */
   readonly processLabel?: AgentProcessLabel;
+  /** Optional short drain grace used by deterministic local integration tests. */
+  readonly persistentTurnGraceMs?: number;
 }
 
 /** The complete Claude option surface used by the future provider launcher. */
@@ -726,7 +734,12 @@ export async function runClaudeSubprocess(
       }
     }
 
-    const args = ['claude', '--no-session-persistence', '--permission-mode', 'auto'];
+    const args = [
+      options.claudeExecutable ?? 'claude',
+      '--no-session-persistence',
+      '--permission-mode',
+      'auto',
+    ];
 
     applyClaudeMcpLaunchArgs(args, mcpLaunch, claudeCodeOptions.mcpConfigFile);
 
@@ -899,6 +912,9 @@ export async function runClaudeSubprocess(
         ? {
             initialPrompt: prompt,
             onTurnComplete: notifyTurnComplete,
+            ...(options.persistentTurnGraceMs === undefined
+              ? {}
+              : { graceMs: options.persistentTurnGraceMs }),
           }
         : undefined,
     });
