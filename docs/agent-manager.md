@@ -27,6 +27,7 @@ The manager owns:
 - `sendAgentMessage()` trusted routing and delivery acknowledgements.
 - The mailbox-to-provider drain for each agent.
 - Per-subagent lifecycle-controller fan-out for `FinishAgent` and `StopAgent`.
+- One terminal notification and one cleanup path for each subagent.
 - Parallel live-subagent teardown.
 
 Each subagent has one internal `AgentLifecycleController`. It owns provider
@@ -41,18 +42,20 @@ those provider-specific operations into the lifecycle controls described here.
 
 ## Module layout
 
-| File                            | Contents                                                                            |
-| ------------------------------- | ----------------------------------------------------------------------------------- |
-| `agent_manager.ts`              | The `AgentManager` facade: option validation, root creation, Start/List/Send, close |
-| `agent_lifecycle_controller.ts` | Per-subagent lifecycle phases, timers, notifications, and cleanup                   |
-| `agent_manager_types.ts`        | Identity, launch, input-adapter, snapshot, option, and error contracts              |
-| `agent_directory.ts`            | Authoritative ID/name maps, capacity, naming, reservation, snapshots                |
-| `agent_startup.ts`              | Per-start cancellation, late-resource tracking, and rollback                        |
-| `agent_mailbox_binding.ts`      | One agent's provider input adapter and its mailbox drain scheduling                 |
-| `agent_names.ts`                | Branded `AgentId` / `AgentName`, parsing, and generated-name construction           |
-| `agent_process_labels.ts`       | The single display-label formatter                                                  |
-| `agent_preparation.ts`          | The preparation dependency built on the subagent launch service                     |
-| `fake_provider.ts`              | Deterministic fake preparer, launcher, handle, and input adapter for tests          |
+| File                            | Contents                                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `agent_manager.ts`              | The `AgentManager` facade: option validation, root creation, Start/List/Send, close                       |
+| `agent_lifecycle_controller.ts` | Per-subagent lifecycle phases, timers, notifications, and cleanup                                         |
+| `agent_manager_types.ts`        | Identity, launch, input-adapter, snapshot, option, and error contracts                                    |
+| `agent_directory.ts`            | Authoritative ID/name maps, capacity, naming, reservation, snapshots                                      |
+| `agent_startup.ts`              | Per-start cancellation, late-resource tracking, and rollback                                              |
+| `agent_mailbox_binding.ts`      | One agent's provider input adapter and its mailbox drain scheduling                                       |
+| `agent_names.ts`                | Branded `AgentId` / `AgentName`, parsing, and generated-name construction                                 |
+| `agent_process_labels.ts`       | The single display-label formatter                                                                        |
+| `agent_preparation.ts`          | The preparation dependency built on the subagent launch service                                           |
+| `terminal_notifications.ts`     | Pure final-result selection, duplicate suppression, and notification formatting                           |
+| `lifecycle_scheduler.ts`        | The production clock and unreferenced timer implementation                                                |
+| `fake_provider.ts`              | Deterministic fake scheduler, preparer, launcher, handle, lifecycle controls, and input adapter for tests |
 
 All files live in `src/tim/agent_messaging/`. `index.ts` exports immutable
 identities, snapshots, results, and the narrow lifecycle seams only. Mutable
@@ -64,17 +67,18 @@ directory records, reservations, and startup operations stay internal.
 creates or accepts a session runtime, and returns only after the reserved root
 mailbox is ready.
 
-| Option                           | Meaning                                                            |
-| -------------------------------- | ------------------------------------------------------------------ |
-| `sessionRuntime`                 | An existing runtime. When absent, the manager creates and owns one |
-| `orchestratorExecutor`           | Executor recorded for the root identity; defaults to `claude-code` |
-| `agentIdGenerator`               | Synchronous opaque-ID source; defaults to `randomUUID()`           |
-| `slugGenerator`                  | Synchronous slug source for generated names                        |
-| `maxAgentIdGenerationAttempts`   | Bounded unique-ID retries                                          |
-| `maxAgentNameGenerationAttempts` | Bounded unique-name retries                                        |
-| `agentPreparer`                  | Provider-neutral preparation boundary                              |
-| `agentLauncher`                  | Provider-neutral launch boundary                                   |
-| `orchestratorInputAdapter`       | Input boundary for messages addressed to `orchestrator`            |
+| Option                           | Meaning                                                                    |
+| -------------------------------- | -------------------------------------------------------------------------- |
+| `sessionRuntime`                 | An existing runtime. When absent, the manager creates and owns one         |
+| `orchestratorExecutor`           | Executor recorded for the root identity; defaults to `claude-code`         |
+| `agentIdGenerator`               | Synchronous opaque-ID source; defaults to `randomUUID()`                   |
+| `slugGenerator`                  | Synchronous slug source for generated names                                |
+| `maxAgentIdGenerationAttempts`   | Bounded unique-ID retries                                                  |
+| `maxAgentNameGenerationAttempts` | Bounded unique-name retries                                                |
+| `agentPreparer`                  | Provider-neutral preparation boundary                                      |
+| `agentLauncher`                  | Provider-neutral launch boundary                                           |
+| `orchestratorInputAdapter`       | Input boundary for messages addressed to `orchestrator`                    |
+| `scheduler`                      | Clock and timers for stop inactivity; defaults to the production scheduler |
 
 Injected generators are what make concurrency, collision, and exhaustion tests
 deterministic. The manager reads no global mutable state and never mutates
@@ -220,6 +224,180 @@ FIFO owns capacity (100 messages) and ordering. Mailbox failures map to
 `unknown_sender`, `unknown_target`, or `transport_error`, and the original stable
 transport code stays available on `AgentManagerError.transportCode`.
 
+## Provider lifecycle controls
+
+Each launch handle carries `lifecycle: AgentProviderLifecycleControls`. This is
+the only shutdown boundary the manager uses. It is provider-neutral: no PID,
+stdin object, thread ID, MCP request, or provider output DTO crosses it.
+
+| Operation                        | Meaning                                                                |
+| -------------------------------- | ---------------------------------------------------------------------- |
+| `requestGracefulShutdown(text)`  | Deliver one manager-composed final-status instruction                  |
+| `requestCloseAfterCurrentTurn()` | Close once the current turn has finished, never inside a tool callback |
+| `requestForcedShutdown()`        | Provider-safe forced termination                                       |
+| `subscribe(observer)`            | Receive lifecycle events; returns an unsubscribe function              |
+
+Each control resolves to `'accepted'` or `'already-exited'`. `'accepted'` means
+the provider control owns completion and will report a classified exit.
+`'already-exited'` is an assertion that the provider is gone; the controller
+then synthesizes a natural exit if no separate exit callback arrives. A control
+may reject with `AgentProviderControlError`. `AgentProviderForceNotAcceptedError`
+is the narrower failure that guarantees no force was accepted and therefore
+stays explicitly retryable.
+
+The observer has four events:
+
+| Event                             | Effect                                                                |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `outputActivity()`                | Resets only this agent's stop-inactivity timer                        |
+| `completedAssistantMessage(text)` | Replaces the final-result candidate and also counts as activity       |
+| `turnComplete()`                  | Lets a pending finish request run close-after-turn once               |
+| `exit(classification, error?)`    | `natural`, `graceful`, `forced`, or `failed`; later calls are ignored |
+
+Only `completedAssistantMessage()` can become terminal content. Streaming
+fragments, tool traces, status events, and stderr must arrive as
+`outputActivity()`; they reset the timer and never reach the orchestrator.
+Providers must therefore make this translation, and the manager captures the
+matching directory record when it subscribes, so a stale callback cannot affect
+a later agent that reuses the same name.
+
+`validateAgentProviderLifecycleControls()` checks the shape once, in the same
+way `validateAgentInputAdapter()` checks the input boundary.
+
+## FinishAgent
+
+`finishAgent(caller, request)` is self-only. The argument schema is
+`{ message?: string }` with no target field, and the caller must resolve to a
+`subagent` record; an orchestrator caller fails with `not_authorized`.
+
+1. The agent must be `running-active`, its provider lifecycle must be bound, and
+   the provider must not have exited. Any other case fails with
+   `finish_not_available`.
+2. The record moves to `finishing`, the nonblank optional message is stored as a
+   final-status fallback, and `{ state: 'finishing' }` returns immediately.
+3. The handler never closes, interrupts, or ends the provider. The current turn
+   continues and its completed assistant message is still captured.
+4. When the provider reports `turnComplete()`, the controller calls
+   `requestCloseAfterCurrentTurn()` exactly once. The claim is taken before the
+   provider call, because a provider can report an exit synchronously from
+   inside it.
+5. Terminal notification and cleanup start only when a provider exit is
+   observed. The FinishAgent acknowledgement is not an exit.
+
+Repeat calls are idempotent and return `finishing`. The first accepted fallback
+is never replaced. A `finishing` agent that reached that state some other way
+(root teardown, for example) rejects FinishAgent rather than adopting it. Force
+can still upgrade a finishing agent.
+
+The completed assistant message of the finishing turn is the authoritative final
+result. The fallback is used only when no nonblank completed message exists, and
+it never enables duplicate suppression.
+
+## StopAgent
+
+`stopAgent(caller, request)` requires the orchestrator caller and takes
+`{ name, message?, force? }`. The reserved `orchestrator` name fails with
+`reserved_name`, a malformed name with `invalid_name`, and an unknown or
+terminal subagent with `unknown_target`.
+
+### Graceful stop
+
+Omitted or false `force` is a graceful request. The first one:
+
+1. Moves the record to `stopping` synchronously, before any `await`, so
+   concurrent sends and stops observe the new state.
+2. Composes one standard final-status instruction. An optional message is
+   appended as delimited additional shutdown context; it never replaces the
+   standard instruction.
+3. Sends that instruction once through `requestGracefulShutdown()`.
+4. Returns `{ mode: 'graceful-requested', state: 'stopping' }` without waiting
+   for provider exit.
+
+The escalation window is `STOP_AGENT_INACTIVITY_TIMEOUT_MS` (120,000 ms) of
+**provider-output inactivity**, not a total-duration cap. An agent that keeps
+emitting output can stay alive far longer than two minutes.
+
+The timer is armed after the provider accepts. Output that arrives during the
+asynchronous request is recorded with its monotonic time and activity
+generation, so acceptance schedules only the interval remaining from the latest
+activity and escalates immediately when that deadline has already passed. Every
+later `outputActivity()` re-arms from the new activity time. Each re-arm, force
+upgrade, and terminal transition bumps a timer generation, because clearing a
+timer does not stop a callback that is already queued.
+
+A graceful control failure does not permit a second graceful instruction. The
+phase becomes active with the error retained, and the inactivity timer escalates
+through the normal force path.
+
+A duplicate graceful call returns `already-stopping`. It sends no second
+instruction, creates no second timer, and does not extend the window.
+
+### Forced stop
+
+Explicit `force: true` and timer escalation use the same path. It cancels the
+graceful timer, records a force-pending phase before invoking the provider, and
+calls `requestForcedShutdown()` once. Force can upgrade a graceful stop or a
+finishing agent. An accepted force answers later force calls from the recorded
+phase instead of calling the provider again.
+
+Failure handling depends on what the failure proves:
+
+- `AgentProviderForceNotAcceptedError` proves nothing was accepted. The prior
+  graceful phase is restored with its timer, the record stays `stopping`, and an
+  explicit caller gets `force_failed` so it can retry.
+- Any other rejection leaves the outcome unknown. The phase becomes
+  force-unknown, the manager never retries the control on its own, later
+  explicit calls report the same `force_failed` error, and resources stay in
+  place until a classified provider exit arrives.
+
+Automatic escalation and root teardown record these errors without blocking
+other agents.
+
+## Terminal convergence and notifications
+
+Natural exit, self-finish, graceful stop, forced stop, provider failure, and
+root teardown all converge on one terminal claim per agent. The claim cancels
+timers, unsubscribes the provider observer, formats the one notification, stores
+that single delivery attempt, and then runs cleanup. Cleanup disposes the
+mailbox binding, releases the provider handle, deregisters the mailbox, removes
+the directory record, and releases the name and slot — each step guarded, and
+the shared terminal promise always resolves in `finally`. Notification and
+cleanup failures are logged as diagnostics; they never produce a second
+notification and never leave a permanently pending entry.
+
+`terminal_notifications.ts` holds the policy as pure functions, so it is proven
+by table-driven tests rather than by a live provider.
+
+| Cause              | Content                                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------------------- |
+| `natural`          | The last completed assistant message, or a no-final-result statement                                      |
+| `self-finish`      | The same, falling back to the nonblank FinishAgent message                                                |
+| `graceful-stop`    | The same as `natural`                                                                                     |
+| `forced-stop`      | The last completed message or the explicit no-message marker, plus the fixed stale/out-of-context warning |
+| `provider-failure` | A short failure statement; provider diagnostics stay in logs                                              |
+
+Delivery uses the manager's trusted internal message path with the exiting
+agent's captured identity, targeting the root registration while its mailbox is
+still open. It does not re-enter tool authorization.
+
+### Duplicate suppression
+
+Suppression exists only to avoid repeating a final result the orchestrator
+already received. It applies when **all** of these hold:
+
+- The cause is `natural`, `self-finish`, or `graceful-stop`.
+- A nonblank completed assistant message exists — a FinishAgent fallback is not
+  eligible.
+- The agent's last **successfully delivered** outbound message targeted exactly
+  `orchestrator` and its content is nonblank.
+- The two strings are equal after trimming leading and trailing whitespace only.
+
+Comparison keeps case, punctuation, and internal whitespace significant. No
+lowercasing, normalization, or fuzzy matching. A later successful message to any
+peer replaces the snapshot and defeats suppression; a failed send does not
+update the snapshot, so it neither enables nor defeats it. Forced and
+provider-failure notifications are never suppressed.
+
 ## Mailbox binding and drain scheduling
 
 `AgentMailboxBinding` owns one agent's input adapter and the drain from its
@@ -263,24 +441,26 @@ tree. Never address, match, or control a process by its label.
 `AgentManagerError` carries a stable `code` and, for mapped transport failures,
 the underlying `transportCode`.
 
-| Code                             | Cause                                                      |
-| -------------------------------- | ---------------------------------------------------------- |
-| `invalid_options`                | Bad manager construction options                           |
-| `invalid_request`                | Request failed schema or limit validation                  |
-| `manager_closed`                 | The manager closed, including during a start               |
-| `not_authorized`                 | A non-orchestrator caller attempted `startAgent()`         |
-| `invalid_name` / `reserved_name` | Name grammar violation or the reserved `orchestrator` name |
-| `name_in_use`                    | Custom-name collision                                      |
-| `name_generation_exhausted`      | Bounded generated-name retries exhausted                   |
-| `identity_generation_exhausted`  | Bounded opaque-ID retries exhausted                        |
-| `agent_limit_reached`            | Eight nonterminal subagents already reserved               |
-| `launch_failed`                  | Preparation, mailbox, launch, or readiness failure         |
-| `unknown_sender`                 | The bound caller is not an active identity                 |
-| `unknown_target`                 | Unknown, terminal, or stale target                         |
-| `target_not_accepting_messages`  | Target is `finishing`, `stopping`, or has no ready mailbox |
-| `transport_error`                | Mailbox transport failure                                  |
-| `root_registration_failed`       | Root identity or mailbox could not be established          |
-| `unknown_agent`                  | A lifecycle seam received an unknown ID                    |
+| Code                             | Cause                                                                                                             |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `invalid_options`                | Bad manager construction options                                                                                  |
+| `invalid_request`                | Request failed schema or limit validation                                                                         |
+| `manager_closed`                 | The manager closed, including during a start                                                                      |
+| `not_authorized`                 | A non-orchestrator caller attempted `startAgent()` or `stopAgent()`, or an orchestrator attempted `finishAgent()` |
+| `invalid_name` / `reserved_name` | Name grammar violation or the reserved `orchestrator` name                                                        |
+| `name_in_use`                    | Custom-name collision                                                                                             |
+| `name_generation_exhausted`      | Bounded generated-name retries exhausted                                                                          |
+| `identity_generation_exhausted`  | Bounded opaque-ID retries exhausted                                                                               |
+| `agent_limit_reached`            | Eight nonterminal subagents already reserved                                                                      |
+| `launch_failed`                  | Preparation, mailbox, launch, or readiness failure                                                                |
+| `unknown_sender`                 | The bound caller is not an active identity                                                                        |
+| `unknown_target`                 | Unknown, terminal, or stale target                                                                                |
+| `target_not_accepting_messages`  | Target is `finishing`, `stopping`, or has no ready mailbox                                                        |
+| `transport_error`                | Mailbox transport failure                                                                                         |
+| `root_registration_failed`       | Root identity or mailbox could not be established                                                                 |
+| `unknown_agent`                  | A lifecycle seam received an unknown ID                                                                           |
+| `finish_not_available`           | FinishAgent outside an active turn, or after provider exit                                                        |
+| `force_failed`                   | Forced shutdown was not accepted, or its outcome is unknown                                                       |
 
 ## Preparation dependency
 
@@ -301,6 +481,22 @@ records directly.
 
 `setAgentLifecycleState(id, state)` remains a narrow nonterminal test seam for
 the provider-neutral lifecycle tests. It does not perform terminal cleanup.
+
+### Parallel root teardown
+
+Creation registers exactly **one** session-level handler with
+`CleanupRegistry`, which calls `close()`. `CleanupRegistry.executeAllAsync()`
+awaits handlers in sequence, so the fan-out across subagents happens inside
+`close()` instead of one handler per agent.
+
+`close()` is memoized: repeated calls, including a racing registry call, return
+the same promise. Once it starts, new starts and messages fail with
+`manager_closed`, and any StopAgent or FinishAgent already in flight joins the
+existing terminal promise rather than starting a second shutdown. Every
+snapshot entry is stopped or joined first, then all terminal promises are
+awaited together, so one slow or failing agent cannot serialize the others. The
+orchestrator mailbox and session runtime close last, after every terminal
+notification attempt has settled, and the cleanup handler is unregistered.
 
 ### Teardown convergence invariants
 
@@ -353,3 +549,15 @@ unavailable, and idle states plus recorded received messages, so active
 steering, queueing, FIFO drain order, idle turns, and each failure boundary are
 exercised without timers or real model processes. Use deferred promises and
 explicit state changes rather than sleeps.
+
+`FakeAgentProviderLifecycleControls` does the same for shutdown. It counts
+graceful, close-after-turn, and force invocations, records each graceful
+instruction, can defer or fail any operation, can report an exit from inside
+close-after-turn, and emits output activity, completed assistant messages, turn
+completion, and classified exits on demand.
+
+`FakeAgentManagerScheduler` replaces the production clock. Tests advance
+simulated time with `advanceBy()` / `advanceTo()` to prove exact 120,000 ms
+boundaries, repeated resets, and per-agent timer isolation without waiting two
+minutes. It also keeps cancelled timer callbacks so a test can run a stale
+callback deliberately and prove it is harmless.

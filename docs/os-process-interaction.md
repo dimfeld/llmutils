@@ -63,6 +63,12 @@ This owner check applies to root-owned executors and to nested executors after a
 their owning `tim` process through the tunnel. The opaque session process ID selects the owner;
 the OS PID is never the UI control key.
 
+`AgentManager` stops agents through provider-neutral lifecycle controls only
+(see [agent-manager.md](agent-manager.md)). It never holds or signals a PID, so
+a provider adapter that owns a real child process must run these identity
+checks itself behind `requestForcedShutdown()`. A logical provider without an
+OS process implements the same control without any signal.
+
 ## Explicit session process tracking
 
 Do not use `ps` as the source of the session process tree. A `SessionProcessRegistry` receives

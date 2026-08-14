@@ -3,15 +3,16 @@
 This document describes the provider-neutral agent-messaging contracts and the
 session storage and Unix-socket mailbox transport in
 `src/tim/agent_messaging/`. It does not describe provider sessions or provider
-adapters. The Start/List/Send manager core built on this transport is documented
-in [agent-manager.md](agent-manager.md), and the reusable one-shot preparation
+adapters. The manager core built on this transport — Start/List/Send plus the
+finish, stop, and terminal lifecycle — is documented in
+[agent-manager.md](agent-manager.md), and the reusable one-shot preparation
 and launch service it uses is documented in
 [subagent-launch-service.md](subagent-launch-service.md).
 
-The shared contracts let an orchestrator address, message, and later stop its
+The shared contracts let an orchestrator address, message, and stop its
 subagents. The transport gives one trusted session runtime a private namespace
 and one mailbox receiver per registered identity. It provides bounded,
-acknowledged message delivery for the later lifecycle layer.
+acknowledged message delivery for the lifecycle layer.
 
 The contracts and environment helpers are the single source of truth for names,
 limits, identity, and lifecycle vocabulary. The transport consumes those
@@ -97,6 +98,10 @@ use opaque IDs, not these names.
 | `MAX_SUBAGENTS_PER_SESSION`          | 8      | Nonterminal subagents per root session |
 | `MAX_AGENT_MESSAGE_BYTES`            | 65,536 | Message content, in UTF-8 **bytes**    |
 | `MAX_PENDING_MESSAGES_PER_RECIPIENT` | 100    | Queued messages for one recipient      |
+
+`STOP_AGENT_INACTIVITY_TIMEOUT_MS` (120,000) is the shared timing constant for
+graceful stop. It measures provider-output inactivity, not total shutdown
+duration; the manager owns that policy ([agent-manager.md](agent-manager.md)).
 
 The reserved orchestrator identity does not count against the subagent limit.
 `agentMessageContentSchema` measures UTF-8 bytes with `utf8ByteLength()`, not

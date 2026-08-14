@@ -812,7 +812,7 @@ experimental:
   agentMessaging: true
 ```
 
-`agentMessaging` is the flag for direct messaging between the orchestrator and its subagents. The contracts, configuration, the session storage and Unix-socket mailbox transport, and the start/list/send manager core exist, but no command wires them up yet, so a run with the flag on currently behaves exactly like a run with it off. See [docs/agent-messaging.md](docs/agent-messaging.md) and [docs/agent-manager.md](docs/agent-manager.md).
+`agentMessaging` is the flag for direct messaging between the orchestrator and its subagents. The contracts, configuration, the session storage and Unix-socket mailbox transport, the start/list/send manager core, and the finish/stop/teardown lifecycle exist, but no command wires them up yet, so a run with the flag on currently behaves exactly like a run with it off. See [docs/agent-messaging.md](docs/agent-messaging.md) and [docs/agent-manager.md](docs/agent-manager.md).
 
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
 
@@ -1049,4 +1049,4 @@ Use a unique prefix per developer to prevent accidental PR-to-plan matching from
 - [`docs/database.md`](docs/database.md) - SQLite-backed plan storage and materialization
 - [`docs/proof-generation.md`](docs/proof-generation.md) - capturing demo artifacts for completed plans
 - [`docs/agent-messaging.md`](docs/agent-messaging.md) - the experimental agent-messaging flag, its contracts, and the mailbox transport
-- [`docs/agent-manager.md`](docs/agent-manager.md) - the orchestrator-owned agent manager: naming, capacity, start, list, and send
+- [`docs/agent-manager.md`](docs/agent-manager.md) - the orchestrator-owned agent manager: naming, capacity, start, list, send, and the finish/stop/terminal lifecycle
