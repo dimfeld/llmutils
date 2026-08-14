@@ -155,7 +155,7 @@ export class PersistentClaudeInputWriter implements AgentInputAdapter {
 
   /** Mark the subprocess input as ready for its initial active turn. */
   public markReady(activity: 'active' | 'idle' = 'active'): void {
-    if (this.isTerminal()) return;
+    if (this.stdinEnded || this.providerState === 'closing' || this.isTerminal()) return;
     this.providerState = activity;
     this.readyState = true;
     this.resolveReadyPromise();
@@ -167,7 +167,14 @@ export class PersistentClaudeInputWriter implements AgentInputAdapter {
    * change prevents an old failed write from restoring a newer state.
    */
   public markProviderState(state: ClaudePersistentAgentState): void {
-    if (this.isTerminal() && state !== 'exited' && state !== 'failed') return;
+    if (this.isTerminal()) return;
+    if (
+      (this.stdinEnded || this.providerState === 'closing') &&
+      state !== 'exited' &&
+      state !== 'failed'
+    ) {
+      return;
+    }
     this.generationValue += 1;
     this.providerState = state;
     if (state === 'active' || state === 'result-pending-background' || state === 'idle') {

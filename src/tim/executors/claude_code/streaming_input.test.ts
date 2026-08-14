@@ -508,4 +508,27 @@ describe('PersistentClaudeInputWriter', () => {
     await expect(pending).rejects.toThrow('closed or failed');
     expect(stdin.end).toHaveBeenCalledTimes(1);
   });
+
+  it('does not let late readiness or parser state resurrect closed input', () => {
+    const stdin = createMockFileSink();
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+    void writer.ready.catch(() => undefined);
+
+    writer.close();
+    writer.markReady('active');
+    writer.markProviderState('idle');
+
+    expect(writer.state).toBe('closing');
+    expect(writer.isReady).toBe(false);
+    expect(writer.activity).toBe('temporarily-unavailable');
+    expect(writer.writeUserMessage('late')).toMatchObject({ status: 'closed-or-failed' });
+
+    writer.markProviderState('exited');
+    expect(writer.state).toBe('exited');
+    writer.markProviderState('active');
+    expect(writer.state).toBe('exited');
+  });
 });
