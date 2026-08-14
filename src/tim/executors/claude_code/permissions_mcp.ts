@@ -1,59 +1,78 @@
 /**
- * This file implements a standalone MCP server for handling interactive tool-use permissions
- * for the Claude Code executor. It provides a mechanism to prompt users for permission before
- * allowing or denying tool invocations based on user input.
+ * Standalone Claude MCP bridge for permission approval and agent management.
+ *
+ * The process receives only a discoverability manifest. Trusted identity and
+ * authorization remain in the parent tim process.
  */
 
 import { FastMCP } from 'fastmcp';
-import { z } from 'zod';
-import * as net from 'net';
-import * as fs from 'fs';
+import * as z from 'zod/v4';
+import * as net from 'node:net';
+import * as fs from 'node:fs';
 
-// Define the schema for the permission prompt input
+import {
+  CLAUDE_AGENT_TOOL_NAMES,
+  CLAUDE_APPROVAL_TOOL_NAME,
+  claudeMcpResponseSchema,
+  type AgentToolResponse,
+  type ClaudeAgentToolName,
+  type ClaudeMcpResponse,
+  type PermissionResponse,
+} from './claude_mcp_protocol.js';
+import {
+  finishAgentArgumentsSchema,
+  listAgentsArgumentsSchema,
+  sendAgentMessageArgumentsSchema,
+  startAgentArgumentsSchema,
+  stopAgentArgumentsSchema,
+} from '../../agent_messaging/contracts.js';
+
 export const PermissionInputSchema = z.object({
   tool_name: z.string().describe('The tool requesting permission'),
   input: z.object({}).passthrough().describe('The input for the tool'),
 });
 
-// Create the FastMCP server
-const server = new FastMCP({
-  name: 'permissions-server',
-  version: '0.0.1',
-});
-
-// Unix socket connection for communication with parent process
-let parentSocket: net.Socket | null = null;
-
-// Map to track pending requests by correlation ID
-const pendingRequests = new Map<string, (value: any) => void>();
-let requestCounter = 0;
-
 export interface PermissionResponseData {
   approved: boolean;
-  updatedInput?: any;
+  updatedInput?: unknown;
 }
 
-// Generate a unique request ID
-function generateRequestId(): string {
-  return `req_${Date.now()}_${++requestCounter}`;
+export interface ClaudeMcpServerOptions {
+  /** Whether the approval_prompt tool should be advertised. */
+  readonly interactiveApprovalEnabled?: boolean;
+  /** Untrusted child-side discoverability list supplied by the parent. */
+  readonly agentToolNames?: readonly string[];
 }
 
-// Maximum JSON message size (1MB)
+export interface ClaudeMcpServerHandle {
+  readonly server: FastMCP;
+  readonly toolNames: readonly string[];
+  /** Direct executor seam for protocol tests; production uses FastMCP stdio. */
+  readonly toolExecutors: ReadonlyMap<string, (input: unknown) => Promise<unknown>>;
+}
+
 const MAX_JSON_SIZE = 1024 * 1024;
+const PARENT_REQUEST_TIMEOUT_MS = 1000 * 60 * 600;
 
-// Buffer for accumulating partial JSON messages
+let parentSocket: net.Socket | null = null;
 let messageBuffer = '';
+let requestCounter = 0;
 let logFilePath: string | undefined;
+
+type PendingRequest = {
+  readonly expectedResponseType: 'permission_response' | 'agent_tool_response';
+  readonly resolve: (response: ClaudeMcpResponse) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+};
+
+const pendingRequests = new Map<string, PendingRequest>();
 
 function formatLogValue(value: unknown): string {
   if (value instanceof Error) {
     return `${value.name}: ${value.message}${value.stack ? `\n${value.stack}` : ''}`;
   }
-
-  if (typeof value === 'string') {
-    return value;
-  }
-
+  if (typeof value === 'string') return value;
   try {
     return JSON.stringify(value);
   } catch {
@@ -62,332 +81,382 @@ function formatLogValue(value: unknown): string {
 }
 
 function writeLog(message: string, ...values: unknown[]): void {
-  if (!logFilePath) {
-    return;
-  }
-
+  if (!logFilePath) return;
   const renderedValues = values.map(formatLogValue);
   const line = `[${new Date().toISOString()}] ${[message, ...renderedValues].join(' ')}\n`;
-
   try {
     fs.appendFileSync(logFilePath, line);
-  } catch (err) {
-    console.error('Failed to write permissions MCP log:', err);
+  } catch (error) {
+    console.error('Failed to write tim MCP log:', error);
   }
 }
 
 function configureLogging(nextLogFilePath: string | undefined): void {
   logFilePath = nextLogFilePath;
-  if (!logFilePath) {
-    return;
-  }
+  if (!logFilePath) return;
+  writeLog('tim MCP log initialized:', logFilePath);
 
-  writeLog('Permissions MCP log initialized:', logFilePath);
-
-  process.on('uncaughtException', (err: Error) => {
-    writeLog('Uncaught exception:', err);
+  process.on('uncaughtException', (error: Error) => {
+    writeLog('Uncaught exception:', error);
     process.exit(1);
   });
-
   process.on('unhandledRejection', (reason: unknown) => {
     writeLog('Unhandled rejection:', reason);
   });
 }
 
-// Test helper function to clean up for testing (for testing only)
-export function cleanupForTests() {
-  pendingRequests.clear();
-  messageBuffer = '';
-  logFilePath = undefined;
-  if (parentSocket) {
-    parentSocket.removeAllListeners();
-    parentSocket = null;
+function generateRequestId(): string {
+  return `req_${Date.now()}_${++requestCounter}`;
+}
+
+function rejectPendingRequest(requestId: string, error: Error): void {
+  const pending = pendingRequests.get(requestId);
+  if (!pending) return;
+  pendingRequests.delete(requestId);
+  clearTimeout(pending.timer);
+  pending.reject(error);
+}
+
+function rejectAllPendingRequests(error: Error): void {
+  for (const requestId of pendingRequests.keys()) {
+    rejectPendingRequest(requestId, error);
   }
 }
 
-// Test helper function to set the parent socket (for testing only)
-export function setParentSocket(socket: net.Socket | null) {
-  parentSocket = socket;
+function handleParentResponse(value: unknown): void {
+  const parsed = claudeMcpResponseSchema.safeParse(value);
+  if (!parsed.success) {
+    const requestId =
+      typeof value === 'object' && value !== null && 'requestId' in value
+        ? (value as { requestId?: unknown }).requestId
+        : undefined;
+    if (typeof requestId === 'string') {
+      rejectPendingRequest(requestId, new Error('Invalid response from tim MCP parent'));
+    }
+    writeLog('Ignoring invalid parent response:', parsed.error.issues);
+    return;
+  }
 
-  // Set up data handling for test sockets
-  if (socket) {
-    // Remove any existing listeners to avoid duplicates
-    socket.removeAllListeners('data');
-    socket.removeAllListeners('error');
-    socket.removeAllListeners('close');
+  const response = parsed.data;
+  const pending = pendingRequests.get(response.requestId);
+  if (!pending) {
+    writeLog('No pending request found for requestId:', response.requestId);
+    return;
+  }
 
-    // Handle incoming data from parent process
-    socket.on('data', (data: Buffer) => {
-      messageBuffer += data.toString();
+  if (pending.expectedResponseType !== response.type) {
+    rejectPendingRequest(
+      response.requestId,
+      new Error(
+        `Unexpected response type ${response.type} for ${pending.expectedResponseType} request`
+      )
+    );
+    return;
+  }
 
-      // Check for complete messages (ended by newline)
-      let newlineIndex;
-      while ((newlineIndex = messageBuffer.indexOf('\n')) !== -1) {
-        const messageStr = messageBuffer.slice(0, newlineIndex);
-        messageBuffer = messageBuffer.slice(newlineIndex + 1);
+  pendingRequests.delete(response.requestId);
+  clearTimeout(pending.timer);
+  pending.resolve(response);
+}
 
-        if (messageStr.length > MAX_JSON_SIZE) {
-          writeLog('Message too large, ignoring:', messageStr.length);
-          console.error('Message too large, ignoring');
-          continue;
-        }
-
-        try {
-          const message = JSON.parse(messageStr);
-          handleParentResponse(message);
-        } catch (err) {
-          writeLog('Failed to parse JSON message:', err);
-          console.error('Failed to parse JSON message:', err);
-        }
+function handleParentData(data: Buffer): void {
+  messageBuffer += data.toString();
+  let newlineIndex = messageBuffer.indexOf('\n');
+  while (newlineIndex !== -1) {
+    const message = messageBuffer.slice(0, newlineIndex);
+    messageBuffer = messageBuffer.slice(newlineIndex + 1);
+    if (message.length > MAX_JSON_SIZE) {
+      writeLog('Message too large, ignoring:', message.length);
+    } else if (message.length > 0) {
+      try {
+        handleParentResponse(JSON.parse(message));
+      } catch (error) {
+        writeLog('Failed to parse parent response:', error);
       }
+    }
+    newlineIndex = messageBuffer.indexOf('\n');
+  }
 
-      // Prevent buffer from growing too large
-      if (messageBuffer.length > MAX_JSON_SIZE) {
-        writeLog('Message buffer too large, clearing:', messageBuffer.length);
-        console.error('Message buffer too large, clearing');
-        messageBuffer = '';
-      }
-    });
-
-    socket.on('error', (err) => {
-      writeLog('Socket error:', err);
-      console.error('Socket error:', err);
-      // Reject all pending requests
-      for (const [, reject] of pendingRequests.entries()) {
-        reject(new Error('Socket connection error'));
-      }
-      pendingRequests.clear();
-    });
-
-    socket.on('close', () => {
-      writeLog('Socket closed');
-      // Reject all pending requests
-      for (const [, reject] of pendingRequests.entries()) {
-        reject(new Error('Socket connection closed'));
-      }
-      pendingRequests.clear();
-    });
-  } else {
-    // Clear pending requests when socket is null (but don't reject them in cleanup)
-    pendingRequests.clear();
+  if (messageBuffer.length > MAX_JSON_SIZE) {
+    writeLog('Message buffer too large, clearing:', messageBuffer.length);
     messageBuffer = '';
   }
 }
 
-// Connect to the parent process via Unix socket
-function connectToParent(socketPath: string) {
+function installParentSocketHandlers(socket: net.Socket, exitOnClose: boolean): void {
+  socket.on('data', handleParentData);
+  socket.on('error', (error: Error) => {
+    writeLog('Parent socket error:', error);
+    rejectAllPendingRequests(new Error('Socket connection error', { cause: error }));
+    if (exitOnClose) process.exit(1);
+  });
+  socket.on('close', () => {
+    writeLog('Parent socket closed');
+    rejectAllPendingRequests(new Error('Socket connection closed'));
+    if (exitOnClose) process.exit(0);
+  });
+}
+
+/** Test seam for exercising the real child request/response correlation. */
+export function setParentSocket(socket: net.Socket | null): void {
+  if (parentSocket && parentSocket !== socket) {
+    parentSocket.removeAllListeners('data');
+    parentSocket.removeAllListeners('error');
+    parentSocket.removeAllListeners('close');
+  }
+  rejectAllPendingRequests(new Error('Parent socket replaced'));
+  parentSocket = socket;
+  messageBuffer = '';
+  if (socket) installParentSocketHandlers(socket, false);
+}
+
+/** Test cleanup that also settles every pending child call. */
+export function cleanupForTests(): void {
+  rejectAllPendingRequests(new Error('MCP bridge test cleanup'));
+  if (parentSocket) {
+    parentSocket.removeAllListeners('data');
+    parentSocket.removeAllListeners('error');
+    parentSocket.removeAllListeners('close');
+    parentSocket = null;
+  }
+  messageBuffer = '';
+  logFilePath = undefined;
+}
+
+function connectToParent(socketPath: string): void {
   writeLog('Connecting to parent socket:', socketPath);
   parentSocket = net.createConnection(socketPath, () => {
     writeLog('Connected to parent socket');
   });
+  installParentSocketHandlers(parentSocket, true);
+}
 
-  // Handle incoming data from parent process
-  parentSocket.on('data', (data: Buffer) => {
-    messageBuffer += data.toString();
+async function requestParent<T extends ClaudeMcpResponse>(
+  request: Omit<
+    Extract<
+      import('./claude_mcp_protocol.js').ClaudeMcpRequest,
+      { type: T extends PermissionResponse ? 'permission_request' : 'agent_tool_request' }
+    >,
+    'requestId'
+  >,
+  expectedResponseType: PendingRequest['expectedResponseType']
+): Promise<T> {
+  if (!parentSocket || parentSocket.destroyed) {
+    throw new Error('Not connected to tim MCP parent');
+  }
 
-    // Check for complete messages (ended by newline)
-    let newlineIndex;
-    while ((newlineIndex = messageBuffer.indexOf('\n')) !== -1) {
-      const messageStr = messageBuffer.slice(0, newlineIndex);
-      messageBuffer = messageBuffer.slice(newlineIndex + 1);
+  const requestId = generateRequestId();
+  const fullRequest = { ...request, requestId };
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      rejectPendingRequest(requestId, new Error('MCP request timed out'));
+    }, PARENT_REQUEST_TIMEOUT_MS);
+    pendingRequests.set(requestId, {
+      expectedResponseType,
+      resolve: (response) => resolve(response as T),
+      reject,
+      timer,
+    });
 
-      if (messageStr.length > MAX_JSON_SIZE) {
-        writeLog('Message too large, ignoring:', messageStr.length);
-        console.error('Message too large, ignoring');
-        continue;
-      }
-
-      try {
-        const message = JSON.parse(messageStr);
-        handleParentResponse(message);
-      } catch (err) {
-        writeLog('Failed to parse JSON message:', err);
-        console.error('Failed to parse JSON message:', err);
-      }
+    try {
+      parentSocket?.write(`${JSON.stringify(fullRequest)}\n`);
+      writeLog('Sent parent request:', fullRequest);
+    } catch (error) {
+      rejectPendingRequest(requestId, error instanceof Error ? error : new Error(String(error)));
     }
-
-    // Prevent buffer from growing too large
-    if (messageBuffer.length > MAX_JSON_SIZE) {
-      writeLog('Message buffer too large, clearing:', messageBuffer.length);
-      console.error('Message buffer too large, clearing');
-      messageBuffer = '';
-    }
-  });
-
-  parentSocket.on('error', (err) => {
-    writeLog('Socket error:', err);
-    console.error('Socket error:', err);
-    // Reject all pending requests
-    for (const [, reject] of pendingRequests.entries()) {
-      reject(new Error('Socket connection error'));
-    }
-    pendingRequests.clear();
-    process.exit(1);
-  });
-
-  parentSocket.on('close', () => {
-    writeLog('Socket closed');
-    // Reject all pending requests
-    for (const [, reject] of pendingRequests.entries()) {
-      reject(new Error('Socket connection closed'));
-    }
-    pendingRequests.clear();
-    process.exit(0);
   });
 }
 
-// Handle responses from the parent process
-function handleParentResponse(message: any) {
-  if (!message.requestId) {
-    writeLog('Received message without requestId:', message);
-    console.error('Received message without requestId:', message);
-    return;
-  }
-
-  const resolver = pendingRequests.get(message.requestId);
-  if (!resolver) {
-    writeLog('No pending request found for requestId:', message.requestId);
-    console.error('No pending request found for requestId:', message.requestId);
-    return;
-  }
-
-  pendingRequests.delete(message.requestId);
-
-  if (message.type === 'permission_response') {
-    writeLog('Received permission response:', {
-      requestId: message.requestId,
-      approved: message.approved,
-      hasUpdatedInput: message.updatedInput !== undefined,
-    });
-    resolver({
-      approved: message.approved,
-      updatedInput: message.updatedInput,
-    });
-  } else {
-    writeLog('Unknown response type:', message.type);
-    console.error('Unknown response type:', message.type);
-    resolver({ approved: false });
-  }
-}
-
-// Send a request to the parent process and wait for response
 async function requestPermissionFromParent(
   tool_name: string,
-  input: any
-): Promise<PermissionResponseData> {
-  if (!parentSocket) {
-    throw new Error('Not connected to parent process');
-  }
-
-  return new Promise((resolve, reject) => {
-    const requestId = generateRequestId();
-    const request = {
-      type: 'permission_request',
-      requestId,
-      tool_name,
-      input,
-    };
-
-    // Store the resolver for this request
-    pendingRequests.set(requestId, resolve);
-    writeLog('Sending permission request:', { requestId, tool_name, input });
-
-    // Set up a timeout to clean up pending requests
-    const timeout = setTimeout(
-      () => {
-        pendingRequests.delete(requestId);
-        writeLog('Permission request timed out:', { requestId, tool_name });
-        reject(new Error('Permission request timed out'));
-      },
-      1000 * 60 * 600
-    ); // 600 minute timeout -- we have another timeout mechanism for normal use
-
-    // Override the resolver to also clear the timeout
-    const originalResolver = pendingRequests.get(requestId)!;
-    pendingRequests.set(requestId, (value) => {
-      clearTimeout(timeout);
-      originalResolver(value);
-    });
-
-    try {
-      // Send the request
-      parentSocket!.write(JSON.stringify(request) + '\n');
-    } catch (err) {
-      clearTimeout(timeout);
-      pendingRequests.delete(requestId);
-      writeLog('Failed to send permission request:', err);
-      reject(err as Error);
-    }
-  });
+  input: Record<string, unknown>
+): Promise<PermissionResponse> {
+  return requestParent<PermissionResponse>(
+    { type: 'permission_request', tool_name, input },
+    'permission_response'
+  );
 }
 
-// Define the approval prompt tool
-server.addTool({
-  name: 'approval_prompt',
-  description: 'Prompts the user for permission to execute a tool',
-  parameters: PermissionInputSchema,
-  execute: async ({ tool_name, input }) => {
-    try {
-      // Request permission from the parent process
-      const response = await requestPermissionFromParent(tool_name, input);
-      writeLog('Permission request completed:', { tool_name, approved: response.approved });
+async function requestAgentToolFromParent(
+  tool_name: ClaudeAgentToolName,
+  input: unknown
+): Promise<AgentToolResponse> {
+  return requestParent<AgentToolResponse>(
+    { type: 'agent_tool_request', tool_name, input },
+    'agent_tool_response'
+  );
+}
 
-      // Return the response based on user's decision
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              response.approved
-                ? {
-                    behavior: 'allow',
-                    updatedInput: response.updatedInput ?? input,
-                  }
-                : {
-                    behavior: 'deny',
-                    message: `User denied permission for tool: ${tool_name}`,
-                  }
-            ),
-          },
-        ],
-      };
-    } catch (err) {
-      writeLog('Permission request failed:', err);
-      // If communication fails, deny by default
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              behavior: 'deny',
-              message: `Permission request failed: ${err as Error}`,
-            }),
-          },
-        ],
-      };
-    }
-  },
-});
+function modelVisibleAgentResult(response: AgentToolResponse): {
+  content: [{ type: 'text'; text: string }];
+  isError?: boolean;
+} {
+  if (response.success) {
+    return {
+      content: [{ type: 'text', text: JSON.stringify(response.result) }],
+    };
+  }
+  return {
+    content: [{ type: 'text', text: response.error }],
+    isError: true,
+  };
+}
 
-// Start the server if this file is run directly
+function addAgentTool(
+  server: FastMCP,
+  toolNames: string[],
+  toolExecutors: Map<string, (input: unknown) => Promise<unknown>>,
+  name: ClaudeAgentToolName,
+  parameters: Parameters<typeof server.addTool>[0]
+): void {
+  server.addTool(parameters);
+  toolNames.push(name);
+  toolExecutors.set(name, parameters.execute as unknown as (input: unknown) => Promise<unknown>);
+}
+
+/** Create one role-scoped MCP server for one Claude process. */
+export function createClaudeMcpServer(options: ClaudeMcpServerOptions = {}): ClaudeMcpServerHandle {
+  const server = new FastMCP({
+    name: 'tim',
+    version: '0.0.1',
+  });
+  const toolNames: string[] = [];
+  const toolExecutors = new Map<string, (input: unknown) => Promise<unknown>>();
+
+  if (options.interactiveApprovalEnabled !== false) {
+    server.addTool({
+      name: CLAUDE_APPROVAL_TOOL_NAME,
+      description: 'Prompts the user for permission to execute a tool',
+      parameters: PermissionInputSchema,
+      execute: async ({ tool_name, input }) => {
+        try {
+          const response = await requestPermissionFromParent(tool_name, input);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(
+                  response.approved
+                    ? { behavior: 'allow', updatedInput: response.updatedInput ?? input }
+                    : {
+                        behavior: 'deny',
+                        message: `User denied permission for tool: ${tool_name}`,
+                      }
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          writeLog('Permission request failed:', error);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  behavior: 'deny',
+                  message: `Permission request failed: ${error instanceof Error ? error.message : String(error)}`,
+                }),
+              },
+            ],
+          };
+        }
+      },
+    });
+    toolNames.push(CLAUDE_APPROVAL_TOOL_NAME);
+  }
+
+  const requestedToolNames = new Set(options.agentToolNames ?? []);
+  if (requestedToolNames.has('StartAgent')) {
+    addAgentTool(server, toolNames, toolExecutors, 'StartAgent', {
+      name: 'StartAgent',
+      description: 'Start a named Claude or Codex subagent',
+      parameters: startAgentArgumentsSchema,
+      execute: async (input) =>
+        modelVisibleAgentResult(await requestAgentToolFromParent('StartAgent', input)),
+    });
+  }
+  if (requestedToolNames.has('ListAgents')) {
+    addAgentTool(server, toolNames, toolExecutors, 'ListAgents', {
+      name: 'ListAgents',
+      description: 'List active agents in this tim session',
+      parameters: listAgentsArgumentsSchema,
+      execute: async (input) =>
+        modelVisibleAgentResult(await requestAgentToolFromParent('ListAgents', input)),
+    });
+  }
+  if (requestedToolNames.has('SendAgentMessage')) {
+    addAgentTool(server, toolNames, toolExecutors, 'SendAgentMessage', {
+      name: 'SendAgentMessage',
+      description: 'Send a message to an active agent',
+      parameters: sendAgentMessageArgumentsSchema,
+      execute: async (input) =>
+        modelVisibleAgentResult(await requestAgentToolFromParent('SendAgentMessage', input)),
+    });
+  }
+  if (requestedToolNames.has('StopAgent')) {
+    addAgentTool(server, toolNames, toolExecutors, 'StopAgent', {
+      name: 'StopAgent',
+      description: 'Gracefully or forcefully stop an active subagent',
+      parameters: stopAgentArgumentsSchema,
+      execute: async (input) =>
+        modelVisibleAgentResult(await requestAgentToolFromParent('StopAgent', input)),
+    });
+  }
+  if (requestedToolNames.has('FinishAgent')) {
+    addAgentTool(server, toolNames, toolExecutors, 'FinishAgent', {
+      name: 'FinishAgent',
+      description: 'Mark this subagent complete after its current turn',
+      parameters: finishAgentArgumentsSchema,
+      execute: async (input) =>
+        modelVisibleAgentResult(await requestAgentToolFromParent('FinishAgent', input)),
+    });
+  }
+
+  return {
+    server,
+    toolNames: Object.freeze(toolNames),
+    toolExecutors,
+  };
+}
+
+function parseServerOptions(value: string | undefined): ClaudeMcpServerOptions {
+  if (!value) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
+    const record = parsed as Record<string, unknown>;
+    const agentToolNames = Array.isArray(record.agentToolNames)
+      ? record.agentToolNames.filter(
+          (name): name is ClaudeAgentToolName =>
+            typeof name === 'string' &&
+            (CLAUDE_AGENT_TOOL_NAMES as readonly string[]).includes(name)
+        )
+      : undefined;
+    return {
+      interactiveApprovalEnabled:
+        record.interactiveApprovalEnabled === undefined
+          ? undefined
+          : record.interactiveApprovalEnabled === true,
+      agentToolNames,
+    };
+  } catch {
+    return {};
+  }
+}
+
 if (import.meta.main) {
-  // Get the Unix socket path from command line argument
   const socketPath = process.argv[2];
   const nextLogFilePath = process.argv[3];
   configureLogging(nextLogFilePath);
   if (!socketPath) {
-    writeLog('Unix socket path was not provided');
-    console.error('Unix socket path must be provided as command line argument');
+    console.error('Unix socket path must be provided as a command line argument');
     process.exit(1);
   }
 
-  // Connect to the parent process
   connectToParent(socketPath);
   process.stdin.on('close', () => parentSocket?.end());
 
-  // Start the MCP server in stdio mode
-  writeLog('Starting permissions MCP server');
-  await server.start({
-    transportType: 'stdio',
-  });
+  const { server } = createClaudeMcpServer(parseServerOptions(process.argv[4]));
+  writeLog('Starting tim MCP server');
+  await server.start({ transportType: 'stdio' });
 }
