@@ -153,6 +153,10 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
 
   public constructor() {}
 
+  public get observerCount(): number {
+    return this.observers.size;
+  }
+
   public subscribe(observer: AgentProviderLifecycleObserver): () => void {
     this.observers.add(observer);
     return (): void => {
@@ -235,6 +239,14 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
 
   public resolveForcedShutdown(result: AgentProviderControlResult = acceptedControlResult()): void {
     this.resolvePendingOperation(this.nextForcedOperation, result, 'forced-shutdown');
+  }
+
+  public rejectForcedShutdown(
+    error: Error = new AgentProviderForceNotAcceptedError(
+      'The fake provider did not accept forced shutdown'
+    )
+  ): void {
+    this.rejectPendingOperation(this.nextForcedOperation, error, 'forced-shutdown');
   }
 
   public failNextGracefulShutdown(

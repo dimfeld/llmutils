@@ -21,6 +21,7 @@ import {
   type TerminalNotificationCause,
   type TerminalNotificationInput,
 } from './terminal_notifications.js';
+import { debugLog } from '../../logging.js';
 import { randomUUID } from 'node:crypto';
 
 const STANDARD_GRACEFUL_STOP_INSTRUCTION =
@@ -73,10 +74,7 @@ interface TerminalLifecycleState {
   finishRequested: boolean;
   finishFallbackMessage?: string;
   closeAfterTurnRequested: boolean;
-  closeAfterTurnPromise?: Promise<unknown>;
-  closeAfterTurnError?: unknown;
   notificationAttempt?: Promise<void>;
-  diagnostics: unknown[];
 }
 
 interface SuccessfulOutboundSnapshot {
@@ -119,7 +117,6 @@ function createTerminalLifecycleState(): TerminalLifecycleState {
     cause: undefined,
     finishRequested: false,
     closeAfterTurnRequested: false,
-    diagnostics: [],
   };
 }
 
@@ -165,16 +162,8 @@ export class AgentLifecycleController {
     return this.terminal.terminalClaimed;
   }
 
-  public get hasProviderExit(): boolean {
-    return this.providerExit !== undefined;
-  }
-
   public get providerExitInfo(): AgentProviderExit | undefined {
     return this.providerExit;
-  }
-
-  public get hasProviderLifecycle(): boolean {
-    return this.providerLifecycle !== undefined;
   }
 
   /** Retry a pending startup stop after the provider becomes ready. */
@@ -367,35 +356,56 @@ export class AgentLifecycleController {
     result: AgentProviderControlResult,
     requestGeneration: number
   ): void {
-    if (!this.isCurrent() || this.terminal.terminalClaimed || this.phase !== phase) return;
+    const forcePendingForPhase =
+      this.phase.kind === 'force-pending' && this.phase.previous === phase;
+    if (
+      !this.isCurrent() ||
+      this.terminal.terminalClaimed ||
+      (this.phase !== phase && !forcePendingForPhase)
+    )
+      return;
     if (result === 'accepted') {
       phase.kind = 'graceful-active';
       if (phase.activityGeneration === requestGeneration) {
         phase.lastActivityAt = this.options.scheduler.now();
         phase.activityGeneration += 1;
       }
-      this.armStopInactivityTimer(phase);
+      if (this.phase === phase) this.armStopInactivityTimer(phase);
       return;
     }
-    this.cancelStopTimer();
+    if (this.phase === phase) this.cancelStopTimer();
     this.synthesizeProviderExit('natural');
   }
 
   private handleGracefulFailure(phase: GracefulStopPhase, error: unknown): void {
-    if (!this.isCurrent() || this.terminal.terminalClaimed || this.phase !== phase) return;
+    const forcePendingForPhase =
+      this.phase.kind === 'force-pending' && this.phase.previous === phase;
+    if (
+      !this.isCurrent() ||
+      this.terminal.terminalClaimed ||
+      (this.phase !== phase && !forcePendingForPhase)
+    )
+      return;
     phase.kind = 'graceful-active';
     phase.lastError = error;
     phase.lastActivityAt = phase.lastActivityAt || this.options.scheduler.now();
-    this.armStopInactivityTimer(phase);
+    if (this.phase === phase) this.armStopInactivityTimer(phase);
   }
 
   private handleOutputActivity(): void {
     if (!this.isCurrent() || this.providerExit !== undefined || this.terminal.terminalClaimed)
       return;
-    if (!isGracefulStopPhase(this.phase)) return;
-    this.phase.lastActivityAt = this.options.scheduler.now();
-    this.phase.activityGeneration += 1;
-    if (this.phase.kind === 'graceful-active') this.armStopInactivityTimer(this.phase);
+    const phase = isGracefulStopPhase(this.phase)
+      ? this.phase
+      : this.phase.kind === 'force-pending' && isGracefulStopPhase(this.phase.previous)
+        ? this.phase.previous
+        : undefined;
+    if (phase === undefined) return;
+    phase.lastActivityAt = this.options.scheduler.now();
+    phase.activityGeneration += 1;
+    if (this.phase === phase && phase.kind === 'graceful-active') {
+      this.armStopInactivityTimer(phase);
+    }
   }
 
   private handleCompletedAssistantMessage(message: string): void {
@@ -415,20 +425,19 @@ export class AgentLifecycleController {
     // exit from inside requestCloseAfterCurrentTurn().
     this.terminal.closeAfterTurnRequested = true;
     try {
-      this.terminal.closeAfterTurnPromise = Promise.resolve(
-        this.providerLifecycle.requestCloseAfterCurrentTurn()
-      ).then(
+      const closeAfterTurn = this.providerLifecycle.requestCloseAfterCurrentTurn();
+      void Promise.resolve(closeAfterTurn).then(
         (result): undefined => {
           if (result === 'already-exited') this.synthesizeProviderExit('natural');
           return undefined;
         },
         (error: unknown): undefined => {
-          this.terminal.closeAfterTurnError = error;
+          this.logDiagnostic('close-after-turn request', error);
           return undefined;
         }
       );
     } catch (error) {
-      this.terminal.closeAfterTurnError = error;
+      this.logDiagnostic('close-after-turn request', error);
     }
   }
 
@@ -471,10 +480,20 @@ export class AgentLifecycleController {
     return 'graceful-stop';
   }
 
-  private createGracefulActiveFromPrevious(previous: RestorableStopPhase): RestorableStopPhase {
+  private captureRestorableStopPhase(previous: RestorableStopPhase): RestorableStopPhase {
     if (previous.kind === 'none') return previous;
     this.cancelPhaseTimer(previous);
     return previous;
+  }
+
+  private restoreGracefulPhaseAfterForceNotAccepted(previous: RestorableStopPhase): void {
+    if (previous.kind === 'none') {
+      this.phase = previous;
+      return;
+    }
+    previous.kind = 'graceful-active';
+    this.phase = previous;
+    this.armStopInactivityTimer(previous);
   }
 
   private requestForcedStop(explicit: boolean): Promise<StopAgentResult> {
@@ -492,7 +511,7 @@ export class AgentLifecycleController {
       );
     }
 
-    const previous = this.createGracefulActiveFromPrevious(this.phase);
+    const previous = this.captureRestorableStopPhase(this.phase);
     this.options.record.state = 'stopping';
     const phase: ForcePendingStopPhase = { kind: 'force-pending', previous };
     this.phase = phase;
@@ -541,7 +560,7 @@ export class AgentLifecycleController {
     if (this.phase !== phase) return this.forcedResult();
     phase.lastError = error;
     if (isForceNotAccepted(error)) {
-      this.phase = phase.previous;
+      this.restoreGracefulPhaseAfterForceNotAccepted(phase.previous);
       if (!explicit) return this.alreadyStoppingResult();
       throw new AgentManagerError(
         'force_failed',
@@ -664,7 +683,8 @@ export class AgentLifecycleController {
         { requestId: randomUUID(), content }
       );
       if (!acknowledgement.success) {
-        this.terminal.diagnostics.push(
+        this.logDiagnostic(
+          'terminal notification delivery',
           new AgentManagerError(
             'transport_error',
             `Terminal notification delivery failed (${acknowledgement.error.code}): ${acknowledgement.error.message}`
@@ -672,35 +692,48 @@ export class AgentLifecycleController {
         );
       }
     } catch (error) {
-      this.terminal.diagnostics.push(error);
+      this.logDiagnostic('terminal notification delivery', error);
     }
   }
 
   private async cleanupTerminal(): Promise<void> {
     try {
       await this.terminal.notificationAttempt;
-      this.options.cleanup.disposeMailbox();
-      try {
-        await this.providerHandle?.release?.();
-      } catch (error) {
-        this.terminal.diagnostics.push(error);
-      }
-      try {
-        await this.options.record.mailbox?.deregister();
-      } catch (error) {
-        this.terminal.diagnostics.push(error);
-      }
     } catch (error) {
-      this.terminal.diagnostics.push(error);
-    } finally {
-      try {
-        this.options.cleanup.removeDirectoryRecord();
-      } catch (error) {
-        this.terminal.diagnostics.push(error);
-      }
+      this.logDiagnostic('terminal notification', error);
+    }
+
+    try {
+      this.options.cleanup.disposeMailbox();
+    } catch (error) {
+      this.logDiagnostic('mailbox disposal', error);
+    }
+    try {
+      await this.providerHandle?.release?.();
+    } catch (error) {
+      this.logDiagnostic('provider release', error);
+    }
+    try {
+      await this.options.record.mailbox?.deregister();
+    } catch (error) {
+      this.logDiagnostic('mailbox deregistration', error);
+    }
+    try {
+      this.options.cleanup.removeDirectoryRecord();
+    } catch (error) {
+      this.logDiagnostic('directory removal', error);
+    }
+    try {
       this.options.cleanup.onRemoved();
+    } catch (error) {
+      this.logDiagnostic('lifecycle removal', error);
+    } finally {
       this.terminal.resolveTerminal();
     }
+  }
+
+  private logDiagnostic(operation: string, error: unknown): void {
+    debugLog(`[agent lifecycle] ${operation} failed for ${this.options.record.name}:`, error);
   }
 
   private forcedResult(): StopAgentResult {

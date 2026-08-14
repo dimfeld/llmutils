@@ -5,6 +5,8 @@ import * as path from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CleanupRegistry } from '../../common/cleanup_registry.js';
+import { runWithLogger } from '../../logging.js';
+import { createRecordingAdapter } from '../../logging/test_helpers.js';
 import {
   MAX_AGENT_MESSAGE_BYTES,
   MAX_AGENT_NAME_LENGTH,
@@ -2698,9 +2700,13 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
 
   test('binds events to the launched opaque identity and ignores late callbacks', async () => {
     const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
     const manager = await createManager({
       agentPreparer: createPreparer(),
       agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
     });
     const launch = await startFakeAgent(manager, launcher, 'lifecycle-target');
     const lifecycle = launch.handle.lifecycle;
@@ -2712,7 +2718,7 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     lifecycle.emitExit('natural');
     lifecycle.emitExit('failed', new Error('late failure'));
     lifecycle.emitOutputActivity();
-    lifecycle.emitCompletedAssistantMessage('wrong identity');
+    lifecycle.emitCompletedAssistantMessage('late result after terminal exit');
     lifecycle.emitTurnComplete();
 
     await manager.waitForAgentTerminal(launch.request.identity.id);
@@ -2721,6 +2727,11 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
     lifecycle.emitTurnComplete();
     lifecycle.emitExit('forced');
     expect(manager.getAgentSnapshot(launch.request.identity.id)).toBeUndefined();
+    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages[0]?.content).toContain('exact\tcompleted\nmessage');
+    expect(rootInput.receivedMessages[0]?.content).not.toContain('late result');
+    expect(rootInput.receivedMessages[0]?.content).not.toContain('late completed message');
+    expect(launch.handle.releaseCount).toBe(1);
   });
 
   test('does not let late events from a removed provider update a reused name', async () => {
@@ -2774,6 +2785,7 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
 
     expect(manager.isClosed).toBe(true);
     expect(manager.listAgents().agents).toEqual([]);
+    expect(lifecycle.observerCount).toBe(0);
   });
 
   test('records successful outbound delivery only after acknowledgement', async () => {
@@ -2967,20 +2979,28 @@ describe('AgentManager FinishAgent lifecycle', () => {
 
   test('uses fallback state only when no completed assistant result exists', async () => {
     const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
     const manager = await createManager({
       agentPreparer: createPreparer(),
       agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
     });
     const launch = await startActiveFakeAgent(manager, launcher, 'finish-fallback');
     const lifecycle = launch.handle.lifecycle;
 
     await manager.finishAgent(launch.request.identity, { message: 'final fallback' });
+    await manager.finishAgent(launch.request.identity, { message: 'late fallback' });
     lifecycle.emitTurnComplete();
     lifecycle.emitExit('natural');
 
     await manager.waitForAgentTerminal(launch.request.identity.id);
+    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages[0]?.content).toContain('final fallback');
+    expect(rootInput.receivedMessages[0]?.content).not.toContain('late fallback');
     await expect(
-      manager.finishAgent(launch.request.identity, { message: 'late fallback' })
+      manager.finishAgent(launch.request.identity, { message: 'after terminal' })
     ).rejects.toMatchObject({
       code: 'unknown_sender',
     });
@@ -3128,11 +3148,16 @@ describe('AgentManager FinishAgent lifecycle', () => {
 
   test('accepts the first nonblank fallback after an empty first request', async () => {
     const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
     const manager = await createManager({
       agentPreparer: createPreparer(),
       agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
     });
     const launch = await startActiveFakeAgent(manager, launcher, 'finish-blank-fallback');
+    const lifecycle = launch.handle.lifecycle;
 
     await manager.finishAgent(launch.request.identity, { message: '   ' });
     await manager.finishAgent(launch.request.identity, { message: 'useful fallback' });
@@ -3143,6 +3168,12 @@ describe('AgentManager FinishAgent lifecycle', () => {
         expect.objectContaining({ name: 'finish-blank-fallback', state: 'finishing' }),
       ])
     );
+    lifecycle.emitTurnComplete();
+    lifecycle.emitExit('natural');
+    await manager.waitForAgentTerminal(launch.request.identity.id);
+    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages[0]?.content).toContain('useful fallback');
+    expect(rootInput.receivedMessages[0]?.content).not.toContain('replacement fallback');
   });
 });
 
@@ -3652,6 +3683,45 @@ describe('AgentManager StopAgent lifecycle', () => {
     });
     await flushLifecyclePromises();
     expect(scheduler.pendingTimerCount).toBe(0);
+  });
+
+  test('restores the graceful timer after an unaccepted force races graceful acceptance', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'stop-force-race-retry');
+    const lifecycle = launch.handle.lifecycle;
+    const gracefulStarted = lifecycle.deferNextGracefulShutdown();
+
+    await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-force-race-retry' });
+    await gracefulStarted;
+
+    const forceStarted = lifecycle.deferNextForcedShutdown();
+    const force = manager.stopAgent(manager.orchestratorIdentity, {
+      name: 'stop-force-race-retry',
+      force: true,
+    });
+    await forceStarted;
+
+    scheduler.advanceBy(10_000);
+    lifecycle.emitOutputActivity();
+    lifecycle.resolveGracefulShutdown();
+    lifecycle.rejectForcedShutdown(new AgentProviderForceNotAcceptedError('force not accepted'));
+    await expect(force).rejects.toMatchObject({
+      code: 'force_failed',
+      message: expect.stringContaining('not accepted'),
+    });
+    expect(scheduler.pendingTimerCount).toBe(1);
+
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+    expect(lifecycle.forcedShutdownCalls).toBe(1);
+    scheduler.advanceBy(1);
+    await flushLifecyclePromises();
+    expect(lifecycle.forcedShutdownCalls).toBe(2);
   });
 
   test('does not close a finishing turn when force upgrades it', async () => {
@@ -4448,13 +4518,25 @@ describe('AgentManager terminal convergence', () => {
     });
     const launch = await startActiveFakeAgent(manager, launcher, 'terminal-failures');
     launch.handle.setReleaseFailure(new Error('provider release failed'));
-    launch.handle.lifecycle.emitExit('failed', new Error('raw provider detail'));
-    await manager.waitForAgentTerminal(launch.request.identity.id);
+    const { adapter, calls } = createRecordingAdapter();
+    await runWithLogger(adapter, async () => {
+      launch.handle.lifecycle.emitExit('failed', new Error('raw provider detail'));
+      await manager.waitForAgentTerminal(launch.request.identity.id);
+    });
 
     expect(manager.getAgentSnapshot(launch.request.identity.id)).toBeUndefined();
     expect(launch.handle.releaseCount).toBe(1);
     expect(rootInput.receivedMessages).toHaveLength(0);
     expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(0);
+    const debugMessages = calls
+      .filter(({ method }) => method === 'debugLog')
+      .map(({ args }) => String(args[0]));
+    expect(debugMessages).toEqual(
+      expect.arrayContaining([
+        '[agent lifecycle] terminal notification delivery failed for terminal-failures:',
+        '[agent lifecycle] provider release failed for terminal-failures:',
+      ])
+    );
   });
 
   test('resolves the terminal promise when mailbox deregistration reports cleanup failure', async () => {
@@ -4491,9 +4573,11 @@ describe('AgentManager terminal convergence', () => {
         launcher,
         'terminal-mailbox-cleanup-failure'
       );
-      launch.handle.lifecycle.emitExit('natural');
-
-      await manager.waitForAgentTerminal(launch.request.identity.id);
+      const { adapter, calls } = createRecordingAdapter();
+      await runWithLogger(adapter, async () => {
+        launch.handle.lifecycle.emitExit('natural');
+        await manager.waitForAgentTerminal(launch.request.identity.id);
+      });
       expect(deregisterCalls).toBe(1);
       expect(manager.getIdentityByName('terminal-mailbox-cleanup-failure')).toBeUndefined();
       expect(manager.subagentCount).toBe(0);
@@ -4504,10 +4588,50 @@ describe('AgentManager terminal convergence', () => {
       await manager.waitForAgentTerminal(launch.request.identity.id);
       expect(deregisterCalls).toBe(1);
       expect(launch.handle.releaseCount).toBe(1);
+      expect(
+        calls.filter(({ method }) => method === 'debugLog').map(({ args }) => String(args[0]))
+      ).toEqual(
+        expect.arrayContaining([
+          '[agent lifecycle] mailbox deregistration failed for terminal-mailbox-cleanup-failure:',
+        ])
+      );
     } finally {
       await manager?.close().catch(() => undefined);
       await session.close().catch(() => undefined);
     }
+  });
+
+  test('logs directory-removal failures without blocking terminal cleanup', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'terminal-directory-failure');
+    const directory = (manager as unknown as { readonly directory: { removeTerminal: () => void } })
+      .directory;
+    vi.spyOn(directory, 'removeTerminal').mockImplementation(() => {
+      throw new Error('reported directory removal failure');
+    });
+    const { adapter, calls } = createRecordingAdapter();
+
+    await runWithLogger(adapter, async () => {
+      launch.handle.lifecycle.emitExit('natural');
+      await manager.waitForAgentTerminal(launch.request.identity.id);
+    });
+
+    expect(launch.handle.releaseCount).toBe(1);
+    expect(
+      calls.filter(({ method }) => method === 'debugLog').map(({ args }) => String(args[0]))
+    ).toEqual(
+      expect.arrayContaining([
+        '[agent lifecycle] directory removal failed for terminal-directory-failure:',
+      ])
+    );
   });
 
   test('fans out root teardown and keeps inactivity timers independent', async () => {
