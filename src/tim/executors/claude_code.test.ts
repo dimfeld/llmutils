@@ -543,19 +543,40 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     sharedOptions?: Record<string, unknown>;
     executionMode?: 'normal' | 'review' | 'planning' | 'bare';
     setupThrows?: Error;
+    cleanupEvents?: string[];
+    inputCleanupError?: Error;
   }) {
     const streaming = options?.streaming ?? createStreamingProcessMock({ pid: 24680 });
-    const spawnWithStreamingIOMock = vi.fn(async () => streaming);
-    const startSubprocessMonitorMock = vi.fn(() => ({ stop: vi.fn() }));
+    const spawnWithStreamingIOMock = vi.fn(async (_args: string[], spawnOptions: any) => {
+      if (options?.cleanupEvents !== undefined) {
+        spawnOptions.onSessionProcessReady?.({
+          setGracefulEndHandler: vi.fn((handler: (() => void) | undefined) => {
+            if (handler === undefined) options.cleanupEvents?.push('process');
+          }),
+        });
+      }
+      return streaming;
+    });
+    const startSubprocessMonitorMock = vi.fn(() => ({
+      stop: vi.fn(() => {
+        options?.cleanupEvents?.push('monitor');
+      }),
+    }));
     const normalizeSubprocessMonitorRulesMock = vi.fn(() => []);
     const getGitRootMock = vi.fn(async () => tempDir);
-    const createTunnelServerMock = vi.fn(async () => ({ close: vi.fn() }));
+    const createTunnelServerMock = vi.fn(async () => ({
+      close: vi.fn(() => {
+        options?.cleanupEvents?.push('tunnel');
+      }),
+    }));
     const setupPermissionsMcpMock = vi.fn(async () => {
       if (options?.setupThrows) throw options.setupThrows;
       return {
         tempDir: `${tempDir}/mcp`,
         mcpConfigFile: `${tempDir}/mcp/config.json`,
-        cleanup: vi.fn(async () => {}),
+        cleanup: vi.fn(async () => {
+          options?.cleanupEvents?.push('mcp');
+        }),
       };
     });
     const executeWithTerminalInputMock = vi.fn(({ streaming: spawnedStreaming }: any) => {
@@ -565,7 +586,10 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
       });
       return {
         resultPromise: spawnedStreaming.result,
-        cleanup: vi.fn(),
+        cleanup: vi.fn(() => {
+          options?.cleanupEvents?.push('input');
+          if (options?.inputCleanupError !== undefined) throw options.inputCleanupError;
+        }),
         sendFollowUpForInterceptedResult: vi.fn(),
         acceptedSuccessfulFinalResult: vi.fn(() => acceptedFinalResult),
         onResultMessage,
@@ -672,6 +696,25 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
     expect(harness.createTunnelServerMock).not.toHaveBeenCalled();
     expect(harness.spawnWithStreamingIOMock).not.toHaveBeenCalled();
+  });
+
+  test('continues executor cleanup in order when input cleanup fails', async () => {
+    const cleanupEvents: string[] = [];
+    const inputCleanupError = new Error('input cleanup failed');
+    const harness = await setupHarness({
+      tunnelActive: false,
+      cleanupEvents,
+      inputCleanupError,
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      timConfig: {
+        subprocessMonitor: {
+          rules: [{ match: { contains: 'child' }, timeoutSeconds: 60 }],
+        },
+      },
+    });
+
+    await expect(harness.execute()).rejects.toBe(inputCleanupError);
+    expect(cleanupEvents).toEqual(['input', 'process', 'monitor', 'tunnel', 'mcp']);
   });
 
   test('installs trusted agent tools in noninteractive mode without approval prompting', async () => {
