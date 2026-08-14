@@ -987,8 +987,9 @@ function createPermissionSocketServer(
         debugLog('Claude MCP client socket failed:', error);
       });
       socket.on('close', () => {
-        sockets.delete(socket);
-        options.permissionPromptCoordinator?.cancelRequester(requester.token);
+        if (sockets.delete(socket)) {
+          options.permissionPromptCoordinator?.cancelRequester(requester.token);
+        }
       });
     });
 
