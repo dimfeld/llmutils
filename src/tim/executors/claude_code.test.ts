@@ -819,6 +819,23 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
       approvalExpected: true,
     },
     {
+      name: 'requested-approval-noninteractive',
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      sharedOptions: { noninteractive: true },
+      setupExpected: false,
+      approvalExpected: false,
+    },
+    {
+      name: 'requested-approval-allow-all',
+      claudeOptions: {
+        allowAllTools: true,
+        permissionsMcp: { enabled: true },
+      },
+      sharedOptions: {},
+      setupExpected: false,
+      approvalExpected: false,
+    },
+    {
       name: 'tools-only',
       claudeOptions: {},
       sharedOptions: {

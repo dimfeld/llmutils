@@ -425,19 +425,32 @@ export async function runClaudeSubprocess(
   let tunnelTempDir: string | undefined;
   let sessionProcessLifecycle: SessionExecutorLifecycle | undefined;
   let cleanupPromise: Promise<void> | undefined;
+  let cleanupStarted = false;
 
   const cleanup = async (): Promise<void> => {
+    if (cleanupPromise === undefined) {
+      cleanupStarted = true;
+    }
     cleanupPromise ??= (async (): Promise<void> => {
       let firstError: unknown;
 
       try {
-        monitorHandle?.stop();
+        // Close the input/controller first. This sets the provider state to
+        // closing and rejects late tunnel, headless, mailbox, and formatter
+        // writes before any other execution resource is torn down.
+        terminalInputResult?.cleanup();
       } catch (error) {
         firstError ??= error;
       }
 
       try {
-        terminalInputResult?.cleanup();
+        sessionProcessLifecycle?.setGracefulEndHandler(undefined);
+      } catch (error) {
+        firstError ??= error;
+      }
+
+      try {
+        monitorHandle?.stop();
       } catch (error) {
         firstError ??= error;
       }
@@ -807,6 +820,7 @@ export async function runClaudeSubprocess(
       },
       onOutputActivity: persistentAgent ? notifyOutputActivity : undefined,
       formatStdout: (output) => {
+        if (cleanupStarted) return '';
         const { formattedResults, structuredMessages } = streamFormatter.formatChunk(output);
 
         // Track complete lifecycle messages and file paths. A process can
@@ -930,12 +944,9 @@ export async function runClaudeSubprocess(
               persistentController.inputWriter.lastError ??
                 new Error(`Claude ${label} persistent input failed`)
             );
-          } else {
-            persistentController?.markProviderExited();
           }
         } catch (error) {
           processError = toError(error);
-          persistentController?.markProviderFailed(processError);
         }
 
         let cleanupError: Error | undefined;
@@ -944,6 +955,12 @@ export async function runClaudeSubprocess(
         } catch (error) {
           cleanupError = toError(error);
           debugLog(`Claude ${label} persistent cleanup failed:`, cleanupError);
+        }
+
+        if (processError !== undefined) {
+          persistentController?.markProviderFailed(processError);
+        } else {
+          persistentController?.markProviderExited();
         }
 
         if (lastSessionEndMessage !== undefined) {
@@ -1039,7 +1056,6 @@ export async function runClaudeSubprocess(
       killedByInactivity: result.killedByInactivity ?? false,
     };
   } catch (error) {
-    persistentController?.markProviderFailed(error);
     if (streaming !== undefined && terminalInputResult === undefined) {
       try {
         safeEndStdin(streaming.stdin, debugLog);
@@ -1047,12 +1063,22 @@ export async function runClaudeSubprocess(
       } catch (cleanupError) {
         debugLog(`Claude ${label} startup cleanup failed:`, cleanupError);
       }
+    } else if (streaming !== undefined && persistentAgent) {
+      try {
+        // The persistent input controller owns stdin once it exists. Its
+        // cleanup path has already closed the sink; only terminate the child
+        // here so a failed launch cannot leave a live provider behind.
+        streaming.kill('SIGTERM');
+      } catch (cleanupError) {
+        debugLog(`Claude ${label} startup process termination failed:`, cleanupError);
+      }
     }
     try {
       await cleanup();
     } catch (cleanupError) {
       debugLog(`Claude ${label} cleanup after failure failed:`, cleanupError);
     }
+    persistentController?.markProviderFailed(error);
     throw error;
   }
 }

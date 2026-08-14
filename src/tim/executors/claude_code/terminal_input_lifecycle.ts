@@ -204,8 +204,16 @@ export function executeWithTerminalInput(
   let handleProcessSigterm: (() => void) | undefined;
   let tunnelUserInputHandlerRegistered = false;
   let headlessUserInputHandlerRegistered = false;
+  let cleanupStarted = false;
   let clearTunnelUserInputHandler = (): void => {};
   let clearHeadlessUserInputHandler = (): void => {};
+
+  const inputIsClosed = (): boolean =>
+    stdinGuard?.isClosed === true ||
+    (persistentController !== undefined &&
+      (persistentController.state === 'closing' ||
+        persistentController.state === 'exited' ||
+        persistentController.state === 'failed'));
 
   const closeInputNow = (): void => {
     if (persistentController) {
@@ -257,10 +265,7 @@ export function executeWithTerminalInput(
     let tunnelHandlerActive = true;
     tunnelUserInputHandlerRegistered = true;
     loggerAdapter.setUserInputHandler((content) => {
-      if (
-        !tunnelHandlerActive ||
-        (stdinGuard?.isClosed ?? persistentController?.state === 'closing')
-      ) {
+      if (!tunnelHandlerActive || inputIsClosed()) {
         return;
       }
       try {
@@ -281,10 +286,7 @@ export function executeWithTerminalInput(
     let headlessHandlerActive = true;
     headlessUserInputHandlerRegistered = true;
     loggerAdapter.setUserInputHandler((content) => {
-      if (
-        !headlessHandlerActive ||
-        (stdinGuard?.isClosed ?? persistentController?.state === 'closing')
-      ) {
+      if (!headlessHandlerActive || inputIsClosed()) {
         return;
       }
 
@@ -331,6 +333,7 @@ export function executeWithTerminalInput(
 
   // onResultMessage is called by the formatStdout callback when a result message is detected
   const onResultMessage = (resultWasSuccessful: boolean, resultText?: string): void => {
+    if (cleanupStarted) return;
     if (persistentController) {
       persistentController.onResultMessage(resultWasSuccessful, resultText);
       return;
@@ -353,6 +356,7 @@ export function executeWithTerminalInput(
   // Lifecycle classification of a formatted stream message: concrete facts are
   // dispatched to the tracker, and an assistant/user message counts as turn activity.
   const observeFormattedMessage = (formatted: FormattedClaudeMessage): void => {
+    if (cleanupStarted) return;
     if (persistentController) {
       persistentController.observeFormattedMessage(formatted);
       return;
@@ -368,6 +372,7 @@ export function executeWithTerminalInput(
   };
 
   const sendFollowUp = (content: string): void => {
+    if (cleanupStarted) return;
     if (persistentController) {
       void Promise.resolve(persistentController.sendContent(content)).catch((error: unknown) => {
         debugLog('Failed to send persistent Claude input: %s', error);
@@ -445,13 +450,19 @@ export function executeWithTerminalInput(
     acceptedSuccessfulFinalResult: (): boolean =>
       backgroundActivityTracker?.acceptedSuccessfulFinalResult() ?? false,
     endSession: () => {
+      if (cleanupStarted) return;
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();
       forceCloseInputNow();
     },
     cleanup: () => {
+      if (cleanupStarted) return;
+      // Mark the execution closed before removing handlers or stopping the
+      // monitor. Late formatter, tunnel, headless, and lifecycle callbacks
+      // must not be able to enqueue another stdin write during teardown.
+      cleanupStarted = true;
+      closeInputNow();
       backgroundActivityTracker?.cancel();
-      persistentController?.cleanup();
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();
       if (loggerAdapter instanceof HeadlessAdapter) {

@@ -33,6 +33,7 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
+import type { SessionExecutorLifecycle } from '../../common/session_process_control.js';
 import { runClaudeSubprocess, buildAllowedToolsList } from './claude_code/run_claude_subprocess.js';
 import {
   applyClaudeMcpLaunchArgs,
@@ -678,19 +679,7 @@ export class ClaudeCodeExecutor implements Executor {
 
     // Create tunnel server for output forwarding from child processes
     let tunnelServer: TunnelServer | undefined;
-    const tunnelTempDir =
-      tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
-    const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-    if (!isTunnelActive()) {
-      try {
-        const promptHandler = createPromptRequestHandler();
-        tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
-          onPromptRequest: promptHandler,
-        });
-      } catch (err) {
-        debugLog('Could not create tunnel server for output forwarding:', err);
-      }
-    }
+    let tunnelTempDir: string | undefined;
 
     // Agent definitions (--agents flag) are no longer used in normal/simple orchestration modes.
     // The orchestrator prompt references `tim subagent` Bash commands instead.
@@ -698,7 +687,75 @@ export class ClaudeCodeExecutor implements Executor {
 
     let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
     let monitorHandle: SubprocessMonitorHandle | undefined;
+    let sessionProcessLifecycle: SessionExecutorLifecycle | undefined;
+    let cleanupPromise: Promise<void> | undefined;
+
+    const cleanup = async (): Promise<void> => {
+      cleanupPromise ??= (async (): Promise<void> => {
+        let firstError: unknown;
+
+        try {
+          // Close the shared input owner before removing the process and
+          // transport handlers. Late provider output must not enqueue input
+          // while the rest of this execution is being torn down.
+          terminalInputResult?.cleanup();
+        } catch (error) {
+          firstError ??= error;
+        }
+
+        try {
+          sessionProcessLifecycle?.setGracefulEndHandler(undefined);
+        } catch (error) {
+          firstError ??= error;
+        }
+
+        try {
+          monitorHandle?.stop();
+        } catch (error) {
+          firstError ??= error;
+        }
+
+        try {
+          tunnelServer?.close();
+        } catch (error) {
+          firstError ??= error;
+        }
+
+        try {
+          if (permissionsMcpCleanup) {
+            await permissionsMcpCleanup();
+          }
+        } catch (error) {
+          firstError ??= error;
+        }
+
+        try {
+          if (!tempMcpConfigDir && tunnelTempDir !== undefined) {
+            await fs.rm(tunnelTempDir, { recursive: true, force: true });
+          }
+        } catch (error) {
+          firstError ??= error;
+        }
+
+        if (firstError !== undefined) throw firstError;
+      })();
+      return cleanupPromise;
+    };
+
     try {
+      tunnelTempDir = tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
+      const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+      if (!isTunnelActive()) {
+        try {
+          const promptHandler = createPromptRequestHandler();
+          tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
+            onPromptRequest: promptHandler,
+          });
+        } catch (err) {
+          debugLog('Could not create tunnel server for output forwarding:', err);
+        }
+      }
+
       const args = ['claude', '--permission-mode', 'auto'];
 
       const extraAccessDirs = new Set<string>();
@@ -773,6 +830,7 @@ export class ClaudeCodeExecutor implements Executor {
         sessionProcessLabel: 'Claude execution',
         sessionProcessControl: 'both',
         onSessionProcessReady: (lifecycle) => {
+          sessionProcessLifecycle = lifecycle;
           lifecycle.setGracefulEndHandler(() => terminalInputResult?.endSession?.());
         },
         env: {
@@ -981,20 +1039,7 @@ export class ClaudeCodeExecutor implements Executor {
 
       return; // Explicitly return void for 'none' or undefined captureOutput
     } finally {
-      monitorHandle?.stop();
-      terminalInputResult?.cleanup();
-
-      // Close the tunnel server if it was created
-      tunnelServer?.close();
-
-      if (permissionsMcpCleanup) {
-        await permissionsMcpCleanup();
-      }
-
-      // Clean up tunnel temp directory if we created a separate one
-      if (!tempMcpConfigDir) {
-        await fs.rm(tunnelTempDir, { recursive: true, force: true });
-      }
+      await cleanup();
     }
   }
 }

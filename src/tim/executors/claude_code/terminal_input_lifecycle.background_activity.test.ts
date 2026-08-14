@@ -431,7 +431,7 @@ describe('terminal_input_lifecycle - background activity', () => {
     controller.cleanup();
     vi.advanceTimersByTime(10_000);
 
-    expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
   });
 
   it('follow-up interception clears accepted final result before a continuation finishes', () => {

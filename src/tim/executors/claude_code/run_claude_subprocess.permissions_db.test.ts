@@ -243,6 +243,15 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
       '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
 
     let formatStdout: ((output: string) => unknown) | undefined;
+    let resolveTerminalResult:
+      | ((value: {
+          exitCode: number;
+          stdout: string;
+          stderr: string;
+          signal: null;
+          killedByInactivity: boolean;
+        }) => void)
+      | undefined;
 
     mockGetRepositoryIdentity.mockResolvedValue({
       repositoryId,
@@ -270,6 +279,15 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
 
     const terminalResult = {
       ...makeDefaultTerminalInputResult(),
+      resultPromise: new Promise<{
+        exitCode: number;
+        stdout: string;
+        stderr: string;
+        signal: null;
+        killedByInactivity: boolean;
+      }>((resolve) => {
+        resolveTerminalResult = resolve;
+      }),
       onResultMessage: onResultMessageSpy,
     };
     mockExecuteWithTerminalInput.mockReturnValue(terminalResult);
@@ -278,29 +296,35 @@ describe('runClaudeSubprocess shared permissions DB integration', () => {
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
     try {
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('runClaudeSubprocess did not resolve')), 250);
+      const runPromise = runClaudeSubprocess({
+        prompt: 'test prompt',
+        cwd: repoDir,
+        label: 'test',
+        noninteractive: false,
+        terminalInput: true,
+        claudeCodeOptions: {
+          includeDefaultTools: false,
+        },
+        processFormattedMessages: () => {},
       });
-      await Promise.race([
-        runClaudeSubprocess({
-          prompt: 'test prompt',
-          cwd: repoDir,
-          label: 'test',
-          noninteractive: false,
-          terminalInput: true,
-          claudeCodeOptions: {
-            includeDefaultTools: false,
-          },
-          processFormattedMessages: () => {},
-        }),
-        timeoutPromise,
-      ]);
+      const setupDeadline = Date.now() + 250;
+      while (formatStdout === undefined && Date.now() < setupDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(formatStdout).toBeDefined();
+      formatStdout?.(`${resultLine}\n`);
+      expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
+      resolveTerminalResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await runPromise;
     } finally {
       Object.defineProperty(process.stdin, 'isTTY', { value: originalIsTTY, configurable: true });
     }
-
-    formatStdout?.(`${resultLine}\n`);
-    expect(onResultMessageSpy).toHaveBeenCalledTimes(1);
   });
 
   test('invokes executeWithTerminalInput when terminal input is enabled', async () => {

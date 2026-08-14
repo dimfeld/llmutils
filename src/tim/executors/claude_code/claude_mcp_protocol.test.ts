@@ -58,6 +58,16 @@ describe('Claude tim MCP child server', () => {
     expect([...result.toolExecutors.keys()]).toEqual(expected);
   });
 
+  test('filters unknown capability-manifest names from child tool installation', () => {
+    const result = createClaudeMcpServer({
+      interactiveApprovalEnabled: false,
+      agentToolNames: ['ListAgents', 'not-a-tim-tool', 'FinishAgent'],
+    });
+
+    expect(result.toolNames).toEqual(['ListAgents', 'FinishAgent']);
+    expect([...result.toolExecutors.keys()]).toEqual(['ListAgents', 'FinishAgent']);
+  });
+
   test('renders the real approval_prompt allow, deny, and updated-input responses', async () => {
     const result = createClaudeMcpServer({ interactiveApprovalEnabled: true });
     const approvalPrompt = result.toolExecutors.get('approval_prompt');

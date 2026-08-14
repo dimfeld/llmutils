@@ -653,6 +653,47 @@ describe('Claude MCP parent agent-tool router', () => {
     client.socket.destroy();
   });
 
+  test('denies an oversized permission request and keeps the bridge usable', async () => {
+    const result = await setupPermissionsMcp({
+      allowedTools: ['Read'],
+      interactiveApprovalEnabled: true,
+    });
+    cleanups.push(result.cleanup);
+
+    const oversized = JSON.stringify({
+      requestId: 'oversized-permission',
+      type: 'permission_request',
+      tool_name: 'Read',
+      input: { payload: 'x'.repeat(1024 * 1024) },
+    });
+    const client = await connectRawAndCollect(
+      pathFor(result),
+      [
+        `${oversized}\n`,
+        `${JSON.stringify({
+          requestId: 'permission-after-oversized',
+          type: 'permission_request',
+          tool_name: 'Read',
+          input: {},
+        })}\n`,
+      ],
+      2
+    );
+    const responses = await client.responses;
+
+    expect(responses).toContainEqual({
+      type: 'permission_response',
+      requestId: 'oversized-permission',
+      approved: false,
+    });
+    expect(responses).toContainEqual({
+      type: 'permission_response',
+      requestId: 'permission-after-oversized',
+      approved: true,
+    });
+    client.socket.destroy();
+  });
+
   test('makes cleanup idempotent and cancels an open requester once', async () => {
     const cancelled: string[] = [];
     const coordinator = {
@@ -671,10 +712,17 @@ describe('Claude MCP parent agent-tool router', () => {
       socket.once('connect', resolve);
       socket.once('error', reject);
     });
+    const closeSpy = vi.spyOn(result.socketServer, 'close');
 
     await Promise.all([result.cleanup(), result.cleanup()]);
 
     expect(cancelled).toHaveLength(1);
+    expect(closeSpy).toHaveBeenCalledOnce();
+    expect(result.socketServer.listening).toBe(false);
+    if (!socket.destroyed) {
+      await new Promise<void>((resolve) => socket.once('close', resolve));
+    }
+    expect(socket.destroyed).toBe(true);
     await expect(fs.access(result.tempDir)).rejects.toThrow();
     socket.destroy();
   });

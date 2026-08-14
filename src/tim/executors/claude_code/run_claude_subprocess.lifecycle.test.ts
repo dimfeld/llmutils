@@ -943,9 +943,9 @@ describe('runClaudeSubprocess lifecycle', () => {
       exit: (classification): void => exits.push(classification),
     });
 
-    await expect(
-      setup.handle.lifecycle.requestGracefulShutdown('please wrap up')
-    ).resolves.toBe('accepted');
+    await expect(setup.handle.lifecycle.requestGracefulShutdown('please wrap up')).resolves.toBe(
+      'accepted'
+    );
     expect(setup.handle.providerState).toBe('graceful-stop-active');
 
     await expect(setup.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');

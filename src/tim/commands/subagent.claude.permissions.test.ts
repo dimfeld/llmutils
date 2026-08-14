@@ -263,6 +263,23 @@ describe('subagent claude permissions MCP integration', () => {
       approvalExpected: true,
     },
     {
+      name: 'requested-approval-noninteractive',
+      claudeCodeOptions: { permissionsMcp: { enabled: true } },
+      noninteractive: true,
+      setupExpected: false,
+      approvalExpected: false,
+    },
+    {
+      name: 'requested-approval-allow-all',
+      claudeCodeOptions: {
+        allowAllTools: true,
+        permissionsMcp: { enabled: true },
+      },
+      noninteractive: false,
+      setupExpected: false,
+      approvalExpected: false,
+    },
+    {
       name: 'tools-only',
       claudeCodeOptions: {
         agentToolContext: {
