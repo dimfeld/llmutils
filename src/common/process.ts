@@ -142,6 +142,8 @@ export type SpawnAndLogOutputOptions = {
   onOutputActivity?: () => void | Promise<void>;
   /** Keep captured stdout in the result. Defaults to true. */
   captureStdout?: boolean;
+  /** Keep captured stderr in the result. Defaults to true. */
+  captureStderr?: boolean;
   /** Disable the inactivity kill while keeping output streaming enabled. */
   disableInactivityKill?: boolean;
   /** Callback invoked immediately after the process has been spawned. */
@@ -271,6 +273,7 @@ function setupOutputProcessing(
     const stdout: string[] = [];
     const stderr: string[] = [];
     const captureStdout = options?.captureStdout !== false;
+    const captureStderr = options?.captureStderr !== false;
 
     async function readStdout() {
       const stdoutDecoder = new TextDecoder();
@@ -317,7 +320,7 @@ function setupOutputProcessing(
           output = options.formatStderr(output);
         }
 
-        stderr.push(output);
+        if (captureStderr) stderr.push(output);
         if (!options?.quiet) {
           writeStderr(output);
         }

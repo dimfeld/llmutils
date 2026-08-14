@@ -546,12 +546,13 @@ describe('process utilities', () => {
       expect(result.killedByInactivity).toBe(false);
     });
 
-    it('can skip captured stdout while continuing to consume output', async () => {
+    it('can skip captured output while continuing to consume both streams', async () => {
       const capturedActivity = vi.fn();
       const streaming = await spawnWithStreamingIO(
         ['sh', '-c', 'printf first; printf second >&2'],
         {
           captureStdout: false,
+          captureStderr: false,
           onOutputActivity: capturedActivity,
         }
       );
@@ -559,7 +560,7 @@ describe('process utilities', () => {
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe('');
-      expect(result.stderr).toBe('second');
+      expect(result.stderr).toBe('');
       expect(capturedActivity).toHaveBeenCalledTimes(2);
     });
   });

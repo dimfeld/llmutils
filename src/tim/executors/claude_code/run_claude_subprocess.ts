@@ -805,7 +805,7 @@ export async function runClaudeSubprocess(
         );
       },
       onOutputActivity: persistentAgent ? notifyOutputActivity : undefined,
-      ...(persistentAgent ? { captureStdout: false } : {}),
+      ...(persistentAgent ? { captureStdout: false, captureStderr: false } : {}),
       formatStdout: (output) => {
         if (cleanupStarted) return '';
         const { formattedResults, structuredMessages } = streamFormatter.formatChunk(output);
