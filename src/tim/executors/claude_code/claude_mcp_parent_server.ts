@@ -282,15 +282,26 @@ export function createClaudeMcpParentServer(
   });
 }
 
-export function closeClaudeMcpParentServer(
+export async function closeClaudeMcpParentServer(
   resources: ClaudeMcpParentServerResources,
   permissionPromptCoordinator?: ClaudePermissionPromptCoordinator
 ): Promise<void> {
+  let firstError: unknown;
   for (const [socket, requesterToken] of resources.sockets) {
-    permissionPromptCoordinator?.cancelRequester(requesterToken);
-    socket.destroy();
+    try {
+      permissionPromptCoordinator?.cancelRequester(requesterToken);
+    } catch (error) {
+      firstError ??= error;
+    }
+    try {
+      socket.destroy();
+    } catch (error) {
+      firstError ??= error;
+    }
   }
   resources.sockets.clear();
-  if (!resources.server.listening) return Promise.resolve();
-  return new Promise<void>((resolve) => resources.server.close(() => resolve()));
+  if (resources.server.listening) {
+    await new Promise<void>((resolve) => resources.server.close(() => resolve()));
+  }
+  if (firstError !== undefined) throw firstError;
 }

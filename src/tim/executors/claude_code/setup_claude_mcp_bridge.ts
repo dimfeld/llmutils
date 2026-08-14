@@ -91,10 +91,20 @@ export async function setupClaudeMcpBridge(
   let cleanupPromise: Promise<void> | undefined;
   const cleanup = async (): Promise<void> => {
     cleanupPromise ??= (async (): Promise<void> => {
+      let firstError: unknown;
       if (resources !== undefined) {
-        await closeClaudeMcpParentServer(resources, options.permissionPromptCoordinator);
+        try {
+          await closeClaudeMcpParentServer(resources, options.permissionPromptCoordinator);
+        } catch (error) {
+          firstError ??= error;
+        }
       }
-      await fs.rm(tempDir, { recursive: true, force: true });
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch (error) {
+        firstError ??= error;
+      }
+      if (firstError !== undefined) throw firstError;
     })();
     return cleanupPromise;
   };

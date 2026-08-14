@@ -727,6 +727,36 @@ describe('Claude MCP parent agent-tool router', () => {
     socket.destroy();
   });
 
+  test('releases sockets, server, and temp files when requester cancellation throws', async () => {
+    const coordinator = {
+      enqueue: vi.fn(),
+      cancelRequester: vi.fn(() => {
+        throw new Error('cancel failed');
+      }),
+      dispose: vi.fn(),
+    };
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: false,
+      permissionPromptCoordinator: coordinator,
+    });
+
+    const socket = net.createConnection(pathFor(result));
+    await new Promise<void>((resolve, reject) => {
+      socket.once('connect', resolve);
+      socket.once('error', reject);
+    });
+
+    await expect(result.cleanup()).rejects.toThrow('cancel failed');
+
+    expect(result.socketServer.listening).toBe(false);
+    if (!socket.destroyed) {
+      await new Promise<void>((resolve) => socket.once('close', resolve));
+    }
+    expect(socket.destroyed).toBe(true);
+    await expect(fs.access(result.tempDir)).rejects.toThrow();
+  });
+
   test('cancels each requester token when its client socket exits', async () => {
     const cancelled: string[] = [];
     const coordinator = {
