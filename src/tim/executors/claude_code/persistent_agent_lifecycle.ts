@@ -308,6 +308,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     // attach it to one new generation instead of allowing the old result to
     // leave the controller falsely idle.
     if (
+      claimedIdleGeneration === undefined &&
       deliveryGeneration === this.turnGenerationValue &&
       this.turnSettled &&
       this.stateValue === 'idle' &&

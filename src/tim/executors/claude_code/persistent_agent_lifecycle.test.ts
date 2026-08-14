@@ -237,6 +237,35 @@ describe('PersistentClaudeTurnController', () => {
     controller.cleanup();
   });
 
+  it('does not create a phantom generation when an idle-start write settles after its result', async () => {
+    const stdin = new FakeStdin();
+    const controller = makeController(stdin);
+    controller.start();
+    controller.onResultMessage(true);
+    expect(controller.state).toBe('idle');
+    expect(controller.generation).toBe(1);
+
+    let resolveWrite: ((value: number) => void) | undefined;
+    stdin.nextWrite = (): Promise<number> =>
+      new Promise<number>((resolve) => {
+        resolveWrite = resolve;
+      });
+
+    const continuation = controller.deliver(message('idle continuation racing result'));
+    expect(controller.state).toBe('active');
+    expect(controller.generation).toBe(2);
+
+    controller.onResultMessage(true);
+    expect(controller.state).toBe('idle');
+
+    resolveWrite?.(1);
+    await expect(continuation as Promise<'started-idle-turn'>).resolves.toBe('started-idle-turn');
+    expect(controller.state).toBe('idle');
+    expect(controller.generation).toBe(2);
+
+    controller.cleanup();
+  });
+
   it('rejects messages after provider exit and ignores late parser events', async () => {
     const stdin = new FakeStdin();
     const controller = makeController(stdin);
@@ -270,9 +299,7 @@ describe('PersistentClaudeTurnController', () => {
     const controller = makeController(stdin, { initialPrompt: undefined });
     controller.start();
 
-    expect(() => controller.requestCloseAfterCurrentResult()).toThrow(
-      'no active turn to close'
-    );
+    expect(() => controller.requestCloseAfterCurrentResult()).toThrow('no active turn to close');
 
     controller.cleanup();
   });
@@ -284,9 +311,7 @@ describe('PersistentClaudeTurnController', () => {
     controller.onResultMessage(true);
     expect(controller.state).toBe('idle');
 
-    expect(() => controller.requestCloseAfterCurrentResult()).toThrow(
-      'no active turn to close'
-    );
+    expect(() => controller.requestCloseAfterCurrentResult()).toThrow('no active turn to close');
 
     controller.cleanup();
   });
@@ -315,7 +340,11 @@ describe('PersistentClaudeTurnController', () => {
     vi.useFakeTimers();
     const stdin = new FakeStdin();
     const completed = vi.fn();
-    const controller = makeController(stdin, { graceMs: 10, stallTimeoutMs: 100, onTurnComplete: completed });
+    const controller = makeController(stdin, {
+      graceMs: 10,
+      stallTimeoutMs: 100,
+      onTurnComplete: completed,
+    });
     controller.start();
 
     controller.observeFormattedMessage({
