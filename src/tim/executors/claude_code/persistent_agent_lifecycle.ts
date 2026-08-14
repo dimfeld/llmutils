@@ -10,6 +10,7 @@ import type { FormattedClaudeMessage } from './format.ts';
 import {
   ClaudePersistentInputClosedError,
   PersistentClaudeInputWriter,
+  type PersistentClaudeInputWriteResult,
 } from './streaming_input.ts';
 import type { ClaudePersistentAgentState } from './persistent_agent_contract.js';
 
@@ -54,6 +55,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
   private resultTextValue: string | undefined;
   private closeAfterCurrentResultValue = false;
   private started = false;
+  private readonly availabilityListeners = new Set<() => void>();
 
   public constructor(options: PersistentClaudeTurnControllerOptions) {
     this.options = options;
@@ -62,6 +64,9 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
       debugLog: options.debugLog,
       onWriteFailure: (error: unknown): void => {
         this.handleWriteFailure(error);
+      },
+      onAvailabilityChange: (): void => {
+        this.notifyAvailabilityChange();
       },
     });
   }
@@ -75,7 +80,21 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
   }
 
   public get activity(): AgentInputActivity {
-    return this.writer.activity;
+    switch (this.stateValue) {
+      case 'active':
+      case 'result-pending-background':
+      case 'finish-after-result':
+      case 'graceful-stop-active':
+        return 'active';
+      case 'idle':
+        return 'idle';
+      case 'spawning':
+        return 'not-ready';
+      case 'closing':
+      case 'exited':
+      case 'failed':
+        return 'temporarily-unavailable';
+    }
   }
 
   public get state(): ClaudePersistentAgentState {
@@ -100,7 +119,10 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
   }
 
   public onAvailabilityChange(listener: () => void): () => void {
-    return this.writer.onAvailabilityChange(listener);
+    this.availabilityListeners.add(listener);
+    return (): void => {
+      this.availabilityListeners.delete(listener);
+    };
   }
 
   /** Start the initial turn. This operation is idempotent. */
@@ -109,13 +131,13 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     this.started = true;
 
     if (this.options.initialPrompt === undefined) {
-      this.writer.markReady('idle');
-      this.stateValue = 'idle';
+      this.setState('idle');
+      this.writer.markReady();
       return;
     }
 
     const generation = this.beginTurn();
-    this.writer.markReady('active');
+    this.writer.markReady();
     this.handleWriteResult(this.writer.writeUserMessage(this.options.initialPrompt), generation);
   }
 
@@ -137,7 +159,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     }
 
     const deliveryGeneration = this.turnGenerationValue;
-    const result = this.writer.deliverContent(content);
+    const result = this.writer.writeUserMessage(content);
     return this.handleDeliveryResult(result, deliveryGeneration, generation);
   }
 
@@ -178,7 +200,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     this.resultSuccessfulValue = resultWasSuccessful;
     this.resultTextValue = resultText;
     if (this.closeAfterCurrentResultValue) {
-      this.stateValue = 'finish-after-result';
+      this.setState('finish-after-result');
     }
 
     this.currentTracker.onResultMessage(resultWasSuccessful);
@@ -187,8 +209,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
       !this.turnSettled &&
       this.currentTracker.hasPendingResult()
     ) {
-      this.stateValue = 'result-pending-background';
-      this.writer.markProviderState('result-pending-background');
+      this.setState('result-pending-background');
     }
   }
 
@@ -210,14 +231,13 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     }
 
     this.closeAfterCurrentResultValue = true;
-    this.stateValue = closeKind === 'graceful' ? 'graceful-stop-active' : 'finish-after-result';
-    this.writer.markProviderState(this.stateValue);
+    this.setState(closeKind === 'graceful' ? 'graceful-stop-active' : 'finish-after-result');
   }
 
   /** Close stdin immediately for a provider/session-wide end request. */
   public forceCloseInputNow(): void {
     if (this.isClosedOrTerminal()) return;
-    this.stateValue = 'closing';
+    this.setState('closing');
     this.currentTracker?.cancel();
     this.writer.close();
   }
@@ -226,16 +246,18 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
   public markProviderExited(): void {
     if (this.isTerminal()) return;
     this.currentTracker?.cancel();
-    this.stateValue = 'exited';
-    this.writer.markProviderState('exited');
+    this.setState('exited');
+    this.writer.markProviderExited();
+    this.notifyAvailabilityChange();
   }
 
   /** Record a provider/input failure and make the adapter terminal. */
   public markProviderFailed(error: unknown): void {
     if (this.isTerminal()) return;
     this.currentTracker?.cancel();
-    this.stateValue = 'failed';
+    this.setState('failed');
     this.writer.fail(error);
+    this.notifyAvailabilityChange();
   }
 
   /** Idempotently cancel timers and prevent any later input delivery. */
@@ -245,7 +267,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
       return;
     }
     this.currentTracker?.cancel();
-    this.stateValue = 'closing';
+    this.setState('closing');
     this.writer.close();
   }
 
@@ -261,7 +283,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     this.resultSeenValue = false;
     this.resultSuccessfulValue = false;
     this.resultTextValue = undefined;
-    this.stateValue = 'active';
+    this.setState('active');
     this.currentTracker = new BackgroundActivityTracker({
       onClose: (): void => {
         this.settleTurn(generation);
@@ -275,13 +297,14 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
   }
 
   private handleDeliveryResult(
-    result: AgentInputDelivery | Promise<AgentInputDelivery>,
+    result: PersistentClaudeInputWriteResult | Promise<PersistentClaudeInputWriteResult>,
     deliveryGeneration: number,
     generation: number | undefined
   ): AgentInputDelivery | Promise<AgentInputDelivery> {
     if (isPromiseLike(result)) {
       return result.then(
-        (delivery: AgentInputDelivery): AgentInputDelivery => {
+        (writeResult: PersistentClaudeInputWriteResult): AgentInputDelivery => {
+          const delivery = this.toAgentInputDelivery(writeResult, generation);
           this.handleAcceptedDelivery(deliveryGeneration, generation, delivery);
           return delivery;
         },
@@ -291,8 +314,9 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
         }
       );
     }
-    this.handleAcceptedDelivery(deliveryGeneration, generation, result);
-    return result;
+    const delivery = this.toAgentInputDelivery(result, generation);
+    this.handleAcceptedDelivery(deliveryGeneration, generation, delivery);
+    return delivery;
   }
 
   private handleAcceptedDelivery(
@@ -325,7 +349,6 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
       !this.closeAfterCurrentResultValue
     ) {
       this.beginTurn();
-      this.writer.markProviderState('active');
     }
   }
 
@@ -354,10 +377,10 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     delivery: AgentInputDelivery
   ): void {
     if (generation === undefined || delivery !== 'temporarily-unavailable') return;
-    if (this.turnGenerationValue !== generation || this.writer.state !== 'idle') return;
+    if (this.turnGenerationValue !== generation || this.stateValue !== 'idle') return;
     this.currentTracker?.cancel();
     this.turnSettled = true;
-    this.stateValue = 'idle';
+    this.setState('idle');
   }
 
   private rollbackFailedIdleTurn(generation: number | undefined): void {
@@ -365,7 +388,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     if (this.isClosedOrTerminal()) return;
     this.currentTracker?.cancel();
     this.turnSettled = true;
-    this.stateValue = this.writer.state === 'idle' ? 'idle' : 'failed';
+    this.setState(this.stateValue === 'idle' ? 'idle' : 'failed');
   }
 
   private settleTurn(generation: number): void {
@@ -380,11 +403,10 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
 
     this.turnSettled = true;
     if (this.closeAfterCurrentResultValue) {
-      this.stateValue = 'closing';
+      this.setState('closing');
       this.writer.close();
     } else {
-      this.stateValue = 'idle';
-      this.writer.markProviderState('idle');
+      this.setState('idle');
     }
 
     try {
@@ -403,8 +425,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     ) {
       return;
     }
-    this.stateValue = 'active';
-    this.writer.markProviderState('active');
+    this.setState('active');
   }
 
   private handleWriteFailure(error: unknown): void {
@@ -426,6 +447,39 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
 
   private isClosedOrTerminal(): boolean {
     return this.stateValue === 'closing' || this.isTerminal();
+  }
+
+  private toAgentInputDelivery(
+    result: PersistentClaudeInputWriteResult,
+    claimedIdleGeneration: number | undefined
+  ): AgentInputDelivery {
+    switch (result.status) {
+      case 'accepted':
+        return claimedIdleGeneration === undefined ? 'steered' : 'started-idle-turn';
+      case 'temporarily-unavailable':
+        return result.status;
+      case 'failed':
+        throw new ClaudePersistentInputClosedError(
+          'Claude persistent input is closed or failed',
+          result.error === undefined ? undefined : { cause: result.error }
+        );
+    }
+  }
+
+  private setState(state: ClaudePersistentAgentState): void {
+    if (this.stateValue === state) return;
+    this.stateValue = state;
+    this.notifyAvailabilityChange();
+  }
+
+  private notifyAvailabilityChange(): void {
+    for (const listener of this.availabilityListeners) {
+      try {
+        listener();
+      } catch (error) {
+        this.options.debugLog('Persistent Claude turn availability callback failed: %s', error);
+      }
+    }
   }
 }
 

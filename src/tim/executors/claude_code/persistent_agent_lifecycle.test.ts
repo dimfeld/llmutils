@@ -436,20 +436,19 @@ describe('PersistentClaudeTurnController', () => {
     });
 
     const delivery = controller.deliver(message('claim idle'));
-    // The idle claim happens synchronously inside the writer's write() call,
-    // before the FileSink promise settles, so no notification fires yet.
-    expect(events).toBe(0);
+    // The controller claims idle synchronously before the FileSink promise
+    // settles, so the availability transition is visible immediately.
+    expect(events).toBe(1);
 
     resolveWrite?.(1);
     await delivery;
-    // The write settling (accepted, active) must reach controller-level
-    // listeners, not just internal writer state.
-    expect(events).toBe(1);
+    // The write settling must reach controller-level listeners as well.
+    expect(events).toBe(2);
 
     unsubscribe();
     controller.onResultMessage(true);
     // The unsubscribed listener must not observe the later idle transition.
-    expect(events).toBe(1);
+    expect(events).toBe(2);
 
     controller.cleanup();
   });
