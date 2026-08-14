@@ -334,6 +334,156 @@ describe('PersistentClaudeInputWriter', () => {
     ).rejects.toThrow('closed or failed');
   });
 
+  it('treats a synchronous zero-byte write as accepted (buffered, not an error)', () => {
+    const stdin = {
+      writes: [] as string[],
+      endCalls: 0,
+      write(chunk: string): number {
+        this.writes.push(chunk);
+        // Bun's FileSink.write() can synchronously return 0 when the chunk is
+        // buffered internally rather than immediately flushed; this is not a
+        // failure and must not be treated as one.
+        return 0;
+      },
+      end(): Promise<void> {
+        this.endCalls += 1;
+        return Promise.resolve();
+      },
+    };
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+    writer.markReady('active');
+
+    expect(writer.writeUserMessage('buffered')).toEqual({
+      status: 'accepted',
+      acknowledgement: 'steered',
+      generation: 1,
+    });
+    expect(stdin.writes).toEqual([buildSingleUserInputMessageLine('buffered')]);
+  });
+
+  it('exposes activity as an AgentInputAdapter contract across provider states', () => {
+    const stdin = createMockFileSink();
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+
+    expect(writer.activity).toBe('not-ready');
+    expect(writer.isReady).toBe(false);
+
+    writer.markReady('active');
+    expect(writer.activity).toBe('active');
+    expect(writer.isReady).toBe(true);
+
+    writer.markProviderState('idle');
+    expect(writer.activity).toBe('idle');
+
+    writer.markProviderState('result-pending-background');
+    expect(writer.activity).toBe('active');
+
+    writer.close();
+    expect(writer.activity).toBe('temporarily-unavailable');
+  });
+
+  it('resolves the ready promise once markReady is called', async () => {
+    const stdin = createMockFileSink();
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+
+    let settled = false;
+    void writer.ready.then(() => {
+      settled = true;
+    });
+    expect(settled).toBe(false);
+
+    writer.markReady('active');
+    await writer.ready;
+    expect(settled).toBe(true);
+  });
+
+  it('rejects the ready promise when startup fails before readiness', async () => {
+    const stdin = createMockFileSink();
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+
+    const failure = new Error('spawn failed');
+    writer.fail(failure);
+
+    await expect(writer.ready).rejects.toThrow('spawn failed');
+    expect(writer.lastError).toBe(failure);
+    expect(writer.state).toBe('failed');
+  });
+
+  it('records lastError from a write failure via the getter', async () => {
+    const write = deferred<number>();
+    const stdin = {
+      write: vi.fn(() => write.promise),
+      end: vi.fn(() => Promise.resolve(0)),
+    };
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+      onWriteFailure: () => {},
+    });
+    writer.markReady('active');
+
+    const pending = writer.writeUserMessage('will fail');
+    const failure = new Error('broken pipe');
+    write.reject(failure);
+
+    await expect(pending).resolves.toMatchObject({ status: 'closed-or-failed' });
+    expect(writer.lastError).toBe(failure);
+  });
+
+  it('starts only one turn when two idle deliveries race through the AgentInputAdapter contract', async () => {
+    const write = deferred<number>();
+    const stdin = {
+      write: vi.fn(() => write.promise),
+      end: vi.fn(() => Promise.resolve(0)),
+    };
+    const writer = new PersistentClaudeInputWriter({
+      stdin: stdin as unknown as FileSink,
+      debugLog: vi.fn(),
+    });
+    writer.markReady('idle');
+
+    const firstDelivery = writer.deliver({
+      messageId: 'message-1',
+      source: {} as never,
+      content: 'first',
+    });
+    // The first delivery must synchronously claim idle before the second
+    // concurrent send is evaluated.
+    expect(writer.state).toBe('active');
+
+    const secondDelivery = writer.deliver({
+      messageId: 'message-2',
+      source: {} as never,
+      content: 'second',
+    });
+
+    write.resolve(1);
+
+    const [firstResult, secondResult] = await Promise.all([
+      Promise.resolve(firstDelivery),
+      Promise.resolve(secondDelivery).catch((error: unknown) => error),
+    ]);
+
+    expect(firstResult).toBe('started-idle-turn');
+    // The second concurrent send must not silently start a second turn: it
+    // either fails because the writer was busy, or a future retry sees the
+    // now-active state and is steered instead of claiming idle again.
+    expect(secondResult).not.toBe('started-idle-turn');
+    expect(stdin.write).toHaveBeenCalledTimes(1);
+  });
+
   it('closes stdin once during a close/write race and rejects the pending delivery', async () => {
     const write = deferred<number>();
     const stdin = {

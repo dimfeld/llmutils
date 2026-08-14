@@ -89,4 +89,73 @@ describe('Claude persistent-agent contract', () => {
       })
     ).toThrow('executor must be claude-code');
   });
+
+  it('rejects a missing or malformed processLabel, ready, or completion', () => {
+    const input = new FakeAgentInputAdapter();
+    input.markReady();
+    const lifecycle = new FakeAgentProviderLifecycleControls();
+    const base = {
+      mode: CLAUDE_PERSISTENT_AGENT_MODE,
+      executor: 'claude-code',
+      processLabel: 'Claude worker-a',
+      providerState: 'spawning',
+      input,
+      ready: Promise.resolve(),
+      completion: Promise.resolve({}),
+      lifecycle,
+    };
+
+    expect(() => validateClaudePersistentAgentLaunchHandle({ ...base, processLabel: 42 })).toThrow(
+      'process label must be a string'
+    );
+    expect(() => validateClaudePersistentAgentLaunchHandle({ ...base, ready: undefined })).toThrow(
+      'ready must be a promise'
+    );
+    expect(() =>
+      validateClaudePersistentAgentLaunchHandle({ ...base, completion: 'not-a-promise' })
+    ).toThrow('completion must be a promise');
+  });
+
+  it('rejects an invalid input adapter, lifecycle controls, or release', () => {
+    const input = new FakeAgentInputAdapter();
+    input.markReady();
+    const lifecycle = new FakeAgentProviderLifecycleControls();
+    const base = {
+      mode: CLAUDE_PERSISTENT_AGENT_MODE,
+      executor: 'claude-code',
+      processLabel: 'Claude worker-a',
+      providerState: 'spawning',
+      input,
+      ready: Promise.resolve(),
+      completion: Promise.resolve({}),
+      lifecycle,
+    };
+
+    expect(() =>
+      validateClaudePersistentAgentLaunchHandle({ ...base, input: { deliver: () => {} } })
+    ).toThrow();
+    expect(() => validateClaudePersistentAgentLaunchHandle({ ...base, lifecycle: {} })).toThrow();
+    expect(() =>
+      validateClaudePersistentAgentLaunchHandle({ ...base, release: 'not-a-function' })
+    ).toThrow('release must be a function');
+  });
+
+  it('accepts a handle with a valid release function', () => {
+    const input = new FakeAgentInputAdapter();
+    input.markReady();
+    const lifecycle = new FakeAgentProviderLifecycleControls();
+    const handle = {
+      mode: CLAUDE_PERSISTENT_AGENT_MODE,
+      executor: 'claude-code',
+      processLabel: formatAgentProcessLabel('claude-code', 'worker-a'),
+      providerState: 'idle' as const,
+      input,
+      ready: Promise.resolve(),
+      completion: Promise.resolve({}),
+      lifecycle,
+      release: async (): Promise<void> => {},
+    } satisfies ClaudePersistentAgentLaunchHandle;
+
+    expect(() => validateClaudePersistentAgentLaunchHandle(handle)).not.toThrow();
+  });
 });
