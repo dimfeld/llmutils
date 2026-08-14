@@ -149,7 +149,7 @@ export interface ExecuteWithTerminalInputOptions {
 
 export interface ExecuteWithTerminalInputResult {
   resultPromise: Promise<SpawnAndLogOutputResult>;
-  onResultMessage: (resultWasSuccessful: boolean) => void;
+  onResultMessage: (resultWasSuccessful: boolean, resultText?: string) => void;
   observeFormattedMessage: (formatted: FormattedClaudeMessage) => void;
   sendFollowUpForInterceptedResult: (content: string) => void;
   acceptedSuccessfulFinalResult: () => boolean;
@@ -330,9 +330,9 @@ export function executeWithTerminalInput(
     headlessUserInputHandlerRegistered;
 
   // onResultMessage is called by the formatStdout callback when a result message is detected
-  const onResultMessage = (resultWasSuccessful: boolean): void => {
+  const onResultMessage = (resultWasSuccessful: boolean, resultText?: string): void => {
     if (persistentController) {
-      persistentController.onResultMessage(resultWasSuccessful);
+      persistentController.onResultMessage(resultWasSuccessful, resultText);
       return;
     }
     if (keepInteractiveInputOpenOnResult && hasInteractiveInputSource()) {

@@ -514,4 +514,36 @@ describe('process utilities', () => {
       expect(result).toEqual(['first part complete']);
     });
   });
+
+  describe('spawnWithStreamingIO output activity', () => {
+    it('keeps consuming output when the activity callback throws', async () => {
+      const onOutputActivity = vi.fn(() => {
+        throw new Error('observer failure');
+      });
+
+      const streaming = await spawnWithStreamingIO(
+        ['sh', '-c', 'printf stdout; printf stderr >&2'],
+        { onOutputActivity }
+      );
+      const result = await streaming.result;
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('stdout');
+      expect(result.stderr).toBe('stderr');
+      expect(onOutputActivity).toHaveBeenCalledTimes(2);
+    });
+
+    it('can disable inactivity termination for an intentionally persistent process', async () => {
+      const streaming = await spawnWithStreamingIO(['sh', '-c', 'sleep 0.05; printf ready'], {
+        inactivityTimeoutMs: 1,
+        initialInactivityTimeoutMs: 1,
+        disableInactivityKill: true,
+      });
+      const result = await streaming.result;
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('ready');
+      expect(result.killedByInactivity).toBe(false);
+    });
+  });
 });

@@ -19,7 +19,11 @@ export interface PersistentClaudeTurnControllerOptions {
   readonly stdin: FileSink;
   readonly debugLog: (...args: unknown[]) => void;
   readonly initialPrompt?: string;
-  readonly onTurnComplete?: (successful: boolean, generation: number) => void;
+  readonly onTurnComplete?: (
+    successful: boolean,
+    generation: number,
+    resultText: string | undefined
+  ) => void;
   readonly graceMs?: number;
   readonly stallTimeoutMs?: number;
   readonly setTimeoutFn?: (callback: () => void, ms: number) => TimerHandle;
@@ -47,6 +51,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
   private turnSettled = false;
   private resultSeenValue = false;
   private resultSuccessfulValue = false;
+  private resultTextValue: string | undefined;
   private closeAfterCurrentResultValue = false;
   private started = false;
 
@@ -148,6 +153,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
       const { hasRunningTasks } = formatted.backgroundActivity;
       this.currentTracker.backgroundTasksChanged(hasRunningTasks);
       if (hasRunningTasks && this.resultSeenValue && !this.closeAfterCurrentResultValue) {
+        this.resultTextValue = undefined;
         this.markTurnActive();
       }
       return;
@@ -157,17 +163,19 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
       const wasResultPending = this.stateValue === 'result-pending-background';
       this.currentTracker.onTurnActivity();
       if (wasResultPending && !this.closeAfterCurrentResultValue) {
+        this.resultTextValue = undefined;
         this.markTurnActive();
       }
     }
   }
 
   /** Called when Claude emits a complete result record for the current turn. */
-  public onResultMessage(resultWasSuccessful: boolean): void {
+  public onResultMessage(resultWasSuccessful: boolean, resultText?: string): void {
     if (this.isTerminal() || this.turnSettled || this.currentTracker === undefined) return;
 
     this.resultSeenValue = true;
     this.resultSuccessfulValue = resultWasSuccessful;
+    this.resultTextValue = resultText;
     if (this.closeAfterCurrentResultValue) {
       this.stateValue = 'finish-after-result';
     }
@@ -251,6 +259,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     this.turnSettled = false;
     this.resultSeenValue = false;
     this.resultSuccessfulValue = false;
+    this.resultTextValue = undefined;
     this.stateValue = 'active';
     this.currentTracker = new BackgroundActivityTracker({
       onClose: (): void => {
@@ -378,7 +387,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     }
 
     try {
-      this.options.onTurnComplete?.(this.resultSuccessfulValue, generation);
+      this.options.onTurnComplete?.(this.resultSuccessfulValue, generation, this.resultTextValue);
     } catch (error) {
       this.options.debugLog('Persistent Claude turn-complete callback failed: %s', error);
     }

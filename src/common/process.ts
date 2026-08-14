@@ -138,6 +138,10 @@ export type SpawnAndLogOutputOptions = {
   initialInactivityTimeoutMs?: number;
   /** Callback invoked when the process is killed due to inactivity. */
   onInactivityKill?: (signal: NodeJS.Signals) => void;
+  /** Callback invoked for every stdout or stderr chunk. */
+  onOutputActivity?: () => void | Promise<void>;
+  /** Disable the inactivity kill while keeping output streaming enabled. */
+  disableInactivityKill?: boolean;
   /** Callback invoked immediately after the process has been spawned. */
   onSpawn?: (pid: number) => void;
   /** Display label used when this process is registered as a session executor. */
@@ -175,7 +179,9 @@ function setupOutputProcessing(
   proc: Bun.Subprocess<SpawnOptions.Writable, 'pipe', 'pipe'>,
   options?: SpawnAndLogOutputOptions
 ): SpawnOutputProcessingState {
-  const inactivityTimeoutMs = options?.inactivityTimeoutMs;
+  const inactivityTimeoutMs = options?.disableInactivityKill
+    ? undefined
+    : options?.inactivityTimeoutMs;
   const initialInactivityTimeoutMs = options?.initialInactivityTimeoutMs ?? inactivityTimeoutMs;
   const inactivitySignal: NodeJS.Signals = 'SIGTERM';
   let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
@@ -196,6 +202,17 @@ function setupOutputProcessing(
       proc.kill(inactivitySignal);
       options?.onInactivityKill?.(inactivitySignal);
     }, timeout);
+  };
+
+  const notifyOutputActivity = (): void => {
+    try {
+      const result = options?.onOutputActivity?.();
+      void Promise.resolve(result).catch((error: unknown) => {
+        debugLog('Process output activity callback failed: %s', error);
+      });
+    } catch (error) {
+      debugLog('Process output activity callback failed: %s', error);
+    }
   };
 
   const clearInactivityTimer = () => {
@@ -283,6 +300,7 @@ function setupOutputProcessing(
         // Activity observed; mark output seen and reset inactivity timer
         hasSeenOutput = true;
         resetInactivityTimer();
+        notifyOutputActivity();
       }
     }
 
@@ -303,6 +321,7 @@ function setupOutputProcessing(
         // Activity observed; mark output seen and reset inactivity timer
         hasSeenOutput = true;
         resetInactivityTimer();
+        notifyOutputActivity();
       }
     }
 

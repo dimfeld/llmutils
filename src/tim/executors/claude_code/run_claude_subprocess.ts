@@ -13,7 +13,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { debugLog, error, log, sendStructured, warn } from '../../../logging.js';
-import { spawnWithStreamingIO } from '../../../common/process.js';
+import { spawnWithStreamingIO, type StreamingProcess } from '../../../common/process.js';
+import type { SessionExecutorLifecycle } from '../../../common/session_process_control.js';
 import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
 import {
   normalizeSubprocessMonitorRules,
@@ -23,6 +24,7 @@ import {
 import type { FormattedClaudeMessage } from './format.js';
 import { createClaudeOutputStreamFormatter } from './output_stream_formatter.js';
 import { executeWithTerminalInput } from './terminal_input_lifecycle.js';
+import { safeEndStdin } from './streaming_input.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
@@ -47,6 +49,18 @@ export {
 } from './claude_mcp_launch.js';
 export type { ClaudeMcpCapabilities } from './claude_mcp_launch.js';
 import type { TimConfig } from '../../configSchema.js';
+import type {
+  AgentProviderControlResult,
+  AgentProviderLifecycleControls,
+  AgentProviderLifecycleObserver,
+  ProcessControlId,
+} from '../../agent_messaging/agent_manager_types.js';
+import {
+  AgentProviderControlError,
+  AgentProviderForceNotAcceptedError,
+} from '../../agent_messaging/agent_manager_types.js';
+import type { AgentProcessLabel } from '../../agent_messaging/agent_process_labels.js';
+import type { StructuredMessage } from '../../../logging/structured_messages.js';
 import type {
   ClaudePersistentAgentCompletion,
   ClaudePersistentAgentLaunchHandle,
@@ -254,7 +268,9 @@ export interface RunClaudeSubprocessOptions {
 export interface ClaudePersistentAgentRunOptions extends Omit<RunClaudeSubprocessOptions, 'mode'> {
   readonly mode: ClaudePersistentAgentMode;
   /** Provider output activity callback consumed by the lifecycle owner. */
-  readonly onOutputActivity?: () => void;
+  readonly onOutputActivity?: () => void | Promise<void>;
+  /** Optional named process-tree label supplied by AgentManager. */
+  readonly processLabel?: AgentProcessLabel;
 }
 
 /** The complete Claude option surface used by the future provider launcher. */
@@ -300,9 +316,15 @@ async function loadSharedPermissions(): Promise<string[]> {
  * Runs a Claude Code subprocess with the standard setup pattern:
  * permissions MCP, tunnel server, CLI args, streaming stdout parsing, and cleanup.
  */
-export async function runClaudeSubprocess(
+export function runClaudeSubprocess(
   options: RunClaudeSubprocessOptions
-): Promise<RunClaudeSubprocessResult> {
+): Promise<RunClaudeSubprocessResult>;
+export function runClaudeSubprocess(
+  options: ClaudePersistentAgentRunOptions
+): Promise<ClaudePersistentAgentLaunchResult>;
+export async function runClaudeSubprocess(
+  options: ClaudeSubprocessExecutionOptions
+): Promise<RunClaudeSubprocessResult | ClaudePersistentAgentLaunchResult> {
   const {
     prompt,
     cwd,
@@ -316,6 +338,7 @@ export async function runClaudeSubprocess(
     processFormattedMessages,
     logModelSelection,
   } = options;
+  const persistentAgent = options.mode === 'persistent-agent';
 
   const inactivityTimeoutMs = options.inactivityTimeoutMs ?? 30 * 60 * 1000;
   const initialInactivityTimeoutMs = options.initialInactivityTimeoutMs ?? 2 * 60 * 1000;
@@ -386,28 +409,190 @@ export async function runClaudeSubprocess(
   const permissionsMcpTempDir = mcpLaunch.tempDir;
 
   // Set up tunneling for intermediate output
-  let tunnelServer: TunnelServer | undefined;
-  // Reuse permissions MCP temp dir if available, otherwise create a new one
-  const tunnelTempDir =
-    permissionsMcpTempDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), `tim-${label}-`)));
-  const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
-  if (!isTunnelActive()) {
-    try {
-      const promptHandler = createPromptRequestHandler();
-      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
-        onPromptRequest: promptHandler,
-      });
-    } catch (err) {
-      debugLog(`Could not create tunnel server for ${label} output forwarding:`, err);
-    }
-  }
-
   let acceptedFinalResult = false;
   let killedByTimeout = false;
   let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
   let monitorHandle: SubprocessMonitorHandle | undefined;
+  let streaming: StreamingProcess | undefined;
+  let tunnelServer: TunnelServer | undefined;
+  let tunnelTempDir: string | undefined;
+  let sessionProcessLifecycle: SessionExecutorLifecycle | undefined;
+  let cleanupPromise: Promise<void> | undefined;
+
+  const cleanup = async (): Promise<void> => {
+    cleanupPromise ??= (async (): Promise<void> => {
+      let firstError: unknown;
+
+      try {
+        monitorHandle?.stop();
+      } catch (error) {
+        firstError ??= error;
+      }
+
+      try {
+        terminalInputResult?.cleanup();
+      } catch (error) {
+        firstError ??= error;
+      }
+
+      try {
+        tunnelServer?.close();
+      } catch (error) {
+        firstError ??= error;
+      }
+
+      if (!permissionsMcpTempDir && tunnelTempDir !== undefined) {
+        try {
+          await fs.rm(tunnelTempDir, { recursive: true, force: true });
+        } catch (error) {
+          firstError ??= error;
+        }
+      }
+
+      try {
+        await permissionsMcpCleanup?.();
+      } catch (error) {
+        firstError ??= error;
+      }
+
+      if (firstError !== undefined) throw firstError;
+    })();
+    return cleanupPromise;
+  };
+
+  const completionDeferred = persistentAgent
+    ? createDeferred<ClaudePersistentAgentCompletion>()
+    : undefined;
+  const lifecycleObservers = new Set<AgentProviderLifecycleObserver>();
+  let persistentController: ReturnType<typeof executeWithTerminalInput>['persistentAgent'];
+  let completionFinalized = false;
+  let exitNotified = false;
+  let settledResultText: string | undefined;
+  let lastCompletedAssistantMessage: string | undefined;
+  let lastSessionEndMessage: StructuredMessage | undefined;
+  let pendingFormattedMessages: FormattedClaudeMessage[] | undefined = persistentAgent
+    ? []
+    : undefined;
+
+  const notifyOutputActivity = (): void => {
+    if (!persistentAgent) return;
+    try {
+      const result = options.onOutputActivity?.();
+      void Promise.resolve(result).catch((error: unknown) => {
+        debugLog(`Claude ${label} output activity callback failed:`, error);
+      });
+    } catch (error) {
+      debugLog(`Claude ${label} output activity callback failed:`, error);
+    }
+    for (const observer of lifecycleObservers) {
+      try {
+        observer.outputActivity();
+      } catch (error) {
+        debugLog(`Claude ${label} lifecycle output callback failed:`, error);
+      }
+    }
+  };
+
+  const notifyCompletedAssistantMessage = (message: string): void => {
+    if (!persistentAgent) return;
+    lastCompletedAssistantMessage = message;
+    for (const observer of lifecycleObservers) {
+      try {
+        observer.completedAssistantMessage(message);
+      } catch (error) {
+        debugLog(`Claude ${label} lifecycle assistant callback failed:`, error);
+      }
+    }
+  };
+
+  const notifyTurnComplete = (
+    successful: boolean,
+    generation: number,
+    resultText: string | undefined
+  ): void => {
+    if (!persistentAgent) return;
+    settledResultText = resultText;
+    for (const observer of lifecycleObservers) {
+      try {
+        observer.turnComplete();
+      } catch (error) {
+        debugLog(`Claude ${label} lifecycle turn callback failed:`, error);
+      }
+    }
+    debugLog(
+      `Claude ${label} persistent turn ${generation} settled (${successful ? 'success' : 'failure'})`
+    );
+  };
+
+  const notifyExit = (
+    classification: 'natural' | 'graceful' | 'forced' | 'failed',
+    error?: Error
+  ) => {
+    if (exitNotified) return;
+    exitNotified = true;
+    for (const observer of lifecycleObservers) {
+      try {
+        observer.exit(classification, error);
+      } catch (observerError) {
+        debugLog(`Claude ${label} lifecycle exit callback failed:`, observerError);
+      }
+    }
+  };
+
+  const lifecycle: AgentProviderLifecycleControls = {
+    requestGracefulShutdown: async (): Promise<AgentProviderControlResult> => {
+      throw new AgentProviderControlError(
+        'graceful-shutdown',
+        'Claude persistent graceful shutdown is not wired by this provider task'
+      );
+    },
+    requestCloseAfterCurrentTurn: async (): Promise<AgentProviderControlResult> => {
+      if (completionFinalized || persistentController === undefined) return 'already-exited';
+      try {
+        persistentController.requestCloseAfterCurrentResult();
+        return 'accepted';
+      } catch (error) {
+        if (persistentController.state === 'exited' || persistentController.state === 'failed') {
+          return 'already-exited';
+        }
+        throw new AgentProviderControlError(
+          'close-after-current-turn',
+          `Claude persistent close-after-turn failed: ${String(error)}`,
+          { cause: error }
+        );
+      }
+    },
+    requestForcedShutdown: async (): Promise<AgentProviderControlResult> => {
+      throw new AgentProviderForceNotAcceptedError(
+        'Claude persistent forced shutdown is not wired by this provider task'
+      );
+    },
+    subscribe: (observer: AgentProviderLifecycleObserver): (() => void) => {
+      lifecycleObservers.add(observer);
+      return (): void => {
+        lifecycleObservers.delete(observer);
+      };
+    },
+  };
 
   try {
+    // Reuse the permissions MCP temp dir if available, otherwise create a
+    // separate output tunnel directory. This is inside the guarded setup so a
+    // failure here still releases a successfully-created MCP bridge.
+    tunnelTempDir =
+      permissionsMcpTempDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), `tim-${label}-`)));
+    const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+    if (!isTunnelActive()) {
+      try {
+        const promptHandler = createPromptRequestHandler();
+        tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
+          onPromptRequest: promptHandler,
+        });
+      } catch (err) {
+        debugLog(`Could not create tunnel server for ${label} output forwarding:`, err);
+      }
+    }
+
     const args = ['claude', '--no-session-persistence', '--permission-mode', 'auto'];
 
     applyClaudeMcpLaunchArgs(args, mcpLaunch, claudeCodeOptions.mcpConfigFile);
@@ -463,16 +648,21 @@ export async function runClaudeSubprocess(
       args.push(...extraArgs);
     }
 
-    const streamFormatter = createClaudeOutputStreamFormatter(modelToUse);
-
     if (logModelSelection) {
       log(`Interactive permissions MCP is`, interactiveApprovalEnabled ? 'enabled' : 'disabled');
     }
 
-    const streaming = await spawnWithStreamingIO(args, {
-      sessionProcessLabel: `Claude ${label}`,
+    const sessionProcessLabel =
+      persistentAgent && options.processLabel !== undefined
+        ? options.processLabel
+        : `Claude ${label}`;
+    const streamFormatter = createClaudeOutputStreamFormatter(modelToUse);
+
+    streaming = await spawnWithStreamingIO(args, {
+      sessionProcessLabel,
       sessionProcessControl: 'both',
       onSessionProcessReady: (lifecycle) => {
+        sessionProcessLifecycle = lifecycle;
         lifecycle.setGracefulEndHandler(() => terminalInputResult?.endSession?.());
       },
       env: {
@@ -488,21 +678,50 @@ export async function runClaudeSubprocess(
       cwd,
       inactivityTimeoutMs,
       initialInactivityTimeoutMs,
+      disableInactivityKill: persistentAgent,
       onInactivityKill: () => {
         killedByTimeout = true;
         error(
           `Claude ${label} timed out after ${Math.round(inactivityTimeoutMs / 60000)} minutes; terminating.`
         );
       },
+      onOutputActivity: persistentAgent ? notifyOutputActivity : undefined,
       formatStdout: (output) => {
         const { formattedResults, structuredMessages } = streamFormatter.formatChunk(output);
 
-        // Track result messages and file paths
+        // Track complete lifecycle messages and file paths. A process can
+        // produce output before executeWithTerminalInput() has installed its
+        // persistent controller, so retain only that short setup window.
         for (const formatted of formattedResults) {
-          terminalInputResult?.observeFormattedMessage(formatted);
+          if (formatted.structured !== undefined) {
+            const structured = Array.isArray(formatted.structured)
+              ? formatted.structured
+              : [formatted.structured];
+            for (const message of structured) {
+              if (message.type === 'agent_session_end') {
+                lastSessionEndMessage = message;
+              }
+            }
+          }
+
+          if (terminalInputResult !== undefined) {
+            terminalInputResult.observeFormattedMessage(formatted);
+          } else if (persistentAgent) {
+            pendingFormattedMessages?.push(formatted);
+          }
 
           if (formatted.type === 'result') {
-            terminalInputResult?.onResultMessage(formatted.resultInfo?.success !== false);
+            terminalInputResult?.onResultMessage(
+              formatted.resultInfo?.success !== false,
+              formatted.resultText
+            );
+          }
+          if (
+            persistentAgent &&
+            formatted.type === 'assistant' &&
+            formatted.rawMessage !== undefined
+          ) {
+            notifyCompletedAssistantMessage(formatted.rawMessage);
           }
           if (formatted.filePaths) {
             for (const filePath of formatted.filePaths) {
@@ -517,7 +736,8 @@ export async function runClaudeSubprocess(
         // Let the caller extract mode-specific data
         processFormattedMessages(formattedResults);
 
-        return structuredMessages.length > 0 ? structuredMessages : '';
+        if (!persistentAgent) return structuredMessages.length > 0 ? structuredMessages : '';
+        return structuredMessages.filter((message) => message.type !== 'agent_session_end');
       },
     });
 
@@ -541,10 +761,137 @@ export async function runClaudeSubprocess(
       tunnelServer,
       terminalInputEnabled: terminalInput === true,
       tunnelForwardingEnabled: isTunnelActive(),
+      persistentAgent: persistentAgent
+        ? {
+            initialPrompt: prompt,
+            onTurnComplete: notifyTurnComplete,
+          }
+        : undefined,
     });
+
+    persistentController = terminalInputResult.persistentAgent;
+    if (persistentAgent && persistentController === undefined) {
+      throw new Error('Persistent Claude runner did not create its input controller');
+    }
+
+    if (persistentAgent && pendingFormattedMessages !== undefined) {
+      const pending = pendingFormattedMessages;
+      pendingFormattedMessages = undefined;
+      for (const formatted of pending) {
+        terminalInputResult.observeFormattedMessage(formatted);
+        if (formatted.type === 'result') {
+          terminalInputResult.onResultMessage(
+            formatted.resultInfo?.success !== false,
+            formatted.resultText
+          );
+        }
+      }
+    }
+
+    if (persistentAgent) {
+      const readyController = persistentController;
+      if (readyController === undefined) {
+        throw new Error('Persistent Claude runner lost its input controller');
+      }
+      const readyCompletionDeferred = completionDeferred;
+      if (readyCompletionDeferred === undefined) {
+        throw new Error('Persistent Claude runner completion was not initialized');
+      }
+      const completion = readyCompletionDeferred.promise;
+
+      const processCompletion = terminalInputResult.resultPromise;
+      void (async (): Promise<void> => {
+        let processResult: Awaited<typeof processCompletion> | undefined;
+        let processError: Error | undefined;
+        try {
+          processResult = await processCompletion;
+          persistentController?.markProviderExited();
+        } catch (error) {
+          processError = toError(error);
+          persistentController?.markProviderFailed(processError);
+        }
+
+        let cleanupError: Error | undefined;
+        try {
+          await cleanup();
+        } catch (error) {
+          cleanupError = toError(error);
+          debugLog(`Claude ${label} persistent cleanup failed:`, cleanupError);
+        }
+
+        if (lastSessionEndMessage !== undefined) {
+          try {
+            sendStructured(lastSessionEndMessage);
+          } catch (error) {
+            debugLog(`Claude ${label} final session message failed:`, error);
+          }
+        }
+
+        const exitError =
+          processError ??
+          cleanupError ??
+          (processResult !== undefined && processResult.exitCode !== 0
+            ? new Error(`Claude ${label} exited with code ${processResult.exitCode}`)
+            : undefined);
+        const classification = exitError === undefined ? 'natural' : 'failed';
+        notifyExit(classification, exitError);
+        lifecycleObservers.clear();
+        if (!completionFinalized) {
+          completionFinalized = true;
+          readyCompletionDeferred.resolve(
+            Object.freeze({
+              ...(exitError === undefined ? {} : { error: exitError }),
+              ...(processResult?.exitCode === undefined
+                ? {}
+                : { exitCode: processResult.exitCode }),
+              ...(processResult?.signal === undefined ? {} : { signal: processResult.signal }),
+              ...(processResult?.killedByInactivity === undefined
+                ? {}
+                : { killedByInactivity: processResult.killedByInactivity }),
+              ...(settledResultText === undefined ? {} : { resultText: settledResultText }),
+              ...(lastCompletedAssistantMessage === undefined
+                ? {}
+                : { lastCompletedAssistantMessage }),
+              ...(settledResultText !== undefined || lastCompletedAssistantMessage !== undefined
+                ? {
+                    finalMessage:
+                      settledResultText !== undefined
+                        ? settledResultText
+                        : lastCompletedAssistantMessage,
+                  }
+                : {}),
+            })
+          );
+        }
+      })();
+
+      await readyController.ready;
+
+      const processControlId = sessionProcessLifecycle?.processId as ProcessControlId | undefined;
+      const handle: ClaudePersistentAgentLaunchResult = {
+        mode: 'persistent-agent',
+        executor: 'claude-code',
+        processLabel: sessionProcessLabel as AgentProcessLabel,
+        get providerState() {
+          return readyController.state;
+        },
+        input: readyController,
+        ready: readyController.ready,
+        completion,
+        lifecycle,
+        ...(processControlId === undefined ? {} : { processControlId }),
+        release: async (): Promise<void> => {
+          persistentController?.cleanup();
+          await cleanup();
+        },
+      };
+      return handle;
+    }
 
     const result = await terminalInputResult.resultPromise;
     acceptedFinalResult = terminalInputResult.acceptedSuccessfulFinalResult();
+
+    await cleanup();
 
     return {
       acceptedFinalResult,
@@ -552,16 +899,39 @@ export async function runClaudeSubprocess(
       exitCode: result.exitCode,
       killedByInactivity: result.killedByInactivity ?? false,
     };
-  } finally {
-    monitorHandle?.stop();
-    terminalInputResult?.cleanup();
-    tunnelServer?.close();
-    // Clean up tunnel temp dir if we created a separate one (not reusing permissions MCP dir)
-    if (!permissionsMcpTempDir) {
-      await fs.rm(tunnelTempDir, { recursive: true, force: true });
+  } catch (error) {
+    persistentController?.markProviderFailed(error);
+    if (streaming !== undefined && terminalInputResult === undefined) {
+      try {
+        safeEndStdin(streaming.stdin, debugLog);
+        streaming.kill('SIGTERM');
+      } catch (cleanupError) {
+        debugLog(`Claude ${label} startup cleanup failed:`, cleanupError);
+      }
     }
-    if (permissionsMcpCleanup) {
-      await permissionsMcpCleanup();
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      debugLog(`Claude ${label} cleanup after failure failed:`, cleanupError);
     }
+    throw error;
   }
+}
+
+function createDeferred<T>(): {
+  readonly promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolvePromise: ((value: T) => void) | undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return {
+    promise,
+    resolve: (value: T): void => resolvePromise?.(value),
+  };
+}
+
+function toError(value: unknown): Error {
+  return value instanceof Error ? value : new Error(String(value));
 }
