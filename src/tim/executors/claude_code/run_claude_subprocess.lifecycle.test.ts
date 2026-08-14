@@ -840,4 +840,186 @@ describe('runClaudeSubprocess lifecycle', () => {
     await setup.handle.completion;
     await expect(setup.handle.release()).resolves.toBeUndefined();
   });
+
+  test('close-after-current-turn during a result-pending background turn waits for drain before closing', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+
+    setup.formatStdout(
+      `${JSON.stringify({
+        type: 'system',
+        subtype: 'background_tasks_changed',
+        tasks: [{ id: 'task-bg1' }],
+        uuid: 'uuid-1',
+        session_id: SESSION_ID,
+      })}\n`
+    );
+    setup.formatStdout(`${RESULT_LINE}\n`);
+    expect(setup.handle.providerState).toBe('result-pending-background');
+
+    await expect(setup.handle.lifecycle.requestCloseAfterCurrentTurn()).resolves.toBe('accepted');
+    expect(setup.stdinEndSpy).not.toHaveBeenCalled();
+
+    vi.useFakeTimers();
+    setup.formatStdout(
+      `${JSON.stringify({
+        type: 'system',
+        subtype: 'background_tasks_changed',
+        tasks: [],
+        uuid: 'uuid-2',
+        session_id: SESSION_ID,
+      })}\n`
+    );
+    expect(setup.stdinEndSpy).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(10_000);
+    expect(setup.stdinEndSpy).toHaveBeenCalledOnce();
+
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await expect(setup.handle.completion).resolves.toMatchObject({ exitCode: 0 });
+  });
+
+  test('duplicate graceful shutdown calls while active do not write a second instruction', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+
+    const first = setup.handle.lifecycle.requestGracefulShutdown('please wrap up');
+    const second = setup.handle.lifecycle.requestGracefulShutdown('please wrap up again');
+    await expect(first).resolves.toBe('accepted');
+    await expect(second).resolves.toBe('accepted');
+
+    // One write for the initial prompt, one write for the shutdown instruction.
+    expect(setup.stdinWriteSpy).toHaveBeenCalledTimes(2);
+    expect(setup.handle.providerState).toBe('graceful-stop-active');
+
+    setup.formatStdout(`${RESULT_LINE}\n`);
+    expect(setup.stdinEndSpy).toHaveBeenCalledOnce();
+
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await setup.handle.completion;
+  });
+
+  test('force shutdown from idle uses the safe owner capability', async () => {
+    const terminateExecutor = vi.fn(() => 'terminated');
+    mockGetCurrentSessionProcessOwner.mockReturnValue({ terminateExecutor } as never);
+    const setup = await setupPersistentClaudeSubprocess();
+
+    setup.formatStdout(`${RESULT_LINE}\n`);
+    expect(setup.handle.providerState).toBe('idle');
+
+    await expect(setup.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');
+    expect(terminateExecutor).toHaveBeenCalledOnce();
+    expect(terminateExecutor).toHaveBeenCalledWith('process-1');
+
+    setup.resolveStreamingResult({
+      exitCode: 143,
+      stdout: '',
+      stderr: '',
+      signal: 'SIGTERM',
+      killedByInactivity: false,
+    });
+    await expect(setup.handle.completion).resolves.toMatchObject({ exitCode: 143 });
+  });
+
+  test('force shutdown upgrades an in-progress graceful stop and classifies completion as forced', async () => {
+    const terminateExecutor = vi.fn(() => 'terminated');
+    mockGetCurrentSessionProcessOwner.mockReturnValue({ terminateExecutor } as never);
+    const setup = await setupPersistentClaudeSubprocess();
+    const exits: string[] = [];
+    setup.handle.lifecycle.subscribe({
+      outputActivity: (): void => {},
+      completedAssistantMessage: (): void => {},
+      turnComplete: (): void => {},
+      exit: (classification): void => exits.push(classification),
+    });
+
+    await expect(
+      setup.handle.lifecycle.requestGracefulShutdown('please wrap up')
+    ).resolves.toBe('accepted');
+    expect(setup.handle.providerState).toBe('graceful-stop-active');
+
+    await expect(setup.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');
+    expect(terminateExecutor).toHaveBeenCalledOnce();
+
+    setup.resolveStreamingResult({
+      exitCode: 143,
+      stdout: '',
+      stderr: '',
+      signal: 'SIGTERM',
+      killedByInactivity: false,
+    });
+    await expect(setup.handle.completion).resolves.toMatchObject({ exitCode: 143 });
+    expect(exits).toEqual(['forced']);
+  });
+
+  test('force shutdown treats an already-exited safe-control result as informational, not accepted', async () => {
+    const terminateExecutor = vi.fn(() => 'already_exited');
+    mockGetCurrentSessionProcessOwner.mockReturnValue({ terminateExecutor } as never);
+    const setup = await setupPersistentClaudeSubprocess();
+    const exits: string[] = [];
+    setup.handle.lifecycle.subscribe({
+      outputActivity: (): void => {},
+      completedAssistantMessage: (): void => {},
+      turnComplete: (): void => {},
+      exit: (classification): void => exits.push(classification),
+    });
+
+    await expect(setup.handle.lifecycle.requestForcedShutdown()).resolves.toBe('already-exited');
+    expect(terminateExecutor).toHaveBeenCalledOnce();
+
+    setup.formatStdout(`${RESULT_LINE}\n`);
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await expect(setup.handle.completion).resolves.toMatchObject({ exitCode: 0 });
+    // The already-exited report never accepted a force; the natural close
+    // path (no close-after-turn request here) still classifies the exit.
+    expect(exits).toEqual(['natural']);
+  });
+
+  test('a throwing lifecycle observer does not block other observers or output flow', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+    const goodObserverActivity = vi.fn();
+    setup.handle.lifecycle.subscribe({
+      outputActivity: (): void => {
+        throw new Error('bad observer');
+      },
+      completedAssistantMessage: (): void => {},
+      turnComplete: (): void => {},
+      exit: (): void => {},
+    });
+    setup.handle.lifecycle.subscribe({
+      outputActivity: goodObserverActivity,
+      completedAssistantMessage: (): void => {},
+      turnComplete: (): void => {},
+      exit: (): void => {},
+    });
+
+    expect(() => (setup.spawnOptions.onOutputActivity as () => void)()).not.toThrow();
+    expect(goodObserverActivity).toHaveBeenCalledOnce();
+
+    setup.formatStdout(`${RESULT_LINE}\n`);
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await setup.handle.completion;
+  });
 });
