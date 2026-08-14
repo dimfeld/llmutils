@@ -991,6 +991,210 @@ describe('runClaudeSubprocess lifecycle', () => {
     expect(exits).toEqual(['natural']);
   });
 
+  test('force-stopping one persistent agent does not affect a concurrently running second agent', async () => {
+    const terminateExecutor = vi.fn((_processId: string) => 'terminated' as const);
+    mockGetCurrentSessionProcessOwner.mockReturnValue({ terminateExecutor } as never);
+
+    async function startAgent(processId: string, label: string) {
+      const stdinWriteSpy = vi.fn((_value: string) => {});
+      const stdinEndSpy = vi.fn(async () => {});
+      let formatStdout: ((output: string) => unknown) | undefined;
+      let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
+      let spawnOptions: Record<string, unknown> | undefined;
+      mockSpawnWithStreamingIO.mockImplementation(async (_args: string[], opts: any) => {
+        spawnOptions = opts;
+        formatStdout = opts.formatStdout;
+        opts.onSessionProcessReady?.({
+          processId,
+          setGracefulEndHandler: vi.fn(),
+          updateMetadata: vi.fn(),
+          markSpawned: vi.fn(),
+          markSpawnFailed: vi.fn(),
+          markExited: vi.fn(),
+        });
+        return {
+          pid: processId === 'process-a' ? 111 : 222,
+          stdin: { write: stdinWriteSpy, end: stdinEndSpy },
+          result: new Promise<SpawnAndLogOutputResult>((resolve) => {
+            resolveStreamingResult = resolve;
+          }),
+          kill: vi.fn(),
+        };
+      });
+      const handlePromise = runClaudeSubprocess({
+        ...makeSubprocessOptions(),
+        mode: 'persistent-agent',
+        processLabel: `Claude agent (${label})` as AgentProcessLabel,
+      });
+      const setupStart = Date.now();
+      while ((!formatStdout || !spawnOptions) && Date.now() - setupStart < 1000) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return {
+        handle: await handlePromise,
+        stdinWriteSpy,
+        stdinEndSpy,
+        formatStdout: formatStdout!,
+        resolveStreamingResult: resolveStreamingResult!,
+        spawnOptions: spawnOptions!,
+      };
+    }
+
+    const agentA = await startAgent('process-a', 'agent-a');
+    const agentB = await startAgent('process-b', 'agent-b');
+
+    expect(agentA.handle.processLabel).toBe('Claude agent (agent-a)');
+    expect(agentB.handle.processLabel).toBe('Claude agent (agent-b)');
+
+    // Force-stop only agent A.
+    await expect(agentA.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');
+    expect(terminateExecutor).toHaveBeenCalledExactlyOnceWith('process-a');
+
+    agentA.resolveStreamingResult({
+      exitCode: 143,
+      stdout: '',
+      stderr: '',
+      signal: 'SIGTERM',
+      killedByInactivity: false,
+    });
+    await expect(agentA.handle.completion).resolves.toMatchObject({ exitCode: 143 });
+    // Repeated release after natural completion must stay idempotent and
+    // must not disturb the other agent's still-live process.
+    await agentA.handle.release();
+    await agentA.handle.release();
+
+    // Agent B must be completely unaffected: no forced call targeted it, its
+    // stdin was never closed, and it can still steer a continuation turn.
+    expect(agentB.stdinEndSpy).not.toHaveBeenCalled();
+    expect(agentB.handle.providerState).toBe('active');
+    expect(agentB.stdinWriteSpy).toHaveBeenCalledTimes(1);
+
+    agentB.formatStdout(`${RESULT_LINE}\n`);
+    expect(agentB.handle.providerState).toBe('idle');
+
+    expect(
+      await Promise.resolve(
+        agentB.handle.input.deliver({
+          messageId: 'b-continue',
+          source: {} as never,
+          content: 'continue',
+        })
+      )
+    ).toBe('started-idle-turn');
+    expect(agentB.handle.providerState).toBe('active');
+    expect(agentB.stdinWriteSpy).toHaveBeenCalledTimes(2);
+
+    agentB.formatStdout(`${RESULT_LINE}\n`);
+    agentB.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await expect(agentB.handle.completion).resolves.toMatchObject({ exitCode: 0 });
+    expect(terminateExecutor).toHaveBeenCalledExactlyOnceWith('process-a');
+  });
+
+  test('concurrent release calls share one cleanup and settle completion exactly once', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+    const exits: string[] = [];
+    setup.handle.lifecycle.subscribe({
+      outputActivity: (): void => {},
+      completedAssistantMessage: (): void => {},
+      turnComplete: (): void => {},
+      exit: (classification): void => exits.push(classification),
+    });
+
+    // Fire several release() calls back-to-back without awaiting any of them
+    // individually, mirroring a caller and the finalizer racing to tear down
+    // the same execution at once.
+    const releasePromises = [
+      setup.handle.release(),
+      setup.handle.release(),
+      setup.handle.release(),
+    ];
+
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+
+    await Promise.all(releasePromises);
+    await setup.handle.completion;
+    expect(setup.stdinEndSpy).toHaveBeenCalledTimes(1);
+    expect(exits).toEqual(['natural']);
+
+    // A release requested after settlement remains harmless.
+    await expect(setup.handle.release()).resolves.toBeUndefined();
+    expect(exits).toEqual(['natural']);
+  });
+
+  test('output produced after cleanup starts is rejected instead of processed', async () => {
+    const processFormattedMessages = vi.fn();
+    const stdinWriteSpy = vi.fn((_value: string) => {});
+    const stdinEndSpy = vi.fn(async () => {});
+    let formatStdout: ((output: string) => unknown) | undefined;
+    let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
+    mockSpawnWithStreamingIO.mockImplementation(async (_args: string[], opts: any) => {
+      formatStdout = opts.formatStdout;
+      opts.onSessionProcessReady?.({
+        processId: 'process-late',
+        setGracefulEndHandler: vi.fn(),
+        updateMetadata: vi.fn(),
+        markSpawned: vi.fn(),
+        markSpawnFailed: vi.fn(),
+        markExited: vi.fn(),
+      });
+      return {
+        pid: 999,
+        stdin: { write: stdinWriteSpy, end: stdinEndSpy },
+        result: new Promise<SpawnAndLogOutputResult>((resolve) => {
+          resolveStreamingResult = resolve;
+        }),
+        kill: vi.fn(),
+      };
+    });
+
+    const handlePromise = runClaudeSubprocess({
+      ...makeSubprocessOptions(),
+      mode: 'persistent-agent',
+      processFormattedMessages,
+    });
+    const setupStart = Date.now();
+    while (!formatStdout && Date.now() - setupStart < 1000) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const handle = await handlePromise;
+    processFormattedMessages.mockClear();
+
+    // release() starts the idempotent cleanup finalizer synchronously; a
+    // process output chunk delivered afterward must not reach the formatter
+    // pipeline even though the mocked stdin has not itself been torn down.
+    const releasePromise = handle.release();
+    expect(() => formatStdout?.(`${RESULT_LINE}\n`)).not.toThrow();
+    expect(processFormattedMessages).not.toHaveBeenCalled();
+
+    resolveStreamingResult?.({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+    await releasePromise;
+    await handle.completion;
+
+    // Cleanup remains idempotent, and output continues to be rejected after
+    // the completion promise has settled.
+    expect(() => formatStdout?.(`${RESULT_LINE}\n`)).not.toThrow();
+    expect(processFormattedMessages).not.toHaveBeenCalled();
+    await handle.release();
+  });
+
   test('a throwing lifecycle observer does not block other observers or output flow', async () => {
     const setup = await setupPersistentClaudeSubprocess();
     const goodObserverActivity = vi.fn();
