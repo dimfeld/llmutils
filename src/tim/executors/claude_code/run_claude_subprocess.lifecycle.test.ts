@@ -575,4 +575,64 @@ describe('runClaudeSubprocess lifecycle', () => {
       error: expect.any(Error),
     });
   });
+
+  test('persistent setup failure before spawn rejects the launch and never leaves completion pending', async () => {
+    mockSpawnWithStreamingIO.mockImplementation(async () => {
+      throw new Error('spawn boom');
+    });
+
+    await expect(
+      runClaudeSubprocess({
+        ...makeSubprocessOptions(),
+        mode: 'persistent-agent',
+      })
+    ).rejects.toThrow('spawn boom');
+  });
+
+  test('a synchronous initial write failure still returns a ready handle and settles completion exactly once on exit', async () => {
+    const stdinWriteSpy = vi.fn(() => {
+      throw new Error('stdin boom');
+    });
+    const setup = await setupPersistentClaudeSubprocess(stdinWriteSpy);
+
+    // The initial write fails synchronously during setup, but launch
+    // readiness (subprocess + writable stream exist) still resolves; the
+    // failure is reflected in provider state instead of rejecting the handle.
+    expect(setup.handle.providerState).toBe('failed');
+
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+
+    const first = await setup.handle.completion;
+    const second = await setup.handle.completion;
+    expect(first).toBe(second);
+    expect(first.exitCode).toBe(0);
+
+    // Cleanup triggered by the completion chain must be idempotent when the
+    // caller also releases the handle after completion has settled.
+    await expect(setup.handle.release()).resolves.toBeUndefined();
+  });
+
+  test('release is idempotent and safe to call before and after natural exit', async () => {
+    const setup = await setupPersistentClaudeSubprocess();
+
+    await expect(setup.handle.release()).resolves.toBeUndefined();
+    await expect(setup.handle.release()).resolves.toBeUndefined();
+
+    setup.resolveStreamingResult({
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      signal: null,
+      killedByInactivity: false,
+    });
+
+    await setup.handle.completion;
+    await expect(setup.handle.release()).resolves.toBeUndefined();
+  });
 });
