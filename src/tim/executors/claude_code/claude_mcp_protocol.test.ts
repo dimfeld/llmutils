@@ -55,9 +55,64 @@ describe('Claude tim MCP child server', () => {
     });
 
     expect(result.toolNames).toEqual(expected);
-    expect([...result.toolExecutors.keys()]).toEqual(
-      expected.filter((name) => name !== 'approval_prompt')
-    );
+    expect([...result.toolExecutors.keys()]).toEqual(expected);
+  });
+
+  test('renders the real approval_prompt allow, deny, and updated-input responses', async () => {
+    const result = createClaudeMcpServer({ interactiveApprovalEnabled: true });
+    const approvalPrompt = result.toolExecutors.get('approval_prompt');
+    expect(approvalPrompt).toBeDefined();
+
+    const parentServer = net.createServer((socket) => {
+      let buffer = '';
+      socket.on('data', (data) => {
+        buffer += data.toString();
+        let newline = buffer.indexOf('\n');
+        while (newline !== -1) {
+          const request = JSON.parse(buffer.slice(0, newline)) as {
+            requestId: string;
+            tool_name: string;
+          };
+          buffer = buffer.slice(newline + 1);
+          const approved = request.tool_name === 'Bash';
+          socket.write(
+            JSON.stringify({
+              type: 'permission_response',
+              requestId: request.requestId,
+              approved,
+              ...(approved ? { updatedInput: { command: 'pwd && ls' } } : {}),
+            }) + '\n'
+          );
+          newline = buffer.indexOf('\n');
+        }
+      });
+    });
+
+    await listen(parentServer);
+    const address = parentServer.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('Parent server did not listen');
+    }
+    const socket = net.createConnection(address.port, '127.0.0.1');
+    try {
+      await onceConnected(socket);
+      setParentSocket(socket);
+
+      const allowed = await approvalPrompt!({ tool_name: 'Bash', input: { command: 'pwd' } });
+      expect(JSON.parse(allowed.content[0].text)).toEqual({
+        behavior: 'allow',
+        updatedInput: { command: 'pwd && ls' },
+      });
+
+      const denied = await approvalPrompt!({ tool_name: 'Read', input: {} });
+      expect(JSON.parse(denied.content[0].text)).toEqual({
+        behavior: 'deny',
+        message: 'User denied permission for tool: Read',
+      });
+    } finally {
+      socket.destroy();
+      await closeServer(parentServer);
+    }
   });
 
   test('does not include a caller identity in agent tool requests and renders a correlated result', async () => {
@@ -292,6 +347,88 @@ describe('Claude tim MCP child server', () => {
       });
       expect(sendResult).toEqual({
         content: [{ type: 'text', text: JSON.stringify({ responseFor: 'SendAgentMessage' }) }],
+      });
+    } finally {
+      socket.destroy();
+      await closeServer(parentServer);
+    }
+  });
+
+  test('does not cross-resolve a permission response and an agent-tool response', async () => {
+    const result = createClaudeMcpServer({
+      interactiveApprovalEnabled: true,
+      agentToolNames: ['ListAgents'],
+    });
+    const approvalPrompt = result.toolExecutors.get('approval_prompt');
+    const listAgents = result.toolExecutors.get('ListAgents');
+    expect(approvalPrompt).toBeDefined();
+    expect(listAgents).toBeDefined();
+
+    const parentServer = net.createServer((socket) => {
+      let buffer = '';
+      const requests: Array<{ requestId: string; type: string }> = [];
+      socket.on('data', (data) => {
+        buffer += data.toString();
+        let newline = buffer.indexOf('\n');
+        while (newline !== -1) {
+          const request = JSON.parse(buffer.slice(0, newline)) as {
+            requestId: string;
+            type: string;
+          };
+          buffer = buffer.slice(newline + 1);
+          requests.push(request);
+          if (requests.length === 2) {
+            const [first, second] = requests;
+            socket.write(
+              JSON.stringify({
+                type:
+                  second.type === 'permission_request'
+                    ? 'permission_response'
+                    : 'agent_tool_response',
+                requestId: second.requestId,
+                ...(second.type === 'permission_request'
+                  ? { approved: true }
+                  : { success: true, result: { agents: [] } }),
+              }) + '\n'
+            );
+            socket.write(
+              JSON.stringify({
+                type:
+                  first.type === 'permission_request'
+                    ? 'permission_response'
+                    : 'agent_tool_response',
+                requestId: first.requestId,
+                ...(first.type === 'permission_request'
+                  ? { approved: true }
+                  : { success: true, result: { agents: [] } }),
+              }) + '\n'
+            );
+          }
+          newline = buffer.indexOf('\n');
+        }
+      });
+    });
+
+    await listen(parentServer);
+    const address = parentServer.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('Parent server did not listen');
+    }
+    const socket = net.createConnection(address.port, '127.0.0.1');
+    try {
+      await onceConnected(socket);
+      setParentSocket(socket);
+
+      const [permissionResult, agentResult] = await Promise.all([
+        approvalPrompt!({ tool_name: 'Read', input: {} }),
+        listAgents!({}),
+      ]);
+      expect(JSON.parse(permissionResult.content[0].text)).toEqual({
+        behavior: 'allow',
+        updatedInput: {},
+      });
+      expect(agentResult).toEqual({
+        content: [{ type: 'text', text: JSON.stringify({ agents: [] }) }],
       });
     } finally {
       socket.destroy();

@@ -324,45 +324,57 @@ export function createClaudeMcpServer(options: ClaudeMcpServerOptions = {}): Cla
   const toolExecutors = new Map<string, (input: unknown) => Promise<unknown>>();
 
   if (options.interactiveApprovalEnabled !== false) {
+    const executeApprovalPrompt = async ({
+      tool_name,
+      input,
+    }: {
+      tool_name: string;
+      input: Record<string, unknown>;
+    }): Promise<{ content: [{ type: 'text'; text: string }] }> => {
+      try {
+        const response = await requestPermissionFromParent(tool_name, input);
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(
+                response.approved
+                  ? { behavior: 'allow', updatedInput: response.updatedInput ?? input }
+                  : {
+                      behavior: 'deny',
+                      message: `User denied permission for tool: ${tool_name}`,
+                    }
+              ),
+            },
+          ],
+        };
+      } catch (error) {
+        writeLog('Permission request failed:', error);
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({
+                behavior: 'deny',
+                message: `Permission request failed: ${error instanceof Error ? error.message : String(error)}`,
+              }),
+            },
+          ],
+        };
+      }
+    };
+
     server.addTool({
       name: CLAUDE_APPROVAL_TOOL_NAME,
       description: 'Prompts the user for permission to execute a tool',
       parameters: PermissionInputSchema,
-      execute: async ({ tool_name, input }) => {
-        try {
-          const response = await requestPermissionFromParent(tool_name, input);
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify(
-                  response.approved
-                    ? { behavior: 'allow', updatedInput: response.updatedInput ?? input }
-                    : {
-                        behavior: 'deny',
-                        message: `User denied permission for tool: ${tool_name}`,
-                      }
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          writeLog('Permission request failed:', error);
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: JSON.stringify({
-                  behavior: 'deny',
-                  message: `Permission request failed: ${error instanceof Error ? error.message : String(error)}`,
-                }),
-              },
-            ],
-          };
-        }
-      },
+      execute: executeApprovalPrompt,
     });
     toolNames.push(CLAUDE_APPROVAL_TOOL_NAME);
+    toolExecutors.set(
+      CLAUDE_APPROVAL_TOOL_NAME,
+      executeApprovalPrompt as unknown as (input: unknown) => Promise<unknown>
+    );
   }
 
   const requestedToolNames = new Set(options.agentToolNames ?? []);
