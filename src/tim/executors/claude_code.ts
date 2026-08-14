@@ -644,8 +644,8 @@ export class ClaudeCodeExecutor implements Executor {
       allowAllTools = envAllowAllTools;
     }
 
-    if (this.sharedOptions.noninteractive) {
-      // Interactive approval does not make sense in noninteractive mode.
+    if (allowAllTools || this.sharedOptions.noninteractive) {
+      // Interactive approval does not make sense in allow-all or noninteractive mode.
       interactiveApprovalEnabled = false;
     }
 

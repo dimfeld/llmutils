@@ -541,6 +541,8 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     tunnelActive?: boolean;
     claudeOptions?: Record<string, unknown>;
     sharedOptions?: Record<string, unknown>;
+    executionMode?: 'normal' | 'review' | 'planning' | 'bare';
+    setupThrows?: Error;
   }) {
     const streaming = options?.streaming ?? createStreamingProcessMock({ pid: 24680 });
     const spawnWithStreamingIOMock = vi.fn(async () => streaming);
@@ -548,11 +550,14 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     const normalizeSubprocessMonitorRulesMock = vi.fn(() => []);
     const getGitRootMock = vi.fn(async () => tempDir);
     const createTunnelServerMock = vi.fn(async () => ({ close: vi.fn() }));
-    const setupPermissionsMcpMock = vi.fn(async () => ({
-      tempDir: `${tempDir}/mcp`,
-      mcpConfigFile: `${tempDir}/mcp/config.json`,
-      cleanup: vi.fn(async () => {}),
-    }));
+    const setupPermissionsMcpMock = vi.fn(async () => {
+      if (options?.setupThrows) throw options.setupThrows;
+      return {
+        tempDir: `${tempDir}/mcp`,
+        mcpConfigFile: `${tempDir}/mcp/config.json`,
+        cleanup: vi.fn(async () => {}),
+      };
+    });
     const executeWithTerminalInputMock = vi.fn(({ streaming: spawnedStreaming }: any) => {
       let acceptedFinalResult = false;
       const onResultMessage = vi.fn((resultWasSuccessful: boolean) => {
@@ -633,7 +638,7 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
         planId: '',
         planTitle: 'T',
         planFilePath: '',
-        executionMode: 'normal',
+        executionMode: options?.executionMode ?? 'normal',
       });
 
     return {
@@ -706,6 +711,126 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__SendAgentMessage');
     expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__StopAgent');
   });
+
+  test('keeps trusted agent tools in allow-all mode without approval prompting', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      claudeOptions: {
+        allowAllTools: true,
+        permissionsMcp: { enabled: true },
+      },
+      sharedOptions: { claudeAgentToolContext: context },
+    });
+
+    await harness.execute();
+
+    const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+    expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        interactiveApprovalEnabled: false,
+        agentToolContext: context,
+      })
+    );
+    expect(args).toContain('--mcp-config');
+    expect(args).not.toContain('--permission-prompt-tool');
+    expect(args).toContain('--dangerously-skip-permissions');
+  });
+
+  test('fails before spawning Claude when required agent tool setup fails', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      setupThrows: new Error('bridge setup failed'),
+      sharedOptions: { claudeAgentToolContext: context, noninteractive: true },
+    });
+
+    await expect(harness.execute()).rejects.toThrow('bridge setup failed');
+    expect(harness.spawnWithStreamingIOMock).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    {
+      role: 'orchestrator' as const,
+      tools: ['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent'],
+    },
+    {
+      role: 'subagent' as const,
+      tools: ['ListAgents', 'SendAgentMessage', 'FinishAgent'],
+    },
+  ])('passes exactly the $role MCP agent tool IDs to Claude', async ({ role, tools }) => {
+    const context = {
+      caller: { id: `${role}-id`, name: role, role },
+      allowedTools: new Set(tools),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    const harness = await setupHarness({
+      sharedOptions: { claudeAgentToolContext: context, noninteractive: true },
+    });
+
+    await harness.execute();
+
+    const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+    const allowedToolsIndex = args.indexOf('--allowedTools');
+    expect(allowedToolsIndex).toBeGreaterThan(-1);
+    const mcpToolIds = args[allowedToolsIndex + 1]
+      .split(',')
+      .filter((toolName) => toolName.startsWith('mcp__tim__'));
+    expect(mcpToolIds).toEqual(tools.map((toolName) => `mcp__tim__${toolName}`));
+  });
+
+  test('passes the original user MCP config directly when no internal bridge is needed', async () => {
+    const harness = await setupHarness({
+      claudeOptions: { mcpConfigFile: '/path/to/user-mcp-config.json' },
+      sharedOptions: { noninteractive: true },
+    });
+
+    await harness.execute();
+
+    const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+    const mcpConfigIndex = args.indexOf('--mcp-config');
+    expect(mcpConfigIndex).toBeGreaterThan(-1);
+    expect(args[mcpConfigIndex + 1]).toBe('/path/to/user-mcp-config.json');
+    expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+  });
+
+  test.each(['review', 'planning', 'bare'] as const)(
+    'keeps %s execution without a trusted agent context free of the internal MCP bridge',
+    async (executionMode) => {
+      const harness = await setupHarness({ executionMode });
+
+      await harness.execute();
+
+      const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+      expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+      expect(args).not.toContain('--mcp-config');
+      expect(args).not.toContain('--permission-prompt-tool');
+    }
+  );
 
   test('starts and stops monitor with spawned Claude PID when rules are configured', async () => {
     const monitorStop = vi.fn();

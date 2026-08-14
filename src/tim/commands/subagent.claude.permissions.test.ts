@@ -384,6 +384,33 @@ describe('subagent claude permissions MCP integration', () => {
     expect(capturedClaudeSpawnArgs).toContain('--dangerously-skip-permissions');
   });
 
+  test('fails before spawning Claude when required agent tool setup fails', async () => {
+    const context = {
+      caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
+      allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+      dispatcher: {
+        startAgent: vi.fn(),
+        listAgents: vi.fn(),
+        sendAgentMessage: vi.fn(),
+        stopAgent: vi.fn(),
+        finishAgent: vi.fn(),
+      },
+    };
+    mocks.setupPermissionsMcp.mockRejectedValueOnce(new Error('bridge setup failed'));
+
+    await expect(
+      runClaudeSubprocess({
+        prompt: 'test prompt',
+        cwd: tempDir,
+        claudeCodeOptions: { agentToolContext: context },
+        noninteractive: true,
+        label: 'orchestrator',
+        processFormattedMessages: vi.fn(),
+      })
+    ).rejects.toThrow('bridge setup failed');
+    expect(mocks.spawnWithStreamingIO).not.toHaveBeenCalled();
+  });
+
   test('rejects disallowed agent tools before spawning Claude', async () => {
     const context = {
       caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },

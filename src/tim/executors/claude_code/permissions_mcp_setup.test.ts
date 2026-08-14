@@ -5,6 +5,11 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 
+vi.mock('fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+  return { ...actual, mkdtemp: vi.fn(actual.mkdtemp) };
+});
+
 const selectResponses: Array<string | Error> = [];
 const checkboxResponses: Array<string[] | Error> = [];
 const inputResponses: Array<string | Error> = [];
@@ -74,7 +79,11 @@ describe('Claude MCP config validation and merging', () => {
     const userConfig = {
       customRootField: { enabled: true },
       mcpServers: {
-        github: { command: './github-server', args: ['--repo', 'example'] },
+        github: {
+          command: './github-server',
+          args: ['--repo', 'example'],
+          env: { GITHUB_TOKEN: '${GITHUB_TOKEN}', LOG_LEVEL: 'debug' },
+        },
         local: { type: 'sse', url: 'http://127.0.0.1:8123' },
       },
     };
@@ -118,6 +127,7 @@ describe('Claude MCP config validation and merging', () => {
   test('setup rejects a reserved tim server collision before creating a temp directory', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-mcp-config-'));
     const userConfigPath = path.join(tempRoot, 'user.json');
+    const mkdtempCallsBefore = vi.mocked(fs.mkdtemp).mock.calls.length;
     try {
       await fs.writeFile(
         userConfigPath,
@@ -129,6 +139,7 @@ describe('Claude MCP config validation and merging', () => {
           mcpConfigFile: userConfigPath,
         })
       ).rejects.toThrow('reserved for tim');
+      expect(vi.mocked(fs.mkdtemp)).toHaveBeenCalledTimes(mkdtempCallsBefore);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -137,15 +148,79 @@ describe('Claude MCP config validation and merging', () => {
   test.each([
     ['invalid JSON', '{'],
     ['non-object root', '[]'],
+    ['null root', 'null'],
     ['invalid mcpServers', JSON.stringify({ mcpServers: [] })],
   ])('rejects %s before setup allocation', async (_name, content) => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-mcp-config-'));
     const userConfigPath = path.join(tempRoot, 'user.json');
+    const mkdtempCallsBefore = vi.mocked(fs.mkdtemp).mock.calls.length;
     try {
       await fs.writeFile(userConfigPath, content);
-      await expect(readUserMcpConfig(userConfigPath)).rejects.toThrow(/Claude MCP config file/);
+      await expect(
+        setupPermissionsMcp({ allowedTools: [], mcpConfigFile: userConfigPath })
+      ).rejects.toThrow(/Claude MCP config file/);
+      expect(vi.mocked(fs.mkdtemp)).toHaveBeenCalledTimes(mkdtempCallsBefore);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    { name: 'permission-only', interactiveApprovalEnabled: true, agentToolNames: [] },
+    {
+      name: 'tools-only',
+      interactiveApprovalEnabled: false,
+      agentToolNames: ['ListAgents', 'SendAgentMessage', 'FinishAgent'],
+    },
+    {
+      name: 'combined',
+      interactiveApprovalEnabled: true,
+      agentToolNames: ['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent'],
+    },
+  ])('writes the correct child capability manifest for $name', async (mode) => {
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: mode.interactiveApprovalEnabled,
+      agentToolContext:
+        mode.agentToolNames.length === 0
+          ? undefined
+          : {
+              caller: {
+                id: 'caller-id',
+                name: 'caller',
+                role: mode.agentToolNames.includes('StartAgent') ? 'orchestrator' : 'subagent',
+              },
+              allowedTools: new Set(mode.agentToolNames),
+              dispatcher: {
+                startAgent: vi.fn(),
+                listAgents: vi.fn(),
+                sendAgentMessage: vi.fn(),
+                stopAgent: vi.fn(),
+                finishAgent: vi.fn(),
+              },
+            },
+    });
+
+    try {
+      const config = JSON.parse(await fs.readFile(result.mcpConfigFile, 'utf8')) as {
+        mcpServers: { tim: { args: string[] } };
+      };
+      if (mode.name === 'permission-only') {
+        expect(config.mcpServers.tim.args).toHaveLength(3);
+        expect(config.mcpServers.tim.args.at(-1)).toBe(result.logFile);
+      } else {
+        const manifest = JSON.parse(config.mcpServers.tim.args.at(-1) ?? '{}') as {
+          interactiveApprovalEnabled?: boolean;
+          agentToolNames?: string[];
+        };
+
+        expect(manifest).toEqual({
+          interactiveApprovalEnabled: mode.interactiveApprovalEnabled,
+          agentToolNames: mode.agentToolNames,
+        });
+      }
+    } finally {
+      await result.cleanup();
     }
   });
 });
