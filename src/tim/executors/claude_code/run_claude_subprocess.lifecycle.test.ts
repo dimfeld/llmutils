@@ -569,7 +569,23 @@ describe('runClaudeSubprocess lifecycle', () => {
       session_id: SESSION_ID,
     });
     setup.formatStdout(`${assistantLine}\n`);
+    const toolOnlyAssistantLine = JSON.stringify({
+      type: 'assistant',
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tool-only-assistant',
+            name: 'Bash',
+            input: { command: 'printf hello' },
+          },
+        ],
+      },
+      session_id: SESSION_ID,
+    });
+    setup.formatStdout(`${toolOnlyAssistantLine}\n`);
     expect(setup.spawnOptions.onOutputActivity).toBeTypeOf('function');
+    expect(setup.spawnOptions.captureStdout).toBe(false);
     expect(() => (setup.spawnOptions.onOutputActivity as () => void)()).not.toThrow();
     expect(outputActivity).toHaveBeenCalledOnce();
 

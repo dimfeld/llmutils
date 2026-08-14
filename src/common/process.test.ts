@@ -545,5 +545,22 @@ describe('process utilities', () => {
       expect(result.stdout).toBe('ready');
       expect(result.killedByInactivity).toBe(false);
     });
+
+    it('can skip captured stdout while continuing to consume output', async () => {
+      const capturedActivity = vi.fn();
+      const streaming = await spawnWithStreamingIO(
+        ['sh', '-c', 'printf first; printf second >&2'],
+        {
+          captureStdout: false,
+          onOutputActivity: capturedActivity,
+        }
+      );
+      const result = await streaming.result;
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe('second');
+      expect(capturedActivity).toHaveBeenCalledTimes(2);
+    });
   });
 });

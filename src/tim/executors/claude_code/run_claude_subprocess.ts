@@ -45,12 +45,6 @@ import {
   prepareClaudeMcpLaunch,
   type ClaudeMcpLaunchResult,
 } from './claude_mcp_launch.js';
-export {
-  getAgentToolIds,
-  resolveClaudeMcpCapabilities,
-  validateAgentToolDisallowConflict,
-} from './claude_mcp_launch.js';
-export type { ClaudeMcpCapabilities } from './claude_mcp_launch.js';
 import type { TimConfig } from '../../configSchema.js';
 import type {
   AgentProviderControlResult,
@@ -503,10 +497,6 @@ export async function runClaudeSubprocess(
   let gracefulShutdownRequest: Promise<AgentProviderControlResult> | undefined;
   let forcedShutdownAccepted = false;
   let forcedShutdownRequest: Promise<AgentProviderControlResult> | undefined;
-  let pendingFormattedMessages: FormattedClaudeMessage[] | undefined = persistentAgent
-    ? []
-    : undefined;
-
   const notifyOutputActivity = (): void => {
     if (!persistentAgent) return;
     try {
@@ -832,13 +822,12 @@ export async function runClaudeSubprocess(
         );
       },
       onOutputActivity: persistentAgent ? notifyOutputActivity : undefined,
+      ...(persistentAgent ? { captureStdout: false } : {}),
       formatStdout: (output) => {
         if (cleanupStarted) return '';
         const { formattedResults, structuredMessages } = streamFormatter.formatChunk(output);
 
-        // Track complete lifecycle messages and file paths. A process can
-        // produce output before executeWithTerminalInput() has installed its
-        // persistent controller, so retain only that short setup window.
+        // Track complete lifecycle messages and file paths for this execution.
         for (const formatted of formattedResults) {
           if (formatted.structured !== undefined) {
             const structured = Array.isArray(formatted.structured)
@@ -853,8 +842,6 @@ export async function runClaudeSubprocess(
 
           if (terminalInputResult !== undefined) {
             terminalInputResult.observeFormattedMessage(formatted);
-          } else if (persistentAgent) {
-            pendingFormattedMessages?.push(formatted);
           }
 
           if (formatted.type === 'result') {
@@ -863,11 +850,7 @@ export async function runClaudeSubprocess(
               formatted.resultText
             );
           }
-          if (
-            persistentAgent &&
-            formatted.type === 'assistant' &&
-            formatted.rawMessage !== undefined
-          ) {
+          if (persistentAgent && formatted.type === 'assistant' && formatted.rawMessage?.trim()) {
             notifyCompletedAssistantMessage(formatted.rawMessage);
           }
           if (formatted.filePaths) {
@@ -922,20 +905,6 @@ export async function runClaudeSubprocess(
     persistentController = terminalInputResult.persistentAgent;
     if (persistentAgent && persistentController === undefined) {
       throw new Error('Persistent Claude runner did not create its input controller');
-    }
-
-    if (persistentAgent && pendingFormattedMessages !== undefined) {
-      const pending = pendingFormattedMessages;
-      pendingFormattedMessages = undefined;
-      for (const formatted of pending) {
-        terminalInputResult.observeFormattedMessage(formatted);
-        if (formatted.type === 'result') {
-          terminalInputResult.onResultMessage(
-            formatted.resultInfo?.success !== false,
-            formatted.resultText
-          );
-        }
-      }
     }
 
     if (persistentAgent) {

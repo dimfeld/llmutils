@@ -105,7 +105,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
 
   /** Start the initial turn. This operation is idempotent. */
   public start(): void {
-    if (this.started || this.isTerminal()) return;
+    if (this.started || this.isClosedOrTerminal()) return;
     this.started = true;
 
     if (this.options.initialPrompt === undefined) {
@@ -124,6 +124,11 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
    * an asynchronous FileSink write, so two callers cannot start two turns.
    */
   public deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery> {
+    return this.deliverContent(message.content);
+  }
+
+  /** Deliver content from a provider-owned control path without a fake source. */
+  public deliverContent(content: string): AgentInputDelivery | Promise<AgentInputDelivery> {
     this.assertAcceptingInput();
 
     let generation: number | undefined;
@@ -132,22 +137,18 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     }
 
     const deliveryGeneration = this.turnGenerationValue;
-    const result = this.writer.deliver(message);
+    const result = this.writer.deliverContent(content);
     return this.handleDeliveryResult(result, deliveryGeneration, generation);
   }
 
   /** Convenience path for existing local follow-up adapters. */
   public sendContent(content: string): AgentInputDelivery | Promise<AgentInputDelivery> {
-    return this.deliver({
-      messageId: `claude-turn-${this.turnGenerationValue + 1}`,
-      source: {} as AgentInputMessage['source'],
-      content,
-    });
+    return this.deliverContent(content);
   }
 
   /** Called for each complete formatted Claude lifecycle message. */
   public observeFormattedMessage(formatted: FormattedClaudeMessage): void {
-    if (this.isTerminal() || this.turnSettled || this.currentTracker === undefined) return;
+    if (this.isClosedOrTerminal() || this.turnSettled || this.currentTracker === undefined) return;
 
     if (formatted.backgroundActivity !== undefined) {
       const { hasRunningTasks } = formatted.backgroundActivity;
@@ -171,7 +172,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
 
   /** Called when Claude emits a complete result record for the current turn. */
   public onResultMessage(resultWasSuccessful: boolean, resultText?: string): void {
-    if (this.isTerminal() || this.turnSettled || this.currentTracker === undefined) return;
+    if (this.isClosedOrTerminal() || this.turnSettled || this.currentTracker === undefined) return;
 
     this.resultSeenValue = true;
     this.resultSuccessfulValue = resultWasSuccessful;
@@ -196,7 +197,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
    * before any provider call or result callback can run.
    */
   public requestCloseAfterCurrentResult(closeKind: 'finish' | 'graceful' = 'finish'): void {
-    if (this.isTerminal() || this.stateValue === 'closing') return;
+    if (this.isClosedOrTerminal()) return;
     if (this.closeAfterCurrentResultValue) return;
     if (
       this.currentTracker === undefined ||
@@ -215,7 +216,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
 
   /** Close stdin immediately for a provider/session-wide end request. */
   public forceCloseInputNow(): void {
-    if (this.isTerminal() || this.stateValue === 'closing') return;
+    if (this.isClosedOrTerminal()) return;
     this.stateValue = 'closing';
     this.currentTracker?.cancel();
     this.writer.close();
@@ -239,7 +240,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
 
   /** Idempotently cancel timers and prevent any later input delivery. */
   public cleanup(): void {
-    if (this.isTerminal() || this.stateValue === 'closing') {
+    if (this.isClosedOrTerminal()) {
       this.currentTracker?.cancel();
       return;
     }
@@ -361,7 +362,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
 
   private rollbackFailedIdleTurn(generation: number | undefined): void {
     if (generation === undefined || this.turnGenerationValue !== generation) return;
-    if (this.stateValue === 'closing' || this.isTerminal()) return;
+    if (this.isClosedOrTerminal()) return;
     this.currentTracker?.cancel();
     this.turnSettled = true;
     this.stateValue = this.writer.state === 'idle' ? 'idle' : 'failed';
@@ -371,7 +372,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
     if (
       generation !== this.turnGenerationValue ||
       this.turnSettled ||
-      this.isTerminal() ||
+      this.isClosedOrTerminal() ||
       this.currentTracker === undefined
     ) {
       return;
@@ -395,7 +396,7 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
 
   private markTurnActive(): void {
     if (
-      this.isTerminal() ||
+      this.isClosedOrTerminal() ||
       this.turnSettled ||
       this.closeAfterCurrentResultValue ||
       this.stateValue === 'active'
@@ -407,12 +408,12 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
   }
 
   private handleWriteFailure(error: unknown): void {
-    if (this.stateValue === 'closing' || this.isTerminal()) return;
+    if (this.isClosedOrTerminal()) return;
     this.markProviderFailed(error);
   }
 
   private assertAcceptingInput(): void {
-    if (this.isTerminal() || this.stateValue === 'closing' || this.closeAfterCurrentResultValue) {
+    if (this.isClosedOrTerminal() || this.closeAfterCurrentResultValue) {
       throw new ClaudePersistentInputClosedError(
         'Claude persistent agent is closing and cannot accept input'
       );
@@ -421,6 +422,10 @@ export class PersistentClaudeTurnController implements AgentInputAdapter {
 
   private isTerminal(): boolean {
     return this.stateValue === 'exited' || this.stateValue === 'failed';
+  }
+
+  private isClosedOrTerminal(): boolean {
+    return this.stateValue === 'closing' || this.isTerminal();
   }
 }
 

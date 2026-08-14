@@ -140,6 +140,8 @@ export type SpawnAndLogOutputOptions = {
   onInactivityKill?: (signal: NodeJS.Signals) => void;
   /** Callback invoked for every stdout or stderr chunk. */
   onOutputActivity?: () => void | Promise<void>;
+  /** Keep captured stdout in the result. Defaults to true. */
+  captureStdout?: boolean;
   /** Disable the inactivity kill while keeping output streaming enabled. */
   disableInactivityKill?: boolean;
   /** Callback invoked immediately after the process has been spawned. */
@@ -205,8 +207,9 @@ function setupOutputProcessing(
   };
 
   const notifyOutputActivity = (): void => {
+    if (options?.onOutputActivity === undefined) return;
     try {
-      const result = options?.onOutputActivity?.();
+      const result = options.onOutputActivity();
       void Promise.resolve(result).catch((error: unknown) => {
         debugLog('Process output activity callback failed: %s', error);
       });
@@ -267,6 +270,7 @@ function setupOutputProcessing(
   const result = (async (): Promise<SpawnAndLogOutputResult> => {
     const stdout: string[] = [];
     const stderr: string[] = [];
+    const captureStdout = options?.captureStdout !== false;
 
     async function readStdout() {
       const stdoutDecoder = new TextDecoder();
@@ -276,14 +280,14 @@ function setupOutputProcessing(
         if (options?.formatStdout) {
           const formatted = options.formatStdout(rawOutput);
           if (typeof formatted === 'string') {
-            stdout.push(formatted);
+            if (captureStdout) stdout.push(formatted);
             if (!options?.quiet) {
               writeStdout(formatted);
             }
           } else {
             const messages = Array.isArray(formatted) ? formatted : [formatted];
             // Keep returned stdout as raw process output for downstream parsers.
-            stdout.push(rawOutput);
+            if (captureStdout) stdout.push(rawOutput);
             for (const message of messages) {
               if (!options?.quiet) {
                 sendStructured(message);
@@ -291,7 +295,7 @@ function setupOutputProcessing(
             }
           }
         } else {
-          stdout.push(rawOutput);
+          if (captureStdout) stdout.push(rawOutput);
           if (!options?.quiet) {
             writeStdout(rawOutput);
           }

@@ -346,10 +346,6 @@ export function executeWithTerminalInput(
   };
 
   const dispatchBackgroundActivity = (signal: BackgroundActivitySignal): void => {
-    if (persistentController) {
-      persistentController.observeFormattedMessage({ type: 'system', backgroundActivity: signal });
-      return;
-    }
     backgroundActivityTracker?.backgroundTasksChanged(signal.hasRunningTasks);
   };
 

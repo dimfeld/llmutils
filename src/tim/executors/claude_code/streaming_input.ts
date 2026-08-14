@@ -232,7 +232,12 @@ export class PersistentClaudeInputWriter implements AgentInputAdapter {
    * failure and retains its message.
    */
   public deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery> {
-    const result = this.writeUserMessage(message.content);
+    return this.deliverContent(message.content);
+  }
+
+  /** Deliver provider-owned content without requiring a synthetic source identity. */
+  public deliverContent(content: string): AgentInputDelivery | Promise<AgentInputDelivery> {
+    const result = this.writeUserMessage(content);
     if (isPromiseLike(result)) {
       return result.then((outcome) => this.toAgentInputDelivery(outcome));
     }

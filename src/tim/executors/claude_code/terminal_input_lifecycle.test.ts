@@ -724,4 +724,36 @@ describe('terminal_input_lifecycle', () => {
     controller.cleanup();
     expect(stdinEndSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('does not settle a persistent turn after endSession closes input', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+    const turnComplete = vi.fn();
+    const streaming = makeStreaming({
+      stdinEnd: stdinEndSpy,
+      result: new Promise<SpawnAndLogOutputResult>(() => {}),
+    });
+
+    const controller = executeWithTerminalInput({
+      streaming,
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude worker',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+      persistentAgent: { onTurnComplete: turnComplete },
+    });
+
+    controller.endSession();
+    controller.onResultMessage(true, 'late result');
+    controller.observeFormattedMessage({ type: 'assistant' });
+
+    expect(controller.persistentAgent?.state).toBe('closing');
+    expect(turnComplete).not.toHaveBeenCalled();
+    expect(stdinEndSpy).toHaveBeenCalledOnce();
+
+    controller.cleanup();
+  });
 });

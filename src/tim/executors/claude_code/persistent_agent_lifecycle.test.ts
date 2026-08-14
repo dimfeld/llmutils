@@ -390,11 +390,16 @@ describe('PersistentClaudeTurnController', () => {
 
   it('rejects delivery once forceCloseInputNow has closed the input stream', () => {
     const stdin = new FakeStdin();
-    const controller = makeController(stdin);
+    const completed = vi.fn();
+    const controller = makeController(stdin, { onTurnComplete: completed });
     controller.start();
     controller.forceCloseInputNow();
 
     expect(() => controller.deliver(message('too late'))).toThrow('cannot accept input');
+    controller.onResultMessage(true, 'late result');
+    controller.observeFormattedMessage({ type: 'assistant' });
+    expect(controller.state).toBe('closing');
+    expect(completed).not.toHaveBeenCalled();
     expect(stdin.endCalls).toBe(1);
   });
 
