@@ -589,33 +589,28 @@ describe('runClaudeSubprocess lifecycle', () => {
     ).rejects.toThrow('spawn boom');
   });
 
-  test('a synchronous initial write failure still returns a ready handle and settles completion exactly once on exit', async () => {
+  test('a synchronous initial write failure rejects launch before returning a handle', async () => {
     const stdinWriteSpy = vi.fn(() => {
       throw new Error('stdin boom');
     });
-    const setup = await setupPersistentClaudeSubprocess(stdinWriteSpy);
-
-    // The initial write fails synchronously during setup, but launch
-    // readiness (subprocess + writable stream exist) still resolves; the
-    // failure is reflected in provider state instead of rejecting the handle.
-    expect(setup.handle.providerState).toBe('failed');
-
-    setup.resolveStreamingResult({
-      exitCode: 0,
-      stdout: '',
-      stderr: '',
-      signal: null,
-      killedByInactivity: false,
+    const stdinEndSpy = vi.fn(async () => {});
+    mockSpawnWithStreamingIO.mockImplementation(async () => {
+      return {
+        pid: 456,
+        stdin: { write: stdinWriteSpy, end: stdinEndSpy },
+        result: new Promise<SpawnAndLogOutputResult>(() => undefined),
+        kill: vi.fn(),
+      };
     });
 
-    const first = await setup.handle.completion;
-    const second = await setup.handle.completion;
-    expect(first).toBe(second);
-    expect(first.exitCode).toBe(0);
-
-    // Cleanup triggered by the completion chain must be idempotent when the
-    // caller also releases the handle after completion has settled.
-    await expect(setup.handle.release()).resolves.toBeUndefined();
+    await expect(
+      runClaudeSubprocess({
+        ...makeSubprocessOptions(),
+        mode: 'persistent-agent',
+        processLabel: 'Claude agent (persistent-worker)' as AgentProcessLabel,
+      })
+    ).rejects.toThrow('stdin boom');
+    expect(stdinEndSpy).toHaveBeenCalledOnce();
   });
 
   test('release is idempotent and safe to call before and after natural exit', async () => {

@@ -866,6 +866,12 @@ export async function runClaudeSubprocess(
       })();
 
       await readyController.ready;
+      if (readyController.state === 'failed') {
+        throw toError(
+          readyController.inputWriter.lastError ??
+            new Error(`Claude ${label} persistent input failed during launch`)
+        );
+      }
 
       const processControlId = sessionProcessLifecycle?.processId as ProcessControlId | undefined;
       const handle: ClaudePersistentAgentLaunchResult = {
