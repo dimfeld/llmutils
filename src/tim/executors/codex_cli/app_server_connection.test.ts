@@ -7,6 +7,7 @@ import {
   CodexAppServerConnection,
   TIM_CODEX_APP_SERVER_SOCKET,
 } from './app_server_connection';
+import { CodexDynamicToolsCompatibilityError } from './app_server_dynamic_tools.js';
 
 interface MockServerPaths {
   rootDir: string;
@@ -521,6 +522,32 @@ describe('CodexAppServerConnection', () => {
       cause: expect.objectContaining({ message: expect.stringContaining('experimentalApi') }),
     });
   });
+
+  test('preserves app-server spawn failures when dynamic tools are requested', async () => {
+    const failure = await CodexAppServerConnection.create({
+      cwd: mockServer.rootDir,
+      experimentalApi: true,
+      env: buildSpawnEnv({
+        PATH: path.join(mockServer.rootDir, 'missing-codex-bin'),
+        MOCK_MODE: 'unused',
+      }),
+    }).catch((error: unknown) => error);
+
+    expect(failure).not.toBeInstanceOf(CodexDynamicToolsCompatibilityError);
+    expect(failure).toMatchObject({ code: 'ENOENT' });
+  });
+
+  test('preserves inherited app-server socket failures when dynamic tools are requested', async () => {
+    const missingSocketPath = path.join(mockServer.rootDir, 'missing', 'codex.sock');
+    const failure = await CodexAppServerConnection.create({
+      cwd: mockServer.rootDir,
+      experimentalApi: true,
+      env: buildSpawnEnv({ [TIM_CODEX_APP_SERVER_SOCKET]: missingSocketPath }),
+    }).catch((error: unknown) => error);
+
+    expect(failure).not.toBeInstanceOf(CodexDynamicToolsCompatibilityError);
+    expect(failure).toMatchObject({ code: 'ENOENT' });
+  }, 7_000);
 
   test('preserves ordinary initialization errors when experimental tools are not requested', async () => {
     await expect(

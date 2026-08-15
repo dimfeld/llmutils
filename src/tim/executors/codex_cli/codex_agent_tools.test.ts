@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 import * as z from 'zod/v4';
+import { warn } from '../../../logging.js';
 
 import {
   AgentManagerError,
@@ -15,6 +16,8 @@ import {
   type CodexAgentToolContext,
   type CodexAgentToolName,
 } from './codex_agent_tools.js';
+
+vi.mock('../../../logging.js', () => ({ warn: vi.fn() }));
 
 function identity(role: AgentIdentity['role']): AgentIdentity {
   return role === 'orchestrator'
@@ -229,8 +232,42 @@ describe('Codex role-bound agent tool provider', () => {
       call('SendAgentMessage', { name: 'orchestrator', message: overLimit })
     );
     expect(rejected.success).toBe(false);
-    expect(rejected.contentItems[0]?.text).toContain('invalid');
+    expect(rejected.contentItems[0]?.text).toBe(
+      'Arguments for SendAgentMessage are invalid: message is invalid.'
+    );
     expect(calls.sendAgentMessage).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    [
+      'invalid name',
+      'SendAgentMessage' as const,
+      { name: 'Invalid Name', message: 'hello' },
+      'name',
+    ],
+    [
+      'wrong enum',
+      'StartAgent' as const,
+      { type: 'unknown', executor: 'codex-cli', initialMessage: 'hello' },
+      'type',
+    ],
+    ['non-boolean force', 'StopAgent' as const, { name: 'worker-a', force: 'yes' }, 'force'],
+  ])('names the first invalid field for %s', async (_label, toolName, argumentsValue, field) => {
+    const { context, calls } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+
+    const result = await provider.handler(call(toolName, argumentsValue));
+
+    expect(result).toEqual({
+      contentItems: [
+        {
+          type: 'inputText',
+          text: `Arguments for ${toolName} are invalid: ${field} is invalid.`,
+        },
+      ],
+      success: false,
+    });
+    expect(Object.values(calls).every((mock) => mock.mock.calls.length === 0)).toBe(true);
   });
 
   test('accepts an empty namespace as top-level compatibility syntax', async () => {
@@ -284,6 +321,10 @@ describe('Codex role-bound agent tool provider', () => {
       ],
       success: false,
     });
+    expect(warn).toHaveBeenCalledWith(
+      'Unexpected Codex agent tool failure in StopAgent:',
+      expect.any(Error)
+    );
     expect(unexpectedFailure.contentItems[0]?.text).not.toContain('/private/session');
 
     const launchFailure = await provider.handler(call('StartAgent', validArguments.StartAgent));

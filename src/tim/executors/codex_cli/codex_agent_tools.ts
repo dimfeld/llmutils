@@ -17,7 +17,7 @@ import {
   type AgentCallerIdentity,
   type AgentIdentity,
 } from '../../agent_messaging/agent_manager_types.js';
-import { debugLog } from '../../../logging.js';
+import { warn } from '../../../logging.js';
 import {
   codexDynamicToolCallParamsSchema,
   createCodexDynamicToolFailureResult,
@@ -192,7 +192,11 @@ function formatEnvelopeFailure(value: unknown): string {
   return `Arguments for ${value.tool} are invalid: arguments must be JSON.`;
 }
 
-function formatArgumentFailure(toolName: string, value: unknown): string {
+function formatArgumentFailure(
+  toolName: string,
+  value: unknown,
+  validationError?: z.ZodError
+): string {
   if (!isRecord(value)) return `Arguments for ${toolName} are invalid: expected an object.`;
   if (Object.hasOwn(value, 'target') && toolName === 'FinishAgent') {
     return 'Arguments for FinishAgent are invalid: FinishAgent does not accept a target.';
@@ -210,6 +214,13 @@ function formatArgumentFailure(toolName: string, value: unknown): string {
   }
   if (unexpectedKey !== undefined) {
     return `Arguments for ${toolName} are invalid: ${unexpectedKey} is not accepted.`;
+  }
+  const firstIssuePath = validationError?.issues[0]?.path[0];
+  if (
+    typeof firstIssuePath === 'string' &&
+    CODEX_AGENT_ARGUMENT_KEYS[toolName as CodexAgentToolName]?.includes(firstIssuePath)
+  ) {
+    return `Arguments for ${toolName} are invalid: ${firstIssuePath} is invalid.`;
   }
   return `Arguments for ${toolName} are invalid.`;
 }
@@ -290,7 +301,9 @@ function createBoundHandler(context: CodexAgentToolContext): CodexDynamicToolCal
     const argumentSchema = getCodexAgentArgumentSchema(toolName as CodexAgentToolName);
     const parsedArguments = argumentSchema.safeParse(params.arguments);
     if (!parsedArguments.success) {
-      return createCodexDynamicToolFailureResult(formatArgumentFailure(toolName, params.arguments));
+      return createCodexDynamicToolFailureResult(
+        formatArgumentFailure(toolName, params.arguments, parsedArguments.error)
+      );
     }
 
     try {
@@ -320,7 +333,7 @@ function createBoundHandler(context: CodexAgentToolContext): CodexDynamicToolCal
       if (error instanceof AgentManagerError) {
         return createCodexDynamicToolFailureResult(formatManagerFailure(toolName, error));
       }
-      debugLog(`Unexpected Codex agent tool failure in ${toolName}:`, error);
+      warn(`Unexpected Codex agent tool failure in ${toolName}:`, error);
       return createCodexDynamicToolFailureResult(
         `Agent tool ${toolName} failed unexpectedly. Try the request again.`
       );

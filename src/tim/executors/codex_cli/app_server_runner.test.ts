@@ -1023,12 +1023,12 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.connection.close).toHaveBeenCalledTimes(1);
   });
 
-  test('wraps dynamic initialization rejection with its cause before a turn starts', async () => {
+  test('preserves connection-create failures with a dynamic provider', async () => {
     const initializationError = new Error('experimentalApi rejected');
     const harness = await createHarness({ connectionCreateError: initializationError });
     const provider = createDynamicToolProvider();
 
-    const compatibilityError = await harness
+    const connectionError = await harness
       .executeCodexStepViaAppServer(
         'prompt',
         '/repo',
@@ -1039,12 +1039,44 @@ describe('executeCodexStepViaAppServer', () => {
       )
       .catch((error: unknown) => error);
 
-    expect(compatibilityError).toMatchObject({
-      name: 'CodexDynamicToolsCompatibilityError',
-      message: expect.stringContaining('does not support experimental dynamic tools'),
-      cause: initializationError,
-    });
+    expect(connectionError).toBe(initializationError);
     expect(harness.connection.turnStart).not.toHaveBeenCalled();
+  });
+
+  test('preserves conversion-thread failures after dynamic negotiation succeeds', async () => {
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider();
+    const conversionError = new Error('conversion thread transport failed');
+    const outputSchema = {
+      type: 'object',
+      required: ['status'],
+      properties: { status: { type: 'string' } },
+      additionalProperties: false,
+    };
+
+    harness.formatter.getFinalAgentMessage
+      .mockReturnValueOnce('Status: ok')
+      .mockReturnValueOnce('Still not JSON');
+    harness.connection.threadStart
+      .mockResolvedValueOnce({ threadId: 'thread-1' })
+      .mockRejectedValueOnce(conversionError);
+    harness.connection.turnStart.mockImplementation(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await expect(
+      harness.executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        { outputSchema, dynamicToolProvider: provider }
+      )
+    ).rejects.toBe(conversionError);
+    expect(harness.connection.threadStart).toHaveBeenCalledTimes(2);
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
   });
 
   test('passes dynamic definitions only when a provider is installed', async () => {

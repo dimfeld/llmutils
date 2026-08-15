@@ -68,7 +68,7 @@ function createAppServerRequestHandler(
   };
 }
 
-async function startThread(
+async function startInitialThread(
   connection: CodexAppServerConnection,
   params: ThreadStartParams,
   dynamicToolProvider: CodexDynamicToolProvider | undefined
@@ -77,6 +77,9 @@ async function startThread(
     return await connection.threadStart(params);
   } catch (error) {
     if (dynamicToolProvider) {
+      if (error instanceof CodexDynamicToolsCompatibilityError) {
+        throw error;
+      }
       throw new CodexDynamicToolsCompatibilityError(error);
     }
     throw error;
@@ -466,14 +469,7 @@ export async function executeCodexStepViaAppServer(
       onServerRequest: createAppServerRequestHandler(dynamicToolProvider, approvalHandler),
     });
 
-    try {
-      connection = await connectionPromise;
-    } catch (error) {
-      if (dynamicToolProvider && !(error instanceof CodexDynamicToolsCompatibilityError)) {
-        throw new CodexDynamicToolsCompatibilityError(error);
-      }
-      throw error;
-    }
+    connection = await connectionPromise;
 
     connection.setGracefulEndHandler(endActiveSession);
 
@@ -486,7 +482,7 @@ export async function executeCodexStepViaAppServer(
       });
     }
 
-    const threadResult = await startThread(
+    const threadResult = await startInitialThread(
       connection,
       {
         cwd,
@@ -918,17 +914,13 @@ export async function executeCodexStepViaAppServer(
         warn(
           'Codex schema correction still did not match the schema; starting a fresh JSON conversion run.'
         );
-        const conversionThreadResult = await startThread(
-          activeConnection,
-          {
-            cwd,
-            approvalPolicy,
-            sandbox,
-            model,
-            ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
-          },
-          dynamicToolProvider
-        );
+        const conversionThreadResult = await activeConnection.threadStart({
+          cwd,
+          approvalPolicy,
+          sandbox,
+          model,
+          ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
+        });
         activeThreadId = conversionThreadResult.threadId;
         threadId = activeThreadId;
         connection.updateMetadata({ threadId: activeThreadId });
