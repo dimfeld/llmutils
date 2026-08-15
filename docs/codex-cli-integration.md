@@ -37,6 +37,24 @@ Codex runs, formal reviews, planning, chat, and bare execution unchanged. This
 plan does not activate collaboration prompts or create a provider for the current
 orchestration prompt.
 
+Relevant code:
+
+- `src/tim/executors/codex_cli/app_server_dynamic_tools.ts` — tolerant wire
+  types, envelope and provider validation, result helpers, and the request
+  composer. It is generic: the provider context is opaque here, and this module
+  does not import the agent manager.
+- `src/tim/executors/codex_cli/codex_agent_tools.ts` — the agent adapter that
+  binds trusted identity, builds the role definitions, authorizes each call, and
+  invokes the shared manager operations.
+- `src/tim/executors/codex_cli/app_server_dynamic_tool_format.ts` —
+  `dynamicToolCall` display formatting, called from `app_server_format.ts`.
+
+Tool names, role allowlists, descriptions, and argument schemas are not defined
+here. They come from `AGENT_TOOL_NAMES`, `getAgentToolNames()`,
+`AGENT_TOOL_DESCRIPTIONS`, and `AGENT_ARGUMENT_SCHEMAS` in
+`src/tim/agent_messaging/contracts.ts`, so Codex and the Claude MCP bridge
+advertise identical tool metadata ([agent-messaging.md](agent-messaging.md)).
+
 ### Disabled wire behavior
 
 When no provider is supplied, `initialize.params` contains exactly the existing
@@ -84,6 +102,12 @@ Tim fails before the first turn with a compatibility error:
 Tim does not retry the unsupported thread without tools. Existing connection and
 resource cleanup still runs.
 
+The compatibility message covers only the two wire points that establish
+support: `initialize` and the first `thread/start`. Process spawn, socket,
+transport, and later replacement-thread failures keep their real errors, so a
+crashed or unreachable app-server is not misreported as an out-of-date Codex
+CLI. The original error is preserved as the `cause` for diagnostics.
+
 ### Dynamic call dispatch and results
 
 The app-server sends a dynamic call as an `item/tool/call` server request. Tim
@@ -100,7 +124,14 @@ manager failures return a bounded `inputText` result with `success: false`, so t
 model can correct the call. Successful manager results return JSON text in an
 `inputText` item with `success: true`. Unexpected failures are logged for
 diagnostics and return a generic bounded message without stack traces, paths, or
-trusted identity values.
+trusted identity values. An unknown or future manager error code also returns
+the generic message rather than the raw manager text.
+
+Every value that leaves the handler passes a shared JSON-safety boundary before
+it reaches JSON-RPC encoding or the formatter. The sanitizer keeps `__proto__`
+and similar keys as ordinary data, drops functions and other unsupported
+values, breaks cycles, and bounds nesting depth. It cannot throw, so a hostile
+or deeply nested model result cannot turn into a transport-level failure.
 
 The formatter treats app-server `dynamicToolCall` items as ordinary structured
 tool activity. `item/started` becomes `llm_tool_use` with the tool name, a readable

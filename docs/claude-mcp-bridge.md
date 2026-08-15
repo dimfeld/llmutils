@@ -18,8 +18,12 @@ Relevant code:
 - `src/tim/executors/claude_code/tim_mcp.ts` — standalone FastMCP child process.
   Built to `dist/claude_code/tim_mcp.js` by `build.ts`, and listed as a `knip`
   entrypoint.
-- `src/tim/executors/claude_code/claude_mcp_protocol.ts` — tool names, role tool
-  sets, request/response schemas, and the trusted context interfaces.
+- `src/tim/executors/claude_code/claude_mcp_protocol.ts` — request/response
+  schemas and the trusted context interfaces. Its tool names, role tool sets,
+  and argument schemas are re-exports of the canonical values in
+  `agent_messaging/contracts.ts`; the installed tool descriptions come from
+  `AGENT_TOOL_DESCRIPTIONS` in that same module, so Claude and Codex advertise
+  identical tool metadata.
 - `src/tim/executors/claude_code/claude_mcp_parent_server.ts` — parent Unix
   socket server, bounded JSONL framing, and the request router.
 - `src/tim/executors/claude_code/claude_mcp_config.ts` — user MCP config reading

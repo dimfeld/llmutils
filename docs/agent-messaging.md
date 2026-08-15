@@ -11,7 +11,10 @@ and launch service it uses is documented in
 transport that exposes these tools to a model is documented in
 [claude-mcp-bridge.md](claude-mcp-bridge.md), and the Claude provider that keeps
 one subprocess alive across turns is documented in
-[persistent-claude-agent.md](persistent-claude-agent.md).
+[persistent-claude-agent.md](persistent-claude-agent.md). The equivalent Codex
+app-server dynamic-tool protocol, which stays dormant until a trusted caller
+supplies a provider, is documented in
+[codex-cli-integration.md](codex-cli-integration.md).
 
 The shared contracts let an orchestrator address, message, and stop its
 subagents. The transport gives one trusted session runtime a private namespace
@@ -119,6 +122,23 @@ Strict, provider-neutral schemas and inferred types exist for the arguments and
 success results of `StartAgent`, `ListAgents`, `SendAgentMessage`, `StopAgent`,
 and `FinishAgent`. They carry no MCP or JSON-RPC wrapper and no provider result
 blocks, so later adapters can serialize the same values.
+
+`contracts.ts` is also the single source of the model-facing tool metadata that
+every transport installs:
+
+| Export                                                       | Purpose                                 |
+| ------------------------------------------------------------ | --------------------------------------- |
+| `AGENT_TOOL_NAMES` / `AgentToolName`                         | The five canonical tool names           |
+| `ORCHESTRATOR_AGENT_TOOL_NAMES`, `SUBAGENT_AGENT_TOOL_NAMES` | The role allowlists                     |
+| `getAgentToolNames(role)`                                    | Role to allowlist lookup                |
+| `AGENT_TOOL_DESCRIPTIONS`                                    | Model-facing description per tool       |
+| `AGENT_ARGUMENT_SCHEMAS`                                     | Tool name to its strict argument schema |
+
+The Claude MCP bridge and the Codex dynamic-tool adapter both read these values,
+so a model sees the same names, descriptions, role sets, and argument shapes on
+either transport. Adapter-local names such as `CLAUDE_ORCHESTRATOR_TOOL_NAMES`
+and `CODEX_AGENT_ARGUMENT_SCHEMAS` are re-exports, not separate definitions.
+Add a tool or change a description here, not in an adapter.
 
 `ListAgents` returns a union discriminated on `role`: an orchestrator row has
 the literal name `orchestrator` and no `type`; a subagent row has
