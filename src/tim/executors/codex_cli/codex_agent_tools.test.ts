@@ -333,6 +333,33 @@ describe('Codex role-bound agent tool provider', () => {
     expect(text.length).toBeLessThanOrEqual(2_048);
   });
 
+  test('keeps an unknown runtime manager failure model-safe', async () => {
+    const { context, calls } = createContext('subagent');
+    calls.listAgents.mockRejectedValueOnce(
+      new AgentManagerError(
+        'future_manager_code' as AgentManagerError['code'],
+        'SECRET /private/session/socket-path stack trace trusted-caller-id'
+      )
+    );
+    const provider = createCodexAgentToolProvider(context);
+
+    const result = await provider.handler(call('ListAgents', {}));
+    expect(result).toEqual({
+      contentItems: [
+        {
+          type: 'inputText',
+          text: 'Agent tool ListAgents could not complete the request.',
+        },
+      ],
+      success: false,
+    });
+    expect(result.contentItems[0]?.type).toBe('inputText');
+    expect(result.contentItems[0]?.text).not.toContain('SECRET');
+    expect(result.contentItems[0]?.text).not.toContain('/private/session');
+    expect(result.contentItems[0]?.text).not.toContain('stack trace');
+    expect(result.contentItems[0]?.text).not.toContain('trusted-caller-id');
+  });
+
   test('serializes a provider result safely when it contains cycles and unsupported values', async () => {
     const { context, calls } = createContext('subagent');
     const circular: Record<string, unknown> = {

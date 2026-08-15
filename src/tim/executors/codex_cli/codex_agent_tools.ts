@@ -250,6 +250,8 @@ function formatManagerFailure(toolName: string, error: AgentManagerError): strin
     case 'root_registration_failed':
     case 'force_failed':
       return `Agent tool ${toolName} could not complete the request.`;
+    default:
+      return `Agent tool ${toolName} could not complete the request.`;
   }
 }
 
