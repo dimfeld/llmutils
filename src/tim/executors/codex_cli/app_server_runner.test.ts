@@ -862,6 +862,48 @@ describe('executeCodexStepViaAppServer', () => {
     );
   });
 
+  test('routes dynamic tool calls before normal approval handling', async () => {
+    const dynamicHandler = vi.fn(async () => ({
+      contentItems: [{ type: 'inputText' as const, text: 'validation failed' }],
+      success: false,
+    }));
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider(dynamicHandler);
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      { dynamicToolProvider: provider }
+    );
+
+    await expect(
+      harness.connectionHandlers.onServerRequest?.('item/tool/call', 44, {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        callId: 'call-1',
+        tool: 'ListAgents',
+        arguments: {},
+      })
+    ).resolves.toEqual({
+      contentItems: [{ type: 'inputText', text: 'validation failed' }],
+      success: false,
+    });
+    expect(dynamicHandler).toHaveBeenCalledTimes(1);
+    expect(harness.approvalHandler).not.toHaveBeenCalledWith(
+      'item/tool/call',
+      44,
+      expect.anything()
+    );
+  });
+
   test('rejects dynamic calls as unsupported when no provider is installed', async () => {
     const harness = await createHarness();
 
@@ -925,6 +967,9 @@ describe('executeCodexStepViaAppServer', () => {
 
     expect(output).toBe('{"status":"ok"}');
     expect(harness.connection.threadStart).toHaveBeenCalledTimes(2);
+    expect(harness.connectionCreateOptions.current).toEqual(
+      expect.objectContaining({ experimentalApi: true })
+    );
     expect(harness.connection.threadStart.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({ dynamicTools: provider.definitions })
     );
@@ -958,6 +1003,73 @@ describe('executeCodexStepViaAppServer', () => {
     const provider = createDynamicToolProvider();
     harness.connection.threadStart.mockRejectedValueOnce(new Error('dynamicTools rejected'));
 
+    const compatibilityError = await harness
+      .executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        {
+          dynamicToolProvider: provider,
+        }
+      )
+      .catch((error: unknown) => error);
+
+    expect(compatibilityError).toMatchObject({
+      name: 'CodexDynamicToolsCompatibilityError',
+      message: expect.stringContaining('does not support experimental dynamic tools'),
+      cause: expect.objectContaining({ message: 'dynamicTools rejected' }),
+    });
+    expect(harness.connection.turnStart).not.toHaveBeenCalled();
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('wraps dynamic initialization rejection with its cause before a turn starts', async () => {
+    const initializationError = new Error('experimentalApi rejected');
+    const harness = await createHarness({ connectionCreateError: initializationError });
+    const provider = createDynamicToolProvider();
+
+    const compatibilityError = await harness
+      .executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        {
+          dynamicToolProvider: provider,
+        }
+      )
+      .catch((error: unknown) => error);
+
+    expect(compatibilityError).toMatchObject({
+      name: 'CodexDynamicToolsCompatibilityError',
+      message: expect.stringContaining('does not support experimental dynamic tools'),
+      cause: initializationError,
+    });
+    expect(harness.connection.turnStart).not.toHaveBeenCalled();
+  });
+
+  test('passes dynamic definitions only when a provider is installed', async () => {
+    const harness = await createHarness();
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer('prompt', '/repo', {});
+
+    expect(harness.connectionCreateOptions.current).not.toHaveProperty('experimentalApi');
+    expect(harness.connection.threadStart).toHaveBeenCalledWith(
+      expect.not.objectContaining({ dynamicTools: expect.anything() })
+    );
+  });
+
+  test('does not retry after a dynamic thread-start compatibility failure', async () => {
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider();
+    harness.connection.threadStart.mockRejectedValue(new Error('dynamicTools rejected'));
+
     await expect(
       harness.executeCodexStepViaAppServer(
         'prompt',
@@ -970,25 +1082,6 @@ describe('executeCodexStepViaAppServer', () => {
     ).rejects.toThrow(/does not support experimental dynamic tools/i);
     expect(harness.connection.turnStart).not.toHaveBeenCalled();
     expect(harness.connection.close).toHaveBeenCalledTimes(1);
-  });
-
-  test('wraps dynamic initialization rejection before a turn starts', async () => {
-    const harness = await createHarness({
-      connectionCreateError: new Error('experimentalApi rejected'),
-    });
-    const provider = createDynamicToolProvider();
-
-    await expect(
-      harness.executeCodexStepViaAppServer(
-        'prompt',
-        '/repo',
-        {},
-        {
-          dynamicToolProvider: provider,
-        }
-      )
-    ).rejects.toThrow(/does not support experimental dynamic tools/i);
-    expect(harness.connection.turnStart).not.toHaveBeenCalled();
   });
 
   test('preserves initialization errors when no dynamic provider is installed', async () => {
