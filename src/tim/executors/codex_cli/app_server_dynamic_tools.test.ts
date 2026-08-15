@@ -269,14 +269,9 @@ describe('Codex dynamic-tool transport contracts', () => {
     ).toBe(true);
   });
 
-  test('validates provider cohesion and trusted caller context', () => {
+  test('validates provider cohesion with an opaque trusted context', () => {
     const validProvider: CodexDynamicToolProvider = {
-      caller: {
-        id: 'root-id' as never,
-        name: 'orchestrator' as never,
-        role: 'orchestrator',
-        executor: 'codex-cli',
-      },
+      context: { trusted: true },
       definitions: [functionDefinition],
       handler: async () => ({ contentItems: [{ type: 'inputText', text: 'ok' }], success: true }),
     };
@@ -289,36 +284,11 @@ describe('Codex dynamic-tool transport contracts', () => {
       validateCodexDynamicToolProvider({ ...validProvider, handler: undefined })
     ).toThrow('callable');
     expect(() =>
-      validateCodexDynamicToolProvider({
-        ...validProvider,
-        caller: { ...validProvider.caller, name: 'worker' },
-      })
-    ).toThrow('orchestrator caller identity');
-
-    expect(() =>
-      validateCodexDynamicToolProvider({
-        ...validProvider,
-        caller: {
-          id: 'worker-id',
-          name: 'worker-a',
-          role: 'subagent',
-          type: 'tester',
-          executor: 'codex-cli',
-        },
-      })
-    ).not.toThrow();
-    expect(() =>
-      validateCodexDynamicToolProvider({
-        ...validProvider,
-        caller: { ...validProvider.caller, id: '' },
-      })
-    ).toThrow('caller ID');
-    expect(() =>
-      validateCodexDynamicToolProvider({
-        ...validProvider,
-        caller: { ...validProvider.caller, executor: 'unknown' },
-      })
-    ).toThrow('caller executor');
+      validateCodexDynamicToolProvider({ ...validProvider, context: undefined })
+    ).toThrow('context');
+    expect(() => validateCodexDynamicToolProvider({ ...validProvider, context: null })).toThrow(
+      'context'
+    );
   });
 
   test('serializes results deterministically and safely', () => {

@@ -1,11 +1,18 @@
 import * as z from 'zod/v4';
 
 import {
-  finishAgentArgumentsSchema,
-  listAgentsArgumentsSchema,
-  sendAgentMessageArgumentsSchema,
-  startAgentArgumentsSchema,
-  stopAgentArgumentsSchema,
+  AGENT_ARGUMENT_SCHEMAS,
+  AGENT_TOOL_NAMES,
+  ORCHESTRATOR_AGENT_TOOL_NAMES,
+  SUBAGENT_AGENT_TOOL_NAMES,
+  agentAddressSchema,
+  agentExecutorSchema,
+  agentIdSchema,
+  agentNameSchema,
+  agentTypeSchema,
+  getAgentToolNames,
+  type AgentArgumentSchema,
+  type AgentToolName,
   type FinishAgentResult,
   type ListAgentsResult,
   type SendAgentMessageResult,
@@ -27,31 +34,13 @@ import {
   type CodexDynamicToolCallParams,
   type CodexDynamicToolDefinition,
   type CodexDynamicToolProvider,
-  validateCodexDynamicToolCaller,
   validateCodexDynamicToolProvider,
 } from './app_server_dynamic_tools.js';
 
-export const CODEX_AGENT_TOOL_NAMES = [
-  'StartAgent',
-  'ListAgents',
-  'SendAgentMessage',
-  'StopAgent',
-  'FinishAgent',
-] as const;
-export type CodexAgentToolName = (typeof CODEX_AGENT_TOOL_NAMES)[number];
-
-export const CODEX_ORCHESTRATOR_TOOL_NAMES = [
-  'StartAgent',
-  'ListAgents',
-  'SendAgentMessage',
-  'StopAgent',
-] as const satisfies readonly CodexAgentToolName[];
-
-export const CODEX_SUBAGENT_TOOL_NAMES = [
-  'ListAgents',
-  'SendAgentMessage',
-  'FinishAgent',
-] as const satisfies readonly CodexAgentToolName[];
+export const CODEX_AGENT_TOOL_NAMES = AGENT_TOOL_NAMES;
+export type CodexAgentToolName = AgentToolName;
+export const CODEX_ORCHESTRATOR_TOOL_NAMES = ORCHESTRATOR_AGENT_TOOL_NAMES;
+export const CODEX_SUBAGENT_TOOL_NAMES = SUBAGENT_AGENT_TOOL_NAMES;
 
 export interface CodexAgentToolDispatcher {
   startAgent(caller: AgentCallerIdentity, request: unknown): Promise<StartAgentResult>;
@@ -67,15 +56,8 @@ export interface CodexAgentToolContext {
   readonly dispatcher: CodexAgentToolDispatcher;
 }
 
-export const CODEX_AGENT_ARGUMENT_SCHEMAS = {
-  StartAgent: startAgentArgumentsSchema,
-  ListAgents: listAgentsArgumentsSchema,
-  SendAgentMessage: sendAgentMessageArgumentsSchema,
-  StopAgent: stopAgentArgumentsSchema,
-  FinishAgent: finishAgentArgumentsSchema,
-} as const;
-
-export type CodexAgentArgumentSchema = (typeof CODEX_AGENT_ARGUMENT_SCHEMAS)[CodexAgentToolName];
+export const CODEX_AGENT_ARGUMENT_SCHEMAS = AGENT_ARGUMENT_SCHEMAS;
+export type CodexAgentArgumentSchema = AgentArgumentSchema;
 
 const CODEX_AGENT_TOOL_DESCRIPTIONS: Record<CodexAgentToolName, string> = {
   StartAgent: 'Start a named subagent with a task and initial message.',
@@ -94,7 +76,7 @@ const CODEX_AGENT_ARGUMENT_KEYS: Record<CodexAgentToolName, readonly string[]> =
 };
 
 export function getCodexAgentToolNames(role: AgentIdentity['role']): readonly CodexAgentToolName[] {
-  return role === 'orchestrator' ? CODEX_ORCHESTRATOR_TOOL_NAMES : CODEX_SUBAGENT_TOOL_NAMES;
+  return getAgentToolNames(role);
 }
 
 export function getCodexAgentArgumentSchema(
@@ -105,6 +87,32 @@ export function getCodexAgentArgumentSchema(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Validate the concrete trusted identity used by the built-in agent provider. */
+export function validateCodexDynamicToolCaller(value: unknown): asserts value is AgentIdentity {
+  if (!isRecord(value)) throw new TypeError('Codex dynamic tool caller must be an object');
+  if (!agentIdSchema.safeParse(value.id).success) {
+    throw new TypeError('Codex dynamic tool caller ID is invalid');
+  }
+  if (value.role !== 'orchestrator' && value.role !== 'subagent') {
+    throw new TypeError('Codex dynamic tool caller role is invalid');
+  }
+  if (!agentExecutorSchema.safeParse(value.executor).success) {
+    throw new TypeError('Codex dynamic tool caller executor is invalid');
+  }
+  if (value.role === 'orchestrator') {
+    if (value.name !== 'orchestrator' || !agentAddressSchema.safeParse(value.name).success) {
+      throw new TypeError('Codex orchestrator caller identity is invalid');
+    }
+    return;
+  }
+  if (!agentNameSchema.safeParse(value.name).success) {
+    throw new TypeError('Codex subagent caller name is invalid');
+  }
+  if (!agentTypeSchema.safeParse(value.type).success) {
+    throw new TypeError('Codex subagent caller type is invalid');
+  }
 }
 
 function validateCodexAgentToolContext(context: CodexAgentToolContext): void {
@@ -372,11 +380,15 @@ function createBoundHandler(context: CodexAgentToolContext): CodexDynamicToolCal
 }
 
 /** Validate that a provider contains exactly the built-in role tool set. */
-export function validateCodexAgentToolProvider(provider: CodexDynamicToolProvider): void {
+export function validateCodexAgentToolProvider(
+  provider: CodexDynamicToolProvider<CodexAgentToolContext>
+): void {
   validateCodexDynamicToolProvider(provider);
-  const expected = new Set<string>(getCodexAgentToolNames(provider.caller.role));
+  const context = provider.context;
+  validateCodexAgentToolContext(context);
+  const expected = new Set<string>(getCodexAgentToolNames(context.caller.role));
   if (provider.definitions.length !== expected.size) {
-    throw new TypeError(`Codex agent definitions do not match the ${provider.caller.role} role`);
+    throw new TypeError(`Codex agent definitions do not match the ${context.caller.role} role`);
   }
   const names = new Set<string>();
   for (const definition of provider.definitions) {
@@ -385,16 +397,16 @@ export function validateCodexAgentToolProvider(provider: CodexDynamicToolProvide
       !expected.has(definition.name) ||
       names.has(definition.name)
     ) {
-      throw new TypeError(`Codex agent definitions do not match the ${provider.caller.role} role`);
+      throw new TypeError(`Codex agent definitions do not match the ${context.caller.role} role`);
     }
     names.add(definition.name);
   }
   if (names.size !== expected.size) {
-    throw new TypeError(`Codex agent definitions do not match the ${provider.caller.role} role`);
+    throw new TypeError(`Codex agent definitions do not match the ${context.caller.role} role`);
   }
 
   const expectedDefinitions = new Map(
-    createDefinitions(provider.caller.role).map((definition) => [definition.name, definition])
+    createDefinitions(context.caller.role).map((definition) => [definition.name, definition])
   );
   for (const definition of provider.definitions) {
     const expectedDefinition = expectedDefinitions.get(definition.name);
@@ -403,7 +415,7 @@ export function validateCodexAgentToolProvider(provider: CodexDynamicToolProvide
       serializeCodexDynamicToolResult(definition) !==
         serializeCodexDynamicToolResult(expectedDefinition)
     ) {
-      throw new TypeError(`Codex agent definitions do not match the ${provider.caller.role} role`);
+      throw new TypeError(`Codex agent definitions do not match the ${context.caller.role} role`);
     }
   }
 }
@@ -411,14 +423,14 @@ export function validateCodexAgentToolProvider(provider: CodexDynamicToolProvide
 /** Create one trusted, role-authorized Codex dynamic-tool provider. */
 export function createCodexAgentToolProvider(
   context: CodexAgentToolContext
-): CodexDynamicToolProvider {
+): CodexDynamicToolProvider<CodexAgentToolContext> {
   validateCodexAgentToolContext(context);
   const boundContext: CodexAgentToolContext = {
     caller: Object.freeze({ ...context.caller }),
     dispatcher: context.dispatcher,
   };
-  const provider: CodexDynamicToolProvider = {
-    caller: boundContext.caller,
+  const provider: CodexDynamicToolProvider<CodexAgentToolContext> = {
+    context: boundContext,
     definitions: createDefinitions(context.caller.role),
     handler: createBoundHandler(boundContext),
   };

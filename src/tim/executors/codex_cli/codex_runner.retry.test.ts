@@ -520,12 +520,7 @@ describe('executeCodexStep subprocess monitor wiring', () => {
 
   test('rejects dynamic tools before schema reads or codex exec fallback', async () => {
     const dynamicToolProvider = {
-      caller: {
-        id: 'root-id' as never,
-        name: 'orchestrator' as never,
-        role: 'orchestrator' as const,
-        executor: 'codex-cli' as const,
-      },
+      context: { trusted: true },
       definitions: [
         {
           type: 'function' as const,

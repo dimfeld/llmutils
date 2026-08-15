@@ -12,6 +12,33 @@ export const AGENT_RUNTIME_ROLES = ['orchestrator', 'subagent'] as const;
 export type AgentRuntimeRole = (typeof AGENT_RUNTIME_ROLES)[number];
 export const agentRuntimeRoleSchema = z.enum(AGENT_RUNTIME_ROLES);
 
+/** Canonical model-facing agent tool names shared by both transports. */
+export const AGENT_TOOL_NAMES = [
+  'StartAgent',
+  'ListAgents',
+  'SendAgentMessage',
+  'StopAgent',
+  'FinishAgent',
+] as const;
+export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number];
+
+export const ORCHESTRATOR_AGENT_TOOL_NAMES = [
+  'StartAgent',
+  'ListAgents',
+  'SendAgentMessage',
+  'StopAgent',
+] as const satisfies readonly AgentToolName[];
+
+export const SUBAGENT_AGENT_TOOL_NAMES = [
+  'ListAgents',
+  'SendAgentMessage',
+  'FinishAgent',
+] as const satisfies readonly AgentToolName[];
+
+export function getAgentToolNames(role: AgentRuntimeRole): readonly AgentToolName[] {
+  return role === 'orchestrator' ? ORCHESTRATOR_AGENT_TOOL_NAMES : SUBAGENT_AGENT_TOOL_NAMES;
+}
+
 export const NONTERMINAL_AGENT_LIFECYCLE_STATES = [
   'starting',
   'running-active',
@@ -209,6 +236,17 @@ export const finishAgentArgumentsSchema = z
   })
   .strict();
 export type FinishAgentArguments = z.infer<typeof finishAgentArgumentsSchema>;
+
+/** Canonical strict argument schemas shared by the Claude and Codex adapters. */
+export const AGENT_ARGUMENT_SCHEMAS = {
+  StartAgent: startAgentArgumentsSchema,
+  ListAgents: listAgentsArgumentsSchema,
+  SendAgentMessage: sendAgentMessageArgumentsSchema,
+  StopAgent: stopAgentArgumentsSchema,
+  FinishAgent: finishAgentArgumentsSchema,
+} as const;
+
+export type AgentArgumentSchema = (typeof AGENT_ARGUMENT_SCHEMAS)[AgentToolName];
 
 export const finishAgentResultSchema = z
   .object({

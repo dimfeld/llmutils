@@ -22,12 +22,7 @@ function createDynamicToolProvider(
   }))
 ): CodexDynamicToolProvider {
   return {
-    caller: {
-      id: 'root-id' as never,
-      name: 'orchestrator' as never,
-      role: 'orchestrator',
-      executor: 'codex-cli',
-    },
+    context: { trusted: true },
     definitions: [
       {
         type: 'function',

@@ -1,11 +1,13 @@
 import * as z from 'zod/v4';
 
 import {
-  finishAgentArgumentsSchema,
-  listAgentsArgumentsSchema,
-  sendAgentMessageArgumentsSchema,
-  startAgentArgumentsSchema,
-  stopAgentArgumentsSchema,
+  AGENT_ARGUMENT_SCHEMAS,
+  AGENT_TOOL_NAMES,
+  ORCHESTRATOR_AGENT_TOOL_NAMES,
+  SUBAGENT_AGENT_TOOL_NAMES,
+  getAgentToolNames,
+  type AgentArgumentSchema,
+  type AgentToolName,
   type FinishAgentResult,
   type ListAgentsResult,
   type SendAgentMessageResult,
@@ -22,32 +24,17 @@ export const CLAUDE_MCP_SERVER_NAME = 'tim';
 export const CLAUDE_APPROVAL_TOOL_NAME = 'approval_prompt';
 export const CLAUDE_APPROVAL_MCP_TOOL_ID = `mcp__${CLAUDE_MCP_SERVER_NAME}__${CLAUDE_APPROVAL_TOOL_NAME}`;
 
-export const CLAUDE_AGENT_TOOL_NAMES = [
-  'StartAgent',
-  'ListAgents',
-  'SendAgentMessage',
-  'StopAgent',
-  'FinishAgent',
-] as const;
-export type ClaudeAgentToolName = (typeof CLAUDE_AGENT_TOOL_NAMES)[number];
+export const CLAUDE_AGENT_TOOL_NAMES = AGENT_TOOL_NAMES;
+export type ClaudeAgentToolName = AgentToolName;
 export const claudeAgentToolNameSchema = z.enum(CLAUDE_AGENT_TOOL_NAMES);
 
-export const CLAUDE_ORCHESTRATOR_TOOL_NAMES = [
-  'StartAgent',
-  'ListAgents',
-  'SendAgentMessage',
-  'StopAgent',
-] as const satisfies readonly ClaudeAgentToolName[];
-export const CLAUDE_SUBAGENT_TOOL_NAMES = [
-  'ListAgents',
-  'SendAgentMessage',
-  'FinishAgent',
-] as const satisfies readonly ClaudeAgentToolName[];
+export const CLAUDE_ORCHESTRATOR_TOOL_NAMES = ORCHESTRATOR_AGENT_TOOL_NAMES;
+export const CLAUDE_SUBAGENT_TOOL_NAMES = SUBAGENT_AGENT_TOOL_NAMES;
 
 export function getClaudeAgentToolNames(
   role: AgentIdentity['role']
 ): readonly ClaudeAgentToolName[] {
-  return role === 'orchestrator' ? CLAUDE_ORCHESTRATOR_TOOL_NAMES : CLAUDE_SUBAGENT_TOOL_NAMES;
+  return getAgentToolNames(role);
 }
 
 export function getClaudeAgentMcpToolId(toolName: ClaudeAgentToolName): string {
@@ -184,15 +171,9 @@ export interface ClaudePermissionPromptCoordinator {
   dispose(): void | Promise<void>;
 }
 
-export const CLAUDE_AGENT_ARGUMENT_SCHEMAS = {
-  StartAgent: startAgentArgumentsSchema,
-  ListAgents: listAgentsArgumentsSchema,
-  SendAgentMessage: sendAgentMessageArgumentsSchema,
-  StopAgent: stopAgentArgumentsSchema,
-  FinishAgent: finishAgentArgumentsSchema,
-} as const;
+export const CLAUDE_AGENT_ARGUMENT_SCHEMAS = AGENT_ARGUMENT_SCHEMAS;
 
-export type ClaudeAgentArgumentSchema = (typeof CLAUDE_AGENT_ARGUMENT_SCHEMAS)[ClaudeAgentToolName];
+export type ClaudeAgentArgumentSchema = AgentArgumentSchema;
 
 export function getClaudeAgentArgumentSchema(
   toolName: ClaudeAgentToolName

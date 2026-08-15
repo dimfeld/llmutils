@@ -1,14 +1,5 @@
 import * as z from 'zod/v4';
 
-import {
-  agentAddressSchema,
-  agentExecutorSchema,
-  agentIdSchema,
-  agentNameSchema,
-  agentTypeSchema,
-} from '../../agent_messaging/contracts.js';
-import type { AgentIdentity } from '../../agent_messaging/agent_manager_types.js';
-
 /** JSON values accepted by the Codex app-server protocol. */
 export type CodexJsonValue =
   | null
@@ -118,9 +109,9 @@ export interface CodexDynamicToolCallItem {
   readonly [key: string]: unknown;
 }
 
-export interface CodexDynamicToolProvider {
-  /** Trusted identity captured when the provider is installed. */
-  readonly caller: AgentIdentity;
+export interface CodexDynamicToolProvider<TContext = unknown> {
+  /** Opaque trusted context captured when the provider is installed. */
+  readonly context: TContext;
   readonly definitions: readonly CodexDynamicToolDefinition[];
   readonly handler: CodexDynamicToolCallHandler;
 }
@@ -315,37 +306,14 @@ export function validateCodexDynamicToolDefinitions(
   value.forEach((definition, index) => visit(definition, `definitions[${index}]`));
 }
 
-export function validateCodexDynamicToolCaller(value: unknown): asserts value is AgentIdentity {
-  if (!isRecord(value)) throw new TypeError('Codex dynamic tool caller must be an object');
-  if (!agentIdSchema.safeParse(value.id).success) {
-    throw new TypeError('Codex dynamic tool caller ID is invalid');
-  }
-  if (value.role !== 'orchestrator' && value.role !== 'subagent') {
-    throw new TypeError('Codex dynamic tool caller role is invalid');
-  }
-  if (!agentExecutorSchema.safeParse(value.executor).success) {
-    throw new TypeError('Codex dynamic tool caller executor is invalid');
-  }
-  if (value.role === 'orchestrator') {
-    if (value.name !== 'orchestrator' || !agentAddressSchema.safeParse(value.name).success) {
-      throw new TypeError('Codex orchestrator caller identity is invalid');
-    }
-    return;
-  }
-  if (!agentNameSchema.safeParse(value.name).success) {
-    throw new TypeError('Codex subagent caller name is invalid');
-  }
-  if (!agentTypeSchema.safeParse(value.type).success) {
-    throw new TypeError('Codex subagent caller type is invalid');
-  }
-}
-
 /** Validate one cohesive provider before it is handed to an app-server runner. */
 export function validateCodexDynamicToolProvider(
   value: unknown
 ): asserts value is CodexDynamicToolProvider {
   if (!isRecord(value)) throw new TypeError('Codex dynamic tool provider must be an object');
-  validateCodexDynamicToolCaller(value.caller);
+  if (!Object.hasOwn(value, 'context') || value.context === undefined || value.context === null) {
+    throw new TypeError('Codex dynamic tool provider context must be present');
+  }
   validateCodexDynamicToolDefinitions(value.definitions);
   if (typeof value.handler !== 'function') {
     throw new TypeError('Codex dynamic tool provider handler must be callable');

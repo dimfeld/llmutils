@@ -473,6 +473,31 @@ describe('Codex role-bound agent tool provider', () => {
     ).toThrow('do not match');
   });
 
+  test('validates the concrete trusted caller in the agent adapter', () => {
+    const { context } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+
+    expect(() =>
+      validateCodexAgentToolProvider({
+        ...provider,
+        context: {
+          ...provider.context,
+          caller: { ...provider.context.caller, name: 'worker' as never },
+        },
+      })
+    ).toThrow('orchestrator caller identity');
+
+    expect(() =>
+      validateCodexAgentToolProvider({
+        ...provider,
+        context: {
+          ...provider.context,
+          caller: { ...provider.context.caller, executor: 'unknown' as never },
+        },
+      })
+    ).toThrow('caller executor');
+  });
+
   test('uses canonical strict schemas and rejects model identity fields', async () => {
     const { context, calls } = createContext('orchestrator');
     const provider = createCodexAgentToolProvider(context);
