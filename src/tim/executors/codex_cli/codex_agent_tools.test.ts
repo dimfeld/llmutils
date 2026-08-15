@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from 'vitest';
+import * as z from 'zod/v4';
 
 import {
   AgentManagerError,
@@ -7,6 +8,7 @@ import {
 import {
   CODEX_ORCHESTRATOR_TOOL_NAMES,
   CODEX_SUBAGENT_TOOL_NAMES,
+  CODEX_AGENT_ARGUMENT_SCHEMAS,
   createCodexAgentToolProvider,
   getCodexAgentToolNames,
   validateCodexAgentToolProvider,
@@ -98,6 +100,13 @@ describe('Codex role-bound agent tool provider', () => {
       expect(definition.inputSchema.additionalProperties).toBe(false);
     }
     expect(() => validateCodexAgentToolProvider(provider)).not.toThrow();
+
+    for (const definition of provider.definitions) {
+      const schema = CODEX_AGENT_ARGUMENT_SCHEMAS[definition.name];
+      expect(definition.inputSchema).toEqual(
+        z.toJSONSchema(schema, { target: 'draft-7', io: 'input' })
+      );
+    }
   });
 
   test.each([
@@ -178,6 +187,59 @@ describe('Codex role-bound agent tool provider', () => {
     expect(calls.finishAgent).not.toHaveBeenCalled();
   });
 
+  test('rejects every malformed envelope before dispatch', async () => {
+    const { context, calls } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+    const malformedCalls: unknown[] = [
+      null,
+      {},
+      { ...call('ListAgents', {}), threadId: '' },
+      { ...call('ListAgents', {}), turnId: '' },
+      { ...call('ListAgents', {}), callId: '' },
+      { ...call('ListAgents', {}), tool: '' },
+      { ...call('ListAgents', {}), namespace: 1 },
+      { ...call('ListAgents', {}), arguments: undefined },
+      { ...call('ListAgents', {}), arguments: () => undefined },
+      { ...call('ListAgents', {}), arguments: { self: undefined } },
+    ];
+
+    for (const params of malformedCalls) {
+      const result = await provider.handler(params);
+      expect(result.success).toBe(false);
+      expect(result.contentItems).toHaveLength(1);
+      expect(result.contentItems[0]?.type).toBe('inputText');
+      expect(result.contentItems[0]?.text).not.toContain('ZodError');
+    }
+    expect(Object.values(calls).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+  });
+
+  test('accepts the UTF-8 message limit and rejects the next byte', async () => {
+    const { context, calls } = createContext('subagent');
+    const provider = createCodexAgentToolProvider(context);
+    const atLimit = '🙂'.repeat(16_384);
+    const overLimit = `${atLimit}a`;
+
+    const accepted = await provider.handler(
+      call('SendAgentMessage', { name: 'orchestrator', message: atLimit })
+    );
+    expect(accepted.success).toBe(true);
+    expect(calls.sendAgentMessage).toHaveBeenCalledTimes(1);
+
+    const rejected = await provider.handler(
+      call('SendAgentMessage', { name: 'orchestrator', message: overLimit })
+    );
+    expect(rejected.success).toBe(false);
+    expect(rejected.contentItems[0]?.text).toContain('invalid');
+    expect(calls.sendAgentMessage).toHaveBeenCalledTimes(1);
+  });
+
+  test('accepts an empty namespace as top-level compatibility syntax', async () => {
+    const { context } = createContext('subagent');
+    const provider = createCodexAgentToolProvider(context);
+    const result = await provider.handler({ ...call('ListAgents', {}), namespace: '' });
+    expect(result.success).toBe(true);
+  });
+
   test('returns safe manager failures and a bounded generic unexpected failure', async () => {
     const { context, calls } = createContext('orchestrator');
     calls.sendAgentMessage.mockRejectedValueOnce(
@@ -198,6 +260,20 @@ describe('Codex role-bound agent tool provider', () => {
     expect(expectedFailure.contentItems[0]?.text).toContain('Unknown or inactive target agent');
     expect(expectedFailure.contentItems[0]?.text).not.toContain('stack');
 
+    calls.sendAgentMessage.mockRejectedValueOnce(
+      new AgentManagerError(
+        'unknown_target',
+        'secret stack /private/session/socket-path trusted-caller-id'
+      )
+    );
+    const leakedManagerFailure = await provider.handler(
+      call('SendAgentMessage', validArguments.SendAgentMessage)
+    );
+    expect(leakedManagerFailure.success).toBe(false);
+    expect(leakedManagerFailure.contentItems[0]?.text).not.toContain('secret stack');
+    expect(leakedManagerFailure.contentItems[0]?.text).not.toContain('/private/session');
+    expect(leakedManagerFailure.contentItems[0]?.text).not.toContain('trusted-caller-id');
+
     const unexpectedFailure = await provider.handler(call('StopAgent', validArguments.StopAgent));
     expect(unexpectedFailure).toEqual({
       contentItems: [
@@ -215,6 +291,93 @@ describe('Codex role-bound agent tool provider', () => {
       type: 'inputText',
       text: 'Agent tool StartAgent could not complete the request.',
     });
+  });
+
+  test.each([
+    'invalid_options',
+    'invalid_request',
+    'manager_closed',
+    'not_authorized',
+    'invalid_name',
+    'reserved_name',
+    'name_in_use',
+    'name_generation_exhausted',
+    'identity_generation_exhausted',
+    'agent_limit_reached',
+    'launch_failed',
+    'unknown_sender',
+    'unknown_target',
+    'target_not_accepting_messages',
+    'transport_error',
+    'root_registration_failed',
+    'unknown_agent',
+    'finish_not_available',
+    'force_failed',
+  ] as const)('keeps %s manager failures model-safe', async (code) => {
+    const { context, calls } = createContext('subagent');
+    calls.listAgents.mockRejectedValueOnce(
+      new AgentManagerError(
+        code,
+        'SECRET /private/session/socket-path stack trace trusted-caller-id'
+      )
+    );
+    const provider = createCodexAgentToolProvider(context);
+    const result = await provider.handler(call('ListAgents', {}));
+    const text = result.contentItems[0]?.type === 'inputText' ? result.contentItems[0].text : '';
+    expect(result.success).toBe(false);
+    expect(text).toContain('Agent tool ListAgents');
+    expect(text).not.toContain('SECRET');
+    expect(text).not.toContain('/private/session');
+    expect(text).not.toContain('stack trace');
+    expect(text).not.toContain('trusted-caller-id');
+    expect(text.length).toBeLessThanOrEqual(2_048);
+  });
+
+  test('serializes a provider result safely when it contains cycles and unsupported values', async () => {
+    const { context, calls } = createContext('subagent');
+    const circular: Record<string, unknown> = {
+      callback: () => undefined,
+      missing: undefined,
+      bigint: BigInt(7),
+    };
+    circular.self = circular;
+    calls.listAgents.mockResolvedValueOnce(circular as never);
+    const provider = createCodexAgentToolProvider(context);
+
+    const result = await provider.handler(call('ListAgents', {}));
+    expect(result.success).toBe(true);
+    expect(result.contentItems[0]).toEqual({
+      type: 'inputText',
+      text: '{"bigint":"7","callback":null,"missing":null,"self":"[Circular]"}',
+    });
+  });
+
+  test('rejects tampered role definitions, including deferred or extra fields', () => {
+    const { context } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+    const listDefinition = provider.definitions.find(
+      (definition) => definition.name === 'ListAgents'
+    );
+    expect(listDefinition).toBeDefined();
+
+    expect(() =>
+      validateCodexAgentToolProvider({
+        ...provider,
+        definitions: provider.definitions.map((definition) =>
+          definition.name === 'ListAgents' ? { ...definition, deferLoading: true } : definition
+        ),
+      })
+    ).toThrow('do not match');
+    expect(() =>
+      validateCodexAgentToolProvider({
+        ...provider,
+        definitions: provider.definitions.map((definition) =>
+          definition.name === 'ListAgents'
+            ? { ...definition, futureField: 'not part of the built-in definition' }
+            : definition
+        ),
+      })
+    ).toThrow('do not match');
   });
 
   test('uses canonical strict schemas and rejects model identity fields', async () => {

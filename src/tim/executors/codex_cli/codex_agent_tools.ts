@@ -19,7 +19,6 @@ import {
 } from '../../agent_messaging/agent_manager_types.js';
 import { debugLog } from '../../../logging.js';
 import {
-  boundCodexDynamicToolErrorText,
   codexDynamicToolCallParamsSchema,
   createCodexDynamicToolFailureResult,
   createCodexDynamicToolSuccessResult,
@@ -216,15 +215,42 @@ function formatArgumentFailure(toolName: string, value: unknown): string {
 }
 
 function formatManagerFailure(toolName: string, error: AgentManagerError): string {
-  if (
-    error.code === 'launch_failed' ||
-    error.code === 'transport_error' ||
-    error.code === 'force_failed' ||
-    error.code === 'root_registration_failed'
-  ) {
-    return `Agent tool ${toolName} could not complete the request.`;
+  switch (error.code) {
+    case 'invalid_request':
+      return `Agent tool ${toolName} request was rejected.`;
+    case 'manager_closed':
+      return `Agent tool ${toolName} is unavailable because the agent manager is closed.`;
+    case 'not_authorized':
+      return `Agent tool ${toolName} is not authorized for this caller.`;
+    case 'invalid_name':
+      return `Agent tool ${toolName} rejected the target agent name.`;
+    case 'reserved_name':
+      return `Agent tool ${toolName} rejected the reserved agent name.`;
+    case 'name_in_use':
+      return `Agent tool ${toolName} rejected the request because that agent name is already in use.`;
+    case 'name_generation_exhausted':
+      return `Agent tool ${toolName} could not generate an available agent name.`;
+    case 'identity_generation_exhausted':
+      return `Agent tool ${toolName} could not allocate an agent identity.`;
+    case 'agent_limit_reached':
+      return `Agent tool ${toolName} could not start an agent because the session limit was reached.`;
+    case 'unknown_sender':
+      return `Agent tool ${toolName} rejected the request because the caller is not active.`;
+    case 'unknown_target':
+      return `Agent tool ${toolName} failed: Unknown or inactive target agent.`;
+    case 'target_not_accepting_messages':
+      return `Agent tool ${toolName} rejected the request because the target is not accepting messages.`;
+    case 'unknown_agent':
+      return `Agent tool ${toolName} could not find the requested agent.`;
+    case 'finish_not_available':
+      return `Agent tool ${toolName} is not available for the current agent turn.`;
+    case 'invalid_options':
+    case 'launch_failed':
+    case 'transport_error':
+    case 'root_registration_failed':
+    case 'force_failed':
+      return `Agent tool ${toolName} could not complete the request.`;
   }
-  return boundCodexDynamicToolErrorText(error.message);
 }
 
 function createBoundHandler(context: CodexAgentToolContext): CodexDynamicToolCallHandler {
@@ -329,9 +355,8 @@ export function validateCodexAgentToolProvider(provider: CodexDynamicToolProvide
     const expectedDefinition = expectedDefinitions.get(definition.name);
     if (
       expectedDefinition === undefined ||
-      definition.description !== expectedDefinition.description ||
-      serializeCodexDynamicToolResult(definition.inputSchema) !==
-        serializeCodexDynamicToolResult(expectedDefinition.inputSchema)
+      serializeCodexDynamicToolResult(definition) !==
+        serializeCodexDynamicToolResult(expectedDefinition)
     ) {
       throw new TypeError(`Codex agent definitions do not match the ${provider.caller.role} role`);
     }
