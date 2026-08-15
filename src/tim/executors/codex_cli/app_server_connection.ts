@@ -15,6 +15,10 @@ import {
   type SessionExecutorLifecycle,
 } from '../../../common/session_process_control.js';
 import type { SessionProcessUpdate } from '../../../common/session_process.js';
+import {
+  CodexDynamicToolsCompatibilityError,
+  type CodexDynamicToolDefinition,
+} from './app_server_dynamic_tools.js';
 
 export const TIM_CODEX_APP_SERVER_SOCKET = 'TIM_CODEX_APP_SERVER_SOCKET';
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
@@ -46,6 +50,7 @@ export interface ThreadStartParams {
   approvalPolicy?: string;
   sandbox?: 'workspace-write' | 'danger-full-access' | 'read-only';
   personality?: string;
+  dynamicTools?: readonly CodexDynamicToolDefinition[];
 }
 
 export interface ThreadResult {
@@ -83,6 +88,8 @@ export interface ConnectionOptions {
   cwd: string;
   env?: Record<string, string>;
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** Opt into the experimental app-server API required by dynamic tools. */
+  experimentalApi?: boolean;
   /** Display label used when the owned app-server process is tracked. */
   sessionProcessLabel?: string;
   onNotification?: (method: string, params: unknown) => void;
@@ -647,6 +654,9 @@ export class CodexAppServerConnection {
       await connection.initialize();
     } catch (err) {
       await connection.close();
+      if (options.experimentalApi === true) {
+        throw new CodexDynamicToolsCompatibilityError(err);
+      }
       throw err;
     }
     return connection;
@@ -820,6 +830,7 @@ export class CodexAppServerConnection {
         title: 'tim',
         version: '1.0.0',
       },
+      ...(this.options.experimentalApi === true ? { capabilities: { experimentalApi: true } } : {}),
     });
     this.sendNotification('initialized');
   }

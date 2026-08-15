@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, vi, test } from 'vitest';
 
+import type { CodexDynamicToolProvider } from './app_server_dynamic_tools.js';
+
 type NotificationHandler = (method: string, params: unknown) => void;
 type ServerRequestHandler = (method: string, id: number, params: unknown) => Promise<unknown>;
 
@@ -11,6 +13,31 @@ async function waitFor(condition: () => boolean, timeoutMs: number = 2000): Prom
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+function createDynamicToolProvider(
+  handler: ReturnType<typeof vi.fn> = vi.fn(async () => ({
+    contentItems: [{ type: 'inputText' as const, text: 'ok' }],
+    success: true,
+  }))
+): CodexDynamicToolProvider {
+  return {
+    caller: {
+      id: 'root-id' as never,
+      name: 'orchestrator' as never,
+      role: 'orchestrator',
+      executor: 'codex-cli',
+    },
+    definitions: [
+      {
+        type: 'function',
+        name: 'ListAgents',
+        description: 'List agents.',
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+    ],
+    handler,
+  };
 }
 
 interface Harness {
@@ -70,6 +97,7 @@ async function createHarness(options?: {
   failedMessage?: string | undefined;
   terminalInputLines?: string[];
   loggerAdapterKind?: 'headless' | 'tunnel';
+  connectionCreateError?: Error;
 }): Promise<Harness> {
   vi.resetModules();
 
@@ -122,6 +150,9 @@ async function createHarness(options?: {
     connectionCreateOptions.current = createOptions;
     connectionHandlers.onNotification = createOptions.onNotification;
     connectionHandlers.onServerRequest = createOptions.onServerRequest;
+    if (options?.connectionCreateError) {
+      throw options.connectionCreateError;
+    }
     return connection;
   });
 
@@ -176,6 +207,14 @@ async function createHarness(options?: {
   }));
 
   vi.doMock('./app_server_connection.ts', () => ({
+    AppServerRequestError: class extends Error {
+      readonly code: number;
+
+      constructor(message: string, code: number) {
+        super(message);
+        this.code = code;
+      }
+    },
     CodexAppServerConnection: {
       create: connectionCreateMock,
     },
@@ -247,10 +286,12 @@ async function createHarness(options?: {
 describe('executeCodexStepViaAppServer', () => {
   const originalAllowAllTools = process.env.ALLOW_ALL_TOOLS;
   const originalOutputTimeout = process.env.CODEX_OUTPUT_TIMEOUT_MS;
+  const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
   beforeEach(() => {
     delete process.env.ALLOW_ALL_TOOLS;
     delete process.env.CODEX_OUTPUT_TIMEOUT_MS;
+    delete process.env.CODEX_USE_APP_SERVER;
   });
 
   afterEach(() => {
@@ -263,6 +304,11 @@ describe('executeCodexStepViaAppServer', () => {
       delete process.env.CODEX_OUTPUT_TIMEOUT_MS;
     } else {
       process.env.CODEX_OUTPUT_TIMEOUT_MS = originalOutputTimeout;
+    }
+    if (originalCodexUseAppServer === undefined) {
+      delete process.env.CODEX_USE_APP_SERVER;
+    } else {
+      process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
     }
     vi.resetModules();
   });
@@ -748,7 +794,208 @@ describe('executeCodexStepViaAppServer', () => {
       writableRoots: ['/repo'],
     });
 
-    expect(harness.connectionCreateOptions.current?.onServerRequest).toBe(harness.approvalHandler);
+    expect(harness.connectionCreateOptions.current?.onServerRequest).not.toBe(
+      harness.approvalHandler
+    );
+    await harness.connectionHandlers.onServerRequest?.('item/commandExecution/requestApproval', 1, {
+      command: 'git status',
+    });
+    expect(harness.approvalHandler).toHaveBeenCalledWith(
+      'item/commandExecution/requestApproval',
+      1,
+      { command: 'git status' }
+    );
+  });
+
+  test('routes dynamic tool calls before approvals, including permissive approvals', async () => {
+    process.env.ALLOW_ALL_TOOLS = '1';
+    const dynamicHandler = vi.fn(async () => ({
+      contentItems: [{ type: 'inputText' as const, text: 'dynamic result' }],
+      success: true,
+    }));
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider(dynamicHandler);
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      {
+        dynamicToolProvider: provider,
+      }
+    );
+
+    const result = await harness.connectionHandlers.onServerRequest?.('item/tool/call', 42, {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      callId: 'call-1',
+      tool: 'ListAgents',
+      arguments: {},
+    });
+    expect(result).toEqual({
+      contentItems: [{ type: 'inputText', text: 'dynamic result' }],
+      success: true,
+    });
+    expect(dynamicHandler).toHaveBeenCalledTimes(1);
+    expect(harness.approvalHandler).not.toHaveBeenCalledWith(
+      'item/tool/call',
+      42,
+      expect.anything()
+    );
+
+    await harness.connectionHandlers.onServerRequest?.(
+      'item/commandExecution/requestApproval',
+      43,
+      { command: 'git status' }
+    );
+    expect(harness.approvalHandler).toHaveBeenCalledWith(
+      'item/commandExecution/requestApproval',
+      43,
+      { command: 'git status' }
+    );
+  });
+
+  test('rejects dynamic calls as unsupported when no provider is installed', async () => {
+    const harness = await createHarness();
+
+    harness.connection.turnStart.mockImplementationOnce(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    await harness.executeCodexStepViaAppServer('prompt', '/repo', {});
+
+    await expect(
+      harness.connectionHandlers.onServerRequest?.('item/tool/call', 42, {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        callId: 'call-1',
+        tool: 'ListAgents',
+        arguments: {},
+      })
+    ).rejects.toMatchObject({ code: -32601 });
+    expect(harness.approvalHandler).not.toHaveBeenCalledWith(
+      'item/tool/call',
+      42,
+      expect.anything()
+    );
+  });
+
+  test('installs dynamic definitions and preserves them on schema conversion threads', async () => {
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider();
+    const outputSchema = {
+      type: 'object',
+      required: ['status'],
+      properties: { status: { type: 'string' } },
+      additionalProperties: false,
+    };
+    harness.formatter.getFinalAgentMessage
+      .mockReturnValueOnce('{"status":404}')
+      .mockReturnValueOnce('{"status":404}')
+      .mockReturnValueOnce('{"status":"ok"}');
+    harness.connection.threadStart
+      .mockResolvedValueOnce({ threadId: 'thread-1' })
+      .mockResolvedValueOnce({ threadId: 'thread-2' });
+    harness.connection.turnStart.mockImplementation(async () => {
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { status: 'completed' },
+      });
+      return { turnId: 'turn-1' };
+    });
+
+    const output = await harness.executeCodexStepViaAppServer(
+      'prompt',
+      '/repo',
+      {},
+      {
+        outputSchema,
+        dynamicToolProvider: provider,
+      }
+    );
+
+    expect(output).toBe('{"status":"ok"}');
+    expect(harness.connection.threadStart).toHaveBeenCalledTimes(2);
+    expect(harness.connection.threadStart.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ dynamicTools: provider.definitions })
+    );
+    expect(harness.connection.threadStart.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ dynamicTools: provider.definitions })
+    );
+  });
+
+  test('rejects dynamic tools before tunnel or connection allocation when app-server is disabled', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'false';
+    const harness = await createHarness({ tunnelActive: false });
+    const provider = createDynamicToolProvider();
+
+    await expect(
+      harness.executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        {
+          dynamicToolProvider: provider,
+          outputSchemaPath: '/path/that/must/not/be/read.json',
+        }
+      )
+    ).rejects.toThrow(/require Codex app-server mode/i);
+    expect(harness.connectionCreateMock).not.toHaveBeenCalled();
+    expect(harness.createTunnelServerMock).not.toHaveBeenCalled();
+  });
+
+  test('wraps dynamic thread-start rejection without starting a turn', async () => {
+    const harness = await createHarness();
+    const provider = createDynamicToolProvider();
+    harness.connection.threadStart.mockRejectedValueOnce(new Error('dynamicTools rejected'));
+
+    await expect(
+      harness.executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        {
+          dynamicToolProvider: provider,
+        }
+      )
+    ).rejects.toThrow(/does not support experimental dynamic tools/i);
+    expect(harness.connection.turnStart).not.toHaveBeenCalled();
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  test('wraps dynamic initialization rejection before a turn starts', async () => {
+    const harness = await createHarness({
+      connectionCreateError: new Error('experimentalApi rejected'),
+    });
+    const provider = createDynamicToolProvider();
+
+    await expect(
+      harness.executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        {
+          dynamicToolProvider: provider,
+        }
+      )
+    ).rejects.toThrow(/does not support experimental dynamic tools/i);
+    expect(harness.connection.turnStart).not.toHaveBeenCalled();
+  });
+
+  test('preserves initialization errors when no dynamic provider is installed', async () => {
+    const error = new Error('ordinary app-server initialization failure');
+    const harness = await createHarness({ connectionCreateError: error });
+
+    await expect(harness.executeCodexStepViaAppServer('prompt', '/repo', {})).rejects.toBe(error);
   });
 
   test('includes external config directory in writable roots passed to approval handler', async () => {

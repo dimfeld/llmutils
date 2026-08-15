@@ -19,6 +19,11 @@ import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
 import { executeCodexStepViaAppServer } from './app_server_runner';
 import { isCodexAppServerEnabled } from './app_server_mode';
 import {
+  CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE,
+  validateCodexDynamicToolProvider,
+  type CodexDynamicToolProvider,
+} from './app_server_dynamic_tools.js';
+import {
   buildOutputSchemaConversionPrompt,
   buildOutputSchemaCorrectionPrompt,
   validateJsonOutputAgainstSchema,
@@ -43,6 +48,8 @@ export interface CodexStepOptions {
   terminalInput?: boolean;
   /** Project environment rendering options for Codex subprocesses. */
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** One trusted, role-bound provider for experimental Codex dynamic tools. */
+  dynamicToolProvider?: CodexDynamicToolProvider;
 }
 
 /**
@@ -59,6 +66,14 @@ export async function executeCodexStep(
     typeof outputSchemaPathOrOptions === 'string'
       ? { outputSchemaPath: outputSchemaPathOrOptions }
       : (outputSchemaPathOrOptions ?? {});
+
+  if (options.dynamicToolProvider) {
+    validateCodexDynamicToolProvider(options.dynamicToolProvider);
+    if (!isCodexAppServerEnabled()) {
+      throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
+    }
+  }
+
   const hasOutputSchema = !!(options.outputSchemaPath || options.outputSchema);
   const outputSchemaForValidation =
     options.outputSchema ??

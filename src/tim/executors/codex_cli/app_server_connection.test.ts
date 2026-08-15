@@ -122,11 +122,30 @@ function handleMessage(send, line) {
       }
 
       if (message.method === 'initialize') {
+        if (
+          mode === 'reject-initialize' ||
+          (mode === 'reject-initialize-capability' && message.params?.capabilities?.experimentalApi)
+        ) {
+          send({
+            jsonrpc: '2.0',
+            id: message.id,
+            error: { code: -32602, message: 'experimentalApi is not supported' },
+          });
+          return;
+        }
         send({ jsonrpc: '2.0', id: message.id, result: { capabilities: {} } });
         return;
       }
 
       if (message.method === 'thread/start') {
+        if (mode === 'reject-dynamic-tools' && message.params?.dynamicTools) {
+          send({
+            jsonrpc: '2.0',
+            id: message.id,
+            error: { code: -32602, message: 'dynamicTools is not supported' },
+          });
+          return;
+        }
         if (mode === 'notification-and-server-request') {
           send({ jsonrpc: '2.0', method: 'thread/started', params: { threadId: 'thread-notify' } });
           send({
@@ -182,6 +201,20 @@ function handleMessage(send, line) {
             id: 901,
             method: 'item/commandExecution/requestApproval',
             params: { command: 'npm test' },
+          });
+        }
+        if (mode === 'dynamic-server-request') {
+          send({
+            jsonrpc: '2.0',
+            id: 905,
+            method: 'item/tool/call',
+            params: {
+              threadId: 'thread-1',
+              turnId: 'turn-1',
+              callId: 'call-1',
+              tool: 'ListAgents',
+              arguments: {},
+            },
           });
         }
 
@@ -403,36 +436,106 @@ describe('CodexAppServerConnection', () => {
     expect(spawnLog).toMatch(/TIM_CODEX_APP_SERVER_SOCKET=.+codex\.sock/);
 
     const messages = await readJsonLines(mockServer.requestLogPath);
-    expect(messages[0]).toEqual(
-      expect.objectContaining({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          clientInfo: {
-            name: 'tim',
-            title: 'tim',
-            version: '1.0.0',
-          },
+    expect(messages[0]).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        clientInfo: {
+          name: 'tim',
+          title: 'tim',
+          version: '1.0.0',
         },
-      })
-    );
+      },
+    });
     expect(messages[1]).toEqual(
       expect.objectContaining({
         jsonrpc: '2.0',
         method: 'initialized',
       })
     );
-    expect(messages[2]).toEqual(
-      expect.objectContaining({
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'thread/start',
-        params: expect.objectContaining({ cwd: '/repo/path', model: 'gpt-5' }),
-      })
-    );
+    expect(messages[2]).toEqual({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'thread/start',
+      params: { cwd: '/repo/path', model: 'gpt-5' },
+    });
 
     await connection.close();
+  });
+
+  test('opts into experimental dynamic tools only when requested', async () => {
+    const dynamicTools = [
+      {
+        type: 'function' as const,
+        name: 'ListAgents',
+        description: 'List agents.',
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+      {
+        type: 'function' as const,
+        name: 'FinishAgent',
+        description: 'Finish work.',
+        inputSchema: { type: 'object', additionalProperties: false },
+      },
+    ];
+    const connection = await CodexAppServerConnection.create({
+      cwd: mockServer.rootDir,
+      experimentalApi: true,
+      env: buildSpawnEnv({
+        PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+        MOCK_REQUEST_LOG: mockServer.requestLogPath,
+      }),
+    });
+
+    await connection.threadStart({ cwd: '/repo/path', dynamicTools });
+
+    const messages = await readJsonLines(mockServer.requestLogPath);
+    expect(messages[0]?.params).toEqual({
+      clientInfo: {
+        name: 'tim',
+        title: 'tim',
+        version: '1.0.0',
+      },
+      capabilities: { experimentalApi: true },
+    });
+    expect(messages[2]?.params).toEqual({ cwd: '/repo/path', dynamicTools });
+
+    await connection.close();
+  });
+
+  test('wraps initialization rejection for experimental dynamic tools and closes the connection', async () => {
+    await expect(
+      CodexAppServerConnection.create({
+        cwd: mockServer.rootDir,
+        experimentalApi: true,
+        env: buildSpawnEnv({
+          PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+          MOCK_MODE: 'reject-initialize-capability',
+          MOCK_REQUEST_LOG: mockServer.requestLogPath,
+        }),
+      })
+    ).rejects.toMatchObject({
+      name: 'CodexDynamicToolsCompatibilityError',
+      message: expect.stringContaining('does not support experimental dynamic tools'),
+      cause: expect.objectContaining({ message: expect.stringContaining('experimentalApi') }),
+    });
+  });
+
+  test('preserves ordinary initialization errors when experimental tools are not requested', async () => {
+    await expect(
+      CodexAppServerConnection.create({
+        cwd: mockServer.rootDir,
+        env: buildSpawnEnv({
+          PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+          MOCK_MODE: 'reject-initialize',
+          MOCK_REQUEST_LOG: mockServer.requestLogPath,
+        }),
+      })
+    ).rejects.toMatchObject({
+      code: -32602,
+      message: expect.stringContaining('experimentalApi is not supported'),
+    });
   });
 
   test('connects to inherited app-server socket without spawning codex', async () => {
@@ -617,6 +720,46 @@ describe('CodexAppServerConnection', () => {
       })
     );
 
+    await connection.close();
+  });
+
+  test('waits for pending thread ownership before dispatching dynamic tool requests', async () => {
+    const serverRequests: Array<{ method: string; id: number; params: unknown }> = [];
+    const connection = await CodexAppServerConnection.create({
+      cwd: mockServer.rootDir,
+      env: buildSpawnEnv({
+        PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+        MOCK_MODE: 'dynamic-server-request',
+        MOCK_REQUEST_LOG: mockServer.requestLogPath,
+        MOCK_CLIENT_RESPONSE_LOG: mockServer.clientResponseLogPath,
+      }),
+      onServerRequest: async (method, id, params) => {
+        serverRequests.push({ method, id, params });
+        return {
+          contentItems: [{ type: 'inputText', text: 'list result' }],
+          success: true,
+        };
+      },
+    });
+
+    await connection.threadStart({});
+    await waitForCondition(
+      async () => {
+        const lines = await readJsonLines(mockServer.clientResponseLogPath);
+        return lines.some(
+          (line) =>
+            line.id === 905 &&
+            line.result?.success === true &&
+            line.result?.contentItems?.[0]?.text === 'list result'
+        );
+      },
+      1_000,
+      'dynamic tool response'
+    );
+
+    expect(serverRequests).toEqual([
+      expect.objectContaining({ method: 'item/tool/call', id: 905 }),
+    ]);
     await connection.close();
   });
 

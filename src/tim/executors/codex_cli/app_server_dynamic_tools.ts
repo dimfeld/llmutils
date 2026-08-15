@@ -22,6 +22,17 @@ export const CODEX_DYNAMIC_TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 export const CODEX_DYNAMIC_TOOL_NAME_MAX_LENGTH = 128;
 export const CODEX_DYNAMIC_TOOL_RESULT_TEXT_MAX_LENGTH = 16_384;
 export const CODEX_DYNAMIC_TOOL_ERROR_TEXT_MAX_LENGTH = 2_048;
+export const CODEX_DYNAMIC_TOOLS_COMPATIBILITY_ERROR_MESSAGE =
+  'Codex app-server does not support experimental dynamic tools. Update Codex CLI or disable experimental.agentMessaging.';
+export const CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE =
+  'Codex dynamic tools require Codex app-server mode; enable CODEX_USE_APP_SERVER or disable experimental agent tools.';
+
+export class CodexDynamicToolsCompatibilityError extends Error {
+  constructor(cause: unknown) {
+    super(CODEX_DYNAMIC_TOOLS_COMPATIBILITY_ERROR_MESSAGE, { cause });
+    this.name = 'CodexDynamicToolsCompatibilityError';
+  }
+}
 
 export interface CodexDynamicToolFunctionDefinition {
   readonly type: 'function';

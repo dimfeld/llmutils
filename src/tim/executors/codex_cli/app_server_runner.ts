@@ -9,7 +9,12 @@ import { isTunnelActive, TunnelAdapter } from '../../../logging/tunnel_client.js
 import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
 import { TIM_OUTPUT_SOCKET } from '../../../logging/tunnel_protocol.js';
-import { CodexAppServerConnection } from './app_server_connection';
+import {
+  AppServerRequestError,
+  CodexAppServerConnection,
+  type ThreadResult,
+  type ThreadStartParams,
+} from './app_server_connection';
 import {
   normalizeSubprocessMonitorRules,
   startSubprocessMonitor,
@@ -18,6 +23,13 @@ import {
 import { createApprovalHandler } from './app_server_approval';
 import { createAppServerFormatter } from './app_server_format';
 import type { CodexStepOptions } from './codex_runner';
+import {
+  CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE,
+  CodexDynamicToolsCompatibilityError,
+  validateCodexDynamicToolProvider,
+  type CodexDynamicToolProvider,
+} from './app_server_dynamic_tools.js';
+import { isCodexAppServerEnabled } from './app_server_mode.js';
 import {
   buildOutputSchemaConversionPrompt,
   buildOutputSchemaCorrectionPrompt,
@@ -32,6 +44,42 @@ import {
 class SessionEndedError extends Error {
   constructor() {
     super('Session ended');
+  }
+}
+
+type AppServerRequestHandler = (method: string, id: number, params: unknown) => Promise<unknown>;
+
+function createAppServerRequestHandler(
+  dynamicToolProvider: CodexDynamicToolProvider | undefined,
+  approvalHandler: AppServerRequestHandler
+): AppServerRequestHandler {
+  return async (method, id, params) => {
+    if (method === 'item/tool/call') {
+      if (!dynamicToolProvider) {
+        throw new AppServerRequestError(
+          'Codex dynamic tool calls are not supported in this session.',
+          -32601
+        );
+      }
+      return await dynamicToolProvider.handler(params);
+    }
+
+    return await approvalHandler(method, id, params);
+  };
+}
+
+async function startThread(
+  connection: CodexAppServerConnection,
+  params: ThreadStartParams,
+  dynamicToolProvider: CodexDynamicToolProvider | undefined
+): Promise<ThreadResult> {
+  try {
+    return await connection.threadStart(params);
+  } catch (error) {
+    if (dynamicToolProvider) {
+      throw new CodexDynamicToolsCompatibilityError(error);
+    }
+    throw error;
   }
 }
 
@@ -128,6 +176,14 @@ export async function executeCodexStepViaAppServer(
   timConfig: TimConfig,
   options?: CodexStepOptions
 ): Promise<string> {
+  const dynamicToolProvider = options?.dynamicToolProvider;
+  if (dynamicToolProvider) {
+    validateCodexDynamicToolProvider(dynamicToolProvider);
+    if (!isCodexAppServerEnabled()) {
+      throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
+    }
+  }
+
   // Validate subprocess monitor rules up front, before any resource allocation,
   // so a bad regex fails cleanly without leaking tunnel servers or temp dirs.
   const subprocessMonitorRules = timConfig?.subprocessMonitor?.rules;
@@ -351,8 +407,9 @@ export async function executeCodexStepViaAppServer(
   };
 
   try {
-    connection = await CodexAppServerConnection.create({
+    const connectionPromise = CodexAppServerConnection.create({
       cwd,
+      ...(dynamicToolProvider ? { experimentalApi: true } : {}),
       sessionProcessLabel: 'Codex app-server',
       env: {
         TIM_EXECUTOR: 'codex',
@@ -406,8 +463,17 @@ export async function executeCodexStepViaAppServer(
           chatTurnId = currentTurnId ?? chatTurnId;
         }
       },
-      onServerRequest: approvalHandler,
+      onServerRequest: createAppServerRequestHandler(dynamicToolProvider, approvalHandler),
     });
+
+    try {
+      connection = await connectionPromise;
+    } catch (error) {
+      if (dynamicToolProvider && !(error instanceof CodexDynamicToolsCompatibilityError)) {
+        throw new CodexDynamicToolsCompatibilityError(error);
+      }
+      throw error;
+    }
 
     connection.setGracefulEndHandler(endActiveSession);
 
@@ -420,12 +486,17 @@ export async function executeCodexStepViaAppServer(
       });
     }
 
-    const threadResult = await connection.threadStart({
-      cwd,
-      approvalPolicy,
-      sandbox,
-      model,
-    });
+    const threadResult = await startThread(
+      connection,
+      {
+        cwd,
+        approvalPolicy,
+        sandbox,
+        model,
+        ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
+      },
+      dynamicToolProvider
+    );
     threadId = threadResult.threadId;
     connection.updateMetadata({ threadId });
     const activeConnection = connection;
@@ -847,12 +918,17 @@ export async function executeCodexStepViaAppServer(
         warn(
           'Codex schema correction still did not match the schema; starting a fresh JSON conversion run.'
         );
-        const conversionThreadResult = await activeConnection.threadStart({
-          cwd,
-          approvalPolicy,
-          sandbox,
-          model,
-        });
+        const conversionThreadResult = await startThread(
+          activeConnection,
+          {
+            cwd,
+            approvalPolicy,
+            sandbox,
+            model,
+            ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
+          },
+          dynamicToolProvider
+        );
         activeThreadId = conversionThreadResult.threadId;
         threadId = activeThreadId;
         connection.updateMetadata({ threadId: activeThreadId });

@@ -517,4 +517,36 @@ describe('executeCodexStep subprocess monitor wiring', () => {
       expect.objectContaining({ timEnvironment })
     );
   });
+
+  test('rejects dynamic tools before schema reads or codex exec fallback', async () => {
+    const dynamicToolProvider = {
+      caller: {
+        id: 'root-id' as never,
+        name: 'orchestrator' as never,
+        role: 'orchestrator' as const,
+        executor: 'codex-cli' as const,
+      },
+      definitions: [
+        {
+          type: 'function' as const,
+          name: 'ListAgents',
+          description: 'List agents.',
+          inputSchema: { type: 'object', additionalProperties: false },
+        },
+      ],
+      handler: vi.fn(async () => ({
+        contentItems: [{ type: 'inputText' as const, text: 'ok' }],
+        success: true,
+      })),
+    };
+
+    await expect(
+      executeCodexStep('prompt', '/tmp', {} as any, {
+        dynamicToolProvider,
+        outputSchemaPath: '/path/that/must/not/be/read.json',
+      })
+    ).rejects.toThrow(/require Codex app-server mode/i);
+    expect(spawnAndLogOutput).not.toHaveBeenCalled();
+    expect(executeCodexStepViaAppServer).not.toHaveBeenCalled();
+  });
 });
