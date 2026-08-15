@@ -23,6 +23,100 @@ gets tim-provided plan context, repository instructions, custom subagent
 instructions, model selection, and output routing that the top-level orchestrator
 could not reliably reconstruct on its own.
 
+## Dormant Codex dynamic tools
+
+Plan 419 adds a dormant Codex app-server protocol for agent tools. The low-level
+Codex runner does not read `experimental.agentMessaging` and does not enable this
+protocol from repository configuration. A trusted caller must pass one cohesive
+`dynamicToolProvider` to `CodexStepOptions`. The provider contains the trusted
+caller identity, the role-scoped definitions, and the handler. Definitions and a
+handler cannot be supplied as separate options.
+
+The provider is not installed unless the caller supplies it. This keeps normal
+Codex runs, formal reviews, planning, chat, and bare execution unchanged. This
+plan does not activate collaboration prompts or create a provider for the current
+orchestration prompt.
+
+### Disabled wire behavior
+
+When no provider is supplied, `initialize.params` contains exactly the existing
+`clientInfo` object. It has no `capabilities` field. The first `thread/start`
+request has no `dynamicTools` field. Tim does not send an empty capabilities
+object, `experimentalApi: false`, or an empty tool list.
+
+Codex app-server selection also stays unchanged. Without a provider, an explicit
+`CODEX_USE_APP_SERVER=false` value still selects the existing `codex exec`
+fallback. With a provider, app-server mode is required. Tim rejects the request
+before reading an output-schema file or allocating tunnel, process, or other
+execution resources; it never falls back to `codex exec` for a dynamic-tool run.
+The app-server-required error is:
+
+> Codex dynamic tools require Codex app-server mode; enable CODEX_USE_APP_SERVER or disable experimental agent tools.
+
+### Negotiation and role tool sets
+
+When a provider is present, Tim sends
+`initialize.params.capabilities.experimentalApi: true`. It sends the provider's
+top-level function definitions in `thread/start.params.dynamicTools`. If output
+schema conversion starts a replacement thread in the same execution, that thread
+receives the same definitions. The app-server wire responses, not a Codex version
+string, decide whether the installed server supports the protocol.
+
+The built-in provider uses the following definitions:
+
+| Trusted caller role | Installed tools                                             |
+| ------------------- | ----------------------------------------------------------- |
+| `orchestrator`      | `StartAgent`, `ListAgents`, `SendAgentMessage`, `StopAgent` |
+| `subagent`          | `ListAgents`, `SendAgentMessage`, `FinishAgent`             |
+
+Each definition is a top-level function. Its input schema is generated from the
+same strict Zod schema that validates the call at runtime. The handler keeps an
+independent role allowlist, so hiding a definition is not the authorization
+boundary. Trusted identity and role are bound when the provider is created and
+cannot be supplied in model arguments. `FinishAgent` has no target, and
+`SendAgentMessage` does not accept a model-supplied source.
+
+If the server rejects the experimental capability or the `dynamicTools` field,
+Tim fails before the first turn with a compatibility error:
+
+> Codex app-server does not support experimental dynamic tools. Update Codex CLI or disable experimental.agentMessaging.
+
+Tim does not retry the unsupported thread without tools. Existing connection and
+resource cleanup still runs.
+
+### Dynamic call dispatch and results
+
+The app-server sends a dynamic call as an `item/tool/call` server request. Tim
+routes this method to the dynamic-tool handler before the approval handler. This
+priority is required even when `ALLOW_ALL_TOOLS` is enabled. Other server
+requests keep the existing approval behavior. A dynamic call without a provider
+is an unsupported-method JSON-RPC error; it is never treated as an approval.
+
+The request envelope accepts the documented optional or null top-level namespace
+and tolerates future fields. Tim requires non-empty thread, turn, call, and tool
+IDs, JSON arguments, and a top-level Tim tool name. The selected strict agent
+schema then validates the arguments. Validation, role, authorization, and normal
+manager failures return a bounded `inputText` result with `success: false`, so the
+model can correct the call. Successful manager results return JSON text in an
+`inputText` item with `success: true`. Unexpected failures are logged for
+diagnostics and return a generic bounded message without stack traces, paths, or
+trusted identity values.
+
+The formatter treats app-server `dynamicToolCall` items as ordinary structured
+tool activity. `item/started` becomes `llm_tool_use` with the tool name, a readable
+argument summary, and JSON-safe input. `item/completed` becomes
+`llm_tool_result` with status, success, readable text content, and JSON-safe
+content items. Namespaces appear only when the server sends a non-empty
+namespace. Image and audio data are retained as structured data but are not
+expanded into the display summary. Unknown status and future content shapes use
+stable fallback text.
+
+Persistent Codex agent turns, idle mailbox delivery, stop/finalization lifetime,
+and other provider lifetime changes remain in Plan 420. Prompt activation and
+collaborative orchestration remain later work. Until a later integration supplies
+a trusted provider, no Codex agent tools appear and the existing one-turn
+behavior remains in force.
+
 ## Shared orchestration prompt
 
 The reusable prompt builders live in a provider-neutral module:
