@@ -206,6 +206,43 @@ describe('Codex role-bound agent tool provider', () => {
     expect(calls.finishAgent).not.toHaveBeenCalled();
   });
 
+  test('derives unexpected-key rejection from the canonical AGENT_ARGUMENT_SCHEMAS shape', async () => {
+    // Task 8 regression: allowed argument keys must come from AGENT_ARGUMENT_SCHEMAS[toolName].shape
+    // at call time, not a separately maintained key list that could drift out of sync with the
+    // schema. This proves both directions: a key absent from the schema is flagged as unexpected,
+    // and every key present in the schema is accepted as a known field (even when its value is the
+    // wrong type, the failure names it "invalid", never "not accepted").
+    const roleForTool: Record<CodexAgentToolName, 'orchestrator' | 'subagent'> = {
+      StartAgent: 'orchestrator',
+      ListAgents: 'orchestrator',
+      SendAgentMessage: 'orchestrator',
+      StopAgent: 'orchestrator',
+      FinishAgent: 'subagent',
+    };
+
+    for (const toolName of Object.keys(AGENT_ARGUMENT_SCHEMAS) as CodexAgentToolName[]) {
+      const { context } = createContext(roleForTool[toolName]);
+      const provider = createCodexAgentToolProvider(context);
+      const schemaKeys = Object.keys(AGENT_ARGUMENT_SCHEMAS[toolName].shape);
+
+      const bogusResult = await provider.handler(
+        call(toolName, { ...validArguments[toolName], zzNotARealArgument: true })
+      );
+      expect(bogusResult.success).toBe(false);
+      expect(bogusResult.contentItems[0]?.text).toBe(
+        `Arguments for ${toolName} are invalid: zzNotARealArgument is not accepted.`
+      );
+
+      for (const key of schemaKeys) {
+        const probeResult = await provider.handler(
+          call(toolName, { ...validArguments[toolName], [key]: 42 })
+        );
+        expect(probeResult.success).toBe(false);
+        expect(probeResult.contentItems[0]?.text).not.toContain('is not accepted');
+      }
+    }
+  });
+
   test('rejects every malformed envelope before dispatch', async () => {
     const { context, calls } = createContext('orchestrator');
     const provider = createCodexAgentToolProvider(context);
