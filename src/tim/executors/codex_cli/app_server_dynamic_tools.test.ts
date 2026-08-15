@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  CODEX_JSON_MAX_DEPTH,
   CODEX_DYNAMIC_TOOL_NAME_MAX_LENGTH,
   codexDynamicToolCallItemSchema,
   codexDynamicToolCallParamsSchema,
@@ -16,10 +17,30 @@ import {
   parseCodexDynamicToolCallResult,
   parseCodexDynamicToolContentItem,
   serializeCodexDynamicToolResult,
+  toCodexJsonSafeValue,
   validateCodexDynamicToolDefinitions,
   validateCodexDynamicToolProvider,
   type CodexDynamicToolProvider,
 } from './app_server_dynamic_tools.js';
+
+function deeplyNestedObject(depth: number): Record<string, unknown> {
+  let value: unknown = { leaf: 'done' };
+  for (let index = 0; index < depth; index += 1) {
+    value = { next: value };
+  }
+  return value as Record<string, unknown>;
+}
+
+function objectWithOwnProto(value: unknown): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  Object.defineProperty(result, '__proto__', {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+  return result;
+}
 
 const functionDefinition = {
   type: 'function' as const,
@@ -330,6 +351,22 @@ describe('Codex dynamic-tool transport contracts', () => {
     });
   });
 
+  test('preserves __proto__ as JSON data for null and object values', () => {
+    const value = objectWithOwnProto({ nested: true });
+    value.child = objectWithOwnProto(null);
+
+    const safe = toCodexJsonSafeValue(value) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(safe)).toBeNull();
+    expect(Object.hasOwn(safe, '__proto__')).toBe(true);
+    expect(safe['__proto__']).toEqual({ nested: true });
+    expect(Object.hasOwn(safe.child as object, '__proto__')).toBe(true);
+    expect((safe.child as Record<string, unknown>)['__proto__']).toBeNull();
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    expect(serializeCodexDynamicToolResult(value)).toBe(
+      '{"__proto__":{"nested":true},"child":{"__proto__":null}}'
+    );
+  });
+
   test('keeps serialized results and failure text bounded and nonempty', () => {
     const longText = 'x'.repeat(20_000);
     const success = createCodexDynamicToolSuccessResult({ value: longText });
@@ -348,5 +385,23 @@ describe('Codex dynamic-tool transport contracts', () => {
     const circular: Record<string, unknown> = {};
     circular.self = circular;
     expect(isCodexJsonValue(circular)).toBe(false);
+  });
+
+  test('rejects deeply nested envelope arguments without overflowing validation', () => {
+    const deeplyNested = deeplyNestedObject(CODEX_JSON_MAX_DEPTH + 10_000);
+    const params = {
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      callId: 'call-1',
+      tool: 'ListAgents',
+      arguments: deeplyNested,
+    };
+
+    expect(() => isCodexJsonValue(deeplyNested)).not.toThrow();
+    expect(isCodexJsonValue(deeplyNested)).toBe(false);
+    expect(() => codexDynamicToolCallParamsSchema.safeParse(params)).not.toThrow();
+    expect(codexDynamicToolCallParamsSchema.safeParse(params).success).toBe(false);
+    expect(() => toCodexJsonSafeValue(deeplyNested)).not.toThrow();
+    expect(() => JSON.stringify(toCodexJsonSafeValue(deeplyNested))).not.toThrow();
   });
 });

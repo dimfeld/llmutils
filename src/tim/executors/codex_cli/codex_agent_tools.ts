@@ -274,9 +274,24 @@ function createBoundHandler(context: CodexAgentToolContext): CodexDynamicToolCal
   return async (
     rawParams: unknown
   ): Promise<ReturnType<typeof createCodexDynamicToolFailureResult>> => {
-    const parsedParams = codexDynamicToolCallParamsSchema.safeParse(rawParams);
+    let parsedParams: ReturnType<typeof codexDynamicToolCallParamsSchema.safeParse>;
+    try {
+      parsedParams = codexDynamicToolCallParamsSchema.safeParse(rawParams);
+    } catch (error) {
+      warn('Unexpected Codex dynamic tool envelope validation failure:', error);
+      return createCodexDynamicToolFailureResult(
+        'Dynamic tool call could not be validated. Try the request again.'
+      );
+    }
     if (!parsedParams.success) {
-      return createCodexDynamicToolFailureResult(formatEnvelopeFailure(rawParams));
+      try {
+        return createCodexDynamicToolFailureResult(formatEnvelopeFailure(rawParams));
+      } catch (error) {
+        warn('Unexpected Codex dynamic tool envelope error formatting failure:', error);
+        return createCodexDynamicToolFailureResult(
+          'Dynamic tool call could not be validated. Try the request again.'
+        );
+      }
     }
     const params = parsedParams.data as CodexDynamicToolCallParams;
     const toolName = params.tool;
@@ -299,11 +314,26 @@ function createBoundHandler(context: CodexAgentToolContext): CodexDynamicToolCal
     }
 
     const argumentSchema = getCodexAgentArgumentSchema(toolName as CodexAgentToolName);
-    const parsedArguments = argumentSchema.safeParse(params.arguments);
-    if (!parsedArguments.success) {
+    let parsedArguments: ReturnType<typeof argumentSchema.safeParse>;
+    try {
+      parsedArguments = argumentSchema.safeParse(params.arguments);
+    } catch (error) {
+      warn(`Unexpected Codex ${toolName} argument validation failure:`, error);
       return createCodexDynamicToolFailureResult(
-        formatArgumentFailure(toolName, params.arguments, parsedArguments.error)
+        `Arguments for ${toolName} could not be validated. Try the request again.`
       );
+    }
+    if (!parsedArguments.success) {
+      try {
+        return createCodexDynamicToolFailureResult(
+          formatArgumentFailure(toolName, params.arguments, parsedArguments.error)
+        );
+      } catch (error) {
+        warn(`Unexpected Codex ${toolName} argument error formatting failure:`, error);
+        return createCodexDynamicToolFailureResult(
+          `Arguments for ${toolName} could not be validated. Try the request again.`
+        );
+      }
     }
 
     try {

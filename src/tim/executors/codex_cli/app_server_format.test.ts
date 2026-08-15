@@ -1,6 +1,25 @@
 import { describe, expect, test } from 'vitest';
 import { createAppServerFormatter } from './app_server_format';
 
+function objectWithOwnProto(value: unknown): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  Object.defineProperty(result, '__proto__', {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+  return result;
+}
+
+function deeplyNestedObject(depth: number): Record<string, unknown> {
+  let value: unknown = { leaf: 'done' };
+  for (let index = 0; index < depth; index += 1) {
+    value = { next: value };
+  }
+  return value as Record<string, unknown>;
+}
+
 describe('createAppServerFormatter', () => {
   test('captures thread/session ids from thread/started and emits session start message', () => {
     const formatter = createAppServerFormatter('gpt-5.6-terra');
@@ -499,6 +518,47 @@ describe('createAppServerFormatter', () => {
     );
   });
 
+  test('preserves __proto__ in dynamic tool input and result data', () => {
+    const formatter = createAppServerFormatter();
+    const input = objectWithOwnProto({ enabled: true });
+    input.child = objectWithOwnProto(null);
+    const result = objectWithOwnProto({ completed: true });
+    result.child = objectWithOwnProto(null);
+
+    const started = formatter.handleNotification('item/started', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'StartAgent',
+        arguments: input,
+      },
+    });
+    const startedInput = (started.structured as { input: Record<string, unknown> }).input;
+    expect(Object.getPrototypeOf(startedInput)).toBeNull();
+    expect(Object.hasOwn(startedInput, '__proto__')).toBe(true);
+    expect(startedInput['__proto__']).toEqual({ enabled: true });
+    expect((startedInput.child as Record<string, unknown>)['__proto__']).toBeNull();
+
+    const completed = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'StartAgent',
+        status: 'completed',
+        success: true,
+        contentItems: [{ type: 'inputText', text: 'Started.' }],
+        result,
+      },
+    });
+    const completedResult = (
+      completed.structured as { result: { result: Record<string, unknown> } }
+    ).result.result;
+    expect(Object.getPrototypeOf(completedResult)).toBeNull();
+    expect(Object.hasOwn(completedResult, '__proto__')).toBe(true);
+    expect(completedResult['__proto__']).toEqual({ completed: true });
+    expect((completedResult.child as Record<string, unknown>)['__proto__']).toBeNull();
+    expect(Object.getPrototypeOf({})).toBe(Object.prototype);
+    expect(() => JSON.stringify(completed.structured)).not.toThrow();
+  });
+
   test('tolerates malformed dynamic tool lifecycle fields and preserves safe result data', () => {
     const formatter = createAppServerFormatter();
     const circularResult: Record<string, unknown> = { ok: true };
@@ -662,6 +722,30 @@ describe('createAppServerFormatter', () => {
     expect(message.structured).toEqual(
       expect.objectContaining({
         inputSummary: expect.stringContaining('"bigint":"9"'),
+      })
+    );
+    expect(() => JSON.stringify(message.structured)).not.toThrow();
+  });
+
+  test('bounds deeply nested formatter input without overflowing the sanitizer', () => {
+    const formatter = createAppServerFormatter();
+    const message = formatter.handleNotification('item/started', {
+      item: {
+        type: 'dynamicToolCall',
+        tool: 'StartAgent',
+        arguments: deeplyNestedObject(10_000),
+      },
+    });
+
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        type: 'llm_tool_use',
+        input: expect.objectContaining({ next: expect.any(Object) }),
+      })
+    );
+    expect(message.structured).toEqual(
+      expect.objectContaining({
+        inputSummary: expect.stringContaining('[MaxDepth]'),
       })
     );
     expect(() => JSON.stringify(message.structured)).not.toThrow();

@@ -73,6 +73,14 @@ function call(tool: CodexAgentToolName, args: unknown): Record<string, unknown> 
   };
 }
 
+function deeplyNestedObject(depth: number): Record<string, unknown> {
+  let value: unknown = { leaf: 'done' };
+  for (let index = 0; index < depth; index += 1) {
+    value = { next: value };
+  }
+  return value as Record<string, unknown>;
+}
+
 const validArguments: Record<CodexAgentToolName, unknown> = {
   StartAgent: {
     type: 'tester',
@@ -213,6 +221,23 @@ describe('Codex role-bound agent tool provider', () => {
       expect(result.contentItems[0]?.type).toBe('inputText');
       expect(result.contentItems[0]?.text).not.toContain('ZodError');
     }
+    expect(Object.values(calls).every((mock) => mock.mock.calls.length === 0)).toBe(true);
+  });
+
+  test('returns a model-visible failure for deeply nested arguments without dispatching', async () => {
+    const { context, calls } = createContext('orchestrator');
+    const provider = createCodexAgentToolProvider(context);
+    const result = await provider.handler(call('ListAgents', deeplyNestedObject(10_000)));
+
+    expect(result).toEqual({
+      contentItems: [
+        {
+          type: 'inputText',
+          text: 'Arguments for ListAgents are invalid: arguments must be JSON.',
+        },
+      ],
+      success: false,
+    });
     expect(Object.values(calls).every((mock) => mock.mock.calls.length === 0)).toBe(true);
   });
 

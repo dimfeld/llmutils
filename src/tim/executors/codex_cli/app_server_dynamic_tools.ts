@@ -20,6 +20,7 @@ export type CodexJsonValue =
 
 export const CODEX_DYNAMIC_TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 export const CODEX_DYNAMIC_TOOL_NAME_MAX_LENGTH = 128;
+export const CODEX_JSON_MAX_DEPTH = 128;
 export const CODEX_DYNAMIC_TOOL_RESULT_TEXT_MAX_LENGTH = 16_384;
 export const CODEX_DYNAMIC_TOOL_ERROR_TEXT_MAX_LENGTH = 2_048;
 export const CODEX_DYNAMIC_TOOLS_COMPATIBILITY_ERROR_MESSAGE =
@@ -134,32 +135,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (!isRecord(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
+  try {
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  } catch {
+    return false;
+  }
 }
 
 /** Return whether a value can be represented without JSON.stringify surprises. */
 export function isCodexJsonValue(
   value: unknown,
-  seen = new WeakSet<object>()
+  seen = new WeakSet<object>(),
+  depth = 0
 ): value is CodexJsonValue {
+  if (depth > CODEX_JSON_MAX_DEPTH) return false;
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
   if (typeof value === 'number') return Number.isFinite(value);
   if (typeof value !== 'object') return false;
   if (seen.has(value)) return false;
   seen.add(value);
 
-  let valid: boolean;
-  if (Array.isArray(value)) {
-    valid = value.every((entry) => isCodexJsonValue(entry, seen));
-  } else if (isPlainRecord(value)) {
-    valid = Object.values(value).every((entry) => isCodexJsonValue(entry, seen));
-  } else {
-    valid = false;
-  }
+  try {
+    if (Array.isArray(value)) {
+      return value.every((entry) => isCodexJsonValue(entry, seen, depth + 1));
+    }
+    if (!isPlainRecord(value)) return false;
 
-  seen.delete(value);
-  return valid;
+    return Object.keys(value).every((key) => {
+      try {
+        return isCodexJsonValue(value[key], seen, depth + 1);
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  } finally {
+    seen.delete(value);
+  }
 }
 
 const jsonValueSchema = z.custom<CodexJsonValue>(
@@ -338,7 +352,12 @@ export function validateCodexDynamicToolProvider(
   }
 }
 
-export function toCodexJsonSafeValue(value: unknown, seen = new WeakSet<object>()): CodexJsonValue {
+export function toCodexJsonSafeValue(
+  value: unknown,
+  seen = new WeakSet<object>(),
+  depth = 0
+): CodexJsonValue {
+  if (depth > CODEX_JSON_MAX_DEPTH) return '[MaxDepth]';
   if (value === null) return null;
   if (typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
@@ -347,24 +366,45 @@ export function toCodexJsonSafeValue(value: unknown, seen = new WeakSet<object>(
   if (seen.has(value)) return '[Circular]';
   seen.add(value);
 
-  let result: CodexJsonValue;
-  if (Array.isArray(value)) {
-    result = value.map((entry) => toCodexJsonSafeValue(entry, seen));
-  } else {
-    const record = value as Record<string, unknown>;
-    const objectResult: Record<string, CodexJsonValue> = {};
-    for (const key of Object.keys(record).sort()) {
-      try {
-        objectResult[key] = toCodexJsonSafeValue(record[key], seen);
-      } catch {
-        objectResult[key] = '[Unreadable]';
+  try {
+    if (Array.isArray(value)) {
+      const length = value.length;
+      const arrayResult: CodexJsonValue[] = [];
+      arrayResult.length = length;
+      for (let index = 0; index < length; index += 1) {
+        try {
+          if (index in value) {
+            arrayResult[index] = toCodexJsonSafeValue(value[index], seen, depth + 1);
+          }
+        } catch {
+          arrayResult[index] = '[Unreadable]';
+        }
       }
+      return arrayResult;
     }
-    result = objectResult;
-  }
 
-  seen.delete(value);
-  return result;
+    const record = value as Record<string, unknown>;
+    const objectResult = Object.create(null) as Record<string, CodexJsonValue>;
+    for (const key of Object.keys(record).sort()) {
+      let safeValue: CodexJsonValue;
+      try {
+        safeValue = toCodexJsonSafeValue(record[key], seen, depth + 1);
+      } catch {
+        safeValue = '[Unreadable]';
+      }
+      Object.defineProperty(objectResult, key, {
+        configurable: true,
+        enumerable: true,
+        value: safeValue,
+        writable: true,
+      });
+    }
+    return objectResult;
+  } catch {
+    return '[Unreadable]';
+  } finally {
+    seen.delete(value);
+  }
 }
 
 function boundText(value: string, maxLength: number, fallback: string): string {
