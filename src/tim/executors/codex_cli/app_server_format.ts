@@ -7,6 +7,8 @@ import {
   buildUnknownStatus,
 } from '../shared/structured_message_builders';
 
+const CODEX_DYNAMIC_TOOL_DISPLAY_SUMMARY_MAX_LENGTH = 4_096;
+
 interface FormatterState {
   finalAgentMessage?: string;
   failedAgentMessage?: string;
@@ -233,6 +235,17 @@ function stringifyJsonSafe(value: unknown, fallback: string): string {
   }
 }
 
+function boundDynamicToolDisplaySummary(value: string, fallback: string): string {
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    return fallback;
+  }
+  if (normalized.length <= CODEX_DYNAMIC_TOOL_DISPLAY_SUMMARY_MAX_LENGTH) {
+    return normalized;
+  }
+  return `${normalized.slice(0, CODEX_DYNAMIC_TOOL_DISPLAY_SUMMARY_MAX_LENGTH - 1)}…`;
+}
+
 function formatDynamicToolName(item: Record<string, unknown>): string {
   const tool = extractTextField(item.tool) ?? 'unknown';
   const namespace = extractTextField(item.namespace);
@@ -243,10 +256,22 @@ function formatDynamicToolInput(item: Record<string, unknown>): {
   input: unknown;
   inputSummary: string;
 } {
-  const input = Object.hasOwn(item, 'arguments') ? item.arguments : null;
+  const hasArguments = Object.hasOwn(item, 'arguments') && item.arguments !== undefined;
+  const input = hasArguments ? item.arguments : null;
+  if (!hasArguments) {
+    return {
+      input,
+      inputSummary: 'Arguments were not provided.',
+    };
+  }
+
+  const serialized = stringifyJsonSafe(input, 'Arguments were not provided.');
   return {
     input: toJsonSafeValue(input),
-    inputSummary: `Arguments: ${stringifyJsonSafe(input, 'Arguments were not provided.')}`,
+    inputSummary: boundDynamicToolDisplaySummary(
+      `Arguments: ${serialized}`,
+      'Arguments were not provided.'
+    ),
   };
 }
 
@@ -283,7 +308,7 @@ function formatDynamicToolContentSummary(contentItems: unknown[] | null): string
   if (omittedItems > 0) {
     lines.push(`(${omittedItems} non-text content item(s) omitted.)`);
   }
-  return lines.join('\n');
+  return boundDynamicToolDisplaySummary(lines.join('\n'), 'No text result was provided.');
 }
 
 function formatDynamicToolStatus(value: unknown): string {
@@ -305,11 +330,14 @@ function buildDynamicToolResult(item: Record<string, unknown>): Record<string, u
 
 function formatDynamicToolResultSummary(item: Record<string, unknown>): string {
   const success = typeof item.success === 'boolean' ? String(item.success) : 'unknown';
-  return [
-    `Status: ${formatDynamicToolStatus(item.status)}`,
-    `Success: ${success}`,
-    `Result:\n${formatDynamicToolContentSummary(getDynamicToolContentItems(item))}`,
-  ].join('\n');
+  return boundDynamicToolDisplaySummary(
+    [
+      `Status: ${formatDynamicToolStatus(item.status)}`,
+      `Success: ${success}`,
+      `Result:\n${formatDynamicToolContentSummary(getDynamicToolContentItems(item))}`,
+    ].join('\n'),
+    'The dynamic tool returned no result.'
+  );
 }
 
 function extractItemText(item: Record<string, unknown>): string {
