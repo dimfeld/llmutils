@@ -35,6 +35,15 @@ export const SUBAGENT_AGENT_TOOL_NAMES = [
   'FinishAgent',
 ] as const satisfies readonly AgentToolName[];
 
+/** Canonical model-facing descriptions shared by the Claude and Codex adapters. */
+export const AGENT_TOOL_DESCRIPTIONS = {
+  StartAgent: 'Start a named subagent with a task and initial message.',
+  ListAgents: 'List the active agents and their current states.',
+  SendAgentMessage: 'Send a message to an active agent by name.',
+  StopAgent: 'Gracefully or forcibly stop an active subagent by name.',
+  FinishAgent: 'Finish your current subagent work and provide an optional final status.',
+} as const satisfies Readonly<Record<AgentToolName, string>>;
+
 export function getAgentToolNames(role: AgentRuntimeRole): readonly AgentToolName[] {
   return role === 'orchestrator' ? ORCHESTRATOR_AGENT_TOOL_NAMES : SUBAGENT_AGENT_TOOL_NAMES;
 }

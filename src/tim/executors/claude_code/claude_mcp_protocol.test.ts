@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as net from 'node:net';
 import { cleanupForTests, createClaudeMcpServer, setParentSocket } from './tim_mcp.js';
+import { AGENT_TOOL_DESCRIPTIONS, AGENT_TOOL_NAMES } from '../../agent_messaging/contracts.js';
 import {
   CLAUDE_AGENT_ARGUMENT_SCHEMAS,
   agentToolRequestSchema,
@@ -66,6 +67,17 @@ describe('Claude tim MCP child server', () => {
 
     expect(result.toolNames).toEqual(['ListAgents', 'FinishAgent']);
     expect([...result.toolExecutors.keys()]).toEqual(['ListAgents', 'FinishAgent']);
+  });
+
+  test('uses the canonical descriptions for every installed agent tool', () => {
+    const result = createClaudeMcpServer({
+      interactiveApprovalEnabled: false,
+      agentToolNames: AGENT_TOOL_NAMES,
+    });
+
+    expect([...result.toolDescriptions.entries()]).toEqual(
+      AGENT_TOOL_NAMES.map((toolName) => [toolName, AGENT_TOOL_DESCRIPTIONS[toolName]])
+    );
   });
 
   test('renders the real approval_prompt allow, deny, and updated-input responses', async () => {

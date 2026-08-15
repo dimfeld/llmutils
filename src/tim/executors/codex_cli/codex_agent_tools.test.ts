@@ -7,6 +7,10 @@ import {
   type AgentIdentity,
 } from '../../agent_messaging/agent_manager_types.js';
 import {
+  AGENT_ARGUMENT_SCHEMAS,
+  AGENT_TOOL_DESCRIPTIONS,
+} from '../../agent_messaging/contracts.js';
+import {
   CODEX_ORCHESTRATOR_TOOL_NAMES,
   CODEX_SUBAGENT_TOOL_NAMES,
   CODEX_AGENT_ARGUMENT_SCHEMAS,
@@ -114,8 +118,12 @@ describe('Codex role-bound agent tool provider', () => {
 
     for (const definition of provider.definitions) {
       const schema = CODEX_AGENT_ARGUMENT_SCHEMAS[definition.name];
+      expect(definition.description).toBe(AGENT_TOOL_DESCRIPTIONS[definition.name]);
       expect(definition.inputSchema).toEqual(
         z.toJSONSchema(schema, { target: 'draft-7', io: 'input' })
+      );
+      expect(Object.keys(definition.inputSchema.properties ?? {})).toEqual(
+        Object.keys(AGENT_ARGUMENT_SCHEMAS[definition.name].shape)
       );
     }
   });

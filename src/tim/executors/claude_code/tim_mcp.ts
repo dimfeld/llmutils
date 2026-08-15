@@ -21,6 +21,7 @@ import {
   type PermissionResponse,
 } from './claude_mcp_protocol.js';
 import {
+  AGENT_TOOL_DESCRIPTIONS,
   finishAgentArgumentsSchema,
   listAgentsArgumentsSchema,
   sendAgentMessageArgumentsSchema,
@@ -48,6 +49,8 @@ export interface ClaudeMcpServerOptions {
 export interface ClaudeMcpServerHandle {
   readonly server: FastMCP;
   readonly toolNames: readonly string[];
+  /** Model-facing descriptions for installed agent tools; exposed for protocol tests. */
+  readonly toolDescriptions: ReadonlyMap<string, string>;
   /** Direct executor seam for protocol tests; production uses FastMCP stdio. */
   readonly toolExecutors: ReadonlyMap<string, (input: unknown) => Promise<unknown>>;
 }
@@ -329,12 +332,14 @@ function modelVisibleAgentResult(response: AgentToolResponse): {
 function addAgentTool(
   server: FastMCP,
   toolNames: string[],
+  toolDescriptions: Map<string, string>,
   toolExecutors: Map<string, (input: unknown) => Promise<unknown>>,
   name: ClaudeAgentToolName,
   parameters: Parameters<typeof server.addTool>[0]
 ): void {
   server.addTool(parameters);
   toolNames.push(name);
+  toolDescriptions.set(name, parameters.description ?? '');
   toolExecutors.set(name, parameters.execute as unknown as (input: unknown) => Promise<unknown>);
 }
 
@@ -345,6 +350,7 @@ export function createClaudeMcpServer(options: ClaudeMcpServerOptions = {}): Cla
     version: '0.0.1',
   });
   const toolNames: string[] = [];
+  const toolDescriptions = new Map<string, string>();
   const toolExecutors = new Map<string, (input: unknown) => Promise<unknown>>();
 
   if (options.interactiveApprovalEnabled !== false) {
@@ -403,45 +409,45 @@ export function createClaudeMcpServer(options: ClaudeMcpServerOptions = {}): Cla
 
   const requestedToolNames = new Set(options.agentToolNames ?? []);
   if (requestedToolNames.has('StartAgent')) {
-    addAgentTool(server, toolNames, toolExecutors, 'StartAgent', {
+    addAgentTool(server, toolNames, toolDescriptions, toolExecutors, 'StartAgent', {
       name: 'StartAgent',
-      description: 'Start a named Claude or Codex subagent',
+      description: AGENT_TOOL_DESCRIPTIONS.StartAgent,
       parameters: startAgentArgumentsSchema,
       execute: async (input) =>
         modelVisibleAgentResult(await requestAgentToolFromParent('StartAgent', input)),
     });
   }
   if (requestedToolNames.has('ListAgents')) {
-    addAgentTool(server, toolNames, toolExecutors, 'ListAgents', {
+    addAgentTool(server, toolNames, toolDescriptions, toolExecutors, 'ListAgents', {
       name: 'ListAgents',
-      description: 'List active agents in this tim session',
+      description: AGENT_TOOL_DESCRIPTIONS.ListAgents,
       parameters: listAgentsArgumentsSchema,
       execute: async (input) =>
         modelVisibleAgentResult(await requestAgentToolFromParent('ListAgents', input)),
     });
   }
   if (requestedToolNames.has('SendAgentMessage')) {
-    addAgentTool(server, toolNames, toolExecutors, 'SendAgentMessage', {
+    addAgentTool(server, toolNames, toolDescriptions, toolExecutors, 'SendAgentMessage', {
       name: 'SendAgentMessage',
-      description: 'Send a message to an active agent',
+      description: AGENT_TOOL_DESCRIPTIONS.SendAgentMessage,
       parameters: sendAgentMessageArgumentsSchema,
       execute: async (input) =>
         modelVisibleAgentResult(await requestAgentToolFromParent('SendAgentMessage', input)),
     });
   }
   if (requestedToolNames.has('StopAgent')) {
-    addAgentTool(server, toolNames, toolExecutors, 'StopAgent', {
+    addAgentTool(server, toolNames, toolDescriptions, toolExecutors, 'StopAgent', {
       name: 'StopAgent',
-      description: 'Gracefully or forcefully stop an active subagent',
+      description: AGENT_TOOL_DESCRIPTIONS.StopAgent,
       parameters: stopAgentArgumentsSchema,
       execute: async (input) =>
         modelVisibleAgentResult(await requestAgentToolFromParent('StopAgent', input)),
     });
   }
   if (requestedToolNames.has('FinishAgent')) {
-    addAgentTool(server, toolNames, toolExecutors, 'FinishAgent', {
+    addAgentTool(server, toolNames, toolDescriptions, toolExecutors, 'FinishAgent', {
       name: 'FinishAgent',
-      description: 'Mark this subagent complete after its current turn',
+      description: AGENT_TOOL_DESCRIPTIONS.FinishAgent,
       parameters: finishAgentArgumentsSchema,
       execute: async (input) =>
         modelVisibleAgentResult(await requestAgentToolFromParent('FinishAgent', input)),
@@ -451,6 +457,7 @@ export function createClaudeMcpServer(options: ClaudeMcpServerOptions = {}): Cla
   return {
     server,
     toolNames: Object.freeze(toolNames),
+    toolDescriptions,
     toolExecutors,
   };
 }

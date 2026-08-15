@@ -2,6 +2,7 @@ import * as z from 'zod/v4';
 
 import {
   AGENT_ARGUMENT_SCHEMAS,
+  AGENT_TOOL_DESCRIPTIONS,
   AGENT_TOOL_NAMES,
   ORCHESTRATOR_AGENT_TOOL_NAMES,
   SUBAGENT_AGENT_TOOL_NAMES,
@@ -58,22 +59,6 @@ export interface CodexAgentToolContext {
 
 export const CODEX_AGENT_ARGUMENT_SCHEMAS = AGENT_ARGUMENT_SCHEMAS;
 export type CodexAgentArgumentSchema = AgentArgumentSchema;
-
-const CODEX_AGENT_TOOL_DESCRIPTIONS: Record<CodexAgentToolName, string> = {
-  StartAgent: 'Start a named subagent with a task and initial message.',
-  ListAgents: 'List the active agents and their current states.',
-  SendAgentMessage: 'Send a message to an active agent by name.',
-  StopAgent: 'Gracefully or forcibly stop an active subagent by name.',
-  FinishAgent: 'Finish your current subagent work and provide an optional final status.',
-};
-
-const CODEX_AGENT_ARGUMENT_KEYS: Record<CodexAgentToolName, readonly string[]> = {
-  StartAgent: ['name', 'type', 'executor', 'initialMessage'],
-  ListAgents: [],
-  SendAgentMessage: ['name', 'message'],
-  StopAgent: ['name', 'message', 'force'],
-  FinishAgent: ['message'],
-};
 
 export function getCodexAgentToolNames(role: AgentIdentity['role']): readonly CodexAgentToolName[] {
   return getAgentToolNames(role);
@@ -155,7 +140,7 @@ function createDefinition(toolName: CodexAgentToolName): CodexDynamicToolDefinit
   return Object.freeze({
     type: 'function' as const,
     name: toolName,
-    description: CODEX_AGENT_TOOL_DESCRIPTIONS[toolName],
+    description: AGENT_TOOL_DESCRIPTIONS[toolName],
     inputSchema,
   });
 }
@@ -209,11 +194,8 @@ function formatArgumentFailure(
   if (Object.hasOwn(value, 'target') && toolName === 'FinishAgent') {
     return 'Arguments for FinishAgent are invalid: FinishAgent does not accept a target.';
   }
-  const allowedKeys = CODEX_AGENT_ARGUMENT_KEYS[toolName as CodexAgentToolName];
-  const unexpectedKey =
-    allowedKeys === undefined
-      ? undefined
-      : Object.keys(value).find((key) => !allowedKeys.includes(key));
+  const allowedKeys = Object.keys(AGENT_ARGUMENT_SCHEMAS[toolName as CodexAgentToolName].shape);
+  const unexpectedKey = Object.keys(value).find((key) => !allowedKeys.includes(key));
   if (unexpectedKey === 'source') {
     return `Arguments for ${toolName} are invalid: source is not accepted from the model.`;
   }
@@ -224,10 +206,7 @@ function formatArgumentFailure(
     return `Arguments for ${toolName} are invalid: ${unexpectedKey} is not accepted.`;
   }
   const firstIssuePath = validationError?.issues[0]?.path[0];
-  if (
-    typeof firstIssuePath === 'string' &&
-    CODEX_AGENT_ARGUMENT_KEYS[toolName as CodexAgentToolName]?.includes(firstIssuePath)
-  ) {
+  if (typeof firstIssuePath === 'string' && allowedKeys.includes(firstIssuePath)) {
     return `Arguments for ${toolName} are invalid: ${firstIssuePath} is invalid.`;
   }
   return `Arguments for ${toolName} are invalid.`;
