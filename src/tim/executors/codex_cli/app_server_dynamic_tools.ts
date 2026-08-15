@@ -338,7 +338,7 @@ export function validateCodexDynamicToolProvider(
   }
 }
 
-function toCodexJsonSafeValue(value: unknown, seen = new WeakSet<object>()): CodexJsonValue {
+export function toCodexJsonSafeValue(value: unknown, seen = new WeakSet<object>()): CodexJsonValue {
   if (value === null) return null;
   if (typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
