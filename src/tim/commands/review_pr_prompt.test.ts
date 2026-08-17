@@ -70,6 +70,13 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain("git merge-base 'origin/main' HEAD");
     expect(prompt).toContain('.tim/tmp/review-guide.md');
     expect(prompt).toContain('Group files into functional sections');
+    expect(prompt).toContain('Treat the guide as an architectural map of the change');
+    expect(prompt).toContain('what it is responsible for, how it implements that responsibility');
+    expect(prompt).toContain('how it interacts with other changed files');
+    expect(prompt).toContain('Trace the existing architecture around the change');
+    expect(prompt).toContain(
+      'cover every changed file with a concise what/how/interactions explanation'
+    );
     expect(prompt).toContain('copied verbatim from the relevant `git diff` output');
     expect(prompt).toContain('Never truncate or omit any part of a diff');
     expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
@@ -88,6 +95,12 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain("git merge-base 'origin/main' HEAD");
     expect(prompt).toContain('Pay special attention to');
     expect(prompt).toContain('Group the changes into a small number of logical sections');
+    expect(prompt).toContain('architectural map of the PR at a glance');
+    expect(prompt).toContain(
+      'what changed, how it works, and how it interacts with the rest of the system'
+    );
+    expect(prompt).toContain('do not turn the comment into a file-by-file inventory');
+    expect(prompt).toContain('architectural boundary changes');
     expect(prompt).toContain('examine it critically to find special-attention items');
     expect(prompt).toContain('Remove or trim down any items that fall into this trap');
     expect(prompt).toContain('Do not paste diffs or large code blocks');
