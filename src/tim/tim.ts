@@ -1020,7 +1020,9 @@ function createAgentCommand(command: Command, description: string) {
       if (options.nextReady !== undefined) {
         options.nextReady = parsePlanIdFromCliArg(options.nextReady);
       }
-      await handleAgentCommand(planId, options, command.parent.opts()).catch(handleCommandError);
+      await runWithCommandTunnelAdapter(async () => {
+        await handleAgentCommand(planId, options, command.parent.opts());
+      }).catch(handleCommandError);
     });
 }
 

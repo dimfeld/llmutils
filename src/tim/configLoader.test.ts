@@ -424,6 +424,19 @@ reviewGuide:
     expect(config).toHaveProperty('defaultExecutor', DEFAULT_EXECUTOR); // Our new default
   });
 
+  test('loadConfig logs and throws on YAML parse errors', async () => {
+    const configPath = path.join(configDir, 'tim.yml');
+    await fs.writeFile(
+      configPath,
+      'lifecycle:\n  commands:\n    - title: first\n      title: second\n'
+    );
+
+    await expect(loadConfig(configPath)).rejects.toThrow(`Error parsing YAML file ${configPath}:`);
+    expect(mockError).toHaveBeenCalledWith(
+      expect.stringContaining(`Error parsing YAML file ${configPath}:`)
+    );
+  });
+
   describe('loadConfig with workspaceCreation', () => {
     test('should return default config when configPath is null', async () => {
       const config = await loadConfig(null);
@@ -1022,6 +1035,24 @@ postApplyCommands:
       expect(config).toHaveProperty('defaultExecutor', 'direct-call');
       expect(config).toHaveProperty('postApplyCommands');
       expect(config.postApplyCommands).toHaveLength(1);
+    });
+
+    test('loadEffectiveConfig throws when local config has YAML parse errors', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(mainConfigPath, 'defaultExecutor: direct-call\n');
+      await fs.writeFile(
+        localConfigPath,
+        'lifecycle:\n  commands:\n    - title: first\n      title: second\n'
+      );
+
+      await expect(loadEffectiveConfig()).rejects.toThrow(
+        `Error parsing YAML file ${localConfigPath}:`
+      );
+      expect(mockError).toHaveBeenCalledWith(
+        expect.stringContaining(`Error parsing YAML file ${localConfigPath}:`)
+      );
     });
 
     test('loadEffectiveConfig deeply merges nested objects and arrays', async () => {

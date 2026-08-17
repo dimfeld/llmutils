@@ -268,6 +268,8 @@ export async function handleAgentCommand(
   let resolvedPlanId: number | undefined;
   let headlessPlanSummary: HeadlessPlanSummary | undefined;
   let didInvokeAgent = false;
+  let handledAgentError = false;
+  let noPlanMessage: string | undefined;
   const notifyNoPlanFound = async (message: string): Promise<void> => {
     try {
       const cwd = await getGitRoot();
@@ -304,59 +306,47 @@ export async function handleAgentCommand(
   };
 
   try {
-    try {
-      config = await loadEffectiveConfig(globalCliOptions.config);
-    } catch (err) {
-      config = await loadGlobalConfigForNotifications(globalCliOptions.config);
-      throw err;
-    }
-
     if (options.nextReady !== undefined) {
       // Find the next ready dependency of the specified parent plan
       const repoRoot = await getGitRoot();
       const result = await findNextReadyDependencyFromDb(options.nextReady, repoRoot, repoRoot);
 
       if (!result.plan) {
-        log(result.message);
-        await notifyNoPlanFound(`tim agent completed: ${result.message} (no work executed)`);
-        return;
-      }
-
-      if (typeof result.plan.id === 'number' && result.plan.title) {
-        sendStructured({
-          type: 'plan_discovery',
-          timestamp: timestamp(),
-          planId: result.plan.id,
-          title: result.plan.title,
-        });
+        noPlanMessage = result.message;
       } else {
-        log(chalk.green(`Found ready plan: ${getCombinedTitleFromSummary(result.plan)}`));
+        if (typeof result.plan.id === 'number' && result.plan.title) {
+          sendStructured({
+            type: 'plan_discovery',
+            timestamp: timestamp(),
+            planId: result.plan.id,
+            title: result.plan.title,
+          });
+        } else {
+          log(chalk.green(`Found ready plan: ${getCombinedTitleFromSummary(result.plan)}`));
+        }
+        resolvedPlanId = result.plan.id;
+        headlessPlanSummary = toHeadlessPlanSummary(result.plan);
       }
-      resolvedPlanId = result.plan.id;
-      headlessPlanSummary = toHeadlessPlanSummary(result.plan);
     } else if (options.latest) {
       const repoRoot = await getGitRoot();
       const latestPlan = await findLatestPlanFromDb(repoRoot, repoRoot);
 
       if (!latestPlan) {
-        const noPlanMessage = 'No plans found in the database.';
-        log(noPlanMessage);
-        await notifyNoPlanFound(`tim agent completed: ${noPlanMessage} (no work executed)`);
-        return;
-      }
-
-      if (typeof latestPlan.id === 'number') {
-        sendStructured({
-          type: 'plan_discovery',
-          timestamp: timestamp(),
-          planId: latestPlan.id,
-          title: getCombinedTitleFromSummary(latestPlan),
-        });
+        noPlanMessage = 'No plans found in the database.';
       } else {
-        log(chalk.green(`Found latest plan: ${getCombinedTitleFromSummary(latestPlan)}`));
+        if (typeof latestPlan.id === 'number') {
+          sendStructured({
+            type: 'plan_discovery',
+            timestamp: timestamp(),
+            planId: latestPlan.id,
+            title: getCombinedTitleFromSummary(latestPlan),
+          });
+        } else {
+          log(chalk.green(`Found latest plan: ${getCombinedTitleFromSummary(latestPlan)}`));
+        }
+        resolvedPlanId = latestPlan.id;
+        headlessPlanSummary = toHeadlessPlanSummary(latestPlan);
       }
-      resolvedPlanId = latestPlan.id;
-      headlessPlanSummary = toHeadlessPlanSummary(latestPlan);
     } else if (options.next || options.current) {
       const repoRoot = await getGitRoot();
       const plan = await findNextPlanFromDb(repoRoot, repoRoot, {
@@ -365,26 +355,23 @@ export async function handleAgentCommand(
       });
 
       if (!plan) {
-        const noPlanMessage = options.current
+        noPlanMessage = options.current
           ? 'No current plans found. No plans are in progress or ready to be implemented.'
           : 'No ready plans found. All pending plans have incomplete dependencies.';
-        log(noPlanMessage);
-        await notifyNoPlanFound(`tim agent completed: ${noPlanMessage} (no work executed)`);
-        return;
-      }
-
-      if (typeof plan.id === 'number') {
-        sendStructured({
-          type: 'plan_discovery',
-          timestamp: timestamp(),
-          planId: plan.id,
-          title: getCombinedTitleFromSummary(plan),
-        });
       } else {
-        log(chalk.green(`Found plan: ${getCombinedTitleFromSummary(plan)}`));
+        if (typeof plan.id === 'number') {
+          sendStructured({
+            type: 'plan_discovery',
+            timestamp: timestamp(),
+            planId: plan.id,
+            title: getCombinedTitleFromSummary(plan),
+          });
+        } else {
+          log(chalk.green(`Found plan: ${getCombinedTitleFromSummary(plan)}`));
+        }
+        resolvedPlanId = plan.id;
+        headlessPlanSummary = toHeadlessPlanSummary(plan);
       }
-      resolvedPlanId = plan.id;
-      headlessPlanSummary = toHeadlessPlanSummary(plan);
     } else {
       if (!planId) {
         throw new Error(
@@ -394,12 +381,7 @@ export async function handleAgentCommand(
       resolvedPlanId = planId;
     }
 
-    if (!resolvedPlanId) {
-      throw new Error('No plan resolved for agent execution.');
-    }
-
-    didInvokeAgent = true;
-    if (!headlessPlanSummary) {
+    if (resolvedPlanId && !headlessPlanSummary) {
       try {
         const repoRoot = await getGitRoot();
         const { plan } = await resolvePlanByNumericId(resolvedPlanId, repoRoot);
@@ -414,10 +396,39 @@ export async function handleAgentCommand(
       command: 'agent',
       interactive: options.nonInteractive !== true,
       plan: headlessPlanSummary,
-      callback: async () => timAgent(resolvedPlanId!, options, globalCliOptions),
+      callback: async () => {
+        try {
+          try {
+            config = await loadEffectiveConfig(globalCliOptions.config);
+          } catch (err) {
+            config = await loadGlobalConfigForNotifications(globalCliOptions.config);
+            throw err;
+          }
+
+          if (noPlanMessage !== undefined) {
+            log(noPlanMessage);
+            await notifyNoPlanFound(`tim agent completed: ${noPlanMessage} (no work executed)`);
+            return;
+          }
+
+          if (!resolvedPlanId) {
+            throw new Error('No plan resolved for agent execution.');
+          }
+
+          didInvokeAgent = true;
+          await timAgent(resolvedPlanId, options, globalCliOptions);
+        } catch (err) {
+          if (!didInvokeAgent) {
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            await notifyAgentError(`tim agent failed: ${errorMessage}`, errorMessage);
+            handledAgentError = true;
+          }
+          throw err;
+        }
+      },
     });
   } catch (err) {
-    if (!didInvokeAgent) {
+    if (!didInvokeAgent && !handledAgentError) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       await notifyAgentError(`tim agent failed: ${errorMessage}`, errorMessage);
     }

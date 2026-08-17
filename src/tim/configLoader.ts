@@ -22,6 +22,13 @@ import {
   type RepositoryConfigResolution,
 } from './repository_config_resolver.ts';
 
+class ConfigParseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigParseError';
+  }
+}
+
 function removeUnknownConfigKeys(
   config: unknown,
   issues: z.ZodIssue[]
@@ -388,7 +395,8 @@ export async function findGlobalConfigPath(): Promise<string | null> {
  * Loads, parses, and validates the tim configuration from a given file path.
  *
  * @param configPath - The absolute path to the configuration file, or null if none was found/specified.
- * @returns The validated configuration object. Returns default configuration if configPath is null or YAML parsing fails.
+ * @returns The validated configuration object. Returns default configuration if configPath is null.
+ * @throws {ConfigParseError} If the configuration file contains invalid YAML.
  * @throws {Error} If the configuration file exists but fails schema validation.
  */
 export async function loadConfig(
@@ -418,9 +426,9 @@ export async function loadConfig(
       parsedYaml = {}; // Treat empty file as empty object for validation
     }
   } catch (err: any) {
-    error(`Error parsing YAML file ${configPath}: ${err.message}`);
-    debugLog('YAML parsing failed. Falling back to default configuration.');
-    return getDefaultConfig(); // Return default on YAML parse error as requested
+    const message = `Error parsing YAML file ${configPath}: ${err.message}`;
+    error(message);
+    throw new ConfigParseError(message);
   }
 
   // Sync, Slack, and GitHub webhook behavior are machine-local: when loading repo/local configs, strip
@@ -667,6 +675,10 @@ export async function loadEffectiveConfig(
 
         debugLog('Loaded configuration files', ...configSources);
       } catch (localErr: any) {
+        if (localErr instanceof ConfigParseError) {
+          throw localErr;
+        }
+
         warn(`Error loading local override configuration: ${localErr.message}`);
         warn('Continuing with main configuration only');
 
@@ -727,7 +739,9 @@ export async function loadEffectiveConfig(
     foundConfigs.set(cacheKey, configWithMetadata);
     return configWithMetadata;
   } catch (err: any) {
-    error(`Error loading or validating configuration: ${err.message}`);
+    if (!(err instanceof ConfigParseError)) {
+      error(`Error loading or validating configuration: ${err.message}`);
+    }
     throw err;
   }
 }
