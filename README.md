@@ -599,6 +599,7 @@ Inspect and edit:
 tim list
 tim ready
 tim show 123
+tim plan show 123                         # Alias for tim show 123
 tim edit 123
 tim materialize 123
 tim sync 123

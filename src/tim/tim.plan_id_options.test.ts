@@ -10,6 +10,7 @@ const {
   handleListCommandMock,
   handleReadyCommandMock,
   handleRenumberMock,
+  handleShowCommandMock,
 } = vi.hoisted(() => ({
   handleAddCommandMock: vi.fn(async () => {}),
   handleSetCommandMock: vi.fn(async () => {}),
@@ -20,6 +21,7 @@ const {
   handleListCommandMock: vi.fn(async () => {}),
   handleReadyCommandMock: vi.fn(async () => {}),
   handleRenumberMock: vi.fn(async () => {}),
+  handleShowCommandMock: vi.fn(async () => {}),
 }));
 
 vi.mock('./commands/add.js', () => ({
@@ -58,6 +60,10 @@ vi.mock('./commands/renumber.js', () => ({
   handleRenumber: handleRenumberMock,
 }));
 
+vi.mock('./commands/show.js', () => ({
+  handleShowCommand: handleShowCommandMock,
+}));
+
 import { program } from './tim.ts';
 
 async function runTimCli(args: string[]): Promise<void> {
@@ -79,6 +85,27 @@ describe('tim plan ID option parsing at Commander boundary', () => {
     handleListCommandMock.mockClear();
     handleReadyCommandMock.mockClear();
     handleRenumberMock.mockClear();
+    handleShowCommandMock.mockClear();
+  });
+
+  test('supports plan show as an alias for show', async () => {
+    const showCommand = program.commands.find((command) => command.name() === 'show');
+    const planCommand = program.commands.find((command) => command.name() === 'plan');
+    const planShowCommand = planCommand?.commands.find((command) => command.name() === 'show');
+
+    expect(showCommand).toBeDefined();
+    expect(planShowCommand).toBeDefined();
+    expect(planShowCommand?.options.map((option) => option.flags).sort()).toEqual(
+      showCommand?.options.map((option) => option.flags).sort()
+    );
+
+    await runTimCli(['plan', 'show', '42', '--full', '--next-ready', '9']);
+
+    expect(handleShowCommandMock).toHaveBeenCalledTimes(1);
+    const [planId, options, command] = handleShowCommandMock.mock.calls[0];
+    expect(planId).toBe(42);
+    expect(options).toMatchObject({ full: true, nextReady: 9 });
+    expect(command.parent).toBe(program);
   });
 
   test('parses valid plan ID options for add command', async () => {

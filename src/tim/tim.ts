@@ -1265,28 +1265,37 @@ program
     await handleReadyCommand(options, command).catch(handleCommandError);
   });
 
-program
-  .command('show [planId]')
-  .description('Display detailed information about a plan.')
-  .option('--next', 'Show the next plan that is ready to be implemented')
-  .option('--current', 'Show the current plan (in_progress or next ready plan)')
-  .option(
-    '--next-ready <planId>',
-    'Find and show the next ready dependency of the specified parent plan'
-  )
-  .option('--latest', 'Show the most recently updated plan')
-  .option('--copy-details', 'Copy the plan details to the clipboard')
-  .option('--full', 'Display full details without truncation')
-  .option('-s, --short', 'Display a condensed summary view')
-  .option('-w, --watch', 'Watch mode: re-print short output every 5 seconds')
-  .action(async (planIdArg, options, command) => {
-    const { handleShowCommand } = await import('./commands/show.js');
-    const planId = parseOptionalPlanIdFromCliArg(planIdArg);
-    if (options.nextReady !== undefined) {
-      options.nextReady = parsePlanIdFromCliArg(options.nextReady);
-    }
-    await handleShowCommand(planId, options, command).catch(handleCommandError);
-  });
+function registerShowCommand(parent: Command): Command {
+  return parent
+    .command('show [planId]')
+    .description('Display detailed information about a plan.')
+    .option('--next', 'Show the next plan that is ready to be implemented')
+    .option('--current', 'Show the current plan (in_progress or next ready plan)')
+    .option(
+      '--next-ready <planId>',
+      'Find and show the next ready dependency of the specified parent plan'
+    )
+    .option('--latest', 'Show the most recently updated plan')
+    .option('--copy-details', 'Copy the plan details to the clipboard')
+    .option('--full', 'Display full details without truncation')
+    .option('-s, --short', 'Display a condensed summary view')
+    .option('-w, --watch', 'Watch mode: re-print short output every 5 seconds')
+    .action(async (planIdArg, options, command) => {
+      const { handleShowCommand } = await import('./commands/show.js');
+      const planId = parseOptionalPlanIdFromCliArg(planIdArg);
+      if (options.nextReady !== undefined) {
+        options.nextReady = parsePlanIdFromCliArg(options.nextReady);
+      }
+
+      const rootCommand = command.parent?.parent ?? command.parent;
+      await handleShowCommand(planId, options, { parent: rootCommand }).catch(handleCommandError);
+    });
+}
+
+registerShowCommand(program);
+
+const planCommand = program.command('plan').description('Plan management commands.');
+registerShowCommand(planCommand);
 
 program
   .command('show-config')
