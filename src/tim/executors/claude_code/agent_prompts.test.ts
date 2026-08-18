@@ -209,6 +209,9 @@ describe('agent_prompts failure protocol integration', () => {
     expect(guidance).toContain(
       '"Consider refactoring" or "this could be cleaner" is NOT a suggestion'
     );
+    expect(guidance).toContain(
+      'Every suggested restructure must improve code clarity and make the implementation easier to understand'
+    );
     expect(guidance).toContain('No artificial finding cap');
     expect(guidance).toContain('Report every high-conviction structural issue');
     expect(guidance).not.toContain('Aim for at most 8-10 findings');

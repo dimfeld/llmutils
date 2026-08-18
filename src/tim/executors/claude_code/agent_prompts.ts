@@ -154,6 +154,7 @@ Above all, be **ambitious** about code structure. Do not merely identify local c
 
 - **Diff-only scope**: Only review code that appears in the diff (added or modified lines). Do not flag issues in unchanged surrounding context. The one exception is pre-existing code that the diff makes materially worse — and even then see "Pre-existing Issues" below.
 - **Confidence gate**: Only report findings you are confident about. If you cannot articulate the concrete maintainability cost or the cleaner alternative, leave it out. Precision matters more than recall.
+- **Clarity is required**: Every suggested restructure must improve code clarity and make the implementation easier to understand. Do not suggest a refactor that makes the code harder to understand unless it provides a clear, substantial benefit; if the other benefit is small, leave the suggestion out.
 - **Suggestions are mandatory for medium+ severity**: Every finding at medium severity or above MUST include a concrete suggestion showing the cleaner structure — which code moves where, which branch disappears, which abstraction to collapse. "Consider refactoring" or "this could be cleaner" is NOT a suggestion.
 - **No artificial finding cap**: Report every high-conviction structural issue you find in the changed code. Avoid cosmetic nits and speculative cleanup notes, but do not suppress real structural problems because several have already been found.
 
