@@ -686,6 +686,7 @@ describe('createPullRequestReviewCommentReply', () => {
       id: 1234,
       nodeId: 'PRRC_reply',
       htmlUrl: 'https://github.com/example/repo/pull/5#discussion_r1234',
+      createdAt: null,
     });
   });
 });

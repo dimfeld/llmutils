@@ -55,7 +55,10 @@ export const getActionablePrs = query(projectIdSchema, async ({ projectId }) => 
   }
 
   const { owner, repo } = ownerRepo;
-  const prs = withRequiredCheckRollupStates(db, getPrStatusesForRepo(db, owner, repo));
+  const prs = withRequiredCheckRollupStates(
+    db,
+    getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true })
+  );
   const prUrls = prs.map((pr) => pr.status.pr_url);
   const linkedPlansByPrUrl = getLinkedPlansByPrUrl(db, prUrls);
 

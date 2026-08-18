@@ -1093,6 +1093,7 @@ describe('replyToThread', () => {
       id: 123456,
       nodeId: 'PRRC_reply',
       htmlUrl: 'https://github.com/owner/repo/pull/42#discussion_r123456',
+      createdAt: '2026-03-20T00:01:00.000Z',
     });
 
     await expect(
@@ -1114,7 +1115,7 @@ describe('replyToThread', () => {
       currentDb
         .prepare(
           `
-            SELECT author, body, state, diff_hunk, database_id
+            SELECT author, body, state, diff_hunk, database_id, reply_to_comment_id
             FROM pr_review_thread_comment
             WHERE review_thread_id = (
               SELECT id
@@ -1132,6 +1133,7 @@ describe('replyToThread', () => {
       state: 'SUBMITTED',
       diff_hunk: null,
       database_id: 123456,
+      reply_to_comment_id: 'PRRC_top_level',
     });
   });
 

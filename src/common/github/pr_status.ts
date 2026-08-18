@@ -209,6 +209,7 @@ interface GraphQlReviewThreadCommentNode {
   state: string | null;
   createdAt: string | null;
   author: GraphQlActor | null;
+  replyTo: { id: string } | null;
 }
 
 interface GraphQlReviewThreadNode {
@@ -316,6 +317,9 @@ const fullStatusQuery = `
             author {
               login
             }
+            replyTo {
+              id
+            }
             state
             body
             submittedAt
@@ -405,6 +409,9 @@ const mergeableStatusQuery = `
           nodes {
             author {
               login
+            }
+            replyTo {
+              id
             }
             state
             body
@@ -868,6 +875,7 @@ function normalizeReviewThreadComment(
     diffHunk: comment.diffHunk,
     state: comment.state,
     createdAt: comment.createdAt,
+    replyToCommentId: comment.replyTo?.id ?? null,
   };
 }
 

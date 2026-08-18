@@ -103,6 +103,7 @@ export interface PrReviewThreadCommentRow {
   diff_hunk: string | null;
   state: string | null;
   created_at: string | null;
+  reply_to_comment_id: string | null;
 }
 
 export interface PlanPrRow {
@@ -149,6 +150,7 @@ export interface StoredPrReviewThreadCommentInput {
   diffHunk?: string | null;
   state?: string | null;
   createdAt?: string | null;
+  replyToCommentId?: string | null;
 }
 
 export interface StoredPrReviewThreadInput {
@@ -374,8 +376,9 @@ function replaceReviewThreads(
         body,
         diff_hunk,
         state,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        created_at,
+        reply_to_comment_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   );
 
@@ -405,7 +408,8 @@ function replaceReviewThreads(
         comment.body ?? null,
         comment.diffHunk ?? null,
         comment.state ?? null,
-        comment.createdAt ?? null
+        comment.createdAt ?? null,
+        comment.replyToCommentId ?? null
       );
     }
   }
@@ -449,8 +453,9 @@ export function upsertPrReviewThread(
         body,
         diff_hunk,
         state,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        created_at,
+        reply_to_comment_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
   );
 
@@ -479,7 +484,8 @@ export function upsertPrReviewThread(
       comment.body ?? null,
       comment.diffHunk ?? null,
       comment.state ?? null,
-      comment.createdAt ?? null
+      comment.createdAt ?? null,
+      comment.replyToCommentId ?? null
     );
   }
 }

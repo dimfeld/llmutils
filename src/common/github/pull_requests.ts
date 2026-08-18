@@ -724,6 +724,7 @@ export interface PostedPullRequestReviewCommentReply {
   id: number;
   nodeId: string | null;
   htmlUrl: string | null;
+  createdAt: string | null;
 }
 
 export interface GitHubRequestAuthOptions {
@@ -784,12 +785,14 @@ export async function createPullRequestReviewCommentReply(
     id: number;
     node_id?: string | null;
     html_url?: string | null;
+    created_at?: string | null;
   };
 
   return {
     id: data.id,
     nodeId: data.node_id ?? null,
     htmlUrl: data.html_url ?? null,
+    createdAt: data.created_at ?? null,
   };
 }
 

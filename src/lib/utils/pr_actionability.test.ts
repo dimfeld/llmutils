@@ -211,6 +211,104 @@ describe('classifyOwnPr', () => {
 });
 
 describe('hasReviewRequestForUser', () => {
+  test('does not count a review-comment reply as a submitted review', () => {
+    const pr = makePrDetail(
+      {},
+      {
+        reviewRequests: [
+          {
+            id: 1,
+            pr_status_id: 1,
+            reviewer: 'reviewer',
+            requested_at: '2026-01-01T00:00:00Z',
+            removed_at: null,
+            last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
+          },
+        ],
+        reviews: [
+          {
+            id: 1,
+            pr_status_id: 1,
+            author: 'reviewer',
+            state: 'COMMENTED',
+            submitted_at: '2026-01-01T00:01:00Z',
+          },
+        ],
+        reviewThreads: [
+          {
+            ...makeReviewThread(),
+            comments: [
+              {
+                id: 1,
+                review_thread_id: 1,
+                comment_id: 'reply-comment',
+                database_id: 2,
+                author: 'reviewer',
+                body: 'A reply, not a submitted review.',
+                diff_hunk: null,
+                state: 'SUBMITTED',
+                created_at: '2026-01-01T00:01:00Z',
+                reply_to_comment_id: 'parent-comment',
+              },
+            ],
+          },
+        ],
+      }
+    );
+
+    expect(hasReviewRequestForUser(pr, 'reviewer')).toBe(true);
+  });
+
+  test('counts a submitted COMMENTED review when it is not a reply', () => {
+    const pr = makePrDetail(
+      {},
+      {
+        reviewRequests: [
+          {
+            id: 1,
+            pr_status_id: 1,
+            reviewer: 'reviewer',
+            requested_at: '2026-01-01T00:00:00Z',
+            removed_at: null,
+            last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
+          },
+        ],
+        reviews: [
+          {
+            id: 1,
+            pr_status_id: 1,
+            author: 'reviewer',
+            state: 'COMMENTED',
+            submitted_at: '2026-01-01T00:01:00Z',
+          },
+        ],
+        reviewThreads: [
+          {
+            ...makeReviewThread(),
+            comments: [
+              {
+                id: 1,
+                review_thread_id: 1,
+                comment_id: 'top-level-comment',
+                database_id: 2,
+                author: 'reviewer',
+                body: 'A submitted review comment.',
+                diff_hunk: null,
+                state: 'SUBMITTED',
+                created_at: '2026-01-01T00:01:00Z',
+                reply_to_comment_id: null,
+              },
+            ],
+          },
+        ],
+      }
+    );
+
+    expect(hasReviewRequestForUser(pr, 'reviewer')).toBe(false);
+  });
+
   test('returns true when user has active review request', () => {
     const pr = makePrDetail(
       {},

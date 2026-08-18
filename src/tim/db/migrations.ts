@@ -1409,6 +1409,18 @@ const migrations: Migration[] = [
         ON inbox_item(read_at);
     `,
   },
+  {
+    version: 52,
+    up: `SELECT 1;`,
+    afterUp: (db: Database) => {
+      if (
+        tableExists(db, 'pr_review_thread_comment') &&
+        !tableColumns(db, 'pr_review_thread_comment').has('reply_to_comment_id')
+      ) {
+        db.exec('ALTER TABLE pr_review_thread_comment ADD COLUMN reply_to_comment_id TEXT');
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

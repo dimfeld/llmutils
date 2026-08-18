@@ -76,6 +76,21 @@ function getLatestSubmittedReviewAt(pr: PrStatusDetail, normalizedUsername: stri
     if (review.state === 'PENDING') continue;
     if (normalizeGitHubUsername(review.author) !== normalizedUsername) continue;
     if (review.submitted_at == null) continue;
+    // GitHub can expose a review-comment reply near the same time as a COMMENTED
+    // review event. A reply has reply_to_comment_id; a submitted Comment review does not.
+    if (
+      review.state === 'COMMENTED' &&
+      pr.reviewThreads?.some((thread) =>
+        thread.comments.some(
+          (comment) =>
+            comment.reply_to_comment_id !== null &&
+            normalizeGitHubUsername(comment.author) === normalizedUsername &&
+            comment.created_at === review.submitted_at
+        )
+      )
+    ) {
+      continue;
+    }
     if (latest === null || review.submitted_at > latest) {
       latest = review.submitted_at;
     }

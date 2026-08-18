@@ -262,14 +262,14 @@ export const replyToThread = command(
     const topLevelComment = db
       .prepare(
         `
-          SELECT database_id
+          SELECT database_id, comment_id
           FROM pr_review_thread_comment
           WHERE review_thread_id = ? AND database_id IS NOT NULL
           ORDER BY id
           LIMIT 1
         `
       )
-      .get(threadRow.id) as Pick<PrReviewThreadCommentRow, 'database_id'> | null;
+      .get(threadRow.id) as Pick<PrReviewThreadCommentRow, 'database_id' | 'comment_id'> | null;
     if (!topLevelComment?.database_id) {
       error(
         400,
@@ -300,9 +300,10 @@ export const replyToThread = command(
           body,
           diff_hunk,
           state,
-          created_at
+          created_at,
+          reply_to_comment_id
         )
-        SELECT id, ?, ?, ?, ?, ?, ?, ?
+        SELECT id, ?, ?, ?, ?, ?, ?, ?, ?
         FROM pr_review_thread
         WHERE pr_status_id = ? AND thread_id = ?
       `
@@ -314,7 +315,8 @@ export const replyToThread = command(
           body,
           null,
           'SUBMITTED',
-          new Date().toISOString(),
+          reply.createdAt ?? new Date().toISOString(),
+          topLevelComment.comment_id,
           prStatusId,
           threadId
         );
