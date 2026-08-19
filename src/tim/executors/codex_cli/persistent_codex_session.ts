@@ -156,12 +156,7 @@ export async function startPersistentCodexAgent(
   }
 
   const session = new PersistentCodexSession(options);
-  try {
-    return await session.start();
-  } catch (error) {
-    await session.close('failed', toError(error));
-    throw error;
-  }
+  return session.start();
 }
 
 class PersistentCodexInputAdapter implements AgentInputAdapter {
@@ -249,6 +244,7 @@ class PersistentCodexSession {
   private tunnelSocketPath: string | undefined;
   private currentTurnId: string | undefined;
   private threadId: string | undefined;
+  private ownedProcessControlId: ProcessControlId | undefined;
   private lastCompletedAssistantMessage: string | undefined;
   private closeAfterCurrentTurn = false;
   private closePromise: Promise<void> | undefined;
@@ -260,7 +256,37 @@ class PersistentCodexSession {
     this.observers.add(options.lifecycleCallbacks);
   }
 
-  public async start(): Promise<CodexPersistentAgentLaunchHandle> {
+  /**
+   * Return the provider handle at the manager launch boundary.
+   *
+   * Provider setup continues in the background. The manager binds the handle
+   * and mailbox before `ready` settles, so input received during startup stays
+   * in the manager-owned FIFO rather than being lost or handled by a second
+   * provider queue.
+   */
+  public start(): CodexPersistentAgentLaunchHandle {
+    const handle = this.createHandle();
+    void this.initialize().catch((error: unknown) => {
+      debugLog('Persistent Codex startup failed:', error);
+    });
+    return handle;
+  }
+
+  private async initialize(): Promise<void> {
+    try {
+      await this.initializeProvider();
+    } catch (error) {
+      const startupError = toError(error);
+      this.input.failReady(startupError);
+      try {
+        await this.close('failed', startupError);
+      } catch (cleanupError) {
+        debugLog('Persistent Codex startup cleanup failed:', cleanupError);
+      }
+    }
+  }
+
+  private async initializeProvider(): Promise<void> {
     const allowAllTools = ['true', '1'].includes(process.env.ALLOW_ALL_TOOLS || '');
     const writableRoots = [this.options.cwd];
     if (
@@ -285,7 +311,7 @@ class PersistentCodexSession {
         ? { [TIM_OUTPUT_SOCKET]: this.tunnelSocketPath }
         : {};
 
-    this.connection = await CodexAppServerConnection.create({
+    const connection = await CodexAppServerConnection.create({
       cwd: this.options.cwd,
       privateOwner: true,
       experimentalApi: true,
@@ -317,7 +343,14 @@ class PersistentCodexSession {
       ),
     });
 
-    const connection = this.connection;
+    if (this.isClosing()) {
+      await connection.close().catch((error: unknown) => {
+        debugLog('Persistent Codex late connection cleanup failed:', error);
+      });
+      return;
+    }
+    this.connection = connection;
+    this.ownedProcessControlId = connection.processControlId as ProcessControlId | undefined;
     connection.setGracefulEndHandler(() => {
       void this.close('graceful');
     });
@@ -336,6 +369,7 @@ class PersistentCodexSession {
       this.buildThreadStartParams(approvalPolicy, sandbox),
       this.options.dynamicToolProvider
     );
+    this.throwIfClosing();
     connection.updateMetadata({ threadId: threadResult.threadId });
     this.threadId = threadResult.threadId;
     this.registerLogicalThread(threadResult.threadId);
@@ -347,11 +381,10 @@ class PersistentCodexSession {
       model: this.options.model,
       effort: this.options.reasoningLevel ?? 'medium',
     });
+    this.throwIfClosing();
     this.currentTurnId = turnResult.turnId;
     this.state = 'running-active';
     this.input.markReady();
-
-    return this.createHandle();
   }
 
   public async close(
@@ -363,6 +396,11 @@ class PersistentCodexSession {
     }
 
     this.state = classification === 'forced' ? 'stopping-forced' : 'terminal';
+    if (!this.input.isReady) {
+      this.input.failReady(
+        error ?? new Error(`Persistent Codex provider closed before startup completed.`)
+      );
+    }
     this.input.markNotReady();
     this.closePromise = this.finishClose(classification, error);
     return this.closePromise;
@@ -372,23 +410,45 @@ class PersistentCodexSession {
     classification: AgentProviderExitClassification,
     error?: Error
   ): Promise<void> {
-    this.monitorHandle?.stop();
+    let cleanupError: Error | undefined;
+
+    try {
+      this.monitorHandle?.stop();
+    } catch (error) {
+      cleanupError = toError(error);
+      debugLog('Persistent Codex monitor cleanup failed:', cleanupError);
+    }
     this.monitorHandle = undefined;
 
     const connection = this.connection;
-    await connection?.close();
-    connection?.setGracefulEndHandler(undefined);
+    try {
+      connection?.setGracefulEndHandler(undefined);
+      await connection?.close();
+    } catch (error) {
+      cleanupError ??= toError(error);
+      debugLog('Persistent Codex connection cleanup failed:', error);
+    }
     this.connection = undefined;
 
     // Keep both End callbacks installed until the provider close has joined
     // the shared close promise. A second process-tree End request that races
     // cleanup must converge on this operation instead of seeing a half-cleaned
     // logical thread and returning a misleading unsupported-control result.
-    this.logicalExecutorLifecycle?.setGracefulEndHandler(undefined);
-    this.logicalExecutorLifecycle?.markExited(error === undefined ? {} : { exitCode: 1 });
+    try {
+      this.logicalExecutorLifecycle?.setGracefulEndHandler(undefined);
+      this.logicalExecutorLifecycle?.markExited(error === undefined ? {} : { exitCode: 1 });
+    } catch (lifecycleError) {
+      cleanupError ??= toError(lifecycleError);
+      debugLog('Persistent Codex logical-thread cleanup failed:', lifecycleError);
+    }
     this.logicalExecutorLifecycle = undefined;
 
-    this.tunnelServer?.close();
+    try {
+      this.tunnelServer?.close();
+    } catch (tunnelError) {
+      cleanupError ??= toError(tunnelError);
+      debugLog('Persistent Codex tunnel cleanup failed:', tunnelError);
+    }
     this.tunnelServer = undefined;
     if (this.tunnelTempDir !== undefined) {
       await fs.rm(this.tunnelTempDir, { recursive: true, force: true }).catch(() => {});
@@ -397,12 +457,15 @@ class PersistentCodexSession {
     this.cleaned = true;
     this.state = 'terminal';
 
+    const completionError = error ?? cleanupError;
+    const exitClassification = cleanupError === undefined ? classification : 'failed';
+
     if (!this.exitNotified) {
       this.exitNotified = true;
-      this.notifyObservers((observer) => observer.exit(classification, error));
+      this.notifyObservers((observer) => observer.exit(exitClassification, completionError));
     }
     this.completionDeferred.resolve({
-      ...(error === undefined ? {} : { error }),
+      ...(completionError === undefined ? {} : { error: completionError }),
       ...(this.lastCompletedAssistantMessage === undefined
         ? {}
         : {
@@ -502,6 +565,8 @@ class PersistentCodexSession {
   private formatterInstance: ReturnType<typeof createAppServerFormatter> | undefined;
 
   private createHandle(): CodexPersistentAgentLaunchHandle {
+    const getProcessControlId = (): ProcessControlId | undefined => this.processControlId;
+    const getProviderThreadId = (): ProviderThreadId | undefined => this.providerThreadId;
     const lifecycle: AgentProviderLifecycleControls = {
       requestGracefulShutdown: (instruction: string): Promise<AgentProviderControlResult> =>
         this.requestGracefulShutdown(instruction),
@@ -529,16 +594,37 @@ class PersistentCodexSession {
       ready: this.input.ready,
       completion: this.completionDeferred.promise,
       lifecycle,
-      ...(this.connection?.processControlId === undefined
-        ? {}
-        : { processControlId: this.connection.processControlId as unknown as ProcessControlId }),
-      ...(this.logicalExecutorLifecycle === undefined
-        ? {}
-        : { providerThreadId: this.threadId as unknown as ProviderThreadId }),
+      get processControlId(): ProcessControlId | undefined {
+        return getProcessControlId();
+      },
+      get providerThreadId(): ProviderThreadId | undefined {
+        return getProviderThreadId();
+      },
       release: async (): Promise<void> => {
         await this.close('forced');
       },
     };
+  }
+
+  private get processControlId(): ProcessControlId | undefined {
+    return (
+      this.ownedProcessControlId ??
+      (this.connection?.processControlId as ProcessControlId | undefined)
+    );
+  }
+
+  private get providerThreadId(): ProviderThreadId | undefined {
+    return this.threadId as ProviderThreadId | undefined;
+  }
+
+  private isClosing(): boolean {
+    return this.closePromise !== undefined || this.cleaned;
+  }
+
+  private throwIfClosing(): void {
+    if (this.isClosing()) {
+      throw new Error('Persistent Codex provider closed during startup.');
+    }
   }
 
   private requestCloseAfterCurrentTurn(): Promise<AgentProviderControlResult> {

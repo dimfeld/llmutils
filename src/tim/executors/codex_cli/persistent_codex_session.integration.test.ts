@@ -237,6 +237,24 @@ function createCallbacks() {
   };
 }
 
+function createDeferred<T>(): {
+  readonly promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+} {
+  let resolvePromise: ((value: T) => void) | undefined;
+  let rejectPromise: ((error: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return {
+    promise,
+    resolve: (value: T): void => resolvePromise?.(value),
+    reject: (error: unknown): void => rejectPromise?.(error),
+  };
+}
+
 async function withFixtureEnvironment<T>(
   fixture: MockCodexFixture,
   callback: () => Promise<T>
@@ -292,6 +310,7 @@ describe('persistent Codex setup', () => {
     vi.resetModules();
 
     const connectionOptions: { current?: Record<string, unknown> } = {};
+    const initialTurn = createDeferred<{ turnId: string }>();
     const connectionCreate = vi.fn(async (options: Record<string, unknown>) => {
       connectionOptions.current = options;
       return connection;
@@ -303,7 +322,7 @@ describe('persistent Codex setup', () => {
       setGracefulEndHandler: vi.fn(),
       updateMetadata: vi.fn(),
       threadStart: vi.fn(async () => ({ threadId: 'thread-1' })),
-      turnStart: vi.fn(async () => ({ turnId: 'turn-1' })),
+      turnStart: vi.fn(() => initialTurn.promise),
       close: vi.fn(async () => {}),
     };
     const logicalEndHandlers: Array<(() => void) | undefined> = [];
@@ -417,6 +436,9 @@ describe('persistent Codex setup', () => {
       })
     );
     expect(connectionOptions.current?.onServerRequest).toEqual(expect.any(Function));
+    await vi.waitFor(() => {
+      expect(connection.turnStart).toHaveBeenCalledTimes(1);
+    });
     expect(owner.prepareLogicalExecutor).toHaveBeenCalledWith({
       label: 'Codex thread (worker-a)',
       command: 'codex thread thread-1',
@@ -424,7 +446,20 @@ describe('persistent Codex setup', () => {
     });
     expect(logicalLifecycle.markStarted).toHaveBeenCalledTimes(1);
     expect(handle.providerThreadId).toBe('thread-1');
+    expect(handle.processControlId).toBe('codex-process-1');
+    await expect(
+      Promise.race([
+        handle.ready.then(
+          () => 'ready' as const,
+          () => 'failed' as const
+        ),
+        Promise.resolve('launch-boundary' as const),
+      ])
+    ).resolves.toBe('launch-boundary');
+    initialTurn.resolve({ turnId: 'turn-1' });
     await expect(handle.ready).resolves.toBeUndefined();
+    expect(handle.processControlId).toBe('codex-process-1');
+    expect(handle.providerThreadId).toBe('thread-1');
 
     expect(connectionOptions.current?.onServerRequest).toEqual(expect.any(Function));
     const serverRequest = connectionOptions.current?.onServerRequest as (
@@ -546,7 +581,7 @@ describe('persistent Codex setup', () => {
 
     try {
       await withFixtureEnvironment(fixture, async () => {
-        const error = await runWithSessionProcessOwner(owner, () =>
+        const handle = await runWithSessionProcessOwner(owner, () =>
           startPersistentCodexAgent({
             mode: CODEX_PERSISTENT_AGENT_MODE,
             identity,
@@ -558,11 +593,16 @@ describe('persistent Codex setup', () => {
             lifecycleCallbacks: callbacks,
             sessionProcessOwner: owner,
           })
-        ).catch((caught: unknown) => caught);
+        );
 
-        expect(error).toMatchObject({
+        await expect(handle.ready).rejects.toMatchObject({
           name: 'CodexDynamicToolsCompatibilityError',
           message: expect.stringContaining('does not support experimental dynamic tools'),
+        });
+        await expect(handle.completion).resolves.toMatchObject({
+          error: expect.objectContaining({
+            name: 'CodexDynamicToolsCompatibilityError',
+          }),
         });
         expect(callbacks.exit).toHaveBeenCalledTimes(1);
         expect(callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
@@ -623,6 +663,8 @@ describe('persistent Codex setup', () => {
             )
           )
         );
+
+        await Promise.all(handles.map((handle) => handle.ready));
 
         const runningExecutors = registry
           .getSnapshot()

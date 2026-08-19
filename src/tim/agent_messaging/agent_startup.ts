@@ -157,6 +157,13 @@ class AgentStartOperation {
     }
   }
 
+  /** Refresh provider identifiers that were assigned after the launch boundary. */
+  public refreshHandleMetadata(): void {
+    if (this.handle === undefined) return;
+    this.record.processControlId = this.handle.processControlId;
+    this.record.providerThreadId = this.handle.providerThreadId;
+  }
+
   public async rollback(): Promise<void> {
     this.cleanupRequested = true;
     this.cancellation.cancel(managerClosedError());

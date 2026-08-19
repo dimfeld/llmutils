@@ -348,6 +348,7 @@ export class AgentManager {
       binding.bindInputAdapter(handle.input);
       await operation.awaitBoundary(handle.ready);
       operation.ensureActive();
+      operation.refreshHandleMetadata();
       if (controller.providerExitInfo !== undefined) {
         throw new AgentManagerError(
           'launch_failed',
