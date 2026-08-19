@@ -372,16 +372,22 @@ class PersistentCodexSession {
     classification: AgentProviderExitClassification,
     error?: Error
   ): Promise<void> {
-    this.connection?.setGracefulEndHandler(undefined);
-    this.logicalExecutorLifecycle?.setGracefulEndHandler(undefined);
     this.monitorHandle?.stop();
     this.monitorHandle = undefined;
 
+    const connection = this.connection;
+    await connection?.close();
+    connection?.setGracefulEndHandler(undefined);
+    this.connection = undefined;
+
+    // Keep both End callbacks installed until the provider close has joined
+    // the shared close promise. A second process-tree End request that races
+    // cleanup must converge on this operation instead of seeing a half-cleaned
+    // logical thread and returning a misleading unsupported-control result.
+    this.logicalExecutorLifecycle?.setGracefulEndHandler(undefined);
     this.logicalExecutorLifecycle?.markExited(error === undefined ? {} : { exitCode: 1 });
     this.logicalExecutorLifecycle = undefined;
 
-    await this.connection?.close();
-    this.connection = undefined;
     this.tunnelServer?.close();
     this.tunnelServer = undefined;
     if (this.tunnelTempDir !== undefined) {

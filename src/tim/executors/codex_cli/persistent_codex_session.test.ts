@@ -112,6 +112,36 @@ describe('persistent Codex launch validation', () => {
     ).toThrow();
   });
 
+  it.each([
+    ['mode', { mode: 'single-turn' }],
+    ['prompt', { prompt: 42 }],
+    ['cwd', { cwd: '' }],
+    ['identity', { identity: undefined }],
+    ['process label', { processLabel: 'Codex thread (wrong-name)' }],
+    ['dynamic provider', { dynamicToolProvider: undefined }],
+    ['lifecycle callbacks', { lifecycleCallbacks: undefined }],
+    ['output schema', { outputSchema: {} }],
+    ['output schema path', { outputSchemaPath: '/tmp/schema.json' }],
+    ['one-shot app-server mode', { appServerMode: 'single-turn' }],
+    ['one-shot inactivity timeout', { inactivityTimeoutMs: 1000 }],
+    ['terminal input', { terminalInput: true }],
+  ])('launcher rejects invalid %s before any resource allocation', async (_label, override) => {
+    const spawnSpy = vi.spyOn(Bun, 'spawn');
+    const prepareLogicalExecutor = vi.fn();
+
+    await expect(
+      startPersistentCodexAgent(
+        createOptions({
+          ...override,
+          sessionProcessOwner: { prepareLogicalExecutor },
+        } as Partial<CodexPersistentAgentLaunchOptions>)
+      )
+    ).rejects.toThrow();
+
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(prepareLogicalExecutor).not.toHaveBeenCalled();
+  });
+
   it('rejects a dynamic provider bound to another identity', () => {
     const otherIdentity = { ...createIdentity(), id: 'agent-2' as AgentIdentity['id'] };
     expect(() =>
@@ -126,6 +156,19 @@ describe('persistent Codex launch validation', () => {
     expect(() => validateCodexPersistentAgentLaunchOptions(createOptions())).toThrow(
       /require Codex app-server mode/i
     );
+  });
+
+  it('launcher rejects disabled app-server mode before allocation', async () => {
+    process.env.CODEX_USE_APP_SERVER = 'false';
+    const spawnSpy = vi.spyOn(Bun, 'spawn');
+    const prepareLogicalExecutor = vi.fn();
+
+    await expect(
+      startPersistentCodexAgent(createOptions({ sessionProcessOwner: { prepareLogicalExecutor } }))
+    ).rejects.toThrow(/require Codex app-server mode/i);
+
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(prepareLogicalExecutor).not.toHaveBeenCalled();
   });
 
   it('rejects through the launcher before setup when validation fails', async () => {
