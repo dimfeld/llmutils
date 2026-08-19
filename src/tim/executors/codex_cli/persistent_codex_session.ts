@@ -952,12 +952,12 @@ function extractTurnId(params: unknown): string | undefined {
   const payload = params as Record<string, unknown>;
   const turn = payload.turn;
   if (turn && typeof turn === 'object' && !Array.isArray(turn)) {
-    const nestedId = (turn as Record<string, unknown>).id;
+    const turnPayload = turn as Record<string, unknown>;
+    const nestedId = turnPayload.id ?? turnPayload.turnId ?? turnPayload.turn_id;
     if (typeof nestedId === 'string' && nestedId.length > 0) return nestedId;
   }
-  return typeof payload.turnId === 'string' && payload.turnId.length > 0
-    ? payload.turnId
-    : undefined;
+  const directId = payload.turnId ?? payload.turn_id;
+  return typeof directId === 'string' && directId.length > 0 ? directId : undefined;
 }
 
 function extractThreadId(params: unknown): string | undefined {
