@@ -32,6 +32,7 @@ import type {
   ProcessControlId,
   ProviderThreadId,
 } from '../../agent_messaging/agent_manager_types.js';
+import { AgentProviderControlError } from '../../agent_messaging/agent_manager_types.js';
 import type { AgentProcessLabel } from '../../agent_messaging/agent_process_labels.js';
 import { formatAgentProcessLabel } from '../../agent_messaging/agent_process_labels.js';
 import {
@@ -261,6 +262,8 @@ class PersistentCodexSession {
   private readonly observers = new Set<AgentProviderLifecycleObserver>();
   private state: CodexPersistentAgentState = 'starting';
   private connection: CodexAppServerConnection | undefined;
+  /** Retained only while a turn/start promise can still resolve after close. */
+  private pendingTurnStartConnection: CodexAppServerConnection | undefined;
   private logicalExecutorLifecycle: SessionLogicalExecutorLifecycle | undefined;
   private monitorHandle: SubprocessMonitorHandle | undefined;
   private tunnelServer: TunnelServer | undefined;
@@ -272,6 +275,13 @@ class PersistentCodexSession {
   private ownedProcessControlId: ProcessControlId | undefined;
   private lastCompletedAssistantMessage: string | undefined;
   private closeAfterCurrentTurn = false;
+  private closeAfterTurnGeneration: number | undefined;
+  private gracefulShutdownRequest: Promise<AgentProviderControlResult> | undefined;
+  private forcedShutdownRequest: Promise<AgentProviderControlResult> | undefined;
+  private forcedShutdownRequested = false;
+  private expectedClosingClassification: AgentProviderExitClassification | undefined;
+  private readonly stateWaiters = new Set<() => void>();
+  private readonly interruptedTurnGenerations = new Set<number>();
   private closePromise: Promise<void> | undefined;
   private exitNotified = false;
   private cleaned = false;
@@ -418,14 +428,21 @@ class PersistentCodexSession {
       return this.closePromise;
     }
 
-    this.state = classification === 'forced' ? 'stopping-forced' : 'terminal';
+    const effectiveClassification =
+      this.expectedClosingClassification === 'forced'
+        ? 'forced'
+        : classification === 'failed'
+          ? 'failed'
+          : (this.expectedClosingClassification ?? classification);
+    this.expectedClosingClassification = effectiveClassification;
+    this.state = effectiveClassification === 'forced' ? 'stopping-forced' : 'terminal';
     if (!this.input.isReady) {
       this.input.failReady(
         error ?? new Error(`Persistent Codex provider closed before startup completed.`)
       );
     }
     this.input.markNotReady();
-    this.closePromise = this.finishClose(classification, error);
+    this.closePromise = this.finishClose(effectiveClassification, error);
     return this.closePromise;
   }
 
@@ -588,7 +605,16 @@ class PersistentCodexSession {
           }
           turn.turnId = turnId;
         }
-        this.setState('running-active');
+        if (this.forcedShutdownRequested) {
+          void this.interruptTurn(turn);
+        } else if (
+          this.closeAfterTurnGeneration !== undefined &&
+          this.closeAfterTurnGeneration === turn.generation
+        ) {
+          this.setState('stopping-gracefully');
+        } else {
+          this.setState('running-active');
+        }
       }
       return;
     }
@@ -669,6 +695,7 @@ class PersistentCodexSession {
     return delivery.finally(() => {
       this.deliveryInFlight = false;
       this.syncInputActivity();
+      this.notifyStateWaiters();
     });
   }
 
@@ -692,6 +719,7 @@ class PersistentCodexSession {
       throw new Error('Codex persistent session is not ready to start a turn');
     }
 
+    this.pendingTurnStartConnection = connection;
     try {
       const turnResult = await connection.turnStart({
         threadId,
@@ -703,17 +731,42 @@ class PersistentCodexSession {
         throw new Error(`Codex reported conflicting turn IDs for generation ${turn.generation}.`);
       }
       turn.turnId = turnResult.turnId;
+      if (this.forcedShutdownRequested) {
+        await this.interruptTurn(turn);
+        if (this.currentTurn === turn) {
+          turn.settled = true;
+          this.currentTurn = undefined;
+        }
+        return;
+      }
       if (turn.settled) {
         if (this.currentTurn === turn) this.currentTurn = undefined;
         return;
       }
-      if (this.currentTurn === turn) this.setState('running-active');
+      if (this.currentTurn === turn) {
+        this.setState(
+          this.closeAfterTurnGeneration === turn.generation
+            ? 'stopping-gracefully'
+            : 'running-active'
+        );
+      }
     } catch (error) {
+      if (this.forcedShutdownRequested || this.isClosing()) {
+        if (this.currentTurn === turn) {
+          turn.settled = true;
+          this.currentTurn = undefined;
+        }
+        return;
+      }
       if (!turn.settled) {
         if (this.currentTurn === turn) this.currentTurn = undefined;
         await this.failProvider(toError(error));
       }
       throw error;
+    } finally {
+      if (this.pendingTurnStartConnection === connection) {
+        this.pendingTurnStartConnection = undefined;
+      }
     }
   }
 
@@ -733,6 +786,12 @@ class PersistentCodexSession {
     }
 
     const status = extractTurnStatus(params);
+    if (this.forcedShutdownRequested || this.state === 'stopping-forced') {
+      turn.settled = true;
+      this.currentTurn = undefined;
+      void this.close('forced');
+      return;
+    }
     if (status.toLowerCase() !== 'completed') {
       turn.settled = true;
       this.currentTurn = undefined;
@@ -741,6 +800,10 @@ class PersistentCodexSession {
     }
 
     turn.settled = true;
+    const shouldCloseAfterTurn =
+      this.closeAfterCurrentTurn &&
+      (this.closeAfterTurnGeneration === undefined ||
+        this.closeAfterTurnGeneration === turn.generation);
     this.currentTurn = undefined;
     this.setStateWithoutAvailability('running-idle');
 
@@ -752,8 +815,12 @@ class PersistentCodexSession {
     }
     this.notifyObservers((observer) => observer.turnComplete());
 
-    if (this.closeAfterCurrentTurn) {
-      void this.close('graceful');
+    const shouldCloseAfterCallbacks =
+      this.closeAfterCurrentTurn &&
+      (this.closeAfterTurnGeneration === undefined ||
+        this.closeAfterTurnGeneration === turn.generation);
+    if (shouldCloseAfterTurn || shouldCloseAfterCallbacks) {
+      void this.close(this.expectedClosingClassification ?? 'graceful');
     } else {
       this.input.markIdle();
     }
@@ -762,10 +829,12 @@ class PersistentCodexSession {
   private setState(state: CodexPersistentAgentState): void {
     this.state = state;
     this.syncInputActivity();
+    this.notifyStateWaiters();
   }
 
   private setStateWithoutAvailability(state: CodexPersistentAgentState): void {
     this.state = state;
+    this.notifyStateWaiters();
   }
 
   private syncInputActivity(): void {
@@ -905,23 +974,186 @@ class PersistentCodexSession {
   }
 
   private requestCloseAfterCurrentTurn(): Promise<AgentProviderControlResult> {
-    if (this.state === 'terminal') return Promise.resolve('already-exited');
-    this.closeAfterCurrentTurn = true;
-    if (this.currentTurn?.turnId === undefined) {
-      return this.close('graceful').then(() => 'accepted');
+    if (this.state === 'terminal' || this.forcedShutdownRequested) {
+      return Promise.resolve('already-exited');
     }
-    this.state = 'finishing';
+    if (this.closeAfterCurrentTurn) return Promise.resolve('accepted');
+
+    this.closeAfterCurrentTurn = true;
+    this.expectedClosingClassification = 'graceful';
+    if (this.currentTurn !== undefined && !this.currentTurn.settled) {
+      this.closeAfterTurnGeneration = this.currentTurn.generation;
+      this.setState('finishing');
+    } else {
+      // The manager requests this from its turnComplete callback, after the
+      // provider has cleared currentTurn. Keep the close intent until this
+      // completion boundary returns; never close from a tool callback.
+      this.setState('finishing');
+    }
     return Promise.resolve('accepted');
   }
 
-  private requestGracefulShutdown(_instruction: string): Promise<AgentProviderControlResult> {
-    if (this.state === 'terminal') return Promise.resolve('already-exited');
-    return this.requestCloseAfterCurrentTurn();
+  private requestGracefulShutdown(instruction: string): Promise<AgentProviderControlResult> {
+    if (this.state === 'terminal' || this.forcedShutdownRequested) {
+      return Promise.resolve('already-exited');
+    }
+    if (this.gracefulShutdownRequest !== undefined) return this.gracefulShutdownRequest;
+
+    this.gracefulShutdownRequest = this.deliverGracefulInstruction(instruction).catch((error) => {
+      this.gracefulShutdownRequest = undefined;
+      throw error;
+    });
+    return this.gracefulShutdownRequest;
   }
 
   private requestForcedShutdown(): Promise<AgentProviderControlResult> {
     if (this.state === 'terminal') return Promise.resolve('already-exited');
-    return this.close('forced').then(() => 'accepted');
+    if (this.forcedShutdownRequest !== undefined) return this.forcedShutdownRequest;
+
+    // Set expected-close state before the first await. A process exit or late
+    // turn/start response can now join the forced path without reporting a
+    // false provider crash or accepting new input.
+    this.forcedShutdownRequested = true;
+    this.expectedClosingClassification = 'forced';
+    this.state = 'stopping-forced';
+    this.input.markNotReady();
+    this.notifyStateWaiters();
+
+    this.forcedShutdownRequest = (async (): Promise<AgentProviderControlResult> => {
+      const turn = this.currentTurn;
+      if (turn !== undefined && !turn.settled) await this.interruptTurn(turn);
+      await this.close('forced');
+      return 'accepted';
+    })();
+    return this.forcedShutdownRequest;
+  }
+
+  /** Wait until a normal input transition has released its serialization gate. */
+  private async waitForDeliveryIdle(): Promise<void> {
+    if (!this.deliveryInFlight) return;
+    await new Promise<void>((resolve) => {
+      this.stateWaiters.add(resolve);
+    });
+  }
+
+  /** Wait for an active turn with an ID or an idle thread. */
+  private async waitForStableInputState(): Promise<void> {
+    if (
+      this.state === 'running-idle' ||
+      (this.state === 'running-active' && this.currentTurn?.turnId !== undefined)
+    ) {
+      return;
+    }
+    if (this.isClosing() || this.forcedShutdownRequested) return;
+    await new Promise<void>((resolve) => {
+      this.stateWaiters.add(resolve);
+    });
+  }
+
+  private notifyStateWaiters(): void {
+    if (this.deliveryInFlight) return;
+    const waiters = [...this.stateWaiters];
+    this.stateWaiters.clear();
+    for (const resolve of waiters) resolve();
+  }
+
+  /** Deliver the manager-built final instruction through the normal turn path. */
+  private async deliverGracefulInstruction(
+    instruction: string
+  ): Promise<AgentProviderControlResult> {
+    for (;;) {
+      await this.waitForDeliveryIdle();
+      if (this.state === 'terminal' || this.forcedShutdownRequested || this.isClosing()) {
+        return 'already-exited';
+      }
+
+      if (this.state === 'running-active') {
+        const turn = this.currentTurn;
+        const turnId = turn?.turnId;
+        const threadId = this.threadId;
+        if (turn === undefined || turn.settled || turnId === undefined || threadId === undefined) {
+          await this.waitForStableInputState();
+          continue;
+        }
+
+        this.input.markTemporarilyUnavailable();
+        const connection = this.connection;
+        if (connection === undefined || !connection.isAlive) {
+          throw new AgentProviderControlError(
+            'graceful-shutdown',
+            'Codex persistent connection is not available for graceful shutdown'
+          );
+        }
+        // Claim the final generation before awaiting turn/steer. A completion
+        // notification can race the response and must still close after this
+        // turn rather than leave the provider idle.
+        this.closeAfterCurrentTurn = true;
+        this.closeAfterTurnGeneration = turn.generation;
+        this.expectedClosingClassification = 'graceful';
+        this.setState('stopping-gracefully');
+        try {
+          await connection.turnSteer({
+            threadId,
+            input: [{ type: 'text', text: instruction }],
+            expectedTurnId: turnId,
+          });
+        } catch (error) {
+          if (!this.isClosing() && !this.forcedShutdownRequested) {
+            this.closeAfterCurrentTurn = false;
+            this.closeAfterTurnGeneration = undefined;
+            this.expectedClosingClassification = undefined;
+            this.setState(
+              this.currentTurn === turn && !turn.settled ? 'running-active' : 'running-idle'
+            );
+          }
+          this.syncInputActivity();
+          throw new AgentProviderControlError(
+            'graceful-shutdown',
+            `Codex persistent graceful shutdown could not deliver its final instruction: ${toError(error).message}`,
+            { cause: error }
+          );
+        }
+
+        if (this.forcedShutdownRequested || this.isClosing()) return 'already-exited';
+        return 'accepted';
+      }
+
+      if (this.state === 'running-idle') {
+        const turn = this.beginTurn();
+        this.closeAfterCurrentTurn = true;
+        this.closeAfterTurnGeneration = turn.generation;
+        this.expectedClosingClassification = 'graceful';
+        this.setState('stopping-gracefully');
+        try {
+          await this.startTurn(turn, instruction);
+        } catch (error) {
+          if (this.forcedShutdownRequested || this.isClosing()) return 'already-exited';
+          throw new AgentProviderControlError(
+            'graceful-shutdown',
+            `Codex persistent graceful shutdown could not start its final turn: ${toError(error).message}`,
+            { cause: error }
+          );
+        }
+        return this.isClosing() ? 'already-exited' : 'accepted';
+      }
+
+      await this.waitForStableInputState();
+    }
+  }
+
+  /** Send one best-effort interrupt for a turn, including a late turn ID. */
+  private async interruptTurn(turn: PersistentCodexTurn): Promise<void> {
+    const connection = this.connection ?? this.pendingTurnStartConnection;
+    const threadId = this.threadId;
+    const turnId = turn.turnId;
+    if (!connection?.isAlive || threadId === undefined || turnId === undefined) return;
+    if (this.interruptedTurnGenerations.has(turn.generation)) return;
+    this.interruptedTurnGenerations.add(turn.generation);
+    try {
+      await connection.turnInterrupt({ threadId, turnId });
+    } catch (error) {
+      debugLog('Failed to interrupt Codex persistent turn during forced shutdown:', error);
+    }
   }
 
   private notifyObservers(callback: (observer: AgentProviderLifecycleObserver) => void): void {

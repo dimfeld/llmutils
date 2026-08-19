@@ -172,19 +172,30 @@ export class AgentLifecycleController {
   }
 
   /** Bind one handle-scoped observer. The captured record protects reused names. */
-  public bindProvider(handle: AgentLaunchHandle): void {
+  public bindProvider(
+    handle: AgentLaunchHandle,
+    launchObserver?: AgentProviderLifecycleObserver
+  ): void {
     this.providerHandle = handle;
     this.providerLifecycle = handle.lifecycle;
     this.unsubscribeProvider?.();
-    const observer: AgentProviderLifecycleObserver = {
+    const observer = launchObserver ?? this.createProviderObserver();
+    this.unsubscribeProvider = handle.lifecycle.subscribe(observer);
+    this.maybeRequestProviderStop();
+  }
+
+  /**
+   * Create the observer that may be passed to a provider before its launch
+   * promise resolves. The observer is handle-scoped by this controller.
+   */
+  public createProviderObserver(): AgentProviderLifecycleObserver {
+    return {
       outputActivity: (): void => this.handleOutputActivity(),
       completedAssistantMessage: (message: string): void =>
         this.handleCompletedAssistantMessage(message),
       turnComplete: (): void => this.handleTurnComplete(),
       exit: (classification, error): void => this.handleProviderExit(classification, error),
     };
-    this.unsubscribeProvider = handle.lifecycle.subscribe(observer);
-    this.maybeRequestProviderStop();
   }
 
   public finish(message: string | undefined): FinishAgentResult {

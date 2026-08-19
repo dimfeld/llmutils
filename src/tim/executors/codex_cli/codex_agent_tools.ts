@@ -25,6 +25,7 @@ import {
   type AgentCallerIdentity,
   type AgentIdentity,
 } from '../../agent_messaging/agent_manager_types.js';
+import type { AgentManager } from '../../agent_messaging/agent_manager.js';
 import { warn } from '../../../logging.js';
 import {
   codexDynamicToolCallParamsSchema,
@@ -49,6 +50,22 @@ export interface CodexAgentToolDispatcher {
   sendAgentMessage(caller: AgentCallerIdentity, request: unknown): Promise<SendAgentMessageResult>;
   stopAgent(caller: AgentCallerIdentity, request: unknown): Promise<StopAgentResult>;
   finishAgent(caller: AgentCallerIdentity, request: unknown): Promise<FinishAgentResult>;
+}
+
+/** Bind the Codex dynamic-tool transport to the provider-neutral manager. */
+export function createCodexAgentToolDispatcher(
+  manager: Pick<
+    AgentManager,
+    'startAgent' | 'listAgents' | 'sendAgentMessage' | 'stopAgent' | 'finishAgent'
+  >
+): CodexAgentToolDispatcher {
+  return {
+    startAgent: (caller, request) => manager.startAgent(caller, request),
+    listAgents: () => manager.listAgents(),
+    sendAgentMessage: (caller, request) => manager.sendAgentMessage(caller, request),
+    stopAgent: (caller, request) => manager.stopAgent(caller, request),
+    finishAgent: (caller, request) => manager.finishAgent(caller, request),
+  };
 }
 
 /** Trusted parent-bound context used to create one Codex dynamic-tool provider. */

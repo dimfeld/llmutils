@@ -34,6 +34,9 @@ export {
   validateCodexPersistentAgentLaunchOptions,
 } from './persistent_codex_session.js';
 export type { CodexPersistentAgentLaunchOptions } from './persistent_codex_session.js';
+export { createCodexAgentLauncher } from './codex_agent_launcher.js';
+export type { CodexAgentLauncherOptions } from './codex_agent_launcher.js';
+export { createCodexAgentToolDispatcher } from './codex_agent_tools.js';
 
 export type CodexAppServerMode = 'single-turn' | 'chat-session' | 'single-turn-with-steering';
 

@@ -330,12 +330,14 @@ export class AgentManager {
       await operation.awaitBoundary(mailbox.ready);
       operation.ensureActive();
 
+      const lifecycleObserver = controller.createProviderObserver();
       const handle = await operation.awaitResource(
         this.options.agentLauncher.launch({
           identity: reservation.identity,
           initialMessage: validated.initialMessage,
           preparedExecution: prepared,
           processLabel: formatAgentProcessLabel(record.executor, record.name),
+          lifecycleObserver,
         }),
         (value): void => operation.attachHandle(value),
         (value): void => {
@@ -344,7 +346,7 @@ export class AgentManager {
       );
       operation.ensureActive();
       validateAgentProviderLifecycleControls(handle.lifecycle);
-      controller.bindProvider(handle);
+      controller.bindProvider(handle, lifecycleObserver);
       binding.bindInputAdapter(handle.input);
       await operation.awaitBoundary(handle.ready);
       operation.ensureActive();

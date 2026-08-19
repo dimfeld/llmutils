@@ -22,6 +22,7 @@ interface TestConnection {
   readonly updateMetadata: ReturnType<typeof vi.fn>;
   readonly turnStart: ReturnType<typeof vi.fn>;
   readonly turnSteer: ReturnType<typeof vi.fn>;
+  readonly turnInterrupt: ReturnType<typeof vi.fn>;
   readonly close: ReturnType<typeof vi.fn>;
 }
 
@@ -83,6 +84,7 @@ async function createHarness(
     updateMetadata: vi.fn(),
     turnStart: vi.fn(() => initialTurn.promise),
     turnSteer: vi.fn(async () => ({ turnId: 'turn-1' })),
+    turnInterrupt: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
   };
   const logicalLifecycle = {
@@ -483,5 +485,131 @@ describe('persistent Codex turn state machine', () => {
       turn: { id: 'turn-1', status: 'interrupted' },
     });
     expect(harness.callbacks.exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('records FinishAgent close intent and closes after assistant output and turn completion', async () => {
+    const harness = await createHarness();
+
+    await expect(harness.handle.lifecycle.requestCloseAfterCurrentTurn()).resolves.toBe('accepted');
+    expect(harness.connection.close).not.toHaveBeenCalled();
+
+    completeTurn(harness, 'turn-1', 'Final implementation status');
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      finalMessage: 'Final implementation status',
+    });
+    expect(harness.callbacks.completedAssistantMessage).toHaveBeenCalledWith(
+      'Final implementation status'
+    );
+    expect(harness.callbacks.turnComplete).toHaveBeenCalledTimes(1);
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('graceful', undefined);
+  });
+
+  it('delivers an active graceful-stop instruction through turn/steer', async () => {
+    const harness = await createHarness();
+
+    await expect(
+      harness.handle.lifecycle.requestGracefulShutdown('Summarize the changed files.')
+    ).resolves.toBe('accepted');
+    expect(harness.connection.turnSteer).toHaveBeenLastCalledWith({
+      threadId: 'thread-state-test',
+      input: [{ type: 'text', text: 'Summarize the changed files.' }],
+      expectedTurnId: 'turn-1',
+    });
+    expect(harness.connection.close).not.toHaveBeenCalled();
+
+    completeTurn(harness, 'turn-1', 'Changed files: ...');
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      finalMessage: 'Changed files: ...',
+    });
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('graceful', undefined);
+  });
+
+  it('closes when graceful steering races the completed-turn notification', async () => {
+    const harness = await createHarness();
+    const steer = createDeferred<{ turnId: string }>();
+    harness.connection.turnSteer.mockImplementationOnce(() => steer.promise);
+
+    const request = harness.handle.lifecycle.requestGracefulShutdown('Finish this turn.');
+    await vi.waitFor(() => expect(harness.connection.turnSteer).toHaveBeenCalledTimes(1));
+    completeTurn(harness, 'turn-1', 'Turn completed during shutdown request');
+    steer.resolve({ turnId: 'turn-1' });
+
+    await expect(request).resolves.toBe('already-exited');
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      finalMessage: 'Turn completed during shutdown request',
+    });
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts a final idle graceful-stop turn on the existing thread', async () => {
+    const harness = await createHarness();
+    completeTurn(harness, 'turn-1', 'Initial result');
+
+    const finalTurn = createDeferred<{ turnId: string }>();
+    harness.connection.turnStart.mockImplementationOnce(() => finalTurn.promise);
+    const request = harness.handle.lifecycle.requestGracefulShutdown('Give the final status.');
+    await vi.waitFor(() => expect(harness.connection.turnStart).toHaveBeenCalledTimes(2));
+    expect(harness.connection.turnStart).toHaveBeenLastCalledWith({
+      threadId: 'thread-state-test',
+      input: [{ type: 'text', text: 'Give the final status.' }],
+      model: undefined,
+      effort: 'medium',
+    });
+    expect(harness.connection.close).not.toHaveBeenCalled();
+
+    finalTurn.resolve({ turnId: 'turn-2' });
+    await expect(request).resolves.toBe('accepted');
+    completeTurn(harness, 'turn-2', 'Final status');
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      finalMessage: 'Final status',
+    });
+    expect(harness.callbacks.turnComplete).toHaveBeenCalledTimes(2);
+  });
+
+  it('interrupts and closes once for duplicate forced-stop requests', async () => {
+    const harness = await createHarness();
+
+    const first = harness.handle.lifecycle.requestForcedShutdown();
+    const second = harness.handle.lifecycle.requestForcedShutdown();
+    await expect(first).resolves.toBe('accepted');
+    await expect(second).resolves.toBe('accepted');
+    expect(harness.connection.turnInterrupt).toHaveBeenCalledTimes(1);
+    expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
+      threadId: 'thread-state-test',
+      turnId: 'turn-1',
+    });
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('forced', undefined);
+  });
+
+  it('remembers a forced interrupt for a late turn/start response', async () => {
+    const harness = await createHarness({ resolveInitialTurn: false });
+    void harness.handle.ready.catch(() => undefined);
+
+    const forced = harness.handle.lifecycle.requestForcedShutdown();
+    await expect(forced).resolves.toBe('accepted');
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+    expect(harness.connection.turnInterrupt).not.toHaveBeenCalled();
+
+    harness.initialTurn.resolve({ turnId: 'turn-late' });
+    await vi.waitFor(() => expect(harness.connection.turnInterrupt).toHaveBeenCalledTimes(1));
+    expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
+      threadId: 'thread-state-test',
+      turnId: 'turn-late',
+    });
+    await expect(harness.handle.completion).resolves.toMatchObject({});
+  });
+
+  it('classifies a connection close failure as one failed provider exit', async () => {
+    const harness = await createHarness();
+    harness.connection.close.mockRejectedValueOnce(new Error('close failed'));
+
+    await expect(harness.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      error: expect.objectContaining({ message: 'close failed' }),
+    });
+    expect(harness.callbacks.exit).toHaveBeenCalledTimes(1);
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
   });
 });
