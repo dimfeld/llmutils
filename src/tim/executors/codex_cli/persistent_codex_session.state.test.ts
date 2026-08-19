@@ -64,10 +64,13 @@ interface Harness {
   >;
   readonly callbacks: CodexPersistentAgentLifecycleCallbacks;
   readonly connection: TestConnection;
+  readonly initialTurn: Deferred<{ turnId: string }>;
   readonly notify: (method: string, params: unknown) => void;
 }
 
-async function createHarness(): Promise<Harness> {
+async function createHarness(
+  options: { readonly resolveInitialTurn?: boolean } = {}
+): Promise<Harness> {
   vi.resetModules();
 
   const initialTurn = createDeferred<{ turnId: string }>();
@@ -157,13 +160,16 @@ async function createHarness(): Promise<Harness> {
   });
 
   await vi.waitFor(() => expect(connection.turnStart).toHaveBeenCalledTimes(1));
-  initialTurn.resolve({ turnId: 'turn-1' });
-  await expect(handle.ready).resolves.toBeUndefined();
+  if (options.resolveInitialTurn !== false) {
+    initialTurn.resolve({ turnId: 'turn-1' });
+    await expect(handle.ready).resolves.toBeUndefined();
+  }
 
   return {
     handle,
     callbacks,
     connection,
+    initialTurn,
     notify: (method: string, params: unknown): void => {
       notify?.(method, params);
     },
@@ -216,8 +222,50 @@ describe('persistent Codex turn state machine', () => {
     });
   });
 
+  it('keeps a rejected active steer temporarily unavailable and restores active readiness', async () => {
+    const harness = await createHarness();
+    const availability: string[] = [];
+    const unsubscribe = harness.handle.input.onAvailabilityChange(() => {
+      availability.push(harness.handle.input.activity);
+    });
+    harness.connection.turnSteer.mockRejectedValueOnce(new Error('turn already completed'));
+
+    await expect(
+      harness.handle.input.deliver(inputMessage('Retry after rejection', 'message-rejected'))
+    ).resolves.toBe('temporarily-unavailable');
+    expect(availability).toContain('temporarily-unavailable');
+    expect(availability.at(-1)).toBe('active');
+
+    await expect(
+      harness.handle.input.deliver(inputMessage('Accepted follow-up', 'message-accepted'))
+    ).resolves.toBe('steered');
+    expect(harness.connection.turnSteer).toHaveBeenLastCalledWith({
+      threadId: 'thread-state-test',
+      input: [{ type: 'text', text: 'Accepted follow-up' }],
+      expectedTurnId: 'turn-1',
+    });
+    unsubscribe();
+  });
+
+  it('keeps later input temporarily unavailable while the initial turn start is pending', async () => {
+    const harness = await createHarness({ resolveInitialTurn: false });
+
+    expect(harness.handle.input.isReady).toBe(false);
+    await expect(
+      harness.handle.input.deliver(inputMessage('Arrived during startup', 'message-startup'))
+    ).resolves.toBe('temporarily-unavailable');
+    expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
+
+    harness.initialTurn.resolve({ turnId: 'turn-1' });
+    await expect(harness.handle.ready).resolves.toBeUndefined();
+  });
+
   it('returns temporary unavailability for concurrent idle sends while one start is pending', async () => {
     const harness = await createHarness();
+    const availability: string[] = [];
+    const unsubscribe = harness.handle.input.onAvailabilityChange(() => {
+      availability.push(harness.handle.input.activity);
+    });
     completeTurn(harness, 'turn-1', 'Initial result');
     const nextTurn = createDeferred<{ turnId: string }>();
     harness.connection.turnStart.mockImplementationOnce(() => nextTurn.promise);
@@ -236,6 +284,18 @@ describe('persistent Codex turn state machine', () => {
       model: undefined,
       effort: 'medium',
     });
+
+    await expect(
+      harness.handle.input.deliver(inputMessage('Retry the second message', 'message-3'))
+    ).resolves.toBe('steered');
+    expect(harness.connection.turnSteer).toHaveBeenCalledWith({
+      threadId: 'thread-state-test',
+      input: [{ type: 'text', text: 'Retry the second message' }],
+      expectedTurnId: 'turn-2',
+    });
+    expect(availability).toContain('temporarily-unavailable');
+    expect(availability.at(-1)).toBe('active');
+    unsubscribe();
   });
 
   it('reconciles turn/started before the turn/start response', async () => {
@@ -256,6 +316,42 @@ describe('persistent Codex turn state machine', () => {
     expect(harness.handle.providerState).toBe('running-active');
   });
 
+  it('turns an idle turn-start failure into one provider failure without retrying', async () => {
+    const harness = await createHarness();
+    completeTurn(harness, 'turn-1');
+    harness.connection.turnStart.mockRejectedValueOnce(new Error('idle turn start failed'));
+
+    await expect(
+      harness.handle.input.deliver(inputMessage('Start failed', 'message-failed-start'))
+    ).rejects.toThrow('idle turn start failed');
+    await expect(harness.handle.completion).resolves.toMatchObject({ error: expect.any(Error) });
+    expect(harness.connection.turnStart).toHaveBeenCalledTimes(2);
+    expect(harness.callbacks.exit).toHaveBeenCalledTimes(1);
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
+  });
+
+  it('reconciles alternate turn ID fields from notifications', async () => {
+    const harness = await createHarness();
+    completeTurn(harness, 'turn-1');
+    const nextTurn = createDeferred<{ turnId: string }>();
+    harness.connection.turnStart.mockImplementationOnce(() => nextTurn.promise);
+
+    const delivery = harness.handle.input.deliver(inputMessage('Use alternate IDs', 'message-2'));
+    await vi.waitFor(() => expect(harness.connection.turnStart).toHaveBeenCalledTimes(2));
+    harness.notify('turn/started', {
+      thread_id: 'thread-state-test',
+      turn: { turn_id: 'turn-2' },
+    });
+    nextTurn.resolve({ turnId: 'turn-2' });
+    await expect(delivery).resolves.toBe('started-idle-turn');
+
+    harness.notify('turn/completed', {
+      thread_id: 'thread-state-test',
+      turn: { turn_id: 'turn-2', status: 'completed' },
+    });
+    expect(harness.callbacks.turnComplete).toHaveBeenCalledTimes(2);
+  });
+
   it('does not acknowledge a steer rejected by a completion race', async () => {
     const harness = await createHarness();
     const steer = createDeferred<{ turnId: string }>();
@@ -273,6 +369,20 @@ describe('persistent Codex turn state machine', () => {
     expect(harness.callbacks.turnComplete).toHaveBeenCalledTimes(1);
   });
 
+  it('reports a conflicting completion turn ID as one provider failure', async () => {
+    const harness = await createHarness();
+
+    harness.notify('turn/completed', {
+      threadId: 'thread-state-test',
+      turn: { id: 'unexpected-turn', status: 'completed' },
+    });
+
+    await expect(harness.handle.completion).resolves.toMatchObject({ error: expect.any(Error) });
+    expect(harness.callbacks.exit).toHaveBeenCalledTimes(1);
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
+    expect(harness.callbacks.turnComplete).not.toHaveBeenCalled();
+  });
+
   it('reports one result per completed turn and isolates empty and duplicate completions', async () => {
     const harness = await createHarness();
     completeTurn(harness, 'turn-1', 'First result');
@@ -286,6 +396,10 @@ describe('persistent Codex turn state machine', () => {
     await expect(secondDelivery).resolves.toBe('started-idle-turn');
     completeTurn(harness, 'turn-2', 'Second result');
     completeTurn(harness, 'turn-2', 'Stale duplicate');
+    harness.notify('thread/status/changed', {
+      threadId: 'thread-state-test',
+      status: { type: 'idle' },
+    });
 
     expect(harness.callbacks.completedAssistantMessage).toHaveBeenLastCalledWith('Second result');
     expect(harness.callbacks.completedAssistantMessage).toHaveBeenCalledTimes(2);
@@ -303,6 +417,31 @@ describe('persistent Codex turn state machine', () => {
     expect(harness.handle.providerState).toBe('running-idle');
   });
 
+  it('reports a completed result before turn completion and ignores a prior-turn item', async () => {
+    const harness = await createHarness();
+    completeTurn(harness, 'turn-1', 'First result');
+
+    const secondTurn = createDeferred<{ turnId: string }>();
+    harness.connection.turnStart.mockImplementationOnce(() => secondTurn.promise);
+    const secondDelivery = harness.handle.input.deliver(inputMessage('Second task', 'message-2'));
+    secondTurn.resolve({ turnId: 'turn-2' });
+    await expect(secondDelivery).resolves.toBe('started-idle-turn');
+
+    harness.notify('item/completed', {
+      threadId: 'thread-state-test',
+      turnId: 'turn-1',
+      item: { type: 'agentMessage', text: 'Late first result' },
+    });
+    completeTurn(harness, 'turn-2');
+
+    expect(harness.callbacks.completedAssistantMessage).toHaveBeenCalledTimes(1);
+    expect(harness.callbacks.completedAssistantMessage).toHaveBeenCalledWith('First result');
+    expect(harness.callbacks.completedAssistantMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      harness.callbacks.turnComplete.mock.invocationCallOrder[1]
+    );
+    expect(harness.callbacks.turnComplete).toHaveBeenCalledTimes(2);
+  });
+
   it('reports only owned provider activity and fails an unrecoverable turn', async () => {
     const harness = await createHarness();
     harness.notify('account/rateLimits/updated', { rateLimits: {} });
@@ -318,11 +457,31 @@ describe('persistent Codex turn state machine', () => {
     });
     expect(harness.callbacks.outputActivity).toHaveBeenCalledTimes(1);
 
-    completeTurn(harness, 'turn-1', undefined, 'failed');
+    harness.notify('item/completed', {
+      threadId: 'thread-state-test',
+      item: {
+        type: 'UserMessage',
+        content: [{ type: 'text', text: 'Local input echo' }],
+      },
+    });
+    expect(harness.callbacks.outputActivity).toHaveBeenCalledTimes(1);
+
+    harness.notify('item/agentMessage/delta', {
+      threadId: 'thread-state-test',
+      delta: 'Provider output without a structured message',
+    });
+    expect(harness.callbacks.outputActivity).toHaveBeenCalledTimes(2);
+
+    completeTurn(harness, 'turn-1', undefined, 'interrupted');
     await expect(harness.handle.completion).resolves.toMatchObject({
       error: expect.any(Error),
     });
     expect(harness.callbacks.turnComplete).not.toHaveBeenCalled();
     expect(harness.callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
+    harness.notify('turn/completed', {
+      threadId: 'thread-state-test',
+      turn: { id: 'turn-1', status: 'interrupted' },
+    });
+    expect(harness.callbacks.exit).toHaveBeenCalledTimes(1);
   });
 });

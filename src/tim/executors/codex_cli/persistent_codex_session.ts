@@ -556,7 +556,7 @@ class PersistentCodexSession {
     const message = formatter.handleNotification(method, params);
     sendFormattedStructured(message.structured);
 
-    if (this.isProviderActivity(method)) {
+    if (this.isProviderActivity(method, params)) {
       this.notifyObservers((observer) => observer.outputActivity());
     }
 
@@ -723,7 +723,12 @@ class PersistentCodexSession {
 
     const turnId = extractTurnId(params);
     if (turnId !== undefined) {
-      if (turn.turnId !== undefined && turn.turnId !== turnId) return;
+      if (turn.turnId !== undefined && turn.turnId !== turnId) {
+        void this.failProvider(
+          new Error(`Codex reported conflicting turn IDs for generation ${turn.generation}.`)
+        );
+        return;
+      }
       turn.turnId = turnId;
     }
 
@@ -800,13 +805,16 @@ class PersistentCodexSession {
     );
   }
 
-  private isProviderActivity(method: string): boolean {
+  private isProviderActivity(method: string, params: unknown): boolean {
     const lowerMethod = method.toLowerCase();
     if (
       lowerMethod.startsWith('account/') ||
       lowerMethod === 'thread/tokenusage/updated' ||
       lowerMethod.startsWith('thread/tokenusage/')
     ) {
+      return false;
+    }
+    if (lowerMethod.startsWith('item/') && isUserMessageItem(params)) {
       return false;
     }
     return (
@@ -1008,6 +1016,14 @@ function extractThreadStatusType(params: unknown): string | undefined {
   if (!status || typeof status !== 'object' || Array.isArray(status)) return undefined;
   const type = (status as Record<string, unknown>).type;
   return typeof type === 'string' ? type : undefined;
+}
+
+function isUserMessageItem(params: unknown): boolean {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return false;
+  const item = (params as Record<string, unknown>).item;
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+  const type = (item as Record<string, unknown>).type;
+  return typeof type === 'string' && type.toLowerCase() === 'usermessage';
 }
 
 function sendFormattedStructured(
