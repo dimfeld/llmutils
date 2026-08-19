@@ -1,0 +1,328 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { TimConfig } from '../../configSchema.js';
+import type {
+  AgentIdentity,
+  AgentInputMessage,
+} from '../../agent_messaging/agent_manager_types.js';
+import { formatAgentProcessLabel } from '../../agent_messaging/agent_process_labels.js';
+import type { CodexAgentToolDispatcher } from './codex_agent_tools.js';
+import type { CodexPersistentAgentLifecycleCallbacks } from './persistent_agent_contract.js';
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+}
+
+interface TestConnection {
+  readonly isAlive: boolean;
+  readonly pid: number;
+  readonly processControlId: string;
+  readonly setGracefulEndHandler: ReturnType<typeof vi.fn>;
+  readonly updateMetadata: ReturnType<typeof vi.fn>;
+  readonly turnStart: ReturnType<typeof vi.fn>;
+  readonly turnSteer: ReturnType<typeof vi.fn>;
+  readonly close: ReturnType<typeof vi.fn>;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolvePromise: ((value: T) => void) | undefined;
+  let rejectPromise: ((error: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return {
+    promise,
+    resolve: (value: T): void => resolvePromise?.(value),
+    reject: (error: unknown): void => rejectPromise?.(error),
+  };
+}
+
+function createIdentity(): AgentIdentity {
+  return {
+    id: 'agent-state-test' as AgentIdentity['id'],
+    name: 'state-test-agent' as AgentIdentity['name'],
+    role: 'subagent',
+    type: 'implementer',
+    executor: 'codex-cli',
+  };
+}
+
+function createCallbacks(): CodexPersistentAgentLifecycleCallbacks {
+  return {
+    outputActivity: vi.fn(),
+    completedAssistantMessage: vi.fn(),
+    turnComplete: vi.fn(),
+    exit: vi.fn(),
+  };
+}
+
+interface Harness {
+  readonly handle: Awaited<
+    ReturnType<(typeof import('./persistent_codex_session.js'))['startPersistentCodexAgent']>
+  >;
+  readonly callbacks: CodexPersistentAgentLifecycleCallbacks;
+  readonly connection: TestConnection;
+  readonly notify: (method: string, params: unknown) => void;
+}
+
+async function createHarness(): Promise<Harness> {
+  vi.resetModules();
+
+  const initialTurn = createDeferred<{ turnId: string }>();
+  let notify: ((method: string, params: unknown) => void) | undefined;
+  const connection: TestConnection = {
+    isAlive: true,
+    pid: 1234,
+    processControlId: 'codex-process-state-test',
+    setGracefulEndHandler: vi.fn(),
+    updateMetadata: vi.fn(),
+    turnStart: vi.fn(() => initialTurn.promise),
+    turnSteer: vi.fn(async () => ({ turnId: 'turn-1' })),
+    close: vi.fn(async () => undefined),
+  };
+  const logicalLifecycle = {
+    processId: 'logical-process-state-test',
+    setGracefulEndHandler: vi.fn(),
+    markStarted: vi.fn(),
+    markExited: vi.fn(),
+  };
+  const owner = {
+    prepareLogicalExecutor: vi.fn(() => logicalLifecycle),
+  };
+  const connectionCreate = vi.fn(async (options: { onNotification?: typeof notify }) => {
+    notify = options.onNotification;
+    return connection;
+  });
+
+  vi.doMock('./app_server_connection.js', () => ({
+    CodexAppServerConnection: { create: connectionCreate },
+  }));
+  vi.doMock('./app_server_runner.js', () => ({
+    createAppServerRequestHandler: vi.fn(() => vi.fn(async () => ({ success: true }))),
+    startInitialThread: vi.fn(async () => ({ threadId: 'thread-state-test' })),
+  }));
+  vi.doMock('../../../common/session_process_control.js', () => ({
+    getCurrentSessionProcessOwner: vi.fn(() => owner),
+  }));
+  vi.doMock('../../../logging', () => ({
+    debugLog: vi.fn(),
+    sendStructured: vi.fn(),
+  }));
+  vi.doMock('../../../logging/tunnel_client.js', () => ({
+    isTunnelActive: vi.fn(() => true),
+  }));
+  vi.doMock('./app_server_approval.js', () => ({
+    createApprovalHandler: vi.fn(() => vi.fn(async () => ({ decision: 'accept' }))),
+  }));
+
+  const { createCodexAgentToolProvider } = await import('./codex_agent_tools.js');
+  const { CODEX_PERSISTENT_AGENT_MODE } = await import('./persistent_agent_contract.js');
+  const { startPersistentCodexAgent } = await import('./persistent_codex_session.js');
+  const identity = createIdentity();
+  const callbacks = createCallbacks();
+  const dispatcher: CodexAgentToolDispatcher = {
+    startAgent: async () => ({
+      name: 'other-agent',
+      id: 'other-id',
+      type: 'tester',
+      executor: 'codex-cli',
+      state: 'starting',
+    }),
+    listAgents: () => ({ agents: [] }),
+    sendAgentMessage: async () => ({
+      name: 'other-agent',
+      messageId: 'message-id',
+      delivery: 'queued',
+    }),
+    stopAgent: async () => ({
+      name: 'other-agent',
+      mode: 'graceful-requested',
+      state: 'stopping',
+    }),
+    finishAgent: async () => ({ state: 'finishing' }),
+  };
+  const provider = createCodexAgentToolProvider({ caller: identity, dispatcher });
+  const handle = await startPersistentCodexAgent({
+    mode: CODEX_PERSISTENT_AGENT_MODE,
+    identity,
+    prompt: 'Initial assignment',
+    cwd: '/repo',
+    timConfig: {} as TimConfig,
+    dynamicToolProvider: provider,
+    processLabel: formatAgentProcessLabel('codex-cli', identity.name),
+    lifecycleCallbacks: callbacks,
+    sessionProcessOwner: owner,
+  });
+
+  await vi.waitFor(() => expect(connection.turnStart).toHaveBeenCalledTimes(1));
+  initialTurn.resolve({ turnId: 'turn-1' });
+  await expect(handle.ready).resolves.toBeUndefined();
+
+  return {
+    handle,
+    callbacks,
+    connection,
+    notify: (method: string, params: unknown): void => {
+      notify?.(method, params);
+    },
+  };
+}
+
+function inputMessage(content: string, messageId: string): AgentInputMessage {
+  return {
+    content,
+    messageId,
+    source: createIdentity(),
+  };
+}
+
+function completeTurn(
+  harness: Harness,
+  turnId: string,
+  message?: string,
+  status: string = 'completed'
+): void {
+  if (message !== undefined) {
+    harness.notify('item/completed', {
+      threadId: 'thread-state-test',
+      turnId,
+      item: { type: 'agentMessage', text: message },
+    });
+  }
+  harness.notify('turn/completed', {
+    threadId: 'thread-state-test',
+    turn: { id: turnId, status },
+  });
+}
+
+describe('persistent Codex turn state machine', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.CODEX_USE_APP_SERVER;
+  });
+
+  it('steers an active turn only after Codex accepts the expected turn', async () => {
+    const harness = await createHarness();
+
+    await expect(
+      harness.handle.input.deliver(inputMessage('Check the migration.', 'message-1'))
+    ).resolves.toBe('steered');
+    expect(harness.connection.turnSteer).toHaveBeenCalledWith({
+      threadId: 'thread-state-test',
+      input: [{ type: 'text', text: 'Check the migration.' }],
+      expectedTurnId: 'turn-1',
+    });
+  });
+
+  it('returns temporary unavailability for concurrent idle sends while one start is pending', async () => {
+    const harness = await createHarness();
+    completeTurn(harness, 'turn-1', 'Initial result');
+    const nextTurn = createDeferred<{ turnId: string }>();
+    harness.connection.turnStart.mockImplementationOnce(() => nextTurn.promise);
+
+    const first = harness.handle.input.deliver(inputMessage('First idle message', 'message-2'));
+    await vi.waitFor(() => expect(harness.connection.turnStart).toHaveBeenCalledTimes(2));
+    await expect(
+      harness.handle.input.deliver(inputMessage('Second idle message', 'message-3'))
+    ).resolves.toBe('temporarily-unavailable');
+
+    nextTurn.resolve({ turnId: 'turn-2' });
+    await expect(first).resolves.toBe('started-idle-turn');
+    expect(harness.connection.turnStart).toHaveBeenLastCalledWith({
+      threadId: 'thread-state-test',
+      input: [{ type: 'text', text: 'First idle message' }],
+      model: undefined,
+      effort: 'medium',
+    });
+  });
+
+  it('reconciles turn/started before the turn/start response', async () => {
+    const harness = await createHarness();
+    completeTurn(harness, 'turn-1');
+    const nextTurn = createDeferred<{ turnId: string }>();
+    harness.connection.turnStart.mockImplementationOnce(() => nextTurn.promise);
+
+    const delivery = harness.handle.input.deliver(inputMessage('Continue work', 'message-2'));
+    await vi.waitFor(() => expect(harness.connection.turnStart).toHaveBeenCalledTimes(2));
+    harness.notify('turn/started', {
+      threadId: 'thread-state-test',
+      turn: { id: 'turn-2' },
+    });
+    nextTurn.resolve({ turnId: 'turn-2' });
+
+    await expect(delivery).resolves.toBe('started-idle-turn');
+    expect(harness.handle.providerState).toBe('running-active');
+  });
+
+  it('does not acknowledge a steer rejected by a completion race', async () => {
+    const harness = await createHarness();
+    const steer = createDeferred<{ turnId: string }>();
+    harness.connection.turnSteer.mockImplementationOnce(() => steer.promise);
+
+    const delivery = harness.handle.input.deliver(inputMessage('Race this turn', 'message-2'));
+    await vi.waitFor(() => expect(harness.connection.turnSteer).toHaveBeenCalledTimes(1));
+    completeTurn(harness, 'turn-1', 'Completed before steer response');
+    steer.reject(new Error('turn is already complete'));
+
+    await expect(delivery).resolves.toBe('temporarily-unavailable');
+    expect(harness.callbacks.completedAssistantMessage).toHaveBeenCalledWith(
+      'Completed before steer response'
+    );
+    expect(harness.callbacks.turnComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports one result per completed turn and isolates empty and duplicate completions', async () => {
+    const harness = await createHarness();
+    completeTurn(harness, 'turn-1', 'First result');
+    expect(harness.callbacks.completedAssistantMessage).toHaveBeenCalledTimes(1);
+    expect(harness.callbacks.turnComplete).toHaveBeenCalledTimes(1);
+
+    const secondTurn = createDeferred<{ turnId: string }>();
+    harness.connection.turnStart.mockImplementationOnce(() => secondTurn.promise);
+    const secondDelivery = harness.handle.input.deliver(inputMessage('Second task', 'message-2'));
+    secondTurn.resolve({ turnId: 'turn-2' });
+    await expect(secondDelivery).resolves.toBe('started-idle-turn');
+    completeTurn(harness, 'turn-2', 'Second result');
+    completeTurn(harness, 'turn-2', 'Stale duplicate');
+
+    expect(harness.callbacks.completedAssistantMessage).toHaveBeenLastCalledWith('Second result');
+    expect(harness.callbacks.completedAssistantMessage).toHaveBeenCalledTimes(2);
+    expect(harness.callbacks.turnComplete).toHaveBeenCalledTimes(2);
+
+    const thirdTurn = createDeferred<{ turnId: string }>();
+    harness.connection.turnStart.mockImplementationOnce(() => thirdTurn.promise);
+    const thirdDelivery = harness.handle.input.deliver(inputMessage('Empty task', 'message-3'));
+    thirdTurn.resolve({ turnId: 'turn-3' });
+    await expect(thirdDelivery).resolves.toBe('started-idle-turn');
+    completeTurn(harness, 'turn-3');
+
+    expect(harness.callbacks.completedAssistantMessage).toHaveBeenCalledTimes(2);
+    expect(harness.callbacks.turnComplete).toHaveBeenCalledTimes(3);
+    expect(harness.handle.providerState).toBe('running-idle');
+  });
+
+  it('reports only owned provider activity and fails an unrecoverable turn', async () => {
+    const harness = await createHarness();
+    harness.notify('account/rateLimits/updated', { rateLimits: {} });
+    harness.notify('item/started', {
+      threadId: 'other-thread',
+      item: { type: 'reasoning', text: 'Not this agent' },
+    });
+    expect(harness.callbacks.outputActivity).not.toHaveBeenCalled();
+
+    harness.notify('item/started', {
+      threadId: 'thread-state-test',
+      item: { type: 'reasoning', text: 'Owned progress' },
+    });
+    expect(harness.callbacks.outputActivity).toHaveBeenCalledTimes(1);
+
+    completeTurn(harness, 'turn-1', undefined, 'failed');
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      error: expect.any(Error),
+    });
+    expect(harness.callbacks.turnComplete).not.toHaveBeenCalled();
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
+  });
+});

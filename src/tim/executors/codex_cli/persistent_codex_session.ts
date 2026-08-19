@@ -166,7 +166,12 @@ class PersistentCodexInputAdapter implements AgentInputAdapter {
   private resolveReady: (() => void) | undefined;
   private rejectReady: ((error: unknown) => void) | undefined;
 
-  public constructor(private readonly onRelease: () => Promise<void>) {}
+  public constructor(
+    private readonly onDeliver: (
+      message: AgentInputMessage
+    ) => AgentInputDelivery | Promise<AgentInputDelivery>,
+    private readonly onRelease: () => Promise<void>
+  ) {}
 
   public get ready(): Promise<void> {
     return this.readyPromise;
@@ -203,14 +208,26 @@ class PersistentCodexInputAdapter implements AgentInputAdapter {
     this.notifyAvailabilityChange();
   }
 
+  public markActive(): void {
+    if (!this.readyState) return;
+    this.currentActivity = 'active';
+    this.notifyAvailabilityChange();
+  }
+
+  public markTemporarilyUnavailable(): void {
+    if (!this.readyState) return;
+    this.currentActivity = 'temporarily-unavailable';
+    this.notifyAvailabilityChange();
+  }
+
   public markNotReady(): void {
     this.readyState = false;
     this.currentActivity = 'not-ready';
     this.notifyAvailabilityChange();
   }
 
-  public deliver(_message: AgentInputMessage): AgentInputDelivery {
-    return 'temporarily-unavailable';
+  public deliver(message: AgentInputMessage): AgentInputDelivery | Promise<AgentInputDelivery> {
+    return this.onDeliver(message);
   }
 
   public onAvailabilityChange(listener: () => void): () => void {
@@ -231,6 +248,13 @@ class PersistentCodexInputAdapter implements AgentInputAdapter {
   }
 }
 
+interface PersistentCodexTurn {
+  readonly generation: number;
+  turnId?: string;
+  settled: boolean;
+  assistantMessage?: string;
+}
+
 class PersistentCodexSession {
   private readonly completionDeferred = createDeferred<CodexPersistentAgentCompletion>();
   private readonly input: PersistentCodexInputAdapter;
@@ -242,7 +266,8 @@ class PersistentCodexSession {
   private tunnelServer: TunnelServer | undefined;
   private tunnelTempDir: string | undefined;
   private tunnelSocketPath: string | undefined;
-  private currentTurnId: string | undefined;
+  private currentTurn: PersistentCodexTurn | undefined;
+  private nextTurnGeneration = 0;
   private threadId: string | undefined;
   private ownedProcessControlId: ProcessControlId | undefined;
   private lastCompletedAssistantMessage: string | undefined;
@@ -250,9 +275,13 @@ class PersistentCodexSession {
   private closePromise: Promise<void> | undefined;
   private exitNotified = false;
   private cleaned = false;
+  private deliveryInFlight = false;
 
   public constructor(private readonly options: CodexPersistentAgentLaunchOptions) {
-    this.input = new PersistentCodexInputAdapter(() => this.close('forced'));
+    this.input = new PersistentCodexInputAdapter(
+      (message) => this.deliver(message),
+      () => this.close('forced')
+    );
     this.observers.add(options.lifecycleCallbacks);
   }
 
@@ -374,17 +403,11 @@ class PersistentCodexSession {
     this.threadId = threadResult.threadId;
     this.registerLogicalThread(threadResult.threadId);
 
-    this.state = 'running-active-starting';
-    const turnResult = await connection.turnStart({
-      threadId: threadResult.threadId,
-      input: [{ type: 'text', text: this.options.prompt }],
-      model: this.options.model,
-      effort: this.options.reasoningLevel ?? 'medium',
-    });
+    const initialTurn = this.beginTurn();
+    await this.startTurn(initialTurn, this.options.prompt);
     this.throwIfClosing();
-    this.currentTurnId = turnResult.turnId;
-    this.state = 'running-active';
     this.input.markReady();
+    this.syncInputActivity();
   }
 
   public async close(
@@ -526,33 +549,279 @@ class PersistentCodexSession {
   }
 
   private handleNotification(method: string, params: unknown): void {
-    if (this.cleaned) return;
+    if (this.cleaned || this.closePromise !== undefined) return;
+    if (!this.isOwnedThreadNotification(method, params)) return;
+
     const formatter = this.formatter;
     const message = formatter.handleNotification(method, params);
     sendFormattedStructured(message.structured);
 
-    this.notifyObservers((observer) => observer.outputActivity());
-    if (message.agentMessage !== undefined && message.agentMessage.trim().length > 0) {
-      this.lastCompletedAssistantMessage = message.agentMessage;
-      this.notifyObservers((observer) => observer.completedAssistantMessage(message.agentMessage!));
+    if (this.isProviderActivity(method)) {
+      this.notifyObservers((observer) => observer.outputActivity());
+    }
+
+    const turn = this.currentTurn;
+    const notificationTurnId = extractTurnId(params);
+    const belongsToCurrentTurn =
+      turn !== undefined &&
+      (notificationTurnId === undefined ||
+        turn.turnId === undefined ||
+        notificationTurnId === turn.turnId);
+    if (
+      belongsToCurrentTurn &&
+      turn !== undefined &&
+      !turn.settled &&
+      message.agentMessage !== undefined
+    ) {
+      turn.assistantMessage = message.agentMessage;
     }
 
     if (method === 'turn/started') {
       const turnId = extractTurnId(params);
-      if (turnId !== undefined) this.currentTurnId = turnId;
-      this.state = 'running-active';
+      if (turn !== undefined && !turn.settled) {
+        if (turnId !== undefined) {
+          if (turn.turnId !== undefined && turn.turnId !== turnId) {
+            void this.failProvider(
+              new Error(`Codex reported conflicting turn IDs for generation ${turn.generation}.`)
+            );
+            return;
+          }
+          turn.turnId = turnId;
+        }
+        this.setState('running-active');
+      }
       return;
     }
 
-    if (method !== 'turn/completed') return;
-    this.currentTurnId = undefined;
+    if (
+      method === 'turn/completed' ||
+      (method === 'thread/status/changed' && extractThreadStatusType(params) === 'idle')
+    ) {
+      this.completeTurn(params);
+    }
+  }
+
+  private deliver(message: AgentInputMessage): Promise<AgentInputDelivery> {
+    if (this.deliveryInFlight) return Promise.resolve('temporarily-unavailable');
+    this.deliveryInFlight = true;
+
+    const delivery = (async (): Promise<AgentInputDelivery> => {
+      if (!this.input.isReady || this.isClosing() || !this.connection?.isAlive) {
+        return 'temporarily-unavailable';
+      }
+      if (
+        this.state === 'starting' ||
+        this.state === 'running-active-starting' ||
+        this.state === 'finishing' ||
+        this.state === 'stopping-gracefully' ||
+        this.state === 'stopping-forced' ||
+        this.state === 'terminal'
+      ) {
+        return 'temporarily-unavailable';
+      }
+
+      if (this.state === 'running-active') {
+        const turn = this.currentTurn;
+        const turnId = turn?.turnId;
+        const threadId = this.threadId;
+        if (turn === undefined || turn.settled || turnId === undefined || threadId === undefined) {
+          return 'temporarily-unavailable';
+        }
+
+        this.input.markTemporarilyUnavailable();
+        try {
+          await this.connection.turnSteer({
+            threadId,
+            input: [{ type: 'text', text: message.content }],
+            expectedTurnId: turnId,
+          });
+          if (this.isClosing() || !this.connection?.isAlive) {
+            return 'temporarily-unavailable';
+          }
+          return 'steered';
+        } catch (error) {
+          if (!this.connection?.isAlive) {
+            await this.failProvider(toError(error));
+            throw error;
+          }
+          return 'temporarily-unavailable';
+        } finally {
+          this.syncInputActivity();
+        }
+      }
+
+      if (this.state === 'running-idle') {
+        const turn = this.beginTurn();
+        try {
+          await this.startTurn(turn, message.content);
+          if (this.isClosing() || !this.connection?.isAlive) {
+            return 'temporarily-unavailable';
+          }
+          return 'started-idle-turn';
+        } finally {
+          this.syncInputActivity();
+        }
+      }
+
+      return 'temporarily-unavailable';
+    })();
+
+    return delivery.finally(() => {
+      this.deliveryInFlight = false;
+      this.syncInputActivity();
+    });
+  }
+
+  private beginTurn(): PersistentCodexTurn {
+    if (this.currentTurn !== undefined && !this.currentTurn.settled) {
+      throw new Error('Codex persistent session already has an active turn');
+    }
+    const turn: PersistentCodexTurn = {
+      generation: ++this.nextTurnGeneration,
+      settled: false,
+    };
+    this.currentTurn = turn;
+    this.setState('running-active-starting');
+    return turn;
+  }
+
+  private async startTurn(turn: PersistentCodexTurn, content: string): Promise<void> {
+    const connection = this.connection;
+    const threadId = this.threadId;
+    if (connection === undefined || threadId === undefined) {
+      throw new Error('Codex persistent session is not ready to start a turn');
+    }
+
+    try {
+      const turnResult = await connection.turnStart({
+        threadId,
+        input: [{ type: 'text', text: content }],
+        model: this.options.model,
+        effort: this.options.reasoningLevel ?? 'medium',
+      });
+      if (turn.turnId !== undefined && turn.turnId !== turnResult.turnId) {
+        throw new Error(`Codex reported conflicting turn IDs for generation ${turn.generation}.`);
+      }
+      turn.turnId = turnResult.turnId;
+      if (turn.settled) {
+        if (this.currentTurn === turn) this.currentTurn = undefined;
+        return;
+      }
+      if (this.currentTurn === turn) this.setState('running-active');
+    } catch (error) {
+      if (!turn.settled) {
+        if (this.currentTurn === turn) this.currentTurn = undefined;
+        await this.failProvider(toError(error));
+      }
+      throw error;
+    }
+  }
+
+  private completeTurn(params: unknown): void {
+    const turn = this.currentTurn;
+    if (turn === undefined || turn.settled) return;
+
+    const turnId = extractTurnId(params);
+    if (turnId !== undefined) {
+      if (turn.turnId !== undefined && turn.turnId !== turnId) return;
+      turn.turnId = turnId;
+    }
+
+    const status = extractTurnStatus(params);
+    if (status.toLowerCase() !== 'completed') {
+      turn.settled = true;
+      this.currentTurn = undefined;
+      void this.failProvider(new Error(`Codex persistent turn ended with status "${status}".`));
+      return;
+    }
+
+    turn.settled = true;
+    this.currentTurn = undefined;
+    this.setStateWithoutAvailability('running-idle');
+
+    if (turn.assistantMessage !== undefined && turn.assistantMessage.trim().length > 0) {
+      this.lastCompletedAssistantMessage = turn.assistantMessage;
+      this.notifyObservers((observer) =>
+        observer.completedAssistantMessage(turn.assistantMessage!)
+      );
+    }
     this.notifyObservers((observer) => observer.turnComplete());
+
     if (this.closeAfterCurrentTurn) {
       void this.close('graceful');
     } else {
-      this.state = 'running-idle';
       this.input.markIdle();
     }
+  }
+
+  private setState(state: CodexPersistentAgentState): void {
+    this.state = state;
+    this.syncInputActivity();
+  }
+
+  private setStateWithoutAvailability(state: CodexPersistentAgentState): void {
+    this.state = state;
+  }
+
+  private syncInputActivity(): void {
+    if (!this.input.isReady) return;
+
+    switch (this.state) {
+      case 'running-active':
+        this.input.markActive();
+        return;
+      case 'running-idle':
+        this.input.markIdle();
+        return;
+      case 'running-active-starting':
+        this.input.markTemporarilyUnavailable();
+        return;
+      case 'starting':
+      case 'finishing':
+      case 'stopping-gracefully':
+      case 'stopping-forced':
+      case 'terminal':
+        this.input.markTemporarilyUnavailable();
+        return;
+    }
+  }
+
+  private isOwnedThreadNotification(method: string, params: unknown): boolean {
+    const threadId = extractThreadId(params);
+    if (threadId !== undefined) return threadId === this.threadId;
+
+    const lowerMethod = method.toLowerCase();
+    return (
+      lowerMethod.startsWith('turn/') ||
+      lowerMethod.startsWith('item/') ||
+      lowerMethod.startsWith('thread/status/') ||
+      lowerMethod.startsWith('codex/event/') ||
+      lowerMethod.startsWith('llm/item/')
+    );
+  }
+
+  private isProviderActivity(method: string): boolean {
+    const lowerMethod = method.toLowerCase();
+    if (
+      lowerMethod.startsWith('account/') ||
+      lowerMethod === 'thread/tokenusage/updated' ||
+      lowerMethod.startsWith('thread/tokenusage/')
+    ) {
+      return false;
+    }
+    return (
+      lowerMethod === 'thread/started' ||
+      lowerMethod.startsWith('thread/status/') ||
+      lowerMethod.startsWith('turn/') ||
+      lowerMethod.startsWith('item/') ||
+      lowerMethod.startsWith('codex/event/') ||
+      lowerMethod.startsWith('llm/item/')
+    );
+  }
+
+  private async failProvider(error: Error): Promise<void> {
+    if (this.isClosing()) return;
+    await this.close('failed', error);
   }
 
   private get formatter(): ReturnType<typeof createAppServerFormatter> {
@@ -630,7 +899,7 @@ class PersistentCodexSession {
   private requestCloseAfterCurrentTurn(): Promise<AgentProviderControlResult> {
     if (this.state === 'terminal') return Promise.resolve('already-exited');
     this.closeAfterCurrentTurn = true;
-    if (this.currentTurnId === undefined) {
+    if (this.currentTurn?.turnId === undefined) {
       return this.close('graceful').then(() => 'accepted');
     }
     this.state = 'finishing';
@@ -689,6 +958,56 @@ function extractTurnId(params: unknown): string | undefined {
   return typeof payload.turnId === 'string' && payload.turnId.length > 0
     ? payload.turnId
     : undefined;
+}
+
+function extractThreadId(params: unknown): string | undefined {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return undefined;
+  const payload = params as Record<string, unknown>;
+  const directId = payload.threadId ?? payload.thread_id;
+  if (typeof directId === 'string' && directId.length > 0) return directId;
+
+  const thread = payload.thread;
+  if (thread && typeof thread === 'object' && !Array.isArray(thread)) {
+    const nestedId = (thread as Record<string, unknown>).id;
+    if (typeof nestedId === 'string' && nestedId.length > 0) return nestedId;
+  }
+
+  const turn = payload.turn;
+  if (turn && typeof turn === 'object' && !Array.isArray(turn)) {
+    const turnPayload = turn as Record<string, unknown>;
+    const nestedTurnThreadId = turnPayload.threadId ?? turnPayload.thread_id;
+    if (typeof nestedTurnThreadId === 'string' && nestedTurnThreadId.length > 0) {
+      return nestedTurnThreadId;
+    }
+  }
+
+  const item = payload.item;
+  if (item && typeof item === 'object' && !Array.isArray(item)) {
+    const itemPayload = item as Record<string, unknown>;
+    const itemThreadId = itemPayload.threadId ?? itemPayload.thread_id;
+    if (typeof itemThreadId === 'string' && itemThreadId.length > 0) return itemThreadId;
+  }
+
+  return undefined;
+}
+
+function extractTurnStatus(params: unknown): string {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return 'completed';
+  const payload = params as Record<string, unknown>;
+  const turn = payload.turn;
+  if (turn && typeof turn === 'object' && !Array.isArray(turn)) {
+    const status = (turn as Record<string, unknown>).status;
+    return typeof status === 'string' ? status : 'completed';
+  }
+  return typeof payload.status === 'string' ? payload.status : 'completed';
+}
+
+function extractThreadStatusType(params: unknown): string | undefined {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return undefined;
+  const status = (params as Record<string, unknown>).status;
+  if (!status || typeof status !== 'object' || Array.isArray(status)) return undefined;
+  const type = (status as Record<string, unknown>).type;
+  return typeof type === 'string' ? type : undefined;
 }
 
 function sendFormattedStructured(
