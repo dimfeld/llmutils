@@ -49,7 +49,7 @@ class SessionEndedError extends Error {
 
 type AppServerRequestHandler = (method: string, id: number, params: unknown) => Promise<unknown>;
 
-function createAppServerRequestHandler(
+export function createAppServerRequestHandler(
   dynamicToolProvider: CodexDynamicToolProvider | undefined,
   approvalHandler: AppServerRequestHandler
 ): AppServerRequestHandler {
@@ -68,7 +68,7 @@ function createAppServerRequestHandler(
   };
 }
 
-async function startInitialThread(
+export async function startInitialThread(
   connection: CodexAppServerConnection,
   params: ThreadStartParams,
   dynamicToolProvider: CodexDynamicToolProvider | undefined

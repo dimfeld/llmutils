@@ -29,6 +29,12 @@ import {
   validateJsonOutputAgainstSchema,
 } from './schema_output';
 
+export {
+  startPersistentCodexAgent,
+  validateCodexPersistentAgentLaunchOptions,
+} from './persistent_codex_session.js';
+export type { CodexPersistentAgentLaunchOptions } from './persistent_codex_session.js';
+
 export type CodexAppServerMode = 'single-turn' | 'chat-session' | 'single-turn-with-steering';
 
 export interface CodexStepOptions {

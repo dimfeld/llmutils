@@ -14,7 +14,7 @@ import {
   getCurrentSessionProcessOwner,
   type SessionExecutorLifecycle,
 } from '../../../common/session_process_control.js';
-import type { SessionProcessUpdate } from '../../../common/session_process.js';
+import type { ProcessId, SessionProcessUpdate } from '../../../common/session_process.js';
 import {
   CodexDynamicToolsCompatibilityError,
   type CodexDynamicToolDefinition,
@@ -88,10 +88,14 @@ export interface ConnectionOptions {
   cwd: string;
   env?: Record<string, string>;
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+  /** Force a private app-server even when the root inherited a shared socket. */
+  privateOwner?: boolean;
   /** Opt into the experimental app-server API required by dynamic tools. */
   experimentalApi?: boolean;
   /** Display label used when the owned app-server process is tracked. */
   sessionProcessLabel?: string;
+  /** Installed before a spawned process becomes visible to End controls. */
+  onGracefulEnd?: () => void;
   onNotification?: (method: string, params: unknown) => void;
   onServerRequest?: (method: string, id: number, params: unknown) => Promise<unknown>;
   onExit?: (info: { exitCode: number; signal?: NodeJS.Signals }) => void;
@@ -614,7 +618,7 @@ export class CodexAppServerConnection {
     const env = await buildWorkspaceCommandEnv(options.cwd, options.env, {
       timEnvironment: options.timEnvironment,
     });
-    const inheritedSocketPath = getInheritedAppServerSocket(env);
+    const inheritedSocketPath = options.privateOwner ? undefined : getInheritedAppServerSocket(env);
     const owner =
       inheritedSocketPath == null ? await CodexAppServerConnection.spawnOwner(options, env) : null;
     const socketPath = inheritedSocketPath ?? owner?.socketPath;
@@ -673,6 +677,7 @@ export class CodexAppServerConnection {
       command: `codex app-server --listen unix://${socketPath}`,
       control: 'both',
     });
+    lifecycle?.setGracefulEndHandler(options.onGracefulEnd);
     const spawnEnv = {
       ...env,
       ...lifecycle?.environment,
@@ -715,6 +720,11 @@ export class CodexAppServerConnection {
 
   get pid(): number | undefined {
     return this.owner.kind === 'spawned' ? this.owner.proc.pid : undefined;
+  }
+
+  /** Opaque session-process identity for the owned app-server, when spawned. */
+  get processControlId(): ProcessId | undefined {
+    return this.owner.kind === 'spawned' ? this.owner.lifecycle?.processId : undefined;
   }
 
   setGracefulEndHandler(handler: (() => void) | undefined): void {

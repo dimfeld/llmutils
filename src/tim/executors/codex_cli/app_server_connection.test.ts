@@ -8,6 +8,15 @@ import {
   TIM_CODEX_APP_SERVER_SOCKET,
 } from './app_server_connection';
 import { CodexDynamicToolsCompatibilityError } from './app_server_dynamic_tools.js';
+import {
+  runWithSessionProcessOwner,
+  SessionProcessOwner,
+} from '../../../common/session_process_control.js';
+import {
+  SessionProcessRegistry,
+  SessionProcessRegistryLifecycleSink,
+  toProcessId,
+} from '../../../common/session_process.js';
 
 interface MockServerPaths {
   rootDir: string;
@@ -590,6 +599,57 @@ describe('CodexAppServerConnection', () => {
       spawnSpy.mockRestore();
       server.stop(true);
       await fs.rm(socketDir, { recursive: true, force: true });
+    }
+  });
+
+  test('privateOwner ignores an inherited socket and starts a labeled private server', async () => {
+    const inheritedSocketDir = await fs.mkdtemp(path.join(os.tmpdir(), 'app-server-private-'));
+    const inheritedSocketPath = path.join(inheritedSocketDir, 'inherited.sock');
+    const inheritedServer = await setupExternalSocketServer(inheritedSocketPath);
+    const registry = new SessionProcessRegistry({ sessionId: 'private-owner-session' });
+    const ownerProcessId = toProcessId('private-owner-process');
+    if (!ownerProcessId) throw new Error('Invalid private-owner process ID');
+    registry.register({ processId: ownerProcessId, kind: 'tim', label: 'private owner' });
+    const owner = new SessionProcessOwner({
+      sessionId: 'private-owner-session',
+      ownerProcessId,
+      lifecycleSink: new SessionProcessRegistryLifecycleSink(registry),
+    });
+
+    try {
+      const connection = await runWithSessionProcessOwner(owner, () =>
+        CodexAppServerConnection.create({
+          cwd: mockServer.rootDir,
+          privateOwner: true,
+          sessionProcessLabel: 'Codex app-server (private-worker)',
+          env: buildSpawnEnv({
+            PATH: `${mockServer.rootDir}:${process.env.PATH ?? ''}`,
+            [TIM_CODEX_APP_SERVER_SOCKET]: inheritedSocketPath,
+            MOCK_REQUEST_LOG: mockServer.requestLogPath,
+          }),
+        })
+      );
+
+      expect(connection.pid).toEqual(expect.any(Number));
+      expect((await connection.threadStart({})).threadId).toBe('thread-1');
+      expect(await fs.readFile(mockServer.spawnLogPath, 'utf8')).toContain(
+        'args:\tapp-server\t--listen\tunix://'
+      );
+      const appServerNode = registry
+        .getSnapshot()
+        .find((node) => node.label === 'Codex app-server (private-worker)');
+      expect(appServerNode).toMatchObject({
+        kind: 'executor',
+        control: 'both',
+        state: 'running',
+        pid: expect.any(Number),
+      });
+      await connection.close();
+      expect(registry.get(appServerNode!.processId)).toMatchObject({ state: 'exited' });
+    } finally {
+      owner.dispose();
+      inheritedServer.stop(true);
+      await fs.rm(inheritedSocketDir, { recursive: true, force: true });
     }
   });
 
