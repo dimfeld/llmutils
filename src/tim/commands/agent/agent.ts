@@ -86,6 +86,8 @@ import { clearTmpDir } from '../../batch_review_cache.js';
 import { autoCreatePrForPlan } from '../create_pr.js';
 import { autoUploadArtifactsToPr } from '../upload_artifacts.js';
 import { withPlanAutoSync } from '../../plan_materialize.js';
+import { createClaudePermissionPromptCoordinator } from '../../executors/claude_code/claude_permission_prompt_coordinator.js';
+import type { ClaudePermissionPromptCoordinator } from '../../executors/claude_code/claude_mcp_protocol.js';
 
 interface AgentCommandOptions {
   nextReady?: number;
@@ -462,6 +464,8 @@ export async function timAgent(
   let summaryFilePath: string | undefined;
   let summaryCollector!: SummaryCollector;
   let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
+  let claudePermissionPromptCoordinator: ClaudePermissionPromptCoordinator | undefined;
+  let claudePermissionCoordinatorShutdownError: Error | undefined;
   const recordFailure = (err: unknown): void => {
     if (failureReason) return;
     if (err instanceof Error) {
@@ -476,6 +480,10 @@ export async function timAgent(
     // Must be inside try so the finally block always resets it
     setDeferSignalExit(true);
     config = await loadEffectiveConfig(globalCliOptions.config);
+    const agentMessagingEnabled = config.experimental?.agentMessaging === true;
+    if (agentMessagingEnabled) {
+      claudePermissionPromptCoordinator = createClaudePermissionPromptCoordinator();
+    }
     currentBaseDir = await getGitRoot();
     let initialResolvedPlan = await resolvePlanByNumericId(planId, currentBaseDir);
     let initialPlanData = initialResolvedPlan.plan;
@@ -689,8 +697,6 @@ export async function timAgent(
       process.stdin.isTTY === true &&
       options.terminalInput !== false &&
       config.terminalInput !== false;
-    const agentMessagingEnabled = config.experimental?.agentMessaging === true;
-
     const sharedExecutorOptions: ExecutorCommonOptions = {
       baseDir: currentBaseDir,
       model: agentExecutionModel,
@@ -698,6 +704,7 @@ export async function timAgent(
       terminalInput: terminalInputEnabled,
       simpleMode: simpleModeEnabled ? true : undefined,
       agentMessagingEnabled,
+      claudePermissionPromptCoordinator,
       reviewExecutor: options.reviewExecutor,
       subagentExecutor,
       dynamicSubagentInstructions,
@@ -1639,6 +1646,20 @@ export async function timAgent(
       unregisterLifecycleCleanup?.();
     }
 
+    try {
+      await claudePermissionPromptCoordinator?.dispose();
+    } catch (err) {
+      claudePermissionCoordinatorShutdownError =
+        err instanceof Error ? err : new Error(String(err));
+      if (!executionError) {
+        executionError = claudePermissionCoordinatorShutdownError;
+      } else {
+        error(
+          `Claude permission coordinator shutdown failed: ${claudePermissionCoordinatorShutdownError}`
+        );
+      }
+    }
+
     scheduleOpportunisticArtifactPurge(config);
 
     if (summaryEnabled && summaryCollector) {
@@ -1688,6 +1709,9 @@ export async function timAgent(
     }
     if (!hadExecutionFailure && !postExecutionError && lifecycleShutdownError) {
       postExecutionError = lifecycleShutdownError;
+    }
+    if (!hadExecutionFailure && !postExecutionError && claudePermissionCoordinatorShutdownError) {
+      postExecutionError = claudePermissionCoordinatorShutdownError;
     }
 
     // Disable deferred exit — no more async cleanup to do

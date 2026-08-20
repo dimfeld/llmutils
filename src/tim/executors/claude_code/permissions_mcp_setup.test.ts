@@ -359,6 +359,97 @@ describe('permissions MCP path resolution', () => {
 });
 
 describe('shared permission prompt coordination over real MCP sockets', () => {
+  test('shares one root coordinator across two bridges and disposes it during root teardown', async () => {
+    const coordinator = new FifoClaudePermissionPromptCoordinator();
+    const promptMessages: string[] = [];
+    let promptShownResolve!: () => void;
+    const promptShown = new Promise<void>((resolve) => {
+      promptShownResolve = resolve;
+    });
+
+    mockPromptSelect.mockImplementation(async (...args: unknown[]) => {
+      const options = args[0] as { message: string; signal?: AbortSignal };
+      promptMessages.push(options.message);
+      promptShownResolve();
+      await new Promise<void>((resolve, reject) => {
+        const signal = options.signal;
+        if (signal?.aborted) {
+          reject(new Error('AbortPromptError'));
+          return;
+        }
+        signal?.addEventListener('abort', () => reject(new Error('AbortPromptError')), {
+          once: true,
+        });
+      });
+      return 'allow';
+    });
+
+    const firstSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('claude-implementer'),
+    });
+    const secondSetup = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: true,
+      permissionPromptCoordinator: coordinator,
+      agentToolContext: makeSubagentToolContext('claude-tester'),
+    });
+    const firstClient = await connectPermissionTestClient(
+      path.join(firstSetup.tempDir, 'permissions.sock')
+    );
+    const secondClient = await connectPermissionTestClient(
+      path.join(secondSetup.tempDir, 'permissions.sock')
+    );
+
+    try {
+      const firstResponse = firstClient.send({
+        type: 'permission_request',
+        requestId: 'root-teardown-first',
+        tool_name: 'Read',
+        input: {},
+      });
+      await promptShown;
+
+      const secondResponse = secondClient.send({
+        type: 'permission_request',
+        requestId: 'root-teardown-second',
+        tool_name: 'Read',
+        input: {},
+      });
+
+      await coordinator.dispose();
+      await firstSetup.cleanup();
+      await secondSetup.cleanup();
+
+      await expect(firstResponse).rejects.toThrow();
+      await expect(secondResponse).rejects.toThrow();
+      expect(promptMessages).toHaveLength(1);
+      expect(promptMessages[0]).toContain('Claude agent claude-implementer');
+      await expect(
+        coordinator.enqueue({
+          requesterName: 'root',
+          requesterToken: 'root-token',
+          requestId: 'after-dispose',
+          run: async () => 'not reached',
+        })
+      ).rejects.toThrow('Prompt coordinator disposed');
+    } finally {
+      firstClient.socket.destroy();
+      secondClient.socket.destroy();
+      await firstSetup.cleanup();
+      await secondSetup.cleanup();
+      await coordinator.dispose();
+      mockPromptSelect.mockImplementation(async () => {
+        const next = selectResponses.shift();
+        if (next instanceof Error) throw next;
+        if (typeof next !== 'string') throw new Error('No queued select response');
+        return next;
+      });
+    }
+  });
+
   test('serializes prompts by arrival order and uses the trusted requester label', async () => {
     const coordinator = new FifoClaudePermissionPromptCoordinator();
     const promptMessages: string[] = [];
