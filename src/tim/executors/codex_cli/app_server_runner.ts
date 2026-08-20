@@ -51,6 +51,13 @@ class SessionEndedError extends Error {
 
 type AppServerRequestHandler = (method: string, id: number, params: unknown) => Promise<unknown>;
 
+interface CodexTurnAttemptHooks {
+  readonly onTurnStarted?: (turnId: string) => void | Promise<void>;
+  readonly onAttemptSettled?: (status: string) => void | Promise<void>;
+}
+
+const ROOT_STEERING_TAIL_WAIT_MS = 1_000;
+
 export function createAppServerRequestHandler(
   dynamicToolProvider: CodexDynamicToolProvider | undefined,
   approvalHandler: AppServerRequestHandler
@@ -486,7 +493,10 @@ export async function executeCodexStepViaAppServer(
       logicalExecutorLifecycle?.markStarted();
     }
 
-    const executeTurnWithRetry = async (initialInput: string): Promise<void> => {
+    const executeTurnWithRetry = async (
+      initialInput: string,
+      hooks: CodexTurnAttemptHooks = {}
+    ): Promise<void> => {
       let promptForAttempt = initialInput;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
@@ -518,6 +528,7 @@ export async function executeCodexStepViaAppServer(
               }
               currentTurnId = turnResult.turnId;
               resetInactivityTimer();
+              void hooks.onTurnStarted?.(turnResult.turnId);
             })
             .catch((err) => {
               if (!currentAttemptActive) {
@@ -537,6 +548,7 @@ export async function executeCodexStepViaAppServer(
           throwIfSessionEndRequested();
           currentAttemptActive = false;
           clearInactivityTimer();
+          await hooks.onAttemptSettled?.(status);
 
           if (status.toLowerCase() === 'completed') {
             if (turnStartError != null) {
@@ -587,6 +599,43 @@ export async function executeCodexStepViaAppServer(
       let clearHeadlessUserInputHandler: () => void = () => {};
       let clearHeadlessEndSessionHandlers: () => void = () => {};
       let rootSteeringTail: Promise<void> = Promise.resolve();
+
+      const waitForRootSteeringTail = async (closeConnection = false): Promise<void> => {
+        const tail = rootSteeringTail;
+        let timedOut = false;
+        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<void>((resolve) => {
+          timeoutHandle = setTimeout(() => {
+            timedOut = true;
+            resolve();
+          }, ROOT_STEERING_TAIL_WAIT_MS);
+        });
+        try {
+          await Promise.race([tail, timeout]);
+        } finally {
+          if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+        }
+        if (!timedOut) return;
+
+        // turn/steer is a provider request, not an AgentManager shutdown
+        // operation. A provider that accepts a request just as its turn ends
+        // may never answer it, so do not let executor cleanup wait forever.
+        debugLog(
+          `Codex root steering request did not settle within ${ROOT_STEERING_TAIL_WAIT_MS}ms`
+        );
+        rootSteeringTail = Promise.resolve();
+        if (closeConnection && activeConnection.isAlive) {
+          try {
+            await activeConnection.close();
+          } catch (error) {
+            debugLog('Failed to close Codex after an unanswered root steering request:', error);
+          }
+        }
+      };
+
+      const closeAndWaitForRootSteeringTail = async (): Promise<void> => {
+        await waitForRootSteeringTail(true);
+      };
 
       if (terminalInputEnabled) {
         terminalInputReader = new TerminalInputReader({
@@ -712,76 +761,19 @@ export async function executeCodexStepViaAppServer(
       })();
 
       try {
-        let promptForAttempt = normalizedPrompt;
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          try {
-            throwIfConnectionExited();
-            throwIfSessionEndRequested();
-            currentTurnId = undefined;
-            sawFirstNotification = false;
-            interruptedByInactivity = false;
-            currentAttemptActive = true;
-            resetTurnTracking();
-            resetInactivityTimer();
-
-            const startResult = await activeConnection.turnStart({
-              threadId: activeThreadId,
-              input: [{ type: 'text', text: promptForAttempt }],
-              model,
-              effort: reasoningLevel,
-              ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
-            });
-            currentTurnId = startResult.turnId;
-            if (sessionEndRequested) {
-              interruptActiveTurn();
-            }
+        await executeTurnWithRetry(normalizedPrompt, {
+          onTurnStarted: (): void => {
             rootInputAdapter?.setActivity('active');
             resetInactivityTimer();
-
-            if (!turnCompletedPromise) {
-              throw new Error('Codex app-server turn tracking was not initialized.');
-            }
-
-            const status = (await turnCompletedPromise) || 'completed';
-            throwIfConnectionExited();
-            throwIfSessionEndRequested();
-            currentAttemptActive = false;
+          },
+          onAttemptSettled: async (): Promise<void> => {
             rootInputAdapter?.setActivity('temporarily-unavailable');
-            clearInactivityTimer();
-            await rootSteeringTail;
-
-            if (status.toLowerCase() === 'completed') {
-              successfulTurns += 1;
-              break;
-            }
-
-            const inactivitySuffix = interruptedByInactivity ? ' (after inactivity timeout)' : '';
-            if (attempt >= maxAttempts) {
-              throw new Error(
-                `codex failed after ${maxAttempts} attempts (turn status: ${status}${inactivitySuffix}).`
-              );
-            }
-            warn(
-              `Codex attempt ${attempt}/${maxAttempts} ended with turn status "${status}"${inactivitySuffix}; retrying...`
-            );
-            promptForAttempt = 'continue';
-          } catch (error) {
-            currentAttemptActive = false;
-            rootInputAdapter?.setActivity('temporarily-unavailable');
-            clearInactivityTimer();
-            await rootSteeringTail;
-            throwIfSessionEndRequested();
-            if (attempt >= maxAttempts) {
-              throw error;
-            }
-            warn(`Codex attempt ${attempt}/${maxAttempts} failed; retrying...`);
-            debugLog('Codex app-server attempt failure details:', error);
-            promptForAttempt = 'continue';
-          }
-        }
+            await waitForRootSteeringTail();
+          },
+        });
       } finally {
         rootInputAdapter?.setActivity('temporarily-unavailable');
-        await rootSteeringTail;
+        await closeAndWaitForRootSteeringTail();
         if (rootInputAdapter !== undefined) {
           options?.orchestratorInputAdapter?.unbind(rootInputAdapter);
           await rootInputAdapter.release();

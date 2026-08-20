@@ -678,14 +678,17 @@ describe('terminal_input_lifecycle - background activity', () => {
     });
     controller.onResultMessage(true);
     expect(controller.acceptedSuccessfulFinalResult()).toBe(false);
+    expect(controller.inputIsClosed()).toBe(false);
 
     controller.observeFormattedMessage({
       type: 'system',
       backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
     });
+    expect(controller.inputIsClosed()).toBe(false);
     vi.advanceTimersByTime(10_000);
 
     expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+    expect(controller.inputIsClosed()).toBe(true);
     expect(controller.acceptedSuccessfulFinalResult()).toBe(true);
 
     controller.cleanup();

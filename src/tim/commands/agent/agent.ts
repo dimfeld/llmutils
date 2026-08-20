@@ -727,7 +727,6 @@ export async function timAgent(
         orchestratorExecutor: collaborativeOrchestratorExecutor!,
         permissionPromptCoordinator: claudePermissionPromptCoordinator!,
         noninteractive,
-        terminalInput: terminalInputEnabled,
       });
     }
 

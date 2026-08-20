@@ -4,6 +4,16 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 
+async function waitFor(condition: () => boolean, timeoutMs: number = 2000): Promise<void> {
+  const startedAt = Date.now();
+  while (!condition()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Timed out waiting for condition');
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 function createStreamingProcessMock(overrides?: {
   pid?: number;
   exitCode?: number;
@@ -2279,6 +2289,136 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     }
 
     expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('queues root messages after result-close and drains them on the next execute turn', async () => {
+    vi.doUnmock('./claude_code/terminal_input_lifecycle.ts');
+    vi.doUnmock('./claude_code/format.ts');
+    vi.doUnmock('./claude_code/output_stream_formatter.ts');
+    vi.doUnmock('./claude_code/streaming_input.ts');
+    const { createAgentManager } = await import('../agent_messaging/agent_manager.js');
+    const { DeferredAgentInputAdapter } = await import('../agent_messaging/agent_input_adapter.js');
+
+    let formatStdout: ((output: string) => unknown) | undefined;
+    let resolveStreamingResult: ((value: SpawnAndLogOutputResult) => void) | undefined;
+    const stdinWrites: string[][] = [];
+    const resultLine =
+      '{"type":"result","subtype":"success","total_cost_usd":0,"duration_ms":1,"duration_api_ms":1,"is_error":false,"num_turns":1,"result":"done","session_id":"session"}';
+
+    vi.doMock('../../common/git.ts', () => ({
+      getGitRoot: vi.fn(async () => tempDir),
+      getUsingJj: vi.fn(async () => false),
+      getWorkingCopyStatus: vi.fn(async () => ''),
+    }));
+    vi.doMock('../../common/process.ts', () => ({
+      spawnWithStreamingIO: vi.fn(async (_args: string[], options: any) => {
+        formatStdout = options.formatStdout;
+        const write = vi.fn((value: string) => {
+          stdinWrites.push([value]);
+        });
+        const end = vi.fn(async () => {});
+        return {
+          pid: 12345,
+          stdin: { write, end },
+          result: new Promise<SpawnAndLogOutputResult>((resolve) => {
+            resolveStreamingResult = resolve;
+          }),
+          kill: vi.fn(() => {}),
+        };
+      }),
+      createLineSplitter: () => (value: string) => value.split('\n').filter(Boolean),
+      debug: false,
+    }));
+    vi.doMock('../../logging/tunnel_client.js', () => ({
+      isTunnelActive: vi.fn(() => true),
+      TunnelAdapter: class {},
+    }));
+
+    const rootInput = new DeferredAgentInputAdapter();
+    const manager = await createAgentManager({
+      orchestratorExecutor: 'claude-code',
+      orchestratorInputAdapter: rootInput,
+    });
+    const execute = async (): Promise<void> => {
+      const { ClaudeCodeExecutor } = await import('./claude_code.js');
+      const executor = new ClaudeCodeExecutor(
+        { permissionsMcp: { enabled: false } } as any,
+        {
+          baseDir: tempDir,
+          noninteractive: true,
+          orchestratorInputAdapter: rootInput,
+        } as any,
+        {} as any
+      );
+      await executor.execute('CTX', {
+        planId: 'root-adapter',
+        planTitle: 'Root adapter',
+        planFilePath: `${tempDir}/plan.yml`,
+        executionMode: 'bare',
+      });
+    };
+
+    try {
+      const firstExecution = execute();
+      let firstExecutionError: unknown;
+      void firstExecution.catch((error: unknown) => {
+        firstExecutionError = error;
+      });
+      await waitFor(() => rootInput.activity === 'active' || firstExecutionError !== undefined);
+      if (firstExecutionError !== undefined) throw firstExecutionError;
+      expect(formatStdout).toBeDefined();
+
+      formatStdout?.(`${resultLine}\n`);
+      await waitFor(() => rootInput.activity === 'temporarily-unavailable');
+      expect(
+        rootInput.deliver({
+          messageId: 'direct-late-message',
+          source: manager.orchestratorIdentity,
+          content: 'directly unavailable after result close',
+        })
+      ).toBe('temporarily-unavailable');
+
+      const queuedAcknowledgement = await manager.sessionRuntime.sendMessage(
+        { id: manager.orchestratorIdentity.id, name: manager.orchestratorIdentity.name },
+        { id: manager.orchestratorIdentity.id, name: manager.orchestratorIdentity.name },
+        { requestId: 'queued-root-message', content: 'deliver on next turn' }
+      );
+      if (!queuedAcknowledgement.success) {
+        throw new Error(JSON.stringify(queuedAcknowledgement));
+      }
+      expect(queuedAcknowledgement).toMatchObject({
+        success: true,
+        delivery: 'queued',
+      });
+      resolveStreamingResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await firstExecution;
+
+      stdinWrites.length = 0;
+      formatStdout = undefined;
+      resolveStreamingResult = undefined;
+      const secondExecution = execute();
+      await waitFor(() => rootInput.activity === 'active');
+      await waitFor(() => stdinWrites.some(([value]) => value.includes('deliver on next turn')));
+      expect(stdinWrites.some(([value]) => value.includes('deliver on next turn'))).toBe(true);
+
+      formatStdout?.(`${resultLine}\n`);
+      resolveStreamingResult?.({
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      await secondExecution;
+    } finally {
+      await manager.close();
+    }
   });
 
   test('logs terminal input hint when lifecycle controller reports started', async () => {

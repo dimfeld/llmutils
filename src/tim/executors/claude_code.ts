@@ -717,6 +717,7 @@ export class ClaudeCodeExecutor implements Executor {
       },
     ]);
     const cleanup = (): Promise<void> => cleanupState.cleanup();
+    const inputIsClosed = (): boolean => terminalInputResult?.inputIsClosed?.() ?? true;
 
     try {
       tunnelTempDir = tempMcpConfigDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-')));
@@ -884,12 +885,18 @@ export class ClaudeCodeExecutor implements Executor {
                     );
                   }
 
-                  rootInputAdapter?.setActivity('temporarily-unavailable');
                   terminalInputResult.onResultMessage(resultWasSuccessful);
+                  rootInputAdapter?.setActivity(
+                    inputIsClosed() ? 'temporarily-unavailable' : 'active'
+                  );
                 })();
               } else {
-                rootInputAdapter?.setActivity('temporarily-unavailable');
                 terminalInputResult?.onResultMessage(resultWasSuccessful);
+                if (terminalInputResult !== undefined) {
+                  rootInputAdapter?.setActivity(
+                    inputIsClosed() ? 'temporarily-unavailable' : 'active'
+                  );
+                }
               }
             }
             if (result.filePaths) {
@@ -965,7 +972,7 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       const result = await terminalInputResult.resultPromise;
-      rootInputAdapter?.setActivity('temporarily-unavailable');
+      rootInputAdapter?.setActivity(inputIsClosed() ? 'temporarily-unavailable' : 'active');
       await resultHandlingPromise;
       acceptedFinalResult = terminalInputResult.acceptedSuccessfulFinalResult();
 

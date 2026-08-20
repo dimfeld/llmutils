@@ -661,8 +661,6 @@ Stop and follow the failure protocol instead of providing a verdict.
     suppressResponseFormat && !advisoryReviewer
       ? ''
       : `
-## Failure Protocol
-
 ${FAILED_PROTOCOL_INSTRUCTIONS}
 `;
   return {

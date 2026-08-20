@@ -155,7 +155,6 @@ describe('CollaborativeAgentSession root activation', () => {
       orchestratorExecutor: 'claude-code',
       permissionPromptCoordinator: coordinator,
       noninteractive: false,
-      terminalInput: true,
     });
 
     try {
@@ -268,6 +267,7 @@ describe('CollaborativeAgentSession root activation', () => {
           repositoryRoot: '/repo',
           orchestratorExecutor: 'claude-code',
           permissionPromptCoordinator: coordinator,
+          noninteractive: false,
         })
       ).rejects.toThrow('provider setup failed');
     } finally {
@@ -294,6 +294,7 @@ describe('CollaborativeAgentSession root activation', () => {
       repositoryRoot: '/repo',
       orchestratorExecutor: 'claude-code',
       permissionPromptCoordinator: coordinator,
+      noninteractive: false,
     });
 
     try {
@@ -416,6 +417,7 @@ describe('CollaborativeAgentSession root activation', () => {
       repositoryRoot: '/repo',
       orchestratorExecutor: 'codex-cli',
       permissionPromptCoordinator: coordinator,
+      noninteractive: false,
     });
 
     try {
@@ -461,6 +463,7 @@ describe('CollaborativeAgentSession root activation', () => {
       repositoryRoot: '/repo',
       orchestratorExecutor: 'codex-cli',
       permissionPromptCoordinator: coordinator,
+      noninteractive: false,
     });
 
     try {

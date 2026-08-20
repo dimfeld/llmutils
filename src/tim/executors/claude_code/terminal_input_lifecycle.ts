@@ -153,6 +153,8 @@ export interface ExecuteWithTerminalInputOptions {
 
 export interface ExecuteWithTerminalInputResult {
   resultPromise: Promise<SpawnAndLogOutputResult>;
+  /** True after this execution has closed its provider input or started cleanup. */
+  inputIsClosed: () => boolean;
   onResultMessage: (resultWasSuccessful: boolean, resultText?: string) => void;
   observeFormattedMessage: (formatted: FormattedClaudeMessage) => void;
   /** Resolves true only when the provider accepted the input write. */
@@ -409,6 +411,7 @@ function executeOneShotWithTerminalInput(
 
   return {
     resultPromise,
+    inputIsClosed,
     onResultMessage,
     observeFormattedMessage,
     sendFollowUpForInterceptedResult,

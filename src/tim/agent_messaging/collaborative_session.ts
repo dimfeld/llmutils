@@ -34,8 +34,7 @@ export interface CollaborativeAgentSessionOptions {
   readonly orchestratorExecutor: AgentExecutor;
   readonly permissionPromptCoordinator: ClaudePermissionPromptCoordinator;
   readonly taskIndex?: string | string[];
-  readonly noninteractive?: boolean;
-  readonly terminalInput?: boolean;
+  readonly noninteractive: boolean;
 }
 
 /**
@@ -99,7 +98,7 @@ export class CollaborativeAgentSession {
       const claudeLauncherOptions: ClaudeAgentLauncherOptions = {
         dispatcher: claudeDispatcher,
         permissionPromptCoordinator: options.permissionPromptCoordinator,
-        noninteractive: options.noninteractive ?? options.terminalInput !== true,
+        noninteractive: options.noninteractive,
       };
       const codexLauncherOptions: CodexAgentLauncherOptions = {
         dispatcher: codexDispatcher,

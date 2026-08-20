@@ -1345,6 +1345,47 @@ describe('executeCodexStepViaAppServer', () => {
     );
   });
 
+  test('does not hang teardown when a root turn/steer request never answers', async () => {
+    const harness = await createHarness();
+    harness.connection.turnSteer.mockImplementationOnce(() => new Promise(() => {}));
+    type TestAdapter = {
+      readonly activity: string;
+      deliver(message: {
+        readonly messageId: string;
+        readonly content: string;
+      }): string | Promise<string>;
+    };
+    let boundAdapter: TestAdapter | undefined;
+    const rootInput = {
+      bind: (adapter: TestAdapter): void => {
+        boundAdapter = adapter;
+      },
+      unbind: (adapter: TestAdapter): void => {
+        if (boundAdapter === adapter) boundAdapter = undefined;
+      },
+    };
+
+    const execution = harness.executeCodexStepViaAppServer(
+      'initial prompt',
+      '/repo',
+      {},
+      {
+        appServerMode: 'single-turn-with-steering',
+        orchestratorInputAdapter: rootInput,
+      }
+    );
+
+    await waitFor(() => boundAdapter?.activity === 'active');
+    void boundAdapter?.deliver({ messageId: 'unanswered', content: 'race the teardown' });
+    await waitFor(() => harness.connection.turnSteer.mock.calls.length === 1);
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'completed' },
+    });
+
+    await expect(execution).resolves.toBe('final agent message');
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
   test('does not emit duplicate structured gui input messages in headless chat sessions', async () => {
     const harness = await createHarness({ loggerAdapterKind: 'headless' });
 
