@@ -1,10 +1,10 @@
 import {
   buildBatchReviewRejectionGuidance,
   buildFinalBatchReviewGuidance,
+  buildFormalReviewScopeGuidance,
   buildFullPlanReviewCommand,
   buildReviewCommand,
   buildReviewIterationGuidance,
-  buildReviewRejectionGuidance,
   structuralPassApplies,
 } from './review_guidance.js';
 export type { OrchestrationOptions } from './orchestration_options.js';
@@ -210,6 +210,20 @@ function buildCollaborativeReviewCommand(planId: string, options: OrchestrationO
     : buildReviewCommand(planId, options);
 }
 
+function buildCollaborativeFormalReviewPhase(
+  planId: string,
+  options: OrchestrationOptions,
+  phaseNumber: string,
+  extraGuidance: string = ''
+): string {
+  const reviewCommand = buildCollaborativeReviewCommand(planId, options);
+  return `${phaseNumber}. **Formal Review Phase**
+   - Run \`${reviewCommand}\` as a separate one-shot formal gate with the shell command tool.
+${extraGuidance}${buildFormalReviewScopeGuidance(planId)}
+   - Do not replace this formal review with a StartAgent reviewer. The formal process has fresh context and no collaborative tools.
+   - Apply the Review Iteration Policy for full scope, diff-scoped \`--since\` verification, closing full scope, severity, and bounded review handling.`;
+}
+
 function buildCollaborativeWorkflowInstructions(
   planId: string,
   options: OrchestrationOptions
@@ -227,11 +241,12 @@ function buildCollaborativeWorkflowInstructions(
     : '';
   const reviewPhase = options.batchMode
     ? buildOrchestratorBatchReviewPhase(planId, options, reviewPhaseNumber)
-    : `${reviewPhaseNumber}. **Formal Review Phase**
-   - Run \`${reviewCommand}\` as a one-shot formal gate with the shell command tool.
-   - Pass relevant implementation and test notes through the review command's supported input and scope options.
-   - Do not replace this formal review with a StartAgent reviewer. The formal process has no collaborative tools.
-   - Apply the Review Iteration Policy for full scope, diff-scoped \`--since\` verification, closing full scope, severity, and bounded review handling.`;
+    : buildCollaborativeFormalReviewPhase(
+        planId,
+        options,
+        reviewPhaseNumber,
+        "   - Pass relevant implementation and test notes through the review command's supported input and scope options.\n"
+      );
 
   return `## Workflow Instructions
 
@@ -275,6 +290,9 @@ function buildCollaborativeSimpleWorkflowInstructions(
 
 `
     : '';
+  const reviewPhase = options.batchMode
+    ? buildOrchestratorBatchReviewPhase(planId, options, reviewPhaseNumber)
+    : buildCollaborativeFormalReviewPhase(planId, options, reviewPhaseNumber);
   return `## Workflow Instructions
 
 Use a small collaborative team while preserving all implementation, review, and completion gates:
@@ -285,9 +303,7 @@ ${batchSelection}${options.batchMode ? '2' : '1'}. **Implementation Phase**
    - Use SendAgentMessage for changed facts and handoffs; a queued acknowledgement is already successful.
    - Before formal review, require the implementer to run the required tests and checks and report their results. Start a tester for independent validation when the scope needs one.
 
-${reviewPhaseNumber}. **Formal Review Phase**
-   - Run \`${reviewCommand}\` as the separate one-shot formal quality gate. A collaborative reviewer is advisory and cannot replace it.
-   - Preserve the full-scope, fix-verification, closing review, severity, structural, and bounded iteration rules.
+${reviewPhase}
 
 ${options.batchMode ? '4' : '3'}. **Notes and Iteration**
    - Update progress and completion state only after implementation, checks, and formal review satisfy the existing policy.
@@ -310,15 +326,9 @@ function buildCollaborativeFailureProtocol(agentTypes: string): string {
 
 function buildCollaborativeImportantGuidelines(
   planId: string,
-  options: OrchestrationOptions,
-  includeReviewPolicy: boolean = true
+  options: OrchestrationOptions
 ): string {
   const reviewCommand = buildCollaborativeReviewCommand(planId, options);
-  const reviewPolicy = includeReviewPolicy
-    ? `
-${buildReviewIterationGuidance(reviewCommand, options)}
-`
-    : '';
   return `## Important Guidelines
 
 - Use StartAgent for delegated implementation, testing, TDD test writing, and advisory review work. Do not implement or write tests directly when an assigned agent owns that scope.
@@ -334,7 +344,6 @@ ${buildRejectedReviewIssueCleanupGuidance(planId)}
 ${buildCollaborativeFailureProtocol('collaborative agent')}
 ${markTasksDoneGuidance(planId)}
 ${buildPlanDocumentationGuidance()}
-${reviewPolicy}
 ${progressSectionGuidance(options.planFilePath, { useAtPrefix: options.useAtPrefix })}`;
 }
 
@@ -368,7 +377,7 @@ ${buildCollaborativeToolGuidance()}
 ${buildCollaborativeAvailableAgents(planId, ['implementer', 'reviewer'], options)}
 ${buildDynamicExecutorGuidance(options)}
 ${buildCollaborativeSimpleWorkflowInstructions(planId, options)}
-${buildCollaborativeImportantGuidelines(planId, options, false)}
+${buildCollaborativeImportantGuidelines(planId, options)}
 ${footer}`;
 }
 
@@ -417,10 +426,12 @@ ${verificationPhaseNumber}. **Testing Phase**
 `;
   const reviewPhase = options.batchMode
     ? buildOrchestratorBatchReviewPhase(planId, options, reviewPhaseNumber)
-    : `${reviewPhaseNumber}. **Formal Review Phase**
-   - Run \`${reviewCommand}\` as the separate one-shot formal gate after the implementation and final checks.
-   - Do not treat a StartAgent reviewer as the formal gate. The formal review has fresh context and no collaborative tools.
-   - Preserve the existing scope, severity, four-review, structural, and bounded-handoff policy.`;
+    : buildCollaborativeFormalReviewPhase(
+        planId,
+        options,
+        reviewPhaseNumber,
+        '   - Run this gate after the implementation and final checks.\n'
+      );
   const header = `# TDD Collaborative Orchestration Instructions
 
 You are coordinating a tim Test-Driven Development workflow. Use persistent agents for separate scopes, but enforce red-before-green for every scope:
@@ -473,7 +484,7 @@ ${iterationPhaseNumber}. **Iteration**
 
 ${buildReviewIterationGuidance(reviewCommand, options)}
 
-${buildCollaborativeImportantGuidelines(planId, options, false)}
+${buildCollaborativeImportantGuidelines(planId, options)}
 ${footer}`;
 }
 
@@ -555,8 +566,8 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
     ? buildOrchestratorBatchReviewPhase(planId, options, '4')
     : `3. **Review Phase**
    - Run \`${reviewCommand}\` using the shell command tool.
-   - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. ${buildReviewRejectionGuidance(planId)}
-   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+   - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
+${buildFormalReviewScopeGuidance(planId)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.
    - The review output focuses on problems; don't expect positive feedback even if the code is perfect.`;
@@ -610,7 +621,7 @@ After marking tasks done, commit your changes with a descriptive message about w
  */
 function buildImportantGuidelines(planId: string, options: OrchestrationOptions): string {
   if (options.agentMessagingEnabled === true) {
-    return buildCollaborativeImportantGuidelines(planId, options, false);
+    return buildCollaborativeImportantGuidelines(planId, options);
   }
 
   const reviewCommand = options.batchMode
@@ -804,8 +815,7 @@ Each subagent command may take a long time to complete because it may run multip
     : `2. **Review Phase**
    - Run \`${reviewCommand}\` using the shell command tool.
    - Pass relevant implementation notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
-   - ${buildReviewRejectionGuidance(planId)}
-   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+${buildFormalReviewScopeGuidance(planId)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.
    - The review output focuses on problems; don't expect positive feedback even if the code is perfect.
@@ -1012,8 +1022,7 @@ Each subagent command may take a long time to complete because it may run multip
       : `${verificationPhaseNumber}. **Review Phase**
    - Run \`${reviewCommand}\` using the shell command tool.
    - Pass relevant TDD test output and implementation notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
-   - ${buildReviewRejectionGuidance(planId)}
-   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+${buildFormalReviewScopeGuidance(planId)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`
     : `${verificationPhaseNumber}. **Testing Phase**
@@ -1030,8 +1039,8 @@ ${
     ? orchestratorBatchReview
     : `${options.batchMode ? '5' : '4'}. **Review Phase**
    - Run \`${reviewCommand}\` using the shell command tool.
-   - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. ${buildReviewRejectionGuidance(planId)}
-   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
+   - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why.
+${buildFormalReviewScopeGuidance(planId)}
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`
 }`;

@@ -5,9 +5,12 @@ export function structuralPassApplies(options: OrchestrationOptions): boolean {
   return options.batchMode === true && options.structuralReviewCompleted !== true;
 }
 
+function reviewCommandName(options: OrchestrationOptions): string {
+  return options.agentMessagingEnabled === true ? 'tim review' : 'tim subagent reviewer';
+}
+
 export function buildReviewCommand(planId: string, options: OrchestrationOptions): string {
-  const commandName =
-    options.agentMessagingEnabled === true ? 'tim review' : 'tim subagent reviewer';
+  const commandName = reviewCommandName(options);
   const baseCommand = `${commandName} ${planId} --print --output-file <output_path>`;
   if (options.reviewExecutor) {
     return `${baseCommand} --executor ${options.reviewExecutor}`;
@@ -16,9 +19,7 @@ export function buildReviewCommand(planId: string, options: OrchestrationOptions
 }
 
 export function buildFullPlanReviewCommand(planId: string, options: OrchestrationOptions): string {
-  const commandName =
-    options.agentMessagingEnabled === true ? 'tim review' : 'tim subagent reviewer';
-  return `${commandName} ${planId} --print --output-file <output_path>`;
+  return `${reviewCommandName(options)} ${planId} --print --output-file <output_path>`;
 }
 
 export function buildReviewRejectionGuidance(planId: string): string {
@@ -34,10 +35,19 @@ export function buildBatchReviewRejectionGuidance(planId: string): string {
   return `   - When you reject one of your own batch-review findings, record it with \`tim review-issues reject ${planId} --content "<the finding>" --file <path> --line <line> --reason "..."\`. When it is valid but non-blocking, add \`--state non-blocking\` instead. If multiple findings in the same review describe the same underlying issue, record only one disposition; do not add a separate rejected issue for a duplicate. This often happens when different reviewer subagents report the same issue. This review produces no reviewer output file, so use the explicit fields rather than \`--from-review\`. Recording it keeps the final full-plan review from re-raising a finding you already settled.`;
 }
 
+/**
+ * Shared policy for an ordinary task-scoped formal review phase.
+ *
+ * The review command and delegation wording vary by orchestration mode, but rejection
+ * recording and reviewer task scope must remain identical in every prompt.
+ */
+export function buildFormalReviewScopeGuidance(planId: string): string {
+  return `   - ${buildReviewRejectionGuidance(planId)}
+   - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.`;
+}
+
 function buildStructuralReviewCommand(planId: string, options: OrchestrationOptions): string {
-  const commandName =
-    options.agentMessagingEnabled === true ? 'tim review' : 'tim subagent reviewer';
-  return `${commandName} ${planId} --print --output-file <output_path> --structural-only`;
+  return `${reviewCommandName(options)} ${planId} --print --output-file <output_path> --structural-only`;
 }
 
 const CLOSING_FULL_SCOPE_REVIEW_GUIDANCE: string =
@@ -56,13 +66,18 @@ const REVIEW_COMMIT_HASH_CAPTURE_GUIDANCE: string =
  */
 function buildReviewFixVerificationInvocation(
   reviewCommand: string,
-  scope: ReviewFixVerificationScope
+  scope: ReviewFixVerificationScope,
+  options: OrchestrationOptions
 ): string {
   const scopeGuidance: string =
     scope === 'full-plan'
       ? 'and the same full-plan scope (no `--task-index`)'
       : 'plus the same `--task-index` scope';
-  return `\`${reviewCommand}\` with \`--since <that commit>\` ${scopeGuidance}, and enumerate in \`--input\` the specific findings being re-checked`;
+  const findingContextGuidance: string =
+    options.agentMessagingEnabled === true
+      ? 'and include the specific findings being re-checked in the review command context'
+      : 'and enumerate in `--input` the specific findings being re-checked';
+  return `\`${reviewCommand}\` with \`--since <that commit>\` ${scopeGuidance}, ${findingContextGuidance}`;
 }
 
 export function buildFinalBatchReviewGuidance(
@@ -77,7 +92,8 @@ export function buildFinalBatchReviewGuidance(
   const reviewCommand = buildFullPlanReviewCommand(planId, options);
   const fixVerificationInvocation: string = buildReviewFixVerificationInvocation(
     reviewCommand,
-    'full-plan'
+    'full-plan',
+    options
   );
   const postStructuralFixGuidance = structuralPassWillRun
     ? ' The post-structural validation review, when needed, is a separate full-plan exception after the structural pass.'
@@ -132,11 +148,13 @@ export function buildReviewIterationGuidance(
   const structuralPassWillRun: boolean = structuralPassApplies(options);
   const taskFixVerificationInvocation: string = buildReviewFixVerificationInvocation(
     reviewCommand,
-    'task-index'
+    'task-index',
+    options
   );
   const finalPlanFixVerificationInvocation: string = buildReviewFixVerificationInvocation(
     reviewCommand,
-    'full-plan'
+    'full-plan',
+    options
   );
   const reviewScopeGuidance = orchestratorReviewsBatch
     ? `- For selected-task batch review passes, perform the review yourself. You may use your own native subagent mechanism as an aid, but do not invoke ${options.agentMessagingEnabled === true ? 'the one-shot formal review command' : '`tim subagent reviewer`'}.
@@ -164,6 +182,14 @@ export function buildReviewIterationGuidance(
     : '';
   const reviewLimitGuidance = `- Allow at most 4 ordinary review runs per task batch during this iteration loop. The limit bounds iterative review execution; it does not mean that remaining feedback should be discarded.${structuralValidationReviewAllowance}`;
   const finalHandoffGuidance = `- Once targeted checks pass and every finding from the fourth review${structuralValidationReviewHandoff} has been rejected or captured in a follow-up task, mark the original in-scope tasks done and complete the batch.`;
+  const reviewFixScopeGuidance =
+    options.agentMessagingEnabled === true
+      ? `- Scope every review-fix agent assignment with StartAgent or SendAgentMessage. Include the owning task, exact file scope, accepted findings, constraints, and verification in the initial or follow-up message. Keep the fix within that scope and use the canonical agent name returned by StartAgent or ListAgents.
+- If the owning task is already complete, describe the completed-task finding and its file scope in the message rather than changing plan task state.
+- Scope only review-fix assignments. Initial implementation, TDD test, and testing assignments use their normal task and file scope; do not create a review-fix assignment until the finding is accepted.`
+      : `- Scope every review-fix subagent run. When you dispatch a subagent to fix review findings, pass repeatable or comma-separated \`--task-index\` values for exactly the task(s) that own the findings. The indexes are plan-absolute and 1-based, numbered over every plan task including completed ones, the same numbering the reviewer's \`--task-index\` uses. Include the findings being fixed in \`--input\` or \`--input-file\`, and instruct the subagent not to touch code outside those findings.
+- Unlike the reviewer, a subagent \`--task-index\` accepts only tasks that are still incomplete; an index naming a completed task fails the command. If the task that owns a finding is already marked done—common in the final full-plan sequence, where earlier iterations have already completed their tasks—omit \`--task-index\` entirely and state the scope of the fix in \`--input\` instead. Never mark a task incomplete to work around this.
+- Scope only fix rounds. The first implementation, TDD-test, and testing run of a batch covers the tasks you selected and passes no \`--task-index\`; only a run that fixes review findings is scoped.`;
   return `## Review Iteration Policy
 
 ${reviewScopeGuidance}
@@ -175,9 +201,7 @@ ${indentBlock(REVIEW_SEVERITY_RUBRIC, '  ')}
 - Watch for cascading findings: the same underlying defect recurring, a fix exposing another defect in the same responsibility boundary, or repeated fixes moving the problem between duplicated implementations.
 - On the FIRST review that reports the same defect class at multiple locations—the reviewer now surfaces this up front as one multi-location finding—treat it as the cascade signal. Do not wait for a second occurrence across rounds. Pause instance-by-instance patching; as the orchestrator, inspect the implementation and prior findings yourself, identify the failed invariant, duplicated responsibility, or ownership problem, and write a concrete consolidation proposal before delegating more implementation.
 - This root-cause checkpoint is orchestrator analysis, not a separate review mode and not a request for the reviewer to solve a difficult bug. Prefer correcting the shared structure or consolidating responsibility when that addresses the cause. Pass the consolidation proposal and the relevant findings to the implementer as ONE consolidated instruction instead of per-instance fixes.
-- Scope every review-fix subagent run. When you dispatch a subagent to fix review findings, pass repeatable or comma-separated \`--task-index\` values for exactly the task(s) that own the findings. The indexes are plan-absolute and 1-based, numbered over every plan task including completed ones, the same numbering the reviewer's \`--task-index\` uses. Include the findings being fixed in \`--input\` or \`--input-file\`, and instruct the subagent not to touch code outside those findings.
-- Unlike the reviewer, a subagent \`--task-index\` accepts only tasks that are still incomplete; an index naming a completed task fails the command. If the task that owns a finding is already marked done—common in the final full-plan sequence, where earlier iterations have already completed their tasks—omit \`--task-index\` entirely and state the scope of the fix in \`--input\` instead. Never mark a task incomplete to work around this.
-- Scope only fix rounds. The first implementation, TDD-test, and testing run of a batch covers the tasks you selected and passes no \`--task-index\`; only a run that fixes review findings is scoped.
+${reviewFixScopeGuidance}
 ${repeatReviewGuidance}
 - Stop the ordinary review loop when either:
   1. targeted checks pass and a complete ordinary review produces no new blocking findings; a review whose only unhandled findings are non-blocking is terminal; or

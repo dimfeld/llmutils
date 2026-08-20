@@ -96,6 +96,14 @@ describe('collaborative orchestration activation matrix', () => {
       expect(output).toContain('file scope');
       expect(output).toContain('read-only and advisory');
       expect(output).toContain('tim review 421 --print --output-file <output_path>');
+      expect(output).toContain(
+        'tim review-issues reject 421 --from-review <output.json> --issue <n> --reason "..."'
+      );
+      expect(output).toContain('StartAgent or SendAgentMessage');
+      expect(output).not.toContain('--input');
+      expect(output).not.toContain('--input-file');
+      expect(output).not.toContain('Scope every review-fix subagent run');
+      expect(output).not.toContain('a subagent `--task-index`');
       expect(output).toContain('## Failure Protocol');
       expect(output).toContain('tim set-task-done 421 --title "<taskTitle>"');
       expect(output).toContain('After marking tasks done, commit your changes');
@@ -105,6 +113,15 @@ describe('collaborative orchestration activation matrix', () => {
       expect(output).not.toMatch(/tim subagent (implementer|tester|tdd-tests|reviewer)/);
       expect(output).not.toMatch(/^- \*\*FinishAgent\*\*/m);
       expect(output).not.toMatch(/`(?:--input|--input-file|--task-index).*tim subagent/m);
+
+      if (batchMode) {
+        expect(output).toContain('Review the selected task batch yourself');
+        expect(output).toContain('final-plan review sequence');
+        expect(output).toContain('--structural-only');
+        expect(output).toContain(
+          'tim review-issues reject 421 --content "<the finding>" --file <path> --line <line> --reason "..."'
+        );
+      }
 
       if (subagentExecutor === 'claude-code' || subagentExecutor === 'codex-cli') {
         expect(output).toContain(
@@ -244,11 +261,17 @@ describe('formal review rendering for collaborative activation', () => {
       expect(guidance).toContain('minor` or `info` are **non-blocking**');
       expect(guidance).toContain('Non-blocking findings must NEVER by themselves trigger');
       expect(guidance).toContain('Allow at most 4 ordinary review runs per task batch');
-      expect(guidance).not.toContain('StartAgent');
-      expect(guidance).not.toContain('ListAgents');
-      expect(guidance).not.toContain('SendAgentMessage');
-      expect(guidance).not.toContain('StopAgent');
-      expect(guidance).not.toContain('FinishAgent');
+      if (enabled) {
+        expect(guidance).toContain('StartAgent or SendAgentMessage');
+        expect(guidance).not.toContain('--input-file');
+        expect(guidance).not.toContain('Include the findings being fixed in');
+      } else {
+        expect(guidance).not.toContain('StartAgent');
+        expect(guidance).not.toContain('ListAgents');
+        expect(guidance).not.toContain('SendAgentMessage');
+        expect(guidance).not.toContain('StopAgent');
+        expect(guidance).not.toContain('FinishAgent');
+      }
     }
   );
 
