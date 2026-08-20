@@ -583,6 +583,29 @@ describe('persistent Codex turn state machine', () => {
     expect(harness.callbacks.exit).toHaveBeenCalledWith('forced', undefined);
   });
 
+  it('upgrades an active graceful stop to force and rejects new input', async () => {
+    const harness = await createHarness();
+    const steer = createDeferred<{ turnId: string }>();
+    harness.connection.turnSteer.mockImplementationOnce(() => steer.promise);
+
+    const graceful = harness.handle.lifecycle.requestGracefulShutdown('Final status, please.');
+    await vi.waitFor(() => expect(harness.connection.turnSteer).toHaveBeenCalledTimes(1));
+    await expect(
+      harness.handle.input.deliver(inputMessage('Must not be accepted', 'message-after-stop'))
+    ).resolves.toBe('temporarily-unavailable');
+
+    const forced = harness.handle.lifecycle.requestForcedShutdown();
+    await expect(forced).resolves.toBe('accepted');
+    expect(harness.connection.turnInterrupt).toHaveBeenCalledTimes(1);
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+
+    steer.resolve({ turnId: 'turn-1' });
+    await expect(graceful).resolves.toBe('already-exited');
+    await expect(harness.handle.completion).resolves.toMatchObject({});
+    expect(harness.callbacks.exit).toHaveBeenCalledTimes(1);
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('forced', undefined);
+  });
+
   it('remembers a forced interrupt for a late turn/start response', async () => {
     const harness = await createHarness({ resolveInitialTurn: false });
     void harness.handle.ready.catch(() => undefined);
