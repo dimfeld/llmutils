@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   prepareSubagentExecution: vi.fn(),
   runClaudeSubprocess: vi.fn(),
   startPersistentCodexAgent: vi.fn(),
+  throwDuringSessionCreate: false,
 }));
 
 vi.mock('../subagents/service.js', () => ({
@@ -23,6 +24,22 @@ vi.mock('../executors/claude_code/run_claude_subprocess.js', async (importOrigin
   ...(await importOriginal<typeof import('../executors/claude_code/run_claude_subprocess.js')>()),
   runClaudeSubprocess: mocks.runClaudeSubprocess,
 }));
+
+vi.mock('../executors/claude_code/claude_mcp_protocol.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../executors/claude_code/claude_mcp_protocol.js')>();
+  return {
+    ...actual,
+    createClaudeAgentToolDispatcher: vi.fn(
+      (...args: Parameters<typeof actual.createClaudeAgentToolDispatcher>) => {
+        if (mocks.throwDuringSessionCreate) {
+          throw new Error('provider setup failed');
+        }
+        return actual.createClaudeAgentToolDispatcher(...args);
+      }
+    ),
+  };
+});
 
 vi.mock('../executors/codex_cli/persistent_codex_session.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../executors/codex_cli/persistent_codex_session.js')>()),
@@ -228,6 +245,28 @@ describe('CollaborativeAgentSession root activation', () => {
     expect(session.manager.isClosed).toBe(true);
     expect(coordinator.dispose).toHaveBeenCalledTimes(1);
     expect(disposeOrder).toEqual(['coordinator']);
+  });
+
+  test('closes the manager when provider setup fails during session creation', async () => {
+    const disposeOrder: string[] = [];
+    const coordinator = createCoordinator(disposeOrder);
+    mocks.throwDuringSessionCreate = true;
+
+    try {
+      await expect(
+        CollaborativeAgentSession.create({
+          planId: 421,
+          repositoryRoot: '/repo',
+          orchestratorExecutor: 'claude-code',
+          permissionPromptCoordinator: coordinator,
+        })
+      ).rejects.toThrow('provider setup failed');
+    } finally {
+      mocks.throwDuringSessionCreate = false;
+    }
+
+    expect(disposeOrder).toEqual([]);
+    expect(coordinator.dispose).not.toHaveBeenCalled();
   });
 
   test('routes root and subagent tool operations through one mixed-executor manager', async () => {
