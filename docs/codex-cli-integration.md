@@ -17,11 +17,15 @@ itself and may use its native subagent mechanism for help. It invokes
 `tim subagent reviewer ...` only for the final full-plan review after every task
 is complete.
 
-Both executors set `supportsSubagents = true`. Codex has native subagent support,
-but the orchestration prompts still delegate through `tim subagent` so each role
-gets tim-provided plan context, repository instructions, custom subagent
-instructions, model selection, and output routing that the top-level orchestrator
-could not reliably reconstruct on its own.
+Both executors set `supportsSubagents = true`. When `experimental.agentMessaging`
+is absent or `false`, the orchestration prompts delegate through `tim subagent`
+shell commands so each role gets tim-provided plan context, repository
+instructions, custom subagent instructions, model selection, and output routing.
+When the flag is `true` for a new session, the prompts use collaborative agent
+tools (`StartAgent`, `ListAgents`, `SendAgentMessage`, `StopAgent`) instead.
+Subagent launches are persistent and messageable rather than synchronous. See
+[agent-messaging.md](agent-messaging.md) for the full collaborative mode
+reference.
 
 ## Dormant Codex dynamic tools
 
@@ -145,9 +149,12 @@ stable fallback text.
 
 Persistent Codex agent turns, idle mailbox delivery, stop/finalization lifetime,
 and other provider lifetime changes are provided by the AgentManager Codex
-launcher described below. Prompt activation and collaborative orchestration
-remain later work. Ordinary one-shot Codex execution still has no agent tools
-and keeps its existing lifetime.
+launcher described below. When `experimental.agentMessaging` is `true`, the
+collaborative orchestration prompts use `StartAgent` with the `executor` field
+instead of `tim subagent` shell commands. The dynamic-tool provider is installed
+for both root orchestrators and StartAgent-created persistent subagents.
+Ordinary one-shot Codex execution still has no agent tools and keeps its
+existing lifetime.
 
 ## Persistent Codex agent sessions
 
@@ -239,18 +246,35 @@ Claude's `retryFastNoopOrchestratorTurn` continuation workaround.
 
 ### Prompt contents by mode
 
+#### Flag off (disabled, default)
+
 - **Normal** — `tim subagent implementer`, `tim subagent tester`, and review.
 - **Simple** — `tim subagent implementer` and review.
 - **TDD** — `tim subagent tdd-tests` before implementation, then tester/reviewer or
   reviewer depending on simple mode.
 
-For non-batch execution, review still uses `tim subagent reviewer`. For batch
+For non-batch execution, review uses `tim subagent reviewer`. For batch
 execution, selected-task reviews are performed directly by the orchestrator; it
 may start a native review subagent if useful. `tim subagent reviewer` is reserved
 for the ordinary and structural full-plan review sequence after the last tasks
 are finished. When `agents.reviewer.instructions` is configured, the batch
 review prompt references that configured path verbatim and directs the
 orchestrator to read and apply the file.
+
+#### Flag on (collaborative mode)
+
+- **Normal** — `StartAgent` for `implementer`, `tester`, and advisory `reviewer`
+  agents. Concurrent same-type agents are allowed for safely separable scopes.
+- **Simple** — `StartAgent` for `implementer` and optional advisory `reviewer`.
+  Smaller team, same safety rules.
+- **TDD** — `StartAgent` for `tdd-tests` before implementation per scope, then
+  `implementer`, optional `tester`, and advisory `reviewer`. Independent scopes
+  can run parallel red-green pipelines.
+
+Formal review uses `tim review` (not `tim subagent reviewer`) for all modes.
+The review iteration policy is unchanged. StartAgent reviewers are advisory and
+read-only. `SendAgentMessage` replaces shell `--input` for follow-up context to
+persistent agents.
 
 ### Option pass-through
 

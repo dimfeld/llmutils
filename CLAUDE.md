@@ -36,7 +36,7 @@ Read the relevant doc before working in these areas:
 - **Sync operations** (REQUIRED before changing synced plan/project mutations) → `docs/sync-operations-guide.md`
 - **Multi-workspace workflow** → `docs/multi-workspace-workflow.md`
 - **Project environment foundation** (`TIM_*` vars, reserved built-ins, renderer conventions) → `docs/project-environment.md`
-- **Agent messaging** (`experimental.agentMessaging`, contracts, identity vars, mailbox transport) → `docs/agent-messaging.md`
+- **Agent messaging** (collaborative orchestration, flag states, tool sets, roles, naming, capacity, delivery, lifecycle, workspace coordination, advisory vs formal review, contracts, mailbox transport) → `docs/agent-messaging.md`
 - **Agent manager** (orchestrator authorization, naming, capacity, StartAgent/ListAgents/SendAgentMessage, FinishAgent/StopAgent lifecycle) → `docs/agent-manager.md`
 - **Subagent launch service** (reusable preparation/launch contracts, execution-scoped Claude formatters) → `docs/subagent-launch-service.md`
 - **Claude `tim` MCP bridge** (approval + role-scoped agent tools, config merge, prompt FIFO) → `docs/claude-mcp-bridge.md`

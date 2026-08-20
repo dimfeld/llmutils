@@ -2,7 +2,18 @@
 
 This tutorial guides you through implementing a Model Context Protocol (MCP) permissions server for the Claude Code SDK using the FastMCP framework in TypeScript, configured to use stdio transport for direct communication with Claude Code. The permissions MCP will handle tool permission prompts, allowing or denying tool invocations based on user confirmation via Unix sockets.
 
-> **Note:** In this repository, the permission server is now one capability of the shared `tim` MCP bridge, which also carries role-scoped agent-management tools. For how the shipped bridge is installed, authorized, merged with user MCP config, and serialized across concurrent agents, read [../claude-mcp-bridge.md](../claude-mcp-bridge.md). This tutorial remains the background explanation of the approval protocol itself.
+> **Note:** In this repository, the permission server is now one capability of the shared `tim` MCP bridge, which also carries role-scoped agent-management tools. The bridge has four installation states:
+>
+> | State           | Registered tools                       | When                                            |
+> | --------------- | -------------------------------------- | ----------------------------------------------- |
+> | Not installed   | none                                   | no capability needed                            |
+> | Permission-only | `approval_prompt`                      | interactive approval, no agent tools            |
+> | Tools-only      | role-scoped agent tools                | collaborative session, noninteractive/allow-all |
+> | Combined        | `approval_prompt` + role-scoped agents | collaborative session with interactive approval |
+>
+> The MCP config uses the reserved `mcpServers.tim` key. If a user MCP config already defines a `tim` server, setup fails with a collision error. User MCP servers are merged verbatim; the user's config file is never modified. One shared root `ClaudePermissionPromptCoordinator` serializes interactive prompts across concurrent agents, labeling each prompt with the requesting agent name. The coordinator is disposed **after** the `AgentManager` shuts down, so permission prompts for in-flight stop sequences can still complete.
+>
+> For the full bridge architecture, four-state table, role-scoped tool sets (orchestrator: `StartAgent`/`ListAgents`/`SendAgentMessage`/`StopAgent`; subagent: `ListAgents`/`SendAgentMessage`/`FinishAgent`), wire protocol, config merge, allowed-tool expansion, and cleanup, read [../claude-mcp-bridge.md](../claude-mcp-bridge.md). This tutorial remains the background explanation of the approval protocol itself.
 
 ## Prerequisites
 

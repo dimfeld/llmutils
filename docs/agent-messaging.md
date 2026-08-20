@@ -1,21 +1,231 @@
 # Agent Messaging
 
-This document describes the provider-neutral agent-messaging contracts and the
-session storage and Unix-socket mailbox transport in
-`src/tim/agent_messaging/`. It does not describe provider sessions or provider
-adapters. The manager core built on this transport — Start/List/Send plus the
-finish, stop, and terminal lifecycle — is documented in
-[agent-manager.md](agent-manager.md), and the reusable one-shot preparation
-and launch service it uses is documented in
-[subagent-launch-service.md](subagent-launch-service.md). The Claude MCP
-transport that exposes these tools to a model is documented in
-[claude-mcp-bridge.md](claude-mcp-bridge.md), and the Claude provider that keeps
-one subprocess alive across turns is documented in
-[persistent-claude-agent.md](persistent-claude-agent.md). The equivalent Codex
-app-server dynamic-tool protocol is documented in
-[codex-cli-integration.md](codex-cli-integration.md), and the Codex provider that
-keeps one app-server process and thread alive across turns is documented in
-[persistent-codex-agent.md](persistent-codex-agent.md).
+This document is the central operational reference for the experimental
+collaborative agent-messaging feature. It covers the configuration flag,
+activated orchestration behavior, tool sets, agent roles, naming, capacity,
+delivery, lifecycle, shared-workspace coordination, TDD ordering, process
+labels, provider requirements, and the advisory-reviewer versus formal-review
+distinction.
+
+For lower-level internals, see these companion documents:
+
+- [agent-manager.md](agent-manager.md) — the `AgentManager` core:
+  naming, capacity, start, list, send, and the finish/stop/terminal lifecycle.
+- [subagent-launch-service.md](subagent-launch-service.md) — reusable one-shot
+  preparation and launch service.
+- [claude-mcp-bridge.md](claude-mcp-bridge.md) — the internal `tim` MCP server
+  for Claude: permission approval, role-scoped agent tools, four installation
+  states, MCP config merging, and prompt serialization.
+- [persistent-claude-agent.md](persistent-claude-agent.md) — persistent Claude
+  provider sessions.
+- [codex-cli-integration.md](codex-cli-integration.md) — Codex executor,
+  dynamic-tool protocol, and persistent Codex provider sessions.
+- [persistent-codex-agent.md](persistent-codex-agent.md) — persistent Codex
+  provider sessions.
+
+## Activated collaborative orchestration
+
+When `experimental.agentMessaging` is `true` for a newly started `tim agent`
+session, the orchestrator prompt uses collaborative agent tools instead of
+synchronous `tim subagent` shell commands. The orchestrator can start, message,
+and stop persistent subagents that share one live working directory. Subagents
+can message each other and the orchestrator directly. The formal review gate
+remains a separate one-shot `tim review` command.
+
+When the flag is absent or `false`, every prompt, tool set, and execution path
+keeps the current synchronous `tim subagent` behavior. No messaging runtime,
+registry, mailbox, or persistent-agent session is created. Existing one-shot
+orchestration is fully compatible.
+
+### New-session snapshot semantics
+
+The flag is read **once** when a root `tim agent` session starts. The resolved
+boolean is stored in `ExecutorCommonOptions.agentMessagingEnabled` and forwarded
+into `OrchestrationOptions`. A running session cannot change mode mid-run.
+Config changes affect only sessions that start after the change. No rebuild is
+needed.
+
+When the snapshot is `true`, the root session creates a
+`CollaborativeAgentSession` that owns the `AgentManager`, Claude MCP tool
+context, Codex dynamic-tool provider, and the shared root
+`ClaudePermissionPromptCoordinator`. When the session ends, the manager shuts
+down before the coordinator is disposed.
+
+### Orchestrator tool set (flag true)
+
+The root orchestrator receives these tools through the provider transport:
+
+| Tool               | Purpose                                                        |
+| ------------------ | -------------------------------------------------------------- |
+| `StartAgent`       | Start a persistent subagent without waiting for it to finish   |
+| `ListAgents`       | Return canonical names, types, executors, and lifecycle states |
+| `SendAgentMessage` | Send context, questions, blockers, decisions, or handoffs      |
+| `StopAgent`        | Graceful or forced stop of a named subagent                    |
+
+The orchestrator does **not** receive `FinishAgent`. It asks each subagent to
+call its own self-only `FinishAgent` after its assignment and final handoff.
+
+### Subagent tool set (flag true, StartAgent-created)
+
+A StartAgent-created subagent receives only:
+
+| Tool               | Purpose                                           |
+| ------------------ | ------------------------------------------------- |
+| `ListAgents`       | Discover team state and canonical reply names     |
+| `SendAgentMessage` | Send useful coordination to any named agent       |
+| `FinishAgent`      | Mark self as done after final handoff (self-only) |
+
+Subagents do **not** receive or learn about `StartAgent` or `StopAgent`.
+
+### Agent types and executors
+
+StartAgent supports four agent types and two executors:
+
+| Type          | Description                                                          |
+| ------------- | -------------------------------------------------------------------- |
+| `implementer` | Edit assigned implementation files, report changes and verification  |
+| `tester`      | Inspect/edit test and fixture files, run checks, report results      |
+| `tdd-tests`   | Write expected failing tests for a scope, report failure evidence    |
+| `reviewer`    | Read-only, advisory: inspect, run non-mutating checks, send findings |
+
+| Executor      | Description            |
+| ------------- | ---------------------- |
+| `claude-code` | Claude Code subprocess |
+| `codex-cli`   | Codex CLI app-server   |
+
+`orchestrator` is a runtime role, not an agent type. The reserved
+`orchestrator` name appears in `ListAgents` and is addressable by
+`SendAgentMessage`.
+
+### Naming
+
+Agent names are 1 to 48 characters of lowercase ASCII letters, digits, and
+hyphens, with alphanumeric first and last characters. `orchestrator` is
+reserved. A custom name collision with an active agent fails the start request.
+
+When the name is omitted, the manager generates `<type>-<short-slug>` (e.g.
+`implementer-moss-7k`) and retries on collision. After `StartAgent` returns,
+always use the canonical name it returned.
+
+### Capacity
+
+A session allows at most **eight nonterminal subagents**. The reserved
+`orchestrator` identity does not count. Agents in `starting`, `running-active`,
+`running-idle`, `finishing`, and `stopping` states all hold capacity until
+terminal cleanup releases their slots. A ninth concurrent start returns a clear
+limit error without allocating a process, mailbox, or name reservation.
+
+### Delivery acknowledgements
+
+`SendAgentMessage` reports one of three successful delivery paths:
+
+| Result              | Meaning                                                     |
+| ------------------- | ----------------------------------------------------------- |
+| `steered`           | Message delivered into the active provider turn immediately |
+| `queued`            | Message accepted into the recipient FIFO for later delivery |
+| `started-idle-turn` | Message started a new turn on an idle provider session      |
+
+`queued` is a successful acceptance. Do not resend a queued message.
+
+Messages carry **trusted sender attribution** set by the runtime. No model
+argument supplies or replaces the source identity. Recipients see the sender's
+canonical name.
+
+Content is limited to 65,536 UTF-8 bytes per message. Each recipient can hold
+at most 100 pending FIFO messages. Oversized content or a full queue returns a
+clear error without truncation or eviction.
+
+### Lifecycle states and terminal notifications
+
+| State            | Accepts work | Visible in ListAgents |
+| ---------------- | ------------ | --------------------- |
+| `starting`       | no           | yes                   |
+| `running-active` | yes          | yes                   |
+| `running-idle`   | yes          | yes                   |
+| `finishing`      | no           | yes                   |
+| `stopping`       | no           | yes                   |
+| `exited`         | no           | no (terminal)         |
+| `failed`         | no           | no (terminal)         |
+
+Natural agent exit and graceful requested exit each produce exactly one terminal
+notification to the orchestrator. Forced-stop notifications are never suppressed
+and include the last completed assistant message (if available) with a staleness
+warning.
+
+### Shared-workspace coordination
+
+All agents share one working directory and see each other's changes immediately.
+The orchestrator must assign disjoint file scopes or coordinate ownership before
+concurrent mutating work. Read-only review and non-mutating inspection may
+overlap freely. The orchestrator owns task selection, final integration, plan
+updates, and the completion decision.
+
+### TDD per-scope ordering
+
+In TDD mode, the `tdd-tests` agent writes expected failing tests before the
+implementer starts for each scope. Independent scopes can run separate TDD
+pipelines concurrently. The orchestrator must verify behavioral failure evidence
+before starting the implementer. Final testing and formal review run against the
+completed implementation.
+
+### Advisory reviewer versus formal `tim review`
+
+A StartAgent `reviewer` is a **read-only, advisory** collaborator. It can
+inspect evolving work, run non-mutating checks, and send findings to the team.
+It cannot edit files or create commits. Its result is not the formal quality
+gate.
+
+The authoritative review is the separate one-shot `tim review` command. It runs
+with fresh context and **no messaging tools**. It preserves the existing review
+iteration policy: full-scope first review, diff-scoped fix verification, closing
+full-scope review, severity gate (`critical`/`major` blocking), four ordinary
+review bound, structural-only pass, and bounded handoff. See
+[review-iteration-policy.md](review-iteration-policy.md).
+
+Enabled orchestrators render `tim review` for formal reviews. Disabled
+orchestrators use the equivalent `tim subagent reviewer` alias. The alias
+remains available for external compatibility.
+
+### Process labels
+
+Named Claude and Codex agents appear in the process tree with labels such as
+`Claude agent (api-implementer)` and `Codex thread (test-auditor)`. The existing
+`ProcessTree.svelte` component renders labels verbatim with no identity or
+process-control changes.
+
+### Provider requirements
+
+- **Claude Code**: requires the `tim` MCP bridge installed by
+  `setupPermissionsMcp()`. See [claude-mcp-bridge.md](claude-mcp-bridge.md).
+- **Codex CLI**: requires app-server experimental dynamic-tool support. The
+  `codex exec` fallback cannot host persistent sessions. See
+  [codex-cli-integration.md](codex-cli-integration.md).
+
+### Disabled compatibility
+
+When the flag is absent or `false`:
+
+- Orchestrator prompts use synchronous `tim subagent implementer`,
+  `tim subagent tester`, `tim subagent tdd-tests`, and
+  `tim subagent reviewer` commands.
+- No `StartAgent`, `ListAgents`, `SendAgentMessage`, `StopAgent`, or
+  `FinishAgent` tool names appear in prompts or tool sets.
+- No session directory, registry, mailbox, or persistent-agent label is created.
+- Formal review, planning, proof, chat, direct `tim subagent`, and all
+  non-orchestration executor paths remain one-shot with no messaging tools.
+
+### Non-orchestration entry points
+
+Formal `tim review`, planning, proof, chat, direct `tim subagent`, `tim run`,
+and bare executor modes never receive messaging tools or persistent-agent
+behavior, regardless of the flag value. They receive no `agentToolContext` and
+therefore the Claude bridge installs no agent tools, and the Codex runner
+installs no dynamic-tool provider.
+
+---
+
+The sections below describe the provider-neutral contracts, session storage,
+and Unix-socket mailbox transport in `src/tim/agent_messaging/`.
 
 The shared contracts let an orchestrator address, message, and stop its
 subagents. The transport gives one trusted session runtime a private namespace

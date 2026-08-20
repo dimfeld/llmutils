@@ -812,7 +812,7 @@ experimental:
   agentMessaging: true
 ```
 
-`agentMessaging` is the flag for direct messaging between the orchestrator and its subagents. The contracts, configuration, session storage, Unix-socket mailbox transport, manager lifecycle, Claude MCP tool bridge, and the persistent Claude and Codex provider runtimes exist. No command activates this workflow yet, so a run with the flag on currently behaves exactly like a run with it off. See [docs/agent-messaging.md](docs/agent-messaging.md), [docs/agent-manager.md](docs/agent-manager.md), [docs/claude-mcp-bridge.md](docs/claude-mcp-bridge.md), [docs/persistent-claude-agent.md](docs/persistent-claude-agent.md), and [docs/persistent-codex-agent.md](docs/persistent-codex-agent.md).
+`agentMessaging` enables collaborative orchestration for `tim agent` sessions. When `true`, the orchestrator uses `StartAgent`, `ListAgents`, `SendAgentMessage`, and `StopAgent` tools to manage persistent subagents instead of synchronous `tim subagent` shell commands. Subagents can message each other and the orchestrator directly. Supported agent types are `implementer`, `tester`, `tdd-tests`, and `reviewer` (read-only, advisory). Both `claude-code` and `codex-cli` executors are supported. The formal review gate remains a separate one-shot `tim review` command with fresh context and no messaging tools. When the flag is absent or `false`, all prompts and execution paths keep the current synchronous behavior. Config changes affect new `tim agent` sessions only; already running sessions keep their original mode. See [docs/agent-messaging.md](docs/agent-messaging.md) for the full operational reference, and [docs/agent-manager.md](docs/agent-manager.md), [docs/claude-mcp-bridge.md](docs/claude-mcp-bridge.md), [docs/persistent-claude-agent.md](docs/persistent-claude-agent.md), and [docs/persistent-codex-agent.md](docs/persistent-codex-agent.md) for internal details.
 
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
 
@@ -1048,6 +1048,6 @@ Use a unique prefix per developer to prevent accidental PR-to-plan matching from
 - [`docs/web-interface.md`](docs/web-interface.md) - web architecture and UI workflow details
 - [`docs/database.md`](docs/database.md) - SQLite-backed plan storage and materialization
 - [`docs/proof-generation.md`](docs/proof-generation.md) - capturing demo artifacts for completed plans
-- [`docs/agent-messaging.md`](docs/agent-messaging.md) - the experimental agent-messaging flag, its contracts, and the mailbox transport
+- [`docs/agent-messaging.md`](docs/agent-messaging.md) - central reference for collaborative orchestration: flag, tool sets, agent types, naming, capacity, delivery, lifecycle, workspace coordination, TDD ordering, advisory vs formal review, and the mailbox transport
 - [`docs/agent-manager.md`](docs/agent-manager.md) - the orchestrator-owned agent manager: naming, capacity, start, list, send, and the finish/stop/terminal lifecycle
 - [`docs/claude-mcp-bridge.md`](docs/claude-mcp-bridge.md) - the internal `tim` MCP server for Claude: permission approval, role-scoped agent tools, and prompt serialization

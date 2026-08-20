@@ -321,8 +321,21 @@ Naming: "consolidation proposal" is the cascade root-cause output; "structural
 pass" refers only to the standalone `--structural-only` reviewer invocation. The
 two are unrelated, and the batch guidance says so explicitly.
 
+## Review command spelling
+
+When `experimental.agentMessaging` is `true`, the orchestrator prompt renders
+`tim review` for ordinary, full-plan, and structural review commands. When the
+flag is absent or `false`, prompts use the equivalent `tim subagent reviewer`
+alias. Both commands share the same handler, options, and review policy.
+
+The review policy itself — severity rubric, severity gate, scope tiers,
+fix-verification scoping, closing full-scope review, four-review bound,
+structural-review marker, rejected-findings ledger, and bounded handoff — is
+unchanged regardless of the flag value.
+
 ## Related
 
 - `docs/codex-cli-integration.md` — the shared orchestration prompt and its modes.
 - `docs/batch-tasks-feature.md` — batch execution and the final full-plan sequence.
 - `docs/reviewer-instructions.md` — repository-specific review pointers.
+- `docs/agent-messaging.md` — the collaborative orchestration feature and advisory-reviewer versus formal-review distinction.
