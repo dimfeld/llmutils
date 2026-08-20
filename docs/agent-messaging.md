@@ -12,9 +12,10 @@ transport that exposes these tools to a model is documented in
 [claude-mcp-bridge.md](claude-mcp-bridge.md), and the Claude provider that keeps
 one subprocess alive across turns is documented in
 [persistent-claude-agent.md](persistent-claude-agent.md). The equivalent Codex
-app-server dynamic-tool protocol, which stays dormant until a trusted caller
-supplies a provider, is documented in
-[codex-cli-integration.md](codex-cli-integration.md).
+app-server dynamic-tool protocol is documented in
+[codex-cli-integration.md](codex-cli-integration.md), and the Codex provider that
+keeps one app-server process and thread alive across turns is documented in
+[persistent-codex-agent.md](persistent-codex-agent.md).
 
 The shared contracts let an orchestrator address, message, and stop its
 subagents. The transport gives one trusted session runtime a private namespace

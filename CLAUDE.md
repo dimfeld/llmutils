@@ -41,6 +41,7 @@ Read the relevant doc before working in these areas:
 - **Subagent launch service** (reusable preparation/launch contracts, execution-scoped Claude formatters) → `docs/subagent-launch-service.md`
 - **Claude `tim` MCP bridge** (approval + role-scoped agent tools, config merge, prompt FIFO) → `docs/claude-mcp-bridge.md`
 - **Persistent Claude agent provider** (`persistent-agent` mode, turn boundary, lifecycle controls, cleanup) → `docs/persistent-claude-agent.md`
+- **Persistent Codex agent provider** (private app-server per agent, turn state machine, steer/idle delivery, cleanup) → `docs/persistent-codex-agent.md`
 - **Parent-child plan relationships** → `docs/parent-child-relationships.md`
 - **Planning workflow** → `docs/planning.md`
 - **Batch tasks** → `docs/batch-tasks-feature.md`

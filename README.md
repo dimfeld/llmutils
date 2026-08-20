@@ -812,7 +812,7 @@ experimental:
   agentMessaging: true
 ```
 
-`agentMessaging` is the flag for direct messaging between the orchestrator and its subagents. The contracts, configuration, session storage, Unix-socket mailbox transport, manager lifecycle, Claude MCP tool bridge, and persistent Claude provider runtime exist. No command activates this workflow yet, so a run with the flag on currently behaves exactly like a run with it off. See [docs/agent-messaging.md](docs/agent-messaging.md), [docs/agent-manager.md](docs/agent-manager.md), [docs/claude-mcp-bridge.md](docs/claude-mcp-bridge.md), and [docs/persistent-claude-agent.md](docs/persistent-claude-agent.md).
+`agentMessaging` is the flag for direct messaging between the orchestrator and its subagents. The contracts, configuration, session storage, Unix-socket mailbox transport, manager lifecycle, Claude MCP tool bridge, and the persistent Claude and Codex provider runtimes exist. No command activates this workflow yet, so a run with the flag on currently behaves exactly like a run with it off. See [docs/agent-messaging.md](docs/agent-messaging.md), [docs/agent-manager.md](docs/agent-manager.md), [docs/claude-mcp-bridge.md](docs/claude-mcp-bridge.md), [docs/persistent-claude-agent.md](docs/persistent-claude-agent.md), and [docs/persistent-codex-agent.md](docs/persistent-codex-agent.md).
 
 The web UI **Settings** tab stores per-project settings in SQLite. The project-level branch prefix there takes precedence over the config file value.
 

@@ -25,7 +25,7 @@ could not reliably reconstruct on its own.
 
 ## Dormant Codex dynamic tools
 
-Plan 419 adds a dormant Codex app-server protocol for agent tools. The low-level
+The Codex app-server protocol for agent tools is dormant by default. The low-level
 Codex runner does not read `experimental.agentMessaging` and does not enable this
 protocol from repository configuration. A trusted caller must pass one cohesive
 `dynamicToolProvider` to `CodexStepOptions`. The provider contains the trusted
@@ -33,9 +33,10 @@ caller identity, the role-scoped definitions, and the handler. Definitions and a
 handler cannot be supplied as separate options.
 
 The provider is not installed unless the caller supplies it. This keeps normal
-Codex runs, formal reviews, planning, chat, and bare execution unchanged. This
-plan does not activate collaboration prompts or create a provider for the current
-orchestration prompt.
+Codex runs, formal reviews, planning, chat, and bare execution unchanged. The
+only current caller is the persistent Codex agent launcher described below.
+Collaboration prompts are still not activated for the ordinary orchestration
+prompt.
 
 Relevant code:
 
@@ -150,38 +151,22 @@ and keeps its existing lifetime.
 
 ## Persistent Codex agent sessions
 
-The AgentManager uses a separate persistent launch path for Codex subagents. This
-path does not change `executeCodexStep()` or the existing single-turn modes.
+`AgentManager` uses a separate persistent launch path for Codex subagents. It
+does not change `executeCodexStep()` or the existing single-turn, steering, and
+chat modes. In short:
 
 - Each persistent agent owns one private `codex app-server` process and one
-  logical Codex thread. It ignores an inherited `TIM_CODEX_APP_SERVER_SOCKET`.
+  Codex thread, and ignores an inherited `TIM_CODEX_APP_SERVER_SOCKET`.
 - The process tree shows `Codex app-server (<agent-name>)` and
-  `Codex thread (<agent-name>)`. The two nodes are siblings because the current
-  session process model does not nest executor nodes.
-- Start readiness is separate from completion. The manager can register the
-  mailbox while the provider starts. The handle becomes input-ready only after
-  app-server initialization, dynamic-tool installation, thread registration, and
-  the initial turn start succeed.
-- The AgentManager mailbox is the only pending-message queue. Input during a
-  known active turn uses `turn/steer`; input during an idle thread starts another
-  `turn/start` on the same thread. A transition or uncertain steer remains in the
-  manager FIFO for retry.
-- A completed turn reports its own assistant message and turn completion, then
-  leaves the process and thread alive and idle. A failed turn is a provider
-  failure; persistent turns are not replayed with the one-shot `continue` retry
-  behavior because tool effects may already have been accepted.
-- `FinishAgent` is acknowledged during the tool call and closes only after the
-  current assistant result and turn completion. Graceful StopAgent input uses the
-  same active-or-idle delivery path. AgentManager owns the output-inactivity
-  timer; provider output only reports activity to that timer.
-- Forced stop interrupts a known or late-starting turn when possible and closes
-  the owned connection. Connection cleanup owns process termination and its
-  SIGTERM-to-SIGKILL escalation. Provider exit, crash, and cleanup callbacks are
-  idempotent and converge on one manager terminal event.
+  `Codex thread (<agent-name>)` as sibling nodes.
+- The AgentManager mailbox is the only pending-message queue. Active turns take
+  input through `turn/steer`; an idle thread starts another `turn/start`.
+- A completed turn leaves the process and thread alive and idle. FinishAgent,
+  graceful stop, and forced stop close through provider-neutral controls.
 
-Persistent sessions require Codex app-server experimental dynamic-tool support.
-The CLI `codex exec` fallback remains available for ordinary one-shot execution,
-but it cannot host a persistent AgentManager provider.
+Persistent sessions require app-server experimental dynamic-tool support; the
+`codex exec` fallback cannot host one. The full contract, state machine, and
+cleanup order are in [persistent-codex-agent.md](persistent-codex-agent.md).
 
 ## Shared orchestration prompt
 

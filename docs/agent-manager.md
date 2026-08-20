@@ -15,7 +15,8 @@ It builds on two lower layers:
 Provider adapters must translate tool arguments into these methods only. They
 must not repeat naming, capacity, authorization, or delivery policy. The Claude
 MCP adapter is documented in [claude-mcp-bridge.md](claude-mcp-bridge.md); the
-Codex dynamic-tool adapter is still to come.
+Codex dynamic-tool adapter is documented in
+[codex-cli-integration.md](codex-cli-integration.md).
 
 ## Scope
 
@@ -42,7 +43,9 @@ or any persistent Claude or Codex provider loop. Provider adapters translate
 those provider-specific operations into the lifecycle controls described here.
 The Claude adapter that implements those controls over one long-lived
 stream-json subprocess is documented in
-[persistent-claude-agent.md](persistent-claude-agent.md).
+[persistent-claude-agent.md](persistent-claude-agent.md). The Codex adapter that
+implements them over one private app-server process and one Codex thread is
+documented in [persistent-codex-agent.md](persistent-codex-agent.md).
 
 ## Module layout
 
@@ -439,6 +442,10 @@ built:
 
 The label travels in the launch request as display metadata for the process
 tree. Never address, match, or control a process by its label.
+
+A provider may register more than one node. The persistent Codex adapter uses
+this label for its logical thread node and adds a sibling
+`Codex app-server (<name>)` node for the process it owns.
 
 ## Errors
 
