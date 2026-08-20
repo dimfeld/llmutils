@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   getImplementerPrompt: vi.fn(),
   getTesterPrompt: vi.fn(),
   getTddTestsPrompt: vi.fn(),
+  getReviewerPrompt: vi.fn(),
   loadAgentInstructionsFor: vi.fn(),
   tryMaterializeReferenceArtifactPathsForExecution: vi.fn(),
   buildTimWorkspaceCommandEnvironmentOptionsForPath: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock('../executors/claude_code/agent_prompts.js', () => ({
   getImplementerPrompt: mocks.getImplementerPrompt,
   getTesterPrompt: mocks.getTesterPrompt,
   getTddTestsPrompt: mocks.getTddTestsPrompt,
+  getReviewerPrompt: mocks.getReviewerPrompt,
 }));
 vi.mock('../executors/codex_cli/agent_helpers.js', () => ({
   loadAgentInstructionsFor: mocks.loadAgentInstructionsFor,
@@ -104,6 +106,7 @@ describe('reusable subagent service', () => {
     );
     mocks.getTesterPrompt.mockReturnValue({ name: 'tester', prompt: 'tester prompt' });
     mocks.getTddTestsPrompt.mockReturnValue({ name: 'tdd-tests', prompt: 'tdd prompt' });
+    mocks.getReviewerPrompt.mockReturnValue({ name: 'reviewer', prompt: 'reviewer prompt' });
     mocks.loadAgentInstructionsFor.mockResolvedValue('role instructions');
     mocks.tryMaterializeReferenceArtifactPathsForExecution.mockResolvedValue([]);
     mocks.buildTimWorkspaceCommandEnvironmentOptionsForPath.mockReturnValue({
@@ -211,6 +214,37 @@ describe('reusable subagent service', () => {
     );
     expect(mocks.executeCodexStep).not.toHaveBeenCalled();
     expect(mocks.runClaudeSubprocess).not.toHaveBeenCalled();
+  });
+
+  test('prepares a collaborative reviewer with persistent-agent prompt context', async () => {
+    const promptContext = { mode: 'persistent-agent' as const };
+
+    const prepared = await prepareSubagentExecution({
+      agentType: 'reviewer',
+      planId: 42,
+      executor: 'claude-code',
+      inputPolicy: resolvedInput('Inspect without editing.'),
+      promptContext,
+    });
+
+    expect(prepared.prompt).toBe('reviewer prompt');
+    expect(mocks.loadAgentInstructionsFor).toHaveBeenLastCalledWith(
+      'reviewer',
+      gitRoot,
+      prepared.config
+    );
+    expect(mocks.getReviewerPrompt).toHaveBeenCalledWith(
+      'prepared context',
+      '42',
+      'role instructions\n\nInspect without editing.',
+      prepared.model,
+      false,
+      false,
+      { mode: 'report', useJj: true },
+      false,
+      false,
+      promptContext
+    );
   });
 
   test('passes explicit persistent-agent prompt context only when supplied by the launch boundary', async () => {

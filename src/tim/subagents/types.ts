@@ -3,6 +3,7 @@ import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
 
 export type SubagentType = 'implementer' | 'tester' | 'tdd-tests';
+export type PreparedSubagentType = SubagentType | 'reviewer';
 export type SubagentExecutor = 'codex-cli' | 'claude-code';
 
 /**
@@ -35,7 +36,7 @@ export type SubagentInputPolicy =
  * the legacy input-file, inline-input, and optional stdin fallback behavior.
  */
 export interface SubagentPreparationRequest {
-  agentType: SubagentType;
+  agentType: PreparedSubagentType;
   planId: number;
   executor?: string;
   model?: string;
@@ -53,7 +54,7 @@ export interface SubagentPreparationRequest {
  * Callers should treat this value as immutable after preparation.
  */
 export interface PreparedSubagentExecution {
-  readonly agentType: SubagentType;
+  readonly agentType: PreparedSubagentType;
   readonly executor: SubagentExecutor;
   readonly model: string | undefined;
   readonly plan: PlanSchema;

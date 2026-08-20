@@ -448,6 +448,7 @@ describe('timAgent lifecycle integration', () => {
   test('owns one Claude permission coordinator for the enabled root session and disposes it at teardown', async () => {
     effectiveConfig = {
       ...effectiveConfig,
+      defaultOrchestrator: 'claude-code',
       experimental: { agentMessaging: true },
     };
 
@@ -462,6 +463,18 @@ describe('timAgent lifecycle integration', () => {
       expect.objectContaining({
         agentMessagingEnabled: true,
         claudePermissionPromptCoordinator: coordinator,
+        claudeAgentToolContext: expect.objectContaining({
+          caller: expect.objectContaining({ name: 'orchestrator', role: 'orchestrator' }),
+          allowedTools: new Set(['StartAgent', 'ListAgents', 'SendAgentMessage', 'StopAgent']),
+        }),
+        codexDynamicToolProvider: expect.objectContaining({
+          definitions: expect.arrayContaining([
+            expect.objectContaining({ name: 'StartAgent' }),
+            expect.objectContaining({ name: 'ListAgents' }),
+            expect.objectContaining({ name: 'SendAgentMessage' }),
+            expect.objectContaining({ name: 'StopAgent' }),
+          ]),
+        }),
       }),
       expect.anything()
     );
@@ -486,6 +499,7 @@ describe('timAgent lifecycle integration', () => {
   test('disposes the enabled coordinator when executor construction fails', async () => {
     effectiveConfig = {
       ...effectiveConfig,
+      defaultOrchestrator: 'claude-code',
       experimental: { agentMessaging: true },
     };
     const startupError = new Error('executor construction failed');
@@ -503,6 +517,7 @@ describe('timAgent lifecycle integration', () => {
   test('preserves an execution failure when coordinator disposal also fails', async () => {
     effectiveConfig = {
       ...effectiveConfig,
+      defaultOrchestrator: 'claude-code',
       experimental: { agentMessaging: true },
     };
     const executionError = new Error('executor execution failed');
@@ -544,6 +559,7 @@ describe('timAgent lifecycle integration', () => {
   test('reports a coordinator cleanup failure after successful execution', async () => {
     effectiveConfig = {
       ...effectiveConfig,
+      defaultOrchestrator: 'claude-code',
       experimental: { agentMessaging: true },
     };
     const disposalError = new Error('coordinator disposal failed');

@@ -5,6 +5,7 @@ export {
 } from './service.js';
 export type {
   PreparedSubagentExecution,
+  PreparedSubagentType,
   SubagentExecutionResult,
   SubagentExecutor,
   SubagentInputPolicy,

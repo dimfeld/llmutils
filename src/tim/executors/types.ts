@@ -5,6 +5,7 @@ import type {
   ClaudeAgentToolContext,
   ClaudePermissionPromptCoordinator,
 } from './claude_code/claude_mcp_protocol.js';
+import type { CodexDynamicToolProvider } from './codex_cli/app_server_dynamic_tools.js';
 
 /**
  * Shared options/state from the agent command, passed to the executor.
@@ -64,6 +65,8 @@ export interface ExecutorCommonOptions {
   claudeAgentToolContext?: ClaudeAgentToolContext;
   /** Root-owned coordinator shared by Claude permission bridges in one session. */
   claudePermissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
+  /** Root-session Codex dynamic tools, installed only for orchestration modes. */
+  codexDynamicToolProvider?: CodexDynamicToolProvider;
 }
 
 /**

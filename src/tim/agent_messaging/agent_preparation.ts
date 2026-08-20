@@ -1,5 +1,5 @@
 import { prepareSubagentExecution } from '../subagents/service.js';
-import type { SubagentPreparationRequest, SubagentType } from '../subagents/types.js';
+import type { SubagentPreparationRequest } from '../subagents/types.js';
 import type {
   AgentPreparation,
   AgentPreparationRequest,
@@ -38,7 +38,7 @@ export function createAgentPreparation(options: AgentPreparationOptions): AgentP
       }
 
       const preparationRequest: SubagentPreparationRequest = {
-        agentType: request.identity.type as SubagentType,
+        agentType: request.identity.type,
         planId: options.planId,
         executor: request.identity.executor,
         model: options.model,

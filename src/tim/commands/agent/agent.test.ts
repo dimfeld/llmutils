@@ -680,6 +680,7 @@ describe('timAgent - simple mode flag plumbing', () => {
 
   test('snapshots an enabled experimental agentMessaging value in shared executor options', async () => {
     (defaultConfig as any).experimental = { agentMessaging: true };
+    defaultConfig.defaultOrchestrator = 'claude-code';
 
     const { timAgent } = await import('./agent.js');
     await timAgent(123, { log: false } as any, {});
@@ -705,6 +706,7 @@ describe('timAgent - simple mode flag plumbing', () => {
 
     await timAgent(123, { log: false } as any, {});
     (defaultConfig as any).experimental = { agentMessaging: true };
+    defaultConfig.defaultOrchestrator = 'claude-code';
     await timAgent(123, { log: false } as any, {});
 
     expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(2);

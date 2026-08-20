@@ -6,6 +6,7 @@ import { resolveSubagentTaskScope } from '../plans/task_scope.js';
 import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
 import {
   getImplementerPrompt,
+  getReviewerPrompt,
   getTddTestsPrompt,
   getTesterPrompt,
 } from '../executors/claude_code/agent_prompts.js';
@@ -23,19 +24,19 @@ import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environmen
 import { tryMaterializeReferenceArtifactPathsForExecution } from '../reference_artifacts.js';
 import type {
   PreparedSubagentExecution,
+  PreparedSubagentType,
   SubagentExecutor,
-  SubagentLaunchHandle,
   SubagentInputPolicy,
+  SubagentLaunchHandle,
   SubagentPreparationRequest,
   SubagentPromptContext,
-  SubagentType,
 } from './types.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { ClaudeCodeSubprocessOptions } from '../executors/claude_code/run_claude_subprocess.js';
 
 type SubagentExecutorModelKey = 'claude' | 'codex';
-type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests';
-type SubagentInstructionKey = 'implementer' | 'tester' | 'tddTests';
+type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer';
+type SubagentInstructionKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer';
 
 type SubagentPromptBuilder = (
   contextContent: string,
@@ -72,7 +73,32 @@ export const ROLE_DEFINITIONS = {
     legacyClaudeModelKey: 'tddTests',
     promptBuilder: getTddTestsPrompt,
   },
-} satisfies Record<SubagentType, SubagentRoleDefinition>;
+  reviewer: {
+    instructionKey: 'reviewer',
+    configKey: 'reviewer',
+    legacyClaudeModelKey: 'reviewer',
+    promptBuilder: (
+      contextContent: string,
+      planId: string,
+      customInstructions: string | undefined,
+      model: string | undefined,
+      progressGuidanceOptions: { mode: 'report'; useJj: boolean },
+      promptContext?: SubagentPromptContext
+    ) =>
+      getReviewerPrompt(
+        contextContent,
+        planId,
+        customInstructions,
+        model,
+        false,
+        false,
+        progressGuidanceOptions,
+        false,
+        false,
+        promptContext
+      ),
+  },
+} satisfies Record<PreparedSubagentType, SubagentRoleDefinition>;
 
 /**
  * A minimal executor-like object used only while constructing the prompt.
@@ -316,7 +342,7 @@ async function resolveSubagentInput(policy: SubagentInputPolicy): Promise<string
 }
 
 function resolveSubagentModel(
-  agentType: SubagentType,
+  agentType: PreparedSubagentType,
   executorType: SubagentExecutor,
   cliModel: string | undefined,
   config: TimConfig

@@ -30,6 +30,7 @@ export interface PersistentClaudeSessionRuntimeOptions {
   readonly sendStructured: (message: StructuredMessage) => void;
   readonly onOutputActivity?: () => void | Promise<void>;
   readonly sessionProcessOwner?: SessionProcessOwner;
+  readonly lifecycleObserver?: AgentProviderLifecycleObserver;
 }
 
 /**
@@ -60,6 +61,9 @@ export class PersistentClaudeSessionRuntime {
   public readonly lifecycle: AgentProviderLifecycleControls;
 
   public constructor(private readonly options: PersistentClaudeSessionRuntimeOptions) {
+    if (options.lifecycleObserver !== undefined) {
+      this.lifecycleObservers.add(options.lifecycleObserver);
+    }
     this.lifecycle = {
       requestGracefulShutdown: (instruction: string): Promise<AgentProviderControlResult> =>
         this.requestGracefulShutdown(instruction),

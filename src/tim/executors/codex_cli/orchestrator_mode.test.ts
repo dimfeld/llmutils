@@ -222,4 +222,32 @@ describe('executeOrchestratorMode dormant agent messaging threading', () => {
       });
     }
   );
+
+  test('passes the root dynamic tool provider to the Codex app-server step', async () => {
+    const dynamicToolProvider = {
+      definitions: [],
+      handler: vi.fn(),
+    } as unknown as NonNullable<ExecutorCommonOptions['codexDynamicToolProvider']>;
+
+    await executeOrchestratorMode(
+      'context',
+      {
+        planId: '123',
+        planTitle: 'Test Plan',
+        planFilePath: '/test/base/123.plan.md',
+        executionMode: 'normal',
+      },
+      '/test/base',
+      undefined,
+      mockConfig,
+      { ...mockSharedOptions, codexDynamicToolProvider: dynamicToolProvider }
+    );
+
+    expect(mocks.executeCodexStep).toHaveBeenCalledWith(
+      'context',
+      '/test/base',
+      mockConfig,
+      expect.objectContaining({ dynamicToolProvider })
+    );
+  });
 });

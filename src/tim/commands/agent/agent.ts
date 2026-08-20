@@ -88,6 +88,10 @@ import { autoUploadArtifactsToPr } from '../upload_artifacts.js';
 import { withPlanAutoSync } from '../../plan_materialize.js';
 import { createClaudePermissionPromptCoordinator } from '../../executors/claude_code/claude_permission_prompt_coordinator.js';
 import type { ClaudePermissionPromptCoordinator } from '../../executors/claude_code/claude_mcp_protocol.js';
+import {
+  CollaborativeAgentSession,
+  isCollaborativeAgentExecutor,
+} from '../../agent_messaging/collaborative_session.js';
 
 interface AgentCommandOptions {
   nextReady?: number;
@@ -465,7 +469,8 @@ export async function timAgent(
   let summaryCollector!: SummaryCollector;
   let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
   let claudePermissionPromptCoordinator: ClaudePermissionPromptCoordinator | undefined;
-  let claudePermissionCoordinatorShutdownError: Error | undefined;
+  let collaborativeAgentSession: CollaborativeAgentSession | undefined;
+  let agentMessagingShutdownError: Error | undefined;
   const recordFailure = (err: unknown): void => {
     if (failureReason) return;
     if (err instanceof Error) {
@@ -564,6 +569,14 @@ export async function timAgent(
     // Use orchestrator from CLI options, fallback to config defaultOrchestrator, or fallback to DEFAULT_EXECUTOR
     // Note: defaultOrchestrator and defaultExecutor are independent - agent command uses defaultOrchestrator
     const executorName = options.orchestrator || config.defaultOrchestrator || DEFAULT_EXECUTOR;
+    if (agentMessagingEnabled && !isCollaborativeAgentExecutor(executorName)) {
+      throw new Error(
+        `Experimental agent messaging requires the Claude or Codex orchestrator executor; received ${executorName}`
+      );
+    }
+    const collaborativeOrchestratorExecutor = isCollaborativeAgentExecutor(executorName)
+      ? executorName
+      : undefined;
     const agentExecutionModel = resolveAgentExecutionModel(executorName, options, config);
 
     // Determine subagent executor: CLI --executor flag -> config defaultSubagentExecutor -> 'dynamic'
@@ -697,6 +710,17 @@ export async function timAgent(
       process.stdin.isTTY === true &&
       options.terminalInput !== false &&
       config.terminalInput !== false;
+
+    if (agentMessagingEnabled) {
+      collaborativeAgentSession = await CollaborativeAgentSession.create({
+        planId: planData.id ?? planId,
+        repositoryRoot: currentBaseDir,
+        configPath: globalCliOptions.config,
+        orchestratorExecutor: collaborativeOrchestratorExecutor!,
+        permissionPromptCoordinator: claudePermissionPromptCoordinator!,
+      });
+    }
+
     const sharedExecutorOptions: ExecutorCommonOptions = {
       baseDir: currentBaseDir,
       model: agentExecutionModel,
@@ -705,6 +729,8 @@ export async function timAgent(
       simpleMode: simpleModeEnabled ? true : undefined,
       agentMessagingEnabled,
       claudePermissionPromptCoordinator,
+      claudeAgentToolContext: collaborativeAgentSession?.claudeAgentToolContext,
+      codexDynamicToolProvider: collaborativeAgentSession?.codexDynamicToolProvider,
       reviewExecutor: options.reviewExecutor,
       subagentExecutor,
       dynamicSubagentInstructions,
@@ -1647,16 +1673,17 @@ export async function timAgent(
     }
 
     try {
-      await claudePermissionPromptCoordinator?.dispose();
-    } catch (err) {
-      claudePermissionCoordinatorShutdownError =
-        err instanceof Error ? err : new Error(String(err));
-      if (!executionError) {
-        executionError = claudePermissionCoordinatorShutdownError;
+      if (collaborativeAgentSession !== undefined) {
+        await collaborativeAgentSession.close();
       } else {
-        error(
-          `Claude permission coordinator shutdown failed: ${claudePermissionCoordinatorShutdownError}`
-        );
+        await claudePermissionPromptCoordinator?.dispose();
+      }
+    } catch (err) {
+      agentMessagingShutdownError = err instanceof Error ? err : new Error(String(err));
+      if (!executionError) {
+        executionError = agentMessagingShutdownError;
+      } else {
+        error(`Agent messaging shutdown failed: ${agentMessagingShutdownError}`);
       }
     }
 
@@ -1710,8 +1737,8 @@ export async function timAgent(
     if (!hadExecutionFailure && !postExecutionError && lifecycleShutdownError) {
       postExecutionError = lifecycleShutdownError;
     }
-    if (!hadExecutionFailure && !postExecutionError && claudePermissionCoordinatorShutdownError) {
-      postExecutionError = claudePermissionCoordinatorShutdownError;
+    if (!hadExecutionFailure && !postExecutionError && agentMessagingShutdownError) {
+      postExecutionError = agentMessagingShutdownError;
     }
 
     // Disable deferred exit — no more async cleanup to do

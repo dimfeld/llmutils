@@ -38,6 +38,7 @@ import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js
 import { getDatabase } from '../../db/database.js';
 import { getPermissions } from '../../db/permission.js';
 import { getOrCreateProject } from '../../db/project.js';
+import type { AgentProviderLifecycleObserver } from '../../agent_messaging/agent_manager_types.js';
 import type {
   ClaudeAgentToolContext,
   ClaudePermissionPromptCoordinator,
@@ -250,6 +251,8 @@ export interface ClaudePersistentAgentRunOptions extends Omit<RunClaudeSubproces
   readonly onOutputActivity?: () => void | Promise<void>;
   /** Optional named process-tree label supplied by AgentManager. */
   readonly processLabel?: AgentProcessLabel;
+  /** Observer installed before provider startup so AgentManager sees lifecycle events. */
+  readonly lifecycleObserver?: AgentProviderLifecycleObserver;
   /** Optional short drain grace used by deterministic local integration tests. */
   readonly persistentTurnGraceMs?: number;
 }
@@ -516,6 +519,7 @@ export async function runClaudeSubprocess(
           sendStructured,
           onOutputActivity: options.onOutputActivity,
           sessionProcessOwner,
+          lifecycleObserver: options.lifecycleObserver,
         })
       : undefined;
     const streamFormatter = createClaudeOutputStreamFormatter(modelToUse);
