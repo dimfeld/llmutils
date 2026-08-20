@@ -28,6 +28,7 @@ interface TestConnection {
   readonly close: ReturnType<typeof vi.fn>;
   onNotification?: (method: string, params: unknown) => void;
   onServerRequest?: (method: string, id: number, params: unknown) => Promise<unknown>;
+  onExit?: (event: { readonly exitCode: number | null; readonly signal?: NodeJS.Signals }) => void;
 }
 
 interface TestLogicalLifecycle {
@@ -53,11 +54,16 @@ const mocked = vi.hoisted(() => ({
     async (options: {
       readonly onNotification?: (method: string, params: unknown) => void;
       readonly onServerRequest?: AppServerRequestHandler;
+      readonly onExit?: (event: {
+        readonly exitCode: number | null;
+        readonly signal?: NodeJS.Signals;
+      }) => void;
     }): Promise<TestConnection> => {
       const connection = mocked.pendingConnections.shift();
       if (connection === undefined) throw new Error('No scripted Codex connection was queued');
       connection.onNotification = options.onNotification;
       connection.onServerRequest = options.onServerRequest;
+      connection.onExit = options.onExit;
       mocked.connections.push(connection);
       return connection;
     }
@@ -283,12 +289,28 @@ describe('Codex AgentManager lifecycle integration', () => {
     expect(acknowledgement).toMatchObject({ success: true, delivery: 'queued' });
     expect(connection.turnSteer).not.toHaveBeenCalled();
 
+    const secondAcknowledgement = await manager.sessionRuntime.sendMessage(
+      { id: manager.orchestratorIdentity.id, name: manager.orchestratorIdentity.name },
+      { id: manager.getIdentityByName('starting-worker')?.id, name: 'starting-worker' },
+      { requestId: 'startup-message-2', content: 'Then update the focused tests.' }
+    );
+    expect(secondAcknowledgement).toMatchObject({ success: true, delivery: 'queued' });
+
     initialTurn.resolve({ turnId: 'thread-starting-turn-1' });
     const started = await start;
-    await vi.waitFor(() => expect(connection.turnSteer).toHaveBeenCalledTimes(1));
-    expect(connection.turnSteer).toHaveBeenCalledWith({
+    await vi.waitFor(() => expect(connection.turnSteer).toHaveBeenCalledTimes(2));
+    expect(connection.turnSteer.mock.calls.map(([request]) => request.input[0].text)).toEqual([
+      'Check the migration before coding.',
+      'Then update the focused tests.',
+    ]);
+    expect(connection.turnSteer).toHaveBeenNthCalledWith(1, {
       threadId: connection.threadId,
       input: [{ type: 'text', text: 'Check the migration before coding.' }],
+      expectedTurnId: 'thread-starting-turn-1',
+    });
+    expect(connection.turnSteer).toHaveBeenNthCalledWith(2, {
+      threadId: connection.threadId,
+      input: [{ type: 'text', text: 'Then update the focused tests.' }],
       expectedTurnId: 'thread-starting-turn-1',
     });
     expect(manager.getAgentSnapshot(started.id)).toMatchObject({
@@ -301,6 +323,36 @@ describe('Codex AgentManager lifecycle integration', () => {
       mode: 'forced',
       state: 'stopping',
     });
+    await manager.waitForAgentTerminal(started.id);
+  });
+
+  it('queues an active steer rejection and retries the same message through the mailbox', async () => {
+    const connection = createConnection('thread-steer-retry', 'process-steer-retry');
+    connection.turnSteer.mockRejectedValueOnce(new Error('turn completion raced the steer'));
+    const { manager, root } = await createHarness({ connections: [connection] });
+    const started = await startAgent(manager, root, 'steer-retry-worker');
+
+    await expect(
+      manager.sendAgentMessage(root, {
+        name: 'steer-retry-worker',
+        message: 'Retry this exact message after the turn settles.',
+      })
+    ).resolves.toMatchObject({ delivery: 'queued' });
+
+    await vi.waitFor(() => expect(connection.turnSteer).toHaveBeenCalledTimes(2));
+    expect(connection.turnSteer.mock.calls.map(([request]) => request.input[0].text)).toEqual([
+      'Retry this exact message after the turn settles.',
+      'Retry this exact message after the turn settles.',
+    ]);
+    expect(connection.turnSteer).toHaveBeenLastCalledWith({
+      threadId: connection.threadId,
+      input: [{ type: 'text', text: 'Retry this exact message after the turn settles.' }],
+      expectedTurnId: 'thread-steer-retry-turn-1',
+    });
+
+    await expect(
+      manager.stopAgent(root, { name: 'steer-retry-worker', force: true })
+    ).resolves.toMatchObject({ mode: 'forced' });
     await manager.waitForAgentTerminal(started.id);
   });
 
@@ -439,6 +491,34 @@ describe('Codex AgentManager lifecycle integration', () => {
     expect(manager.getAgentSnapshot(started.id)).toBeUndefined();
   });
 
+  it('classifies an unexpected provider exit once and ignores late callbacks', async () => {
+    const connection = createConnection('thread-crash', 'process-crash');
+    const { manager, root, rootInput, logicalLifecycles } = await createHarness({
+      connections: [connection],
+    });
+    const started = await startAgent(manager, root, 'crash-worker');
+
+    connection.onExit?.({ exitCode: 17 });
+    connection.onExit?.({ exitCode: 18 });
+    notify(connection, 'item/completed', {
+      threadId: connection.threadId,
+      turnId: 'thread-crash-turn-1',
+      item: { type: 'agentMessage', text: 'late partial result' },
+    });
+    notify(connection, 'turn/completed', {
+      threadId: connection.threadId,
+      turn: { id: 'thread-crash-turn-1', status: 'completed' },
+    });
+
+    await manager.waitForAgentTerminal(started.id);
+    expect(connection.close).toHaveBeenCalledTimes(1);
+    expect(logicalLifecycles[0]?.markExited).toHaveBeenCalledTimes(1);
+    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages[0]?.content).toContain('failed');
+    expect(rootInput.receivedMessages[0]?.content).not.toContain('late partial result');
+    expect(manager.getAgentSnapshot(started.id)).toBeUndefined();
+  });
+
   it('tears down two active agents in parallel without crossing callback identity', async () => {
     const first = createConnection('thread-first', 'process-first');
     const second = createConnection('thread-second', 'process-second');
@@ -466,5 +546,37 @@ describe('Codex AgentManager lifecycle integration', () => {
     expect(second.close).toHaveBeenCalledTimes(1);
     expect(manager.getAgentSnapshot(firstStarted.id)).toBeUndefined();
     expect(manager.getAgentSnapshot(secondStarted.id)).toBeUndefined();
+  });
+
+  it('keeps one agent alive when the other completes and stops in reverse order', async () => {
+    const first = createConnection('thread-reverse-first', 'process-reverse-first');
+    const second = createConnection('thread-reverse-second', 'process-reverse-second');
+    const { manager, root } = await createHarness({ connections: [first, second] });
+    const firstStarted = await startAgent(manager, root, 'reverse-first');
+    const secondStarted = await startAgent(manager, root, 'reverse-second');
+
+    completeTurn(first, 'thread-reverse-first-turn-1', 'First completed normally.');
+    await vi.waitFor(() =>
+      expect(manager.getAgentSnapshot(firstStarted.id)?.state).toBe('running-idle')
+    );
+    await expect(
+      manager.stopAgent(root, { name: 'reverse-second', force: true })
+    ).resolves.toMatchObject({ mode: 'forced' });
+    await manager.waitForAgentTerminal(secondStarted.id);
+
+    expect(manager.getAgentSnapshot(firstStarted.id)).toMatchObject({
+      identity: { name: 'reverse-first' },
+      state: 'running-idle',
+      providerThreadId: 'thread-reverse-first',
+    });
+    expect(second.isAlive).toBe(false);
+    expect(first.isAlive).toBe(true);
+    expect(first.close).not.toHaveBeenCalled();
+
+    await expect(
+      manager.stopAgent(root, { name: 'reverse-first', force: true })
+    ).resolves.toMatchObject({ mode: 'forced' });
+    await manager.waitForAgentTerminal(firstStarted.id);
+    expect(first.close).toHaveBeenCalledTimes(1);
   });
 });

@@ -24,7 +24,7 @@ import { startPersistentCodexAgent } from './persistent_codex_session.js';
 
 interface MockCodexFixture {
   readonly rootDir: string;
-  readonly mode: 'normal' | 'dynamic-tool' | 'reject-thread-start';
+  readonly mode: 'normal' | 'dynamic-tool' | 'reject-thread-start' | 'crash-after-start';
   readonly serverPath: string;
   readonly codexPath: string;
   readonly spawnLogPath: string;
@@ -33,7 +33,7 @@ interface MockCodexFixture {
 }
 
 async function createMockCodexFixture(
-  mode: 'normal' | 'dynamic-tool' | 'reject-thread-start'
+  mode: 'normal' | 'dynamic-tool' | 'reject-thread-start' | 'crash-after-start'
 ): Promise<MockCodexFixture> {
   const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'persistent-codex-fixture-'));
   const serverPath = path.join(rootDir, 'mock-app-server.ts');
@@ -111,6 +111,9 @@ const server = Bun.serve({
           }
         } else if (message.method === 'turn/start') {
           send(websocket, { jsonrpc: '2.0', id: message.id, result: { turnId } });
+          if (mode === 'crash-after-start') {
+            setTimeout(() => process.exit(23), 0);
+          }
         } else if (message.method === 'turn/interrupt') {
           send(websocket, { jsonrpc: '2.0', id: message.id, result: {} });
         } else {
@@ -706,6 +709,49 @@ describe('persistent Codex setup', () => {
           registry
             .getSnapshot()
             .filter((node) => node.kind === 'executor')
+            .every((node) => node.state === 'exited')
+        ).toBe(true);
+      });
+    } finally {
+      owner.dispose();
+      await fs.rm(fixture.rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports a scripted app-server crash once and cleans the private owner', async () => {
+    const fixture = await createMockCodexFixture('crash-after-start');
+    const { owner, registry } = createOwner();
+    const identity = createIdentity('crash-worker');
+    const callbacks = createCallbacks();
+
+    try {
+      await withFixtureEnvironment(fixture, async () => {
+        const handle = await runWithSessionProcessOwner(owner, () =>
+          startPersistentCodexAgent({
+            mode: CODEX_PERSISTENT_AGENT_MODE,
+            identity,
+            prompt: 'Start and then crash.',
+            cwd: fixture.rootDir,
+            timConfig: {},
+            dynamicToolProvider: createProvider(identity),
+            processLabel: formatAgentProcessLabel('codex-cli', identity.name),
+            lifecycleCallbacks: callbacks,
+            sessionProcessOwner: owner,
+          })
+        );
+
+        await expect(handle.ready).resolves.toBeUndefined();
+        await expect(handle.completion).resolves.toMatchObject({
+          error: expect.objectContaining({
+            message: expect.stringContaining('exited unexpectedly'),
+          }),
+        });
+        expect(callbacks.exit).toHaveBeenCalledTimes(1);
+        expect(callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
+        expect(
+          registry
+            .getSnapshot()
+            .filter((node) => node.label.includes('(crash-worker)'))
             .every((node) => node.state === 'exited')
         ).toBe(true);
       });

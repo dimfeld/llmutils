@@ -29,6 +29,24 @@ The AgentManager can select `mode: 'persistent-agent'` for a Claude provider lau
 
 All other Claude paths remain one-shot. When persistent mode is not selected, a normal result still closes stdin before the process result is awaited, existing background grace and timeout behavior remains in force, and review, planning, proof, terminal, tunnel, headless, and legacy subagent executions do not receive a persistent handle.
 
+## Persistent Codex app-server input
+
+Persistent Codex agents do not use stdin for AgentManager messages. The
+app-server connection and Codex thread remain open between turns.
+
+- The AgentManager mailbox is the only pending input queue. The Codex adapter
+  does not create a second user-message queue.
+- A message for an active turn is sent with `turn/steer` after a turn ID is
+  known. A message for an idle thread starts a new turn on the existing thread.
+  Messages that arrive during startup or an unsafe transition remain in the
+  manager FIFO.
+- A completed turn changes the provider to idle; it does not close a stream or
+  process. `FinishAgent` and graceful StopAgent close after the required final
+  turn. Forced stop uses the owned app-server connection close path.
+- Persistent Codex mode does not install terminal, tunnel-user-input, or
+  headless-user-input callbacks. Existing Codex app-server chat and
+  single-turn-with-steering modes keep their current input and close behavior.
+
 ## Background-Activity Keep-Alive
 
 Claude Code can end a turn (emit a `result` message) while work is still pending in the background, then **re-invoke itself** through the same stream-json session when a background task posts an update. Closing stdin on the first `result` would kill Claude Code before it resumes, truncating single-turn commands like `tim agent`. `BackgroundActivityTracker` (`background_activity_tracker.ts`) gates the stdin-close decision so deferred turns stay alive.

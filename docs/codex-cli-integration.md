@@ -148,6 +148,41 @@ collaborative orchestration remain later work. Until a later integration supplie
 a trusted provider, no Codex agent tools appear and the existing one-turn
 behavior remains in force.
 
+## Persistent Codex agent sessions
+
+The AgentManager uses a separate persistent launch path for Codex subagents. This
+path does not change `executeCodexStep()` or the existing single-turn modes.
+
+- Each persistent agent owns one private `codex app-server` process and one
+  logical Codex thread. It ignores an inherited `TIM_CODEX_APP_SERVER_SOCKET`.
+- The process tree shows `Codex app-server (<agent-name>)` and
+  `Codex thread (<agent-name>)`. The two nodes are siblings because the current
+  session process model does not nest executor nodes.
+- Start readiness is separate from completion. The manager can register the
+  mailbox while the provider starts. The handle becomes input-ready only after
+  app-server initialization, dynamic-tool installation, thread registration, and
+  the initial turn start succeed.
+- The AgentManager mailbox is the only pending-message queue. Input during a
+  known active turn uses `turn/steer`; input during an idle thread starts another
+  `turn/start` on the same thread. A transition or uncertain steer remains in the
+  manager FIFO for retry.
+- A completed turn reports its own assistant message and turn completion, then
+  leaves the process and thread alive and idle. A failed turn is a provider
+  failure; persistent turns are not replayed with the one-shot `continue` retry
+  behavior because tool effects may already have been accepted.
+- `FinishAgent` is acknowledged during the tool call and closes only after the
+  current assistant result and turn completion. Graceful StopAgent input uses the
+  same active-or-idle delivery path. AgentManager owns the output-inactivity
+  timer; provider output only reports activity to that timer.
+- Forced stop interrupts a known or late-starting turn when possible and closes
+  the owned connection. Connection cleanup owns process termination and its
+  SIGTERM-to-SIGKILL escalation. Provider exit, crash, and cleanup callbacks are
+  idempotent and converge on one manager terminal event.
+
+Persistent sessions require Codex app-server experimental dynamic-tool support.
+The CLI `codex exec` fallback remains available for ordinary one-shot execution,
+but it cannot host a persistent AgentManager provider.
+
 ## Shared orchestration prompt
 
 The reusable prompt builders live in a provider-neutral module:
