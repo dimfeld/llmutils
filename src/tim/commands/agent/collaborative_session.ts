@@ -36,7 +36,6 @@ export interface CollaborativeAgentSessionOptions {
   readonly repositoryRoot: string;
   readonly configPath?: string;
   readonly orchestratorExecutor: AgentExecutor;
-  readonly taskIndex?: string | string[];
   readonly noninteractive: boolean;
 }
 
@@ -90,7 +89,6 @@ export class CollaborativeAgentSession {
     try {
       const agentPreparer = createAgentPreparation({
         planId: options.planId,
-        taskIndex: options.taskIndex,
         configPath: options.configPath,
         repositoryRoot: options.repositoryRoot,
       });
