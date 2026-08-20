@@ -661,7 +661,7 @@ After marking tasks done, commit your changes with a descriptive message about w
  */
 function buildImportantGuidelines(planId: string, options: OrchestrationOptions): string {
   if (options.agentMessagingEnabled === true) {
-    return buildCollaborativeImportantGuidelines(planId, options);
+    return buildCollaborativeImportantGuidelines(planId, options, false);
   }
 
   const reviewCommand = options.batchMode
