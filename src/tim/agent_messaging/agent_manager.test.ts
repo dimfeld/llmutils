@@ -2615,39 +2615,6 @@ describe('provider-neutral launch contracts and test fakes', () => {
     }
   });
 
-  test('keeps collaborative reviewer preparation behind a narrow injected seam', async () => {
-    const manager = await createManager();
-    const reservation = reserveSubagentForTest(
-      manager,
-      reservationRequest('reviewer-prepared', 'reviewer')
-    );
-    let receivedPromptContext: unknown;
-    const reviewerPreparation = createAgentPreparation({
-      planId: 1,
-      prepareReviewer: async (request): Promise<PreparedAgentExecution> => {
-        receivedPromptContext = request.promptContext;
-        return preparedExecutionFor(request);
-      },
-    });
-
-    const prepared = await reviewerPreparation.prepare({
-      identity: reservation.identity,
-      initialMessage: 'Review without mutating the workspace.',
-      promptContext: { mode: 'persistent-agent' },
-    });
-
-    expect(prepared.agentType).toBe('reviewer');
-    expect(prepared.executor).toBe('codex-cli');
-    expect(receivedPromptContext).toEqual({ mode: 'persistent-agent' });
-
-    await reviewerPreparation.prepare({
-      identity: reservation.identity,
-      initialMessage: 'Review the current changes as a one-shot caller.',
-    });
-    expect(receivedPromptContext).toBeUndefined();
-    reservation.release();
-  });
-
   test('formats named labels without conflating names and provider identities', () => {
     expect(formatAgentProcessLabel('claude-code', 'worker-one')).toBe('Claude agent (worker-one)');
     expect(formatAgentProcessLabel('codex-cli', 'worker-one')).toBe('Codex thread (worker-one)');

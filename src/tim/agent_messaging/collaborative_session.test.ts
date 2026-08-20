@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   prepareSubagentExecution: vi.fn(),
   runClaudeSubprocess: vi.fn(),
   startPersistentCodexAgent: vi.fn(),
+  createClaudePermissionPromptCoordinator: vi.fn(),
   throwDuringSessionCreate: false,
 }));
 
@@ -41,12 +42,16 @@ vi.mock('../executors/claude_code/claude_mcp_protocol.js', async (importOriginal
   };
 });
 
+vi.mock('../executors/claude_code/claude_permission_prompt_coordinator.js', () => ({
+  createClaudePermissionPromptCoordinator: mocks.createClaudePermissionPromptCoordinator,
+}));
+
 vi.mock('../executors/codex_cli/persistent_codex_session.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../executors/codex_cli/persistent_codex_session.js')>()),
   startPersistentCodexAgent: mocks.startPersistentCodexAgent,
 }));
 
-const { CollaborativeAgentSession } = await import('./collaborative_session.js');
+const { CollaborativeAgentSession } = await import('../commands/agent/collaborative_session.js');
 
 function createProviderHandle(
   executor: 'claude-code' | 'codex-cli',
@@ -139,6 +144,7 @@ describe('CollaborativeAgentSession root activation', () => {
   test('installs role-scoped root tools and launches mixed persistent providers through the manager', async () => {
     const disposeOrder: string[] = [];
     const coordinator = createCoordinator(disposeOrder);
+    mocks.createClaudePermissionPromptCoordinator.mockReturnValue(coordinator);
     mocks.prepareSubagentExecution.mockImplementation(async (request) =>
       preparedExecution(request)
     );
@@ -153,7 +159,6 @@ describe('CollaborativeAgentSession root activation', () => {
       planId: 421,
       repositoryRoot: '/repo',
       orchestratorExecutor: 'claude-code',
-      permissionPromptCoordinator: coordinator,
       noninteractive: false,
     });
 
@@ -240,11 +245,11 @@ describe('CollaborativeAgentSession root activation', () => {
   test('closes only once and preserves cleanup errors after manager shutdown', async () => {
     const disposeOrder: string[] = [];
     const coordinator = createCoordinator(disposeOrder, new Error('coordinator close failed'));
+    mocks.createClaudePermissionPromptCoordinator.mockReturnValue(coordinator);
     const session = await CollaborativeAgentSession.create({
       planId: 421,
       repositoryRoot: '/repo',
       orchestratorExecutor: 'claude-code',
-      permissionPromptCoordinator: coordinator,
     });
 
     const firstClose = session.close();
@@ -258,6 +263,7 @@ describe('CollaborativeAgentSession root activation', () => {
   test('closes the manager when provider setup fails during session creation', async () => {
     const disposeOrder: string[] = [];
     const coordinator = createCoordinator(disposeOrder);
+    mocks.createClaudePermissionPromptCoordinator.mockReturnValue(coordinator);
     mocks.throwDuringSessionCreate = true;
 
     try {
@@ -266,7 +272,6 @@ describe('CollaborativeAgentSession root activation', () => {
           planId: 421,
           repositoryRoot: '/repo',
           orchestratorExecutor: 'claude-code',
-          permissionPromptCoordinator: coordinator,
           noninteractive: false,
         })
       ).rejects.toThrow('provider setup failed');
@@ -274,13 +279,14 @@ describe('CollaborativeAgentSession root activation', () => {
       mocks.throwDuringSessionCreate = false;
     }
 
-    expect(disposeOrder).toEqual([]);
-    expect(coordinator.dispose).not.toHaveBeenCalled();
+    expect(disposeOrder).toEqual(['coordinator']);
+    expect(coordinator.dispose).toHaveBeenCalledTimes(1);
   });
 
   test('routes root and subagent tool operations through one mixed-executor manager', async () => {
     const disposeOrder: string[] = [];
     const coordinator = createCoordinator(disposeOrder);
+    mocks.createClaudePermissionPromptCoordinator.mockReturnValue(coordinator);
     const claudeHandle = createProviderHandle('claude-code', disposeOrder);
     const codexHandle = createProviderHandle('codex-cli', disposeOrder);
     mocks.prepareSubagentExecution.mockImplementation(async (request) =>
@@ -293,7 +299,6 @@ describe('CollaborativeAgentSession root activation', () => {
       planId: 421,
       repositoryRoot: '/repo',
       orchestratorExecutor: 'claude-code',
-      permissionPromptCoordinator: coordinator,
       noninteractive: false,
     });
 
@@ -406,6 +411,7 @@ describe('CollaborativeAgentSession root activation', () => {
   test('rolls back the mailbox and reservation when a persistent provider fails to launch', async () => {
     const disposeOrder: string[] = [];
     const coordinator = createCoordinator(disposeOrder);
+    mocks.createClaudePermissionPromptCoordinator.mockReturnValue(coordinator);
     const launchError = new Error('persistent Claude launch failed');
     mocks.prepareSubagentExecution.mockImplementation(async (request) =>
       preparedExecution(request)
@@ -416,7 +422,6 @@ describe('CollaborativeAgentSession root activation', () => {
       planId: 421,
       repositoryRoot: '/repo',
       orchestratorExecutor: 'codex-cli',
-      permissionPromptCoordinator: coordinator,
       noninteractive: false,
     });
 
@@ -451,6 +456,7 @@ describe('CollaborativeAgentSession root activation', () => {
 
   test('uses the same provider-neutral root semantics for a Codex orchestrator', async () => {
     const coordinator = createCoordinator([]);
+    mocks.createClaudePermissionPromptCoordinator.mockReturnValue(coordinator);
     mocks.prepareSubagentExecution.mockImplementation(async (request) =>
       preparedExecution(request)
     );
@@ -462,7 +468,6 @@ describe('CollaborativeAgentSession root activation', () => {
       planId: 421,
       repositoryRoot: '/repo',
       orchestratorExecutor: 'codex-cli',
-      permissionPromptCoordinator: coordinator,
       noninteractive: false,
     });
 

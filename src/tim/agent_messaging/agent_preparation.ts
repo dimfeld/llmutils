@@ -13,13 +13,7 @@ export interface AgentPreparationOptions {
   readonly model?: string;
   readonly taskIndex?: string | string[];
   readonly repositoryRoot?: string;
-  readonly prepareReviewer?: CollaborativeReviewerPreparation;
 }
-
-/** Optional test or integration override for collaborative reviewer preparation. */
-export type CollaborativeReviewerPreparation = (
-  request: AgentPreparationRequest
-) => Promise<PreparedAgentExecution>;
 
 /**
  * Build the preparation dependency used by AgentManager.
@@ -31,10 +25,6 @@ export type CollaborativeReviewerPreparation = (
 export function createAgentPreparation(options: AgentPreparationOptions): AgentPreparation {
   return {
     prepare: async (request: AgentPreparationRequest): Promise<PreparedAgentExecution> => {
-      if (request.identity.type === 'reviewer' && options.prepareReviewer !== undefined) {
-        return options.prepareReviewer(request);
-      }
-
       const preparationRequest: SubagentPreparationRequest = {
         agentType: request.identity.type,
         planId: options.planId,

@@ -86,14 +86,12 @@ import { clearTmpDir } from '../../batch_review_cache.js';
 import { autoCreatePrForPlan } from '../create_pr.js';
 import { autoUploadArtifactsToPr } from '../upload_artifacts.js';
 import { withPlanAutoSync } from '../../plan_materialize.js';
-import { createClaudePermissionPromptCoordinator } from '../../executors/claude_code/claude_permission_prompt_coordinator.js';
-import type { ClaudePermissionPromptCoordinator } from '../../executors/claude_code/claude_mcp_protocol.js';
 import { isCodexAppServerEnabled } from '../../executors/codex_cli/app_server_mode.js';
 import { CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE } from '../../executors/codex_cli/app_server_dynamic_tools.js';
 import {
   CollaborativeAgentSession,
   isCollaborativeAgentExecutor,
-} from '../../agent_messaging/collaborative_session.js';
+} from './collaborative_session.js';
 
 interface AgentCommandOptions {
   nextReady?: number;
@@ -470,7 +468,6 @@ export async function timAgent(
   let summaryFilePath: string | undefined;
   let summaryCollector!: SummaryCollector;
   let planWatcher: ReturnType<typeof watchPlanFile> | undefined;
-  let claudePermissionPromptCoordinator: ClaudePermissionPromptCoordinator | undefined;
   let unregisterAgentMessagingCleanup: (() => void) | undefined;
   let collaborativeAgentSession: CollaborativeAgentSession | undefined;
   let agentMessagingShutdownError: Error | undefined;
@@ -500,12 +497,6 @@ export async function timAgent(
     }
     if (agentMessagingEnabled && executorName === 'codex-cli' && !isCodexAppServerEnabled()) {
       throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
-    }
-    if (agentMessagingEnabled) {
-      claudePermissionPromptCoordinator = createClaudePermissionPromptCoordinator();
-      unregisterAgentMessagingCleanup = cleanupRegistry.register(() =>
-        claudePermissionPromptCoordinator?.dispose()
-      );
     }
     currentBaseDir = await getGitRoot();
     let initialResolvedPlan = await resolvePlanByNumericId(planId, currentBaseDir);
@@ -725,9 +716,11 @@ export async function timAgent(
         repositoryRoot: currentBaseDir,
         configPath: globalCliOptions.config,
         orchestratorExecutor: collaborativeOrchestratorExecutor!,
-        permissionPromptCoordinator: claudePermissionPromptCoordinator!,
         noninteractive,
       });
+      unregisterAgentMessagingCleanup = cleanupRegistry.register(() =>
+        collaborativeAgentSession?.close()
+      );
     }
 
     const sharedExecutorOptions: ExecutorCommonOptions = {
@@ -737,7 +730,8 @@ export async function timAgent(
       terminalInput: terminalInputEnabled,
       simpleMode: simpleModeEnabled ? true : undefined,
       agentMessagingEnabled,
-      claudePermissionPromptCoordinator,
+      claudePermissionPromptCoordinator:
+        collaborativeAgentSession?.claudePermissionPromptCoordinator,
       claudeAgentToolContext: collaborativeAgentSession?.claudeAgentToolContext,
       codexDynamicToolProvider: collaborativeAgentSession?.codexDynamicToolProvider,
       orchestratorInputAdapter: collaborativeAgentSession?.orchestratorInputAdapter,
@@ -1590,8 +1584,6 @@ export async function timAgent(
     try {
       if (collaborativeAgentSession !== undefined) {
         await collaborativeAgentSession.close();
-      } else {
-        await claudePermissionPromptCoordinator?.dispose();
       }
     } catch (err) {
       agentMessagingShutdownError = err instanceof Error ? err : new Error(String(err));

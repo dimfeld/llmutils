@@ -9,6 +9,11 @@ import {
 } from './review_guidance.js';
 export type { OrchestrationOptions } from './orchestration_options.js';
 import type { OrchestrationOptions } from './orchestration_options.js';
+import { createOrchestrationDelegationRenderer } from './orchestration_delegation.js';
+import {
+  buildCollaborativeAvailableAgents,
+  buildCollaborativeToolGuidance,
+} from './collaboration_prompt.js';
 
 const INPUT_COMBINATION_GUIDANCE =
   '- You can use both `--input-file` and `--input` together. `--input-file` is read first and `--input` is appended afterward.';
@@ -167,20 +172,6 @@ const DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS =
   'Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.';
 
 /**
- * Builds the -x flag portion of a tim subagent command based on executor selection mode.
- * For fixed mode, always includes -x <executor>.
- * For dynamic mode, returns empty string (orchestrator decides per invocation).
- */
-function buildSubagentExecutorFlag(options: OrchestrationOptions): string {
-  const executor = options.subagentExecutor;
-  if (executor === 'codex-cli' || executor === 'claude-code') {
-    return ` -x ${executor}`;
-  }
-  // dynamic or undefined: orchestrator decides per invocation
-  return '';
-}
-
-/**
  * Builds the subagent executor selection guidance for dynamic mode.
  */
 function buildDynamicExecutorGuidance(options: OrchestrationOptions): string {
@@ -210,57 +201,6 @@ Both executors are supported for implementer, tester, tdd-tests, and reviewer ag
 You must choose which executor to use for each subagent invocation by passing \`-x codex-cli\` or \`-x claude-code\` to the \`tim subagent\` command.
 
 Decision guidance: ${instructions}
-`;
-}
-
-function buildCollaborativeToolGuidance(): string {
-  return `## Collaborative Agent Tools
-
-This root session has collaborative agent tools enabled. Use them for delegated implementation, testing, TDD test writing, and advisory review work.
-
-- **StartAgent** starts a persistent subagent without waiting for it to finish. Its type is one of \`implementer\`, \`tester\`, \`tdd-tests\`, or \`reviewer\`; its executor is \`claude-code\` or \`codex-cli\`; and its initial message must state the task, file scope, constraints, and expected handoff.
-- **ListAgents** returns the canonical names, types, executors, and visible lifecycle states for the orchestrator and active subagents. Use it when team state is unclear or before retrying a target.
-- **SendAgentMessage** sends useful context, questions, blockers, decisions, and handoffs. The runtime supplies trusted source attribution; agents must use the canonical names returned by ListAgents when replying.
-- **StopAgent** is available only to the orchestrator. Graceful stop is normal: request a final status and allow the manager to report terminal state. Use force only for an unresponsive agent or urgent shutdown.
-
-Use short descriptive names when a stable address helps, or omit the name to accept a generated name. After StartAgent returns, always use its returned canonical name. The session allows at most eight nonterminal subagents; \`orchestrator\` is reserved for the root and does not count. Agents in \`starting\`, \`running-active\`, \`running-idle\`, \`finishing\`, and \`stopping\` states all hold capacity. Starting agents remain visible while preparing and must not be assumed ready for another assignment. Finishing and stopping agents remain visible but reject new assignments.
-
-SendAgentMessage reports one of three successful delivery paths: \`steered\` for the active turn, \`queued\` when input waits in the recipient FIFO, or \`started-idle-turn\` when an idle provider begins a continuation. \`queued\` means accepted; do not resend it just because delivery was not immediate.
-
-FinishAgent is self-only. The root cannot call it; ask each subagent to call FinishAgent after its assignment and final handoff are complete. Use the manager's terminal notification as the final handoff rather than relying on repeated ListAgents polling alone.
-
-All agents share one working directory and see changes immediately. Before concurrent mutating work, assign disjoint file scopes or agree on one owner and an edit order for shared files. Read-only review and non-mutating inspection may overlap. Start only agents with a clear job; several agents of the same type are allowed when their scopes are safely separable.
-
-A StartAgent reviewer is read-only and advisory. It may inspect evolving work, run non-mutating checks, and send findings, but it is not the formal quality gate. The authoritative review is the separate one-shot \`tim review\` command with fresh context and no collaborative tools.
-`;
-}
-
-type CollaborativeAgentType = 'implementer' | 'tester' | 'tdd-tests' | 'reviewer';
-
-function buildCollaborativeAvailableAgents(
-  planId: string,
-  agentTypes: readonly CollaborativeAgentType[]
-): string {
-  const descriptions: Record<CollaborativeAgentType, string> = {
-    implementer:
-      'Change only the assigned implementation files and report the changes and verification.',
-    tester:
-      'Inspect or change only the assigned test and fixture files, run checks, and report failures and coverage gaps.',
-    'tdd-tests':
-      'Create the expected failing tests for the assigned scope and report the failure evidence before implementation starts.',
-    reviewer:
-      'Read-only inspect the evolving work, run non-mutating checks, and send advisory findings; do not edit or commit.',
-  };
-  const lines = agentTypes.map(
-    (agentType) =>
-      `- **${agentType}**: Call StartAgent with type \`${agentType}\`, the selected executor, and an initial message containing plan \`${planId}\`, the exact task and file scope, constraints, and expected handoff. ${descriptions[agentType]}`
-  );
-
-  return `## Available Collaborative Agents
-
-${lines.join('\n')}
-
-Start only the roles needed for clear, separable work. Keep task selection, plan updates, and the final integrated result with the orchestrator. Send follow-up context with SendAgentMessage instead of restarting a persistent agent.
 `;
 }
 
@@ -425,7 +365,7 @@ ${contextContent}`;
 
 ${buildBatchModeInstructions(options)}
 ${buildCollaborativeToolGuidance()}
-${buildCollaborativeAvailableAgents(planId, ['implementer', 'reviewer'])}
+${buildCollaborativeAvailableAgents(planId, ['implementer', 'reviewer'], options)}
 ${buildDynamicExecutorGuidance(options)}
 ${buildCollaborativeSimpleWorkflowInstructions(planId, options)}
 ${buildCollaborativeImportantGuidelines(planId, options, false)}
@@ -503,7 +443,8 @@ ${buildCollaborativeAvailableAgents(
   planId,
   isSimpleTdd
     ? ['tdd-tests', 'implementer', 'reviewer']
-    : ['tdd-tests', 'implementer', 'tester', 'reviewer']
+    : ['tdd-tests', 'implementer', 'tester', 'reviewer'],
+  options
 )}
 ${buildDynamicExecutorGuidance(options)}
 ## Workflow Instructions
@@ -541,22 +482,22 @@ ${footer}`;
  */
 function buildAvailableAgents(planId: string, options: OrchestrationOptions): string {
   if (options.agentMessagingEnabled === true) {
-    return `${buildCollaborativeToolGuidance()}\n${buildCollaborativeAvailableAgents(planId, [
-      'implementer',
-      'tester',
-      'reviewer',
-    ])}`;
+    return `${buildCollaborativeToolGuidance()}\n${buildCollaborativeAvailableAgents(
+      planId,
+      ['implementer', 'tester', 'reviewer'],
+      options
+    )}`;
   }
 
-  const executorFlag = buildSubagentExecutorFlag(options);
+  const renderer = createOrchestrationDelegationRenderer(planId, options);
   const reviewer = options.batchMode
     ? `- **Full-plan reviewer**: Only when the selected batch completes every remaining task, run \`${buildFullPlanReviewCommand(planId, options)}\` via the shell command tool, without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use \`tim subagent reviewer\` for selected-task batch reviews.`
     : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`;
   return `## Available Agents
 
 You have access to three specialized agents via the shell command tool:
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Implementer**: Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Tester**: Run \`${renderer.subagentCommand('tester')}\` via the shell command tool (or \`--input-file <paths...>\`)
 
 ${reviewer}
 
@@ -574,7 +515,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
     return buildCollaborativeWorkflowInstructions(planId, options);
   }
 
-  const executorFlag = buildSubagentExecutorFlag(options);
+  const renderer = createOrchestrationDelegationRenderer(planId, options);
 
   const taskSelectionPhase = options.batchMode
     ? `1. **Task Selection Phase**
@@ -591,12 +532,12 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
       : '';
 
   const implementationSteps = `
-   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
+   - Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output`;
 
   const testingPhase = `${options.batchMode ? '3' : '2'}. **Testing Phase**
-   - After implementation is complete, run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
+   - After implementation is complete, run \`${renderer.subagentCommand('tester')}\` via the shell command tool with a long timeout${dynamicNote}
    - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - In the input (\`--input\` or \`--input-file\`), ask the tester to create comprehensive tests for the implemented functionality, if needed
    - Emphasize that tests must test actual implementation code. Testing a reproduction or simulation of the code is useless.
@@ -817,7 +758,7 @@ export function wrapWithOrchestrationSimple(
   const progressSection = progressSectionGuidance(options.planFilePath, {
     useAtPrefix: options.useAtPrefix,
   });
-  const executorFlag = buildSubagentExecutorFlag(options);
+  const renderer = createOrchestrationDelegationRenderer(planId, options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
   const reviewCommand = options.batchMode
     ? buildFullPlanReviewCommand(planId, options)
@@ -836,7 +777,7 @@ You are coordinating a tim streamlined two-phase workflow (implement → review)
   const availableAgents = `## Available Agents
 
 You have two specialized subagents available via the shell command tool:
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Implementer**: Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool (or \`--input-file <paths...>\`)
 ${reviewerAgent}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
@@ -876,7 +817,7 @@ You MUST follow this simplified loop:
 
 ${taskSelectionPhase}
    - Explore the repository and create a plan on how to implement the task.
-   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
+   - Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output
 
@@ -983,7 +924,7 @@ export function wrapWithOrchestrationTdd(
   const progressSection = progressSectionGuidance(options.planFilePath, {
     useAtPrefix: options.useAtPrefix,
   });
-  const executorFlag = buildSubagentExecutorFlag(options);
+  const renderer = createOrchestrationDelegationRenderer(planId, options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
   const isSimpleTdd = options.simpleMode === true;
 
@@ -1000,8 +941,8 @@ You MUST enforce TDD order:
     ? `## Available Agents
 
 You have three specialized subagents available via the shell command tool:
-- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **TDD Tests**: Run \`${renderer.subagentCommand('tdd-tests')}\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Implementer**: Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool (or \`--input-file <paths...>\`)
 ${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildFullPlanReviewCommand(planId, options)}\` without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`${buildReviewCommand(planId, options)}\` via the shell command tool`}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
@@ -1011,9 +952,9 @@ Each subagent command may take a long time to complete because it may run multip
     : `## Available Agents
 
 You have four specialized subagents available via the shell command tool:
-- **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
+- **TDD Tests**: Run \`${renderer.subagentCommand('tdd-tests')}\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Implementer**: Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool (or \`--input-file <paths...>\`)
+- **Tester**: Run \`${renderer.subagentCommand('tester')}\` via the shell command tool (or \`--input-file <paths...>\`)
 ${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildFullPlanReviewCommand(planId, options)}\` without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
@@ -1076,7 +1017,7 @@ Each subagent command may take a long time to complete because it may run multip
 ${reviewExecutorGuidance}
    - The review command may take up to 15 minutes; use a long timeout.`
     : `${verificationPhaseNumber}. **Testing Phase**
-   - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
+   - Run \`${renderer.subagentCommand('tester')}\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), include:
      - TDD tests output and implementer output
      - Which tasks are in scope
@@ -1104,7 +1045,7 @@ ${reviewExecutorGuidance}
 You MUST follow this TDD process:
 
 ${taskSelectionPhase}
-   - Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
+   - Run \`${renderer.subagentCommand('tdd-tests')}\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify in-scope tasks and expected behavior to define
    - Explicitly instruct the TDD tests agent to:
      - Write tests first
@@ -1113,7 +1054,7 @@ ${taskSelectionPhase}
    - Capture and preserve this output for downstream phases
 
 ${implementationPhaseNumber}. **Implementation Phase**
-   - Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
+   - Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool with a long timeout${dynamicNote}
    - In the input, include the TDD tests output and direct the implementer to make those tests pass
    - Emphasize that implementation should be driven by existing TDD tests, not by adding unrelated new behavior
    - Wait for the subagent to complete and review its output

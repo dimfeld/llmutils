@@ -41,7 +41,7 @@ import {
   getCurrentSessionProcessOwner,
   type SessionLogicalExecutorLifecycle,
 } from '../../../common/session_process_control.js';
-import { CallbackAgentInputAdapter } from '../../agent_messaging/agent_input_adapter.js';
+import { CodexRootSteeringBridge } from './codex_root_steering_bridge.js';
 
 class SessionEndedError extends Error {
   constructor() {
@@ -55,8 +55,6 @@ interface CodexTurnAttemptHooks {
   readonly onTurnStarted?: (turnId: string) => void | Promise<void>;
   readonly onAttemptSettled?: (status: string) => void | Promise<void>;
 }
-
-const ROOT_STEERING_TAIL_WAIT_MS = 1_000;
 
 export function createAppServerRequestHandler(
   dynamicToolProvider: CodexDynamicToolProvider | undefined,
@@ -597,49 +595,11 @@ export async function executeCodexStepViaAppServer(
     } else if (singleTurnSteeringEnabled) {
       const inputQueue = new UserInputQueue();
       activeInputQueue = inputQueue;
-      let rootInputAdapter: CallbackAgentInputAdapter | undefined;
+      let rootSteeringBridge: CodexRootSteeringBridge | undefined;
       let terminalInputReader: TerminalInputReader | undefined;
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
       let clearHeadlessEndSessionHandlers: () => void = () => {};
-      let rootSteeringTail: Promise<void> = Promise.resolve();
-
-      const waitForRootSteeringTail = async (closeConnection = false): Promise<void> => {
-        const tail = rootSteeringTail;
-        let timedOut = false;
-        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-        const timeout = new Promise<void>((resolve) => {
-          timeoutHandle = setTimeout(() => {
-            timedOut = true;
-            resolve();
-          }, ROOT_STEERING_TAIL_WAIT_MS);
-        });
-        try {
-          await Promise.race([tail, timeout]);
-        } finally {
-          if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-        }
-        if (!timedOut) return;
-
-        // turn/steer is a provider request, not an AgentManager shutdown
-        // operation. A provider that accepts a request just as its turn ends
-        // may never answer it, so do not let executor cleanup wait forever.
-        debugLog(
-          `Codex root steering request did not settle within ${ROOT_STEERING_TAIL_WAIT_MS}ms`
-        );
-        rootSteeringTail = Promise.resolve();
-        if (closeConnection && activeConnection.isAlive) {
-          try {
-            await closeAppServerConnection();
-          } catch (error) {
-            debugLog('Failed to close Codex after an unanswered root steering request:', error);
-          }
-        }
-      };
-
-      const closeAndWaitForRootSteeringTail = async (): Promise<void> => {
-        await waitForRootSteeringTail(true);
-      };
 
       if (terminalInputEnabled) {
         terminalInputReader = new TerminalInputReader({
@@ -708,35 +668,15 @@ export async function executeCodexStepViaAppServer(
       }
 
       if (options?.orchestratorInputAdapter !== undefined) {
-        rootInputAdapter = new CallbackAgentInputAdapter({
-          onDeliver: (message) => {
-            const delivery = rootSteeringTail.then(async () => {
-              const turnId = currentTurnId;
-              if (!currentAttemptActive || turnId === undefined || !activeConnection.isAlive) {
-                return 'temporarily-unavailable' as const;
-              }
-              try {
-                await activeConnection.turnSteer({
-                  threadId: activeThreadId,
-                  input: [{ type: 'text', text: message.content }],
-                  expectedTurnId: turnId,
-                });
-                return 'steered' as const;
-              } catch (error) {
-                debugLog('Failed to send root turn/steer input:', error);
-                return 'temporarily-unavailable' as const;
-              }
-            });
-            rootSteeringTail = delivery.then(
-              () => undefined,
-              () => undefined
-            );
-            return delivery;
-          },
+        rootSteeringBridge = new CodexRootSteeringBridge({
+          orchestratorInputAdapter: options.orchestratorInputAdapter,
+          connection: activeConnection,
+          threadId: () => activeThreadId,
+          turnId: () => currentTurnId,
+          isAttemptActive: () => currentAttemptActive,
+          closeConnection: closeAppServerConnection,
         });
-        rootInputAdapter.start();
-        rootInputAdapter.setActivity('temporarily-unavailable');
-        options.orchestratorInputAdapter.bind(rootInputAdapter);
+        rootSteeringBridge.start();
       }
 
       const steeringPump = (async () => {
@@ -767,21 +707,16 @@ export async function executeCodexStepViaAppServer(
       try {
         await executeTurnWithRetry(normalizedPrompt, {
           onTurnStarted: (): void => {
-            rootInputAdapter?.setActivity('active');
+            rootSteeringBridge?.setActive();
             resetInactivityTimer();
           },
           onAttemptSettled: async (): Promise<void> => {
-            rootInputAdapter?.setActivity('temporarily-unavailable');
-            await waitForRootSteeringTail(true);
+            rootSteeringBridge?.setTemporarilyUnavailable();
+            await rootSteeringBridge?.waitForPending(true);
           },
         });
       } finally {
-        rootInputAdapter?.setActivity('temporarily-unavailable');
-        await closeAndWaitForRootSteeringTail();
-        if (rootInputAdapter !== undefined) {
-          options?.orchestratorInputAdapter?.unbind(rootInputAdapter);
-          await rootInputAdapter.release();
-        }
+        await rootSteeringBridge?.close();
         inputQueue.close();
         activeInputQueue = undefined;
         await steeringPump;

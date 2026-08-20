@@ -1,51 +1,55 @@
-import type { ClaudePermissionPromptCoordinator } from '../executors/claude_code/claude_mcp_protocol.js';
+import { createClaudePermissionPromptCoordinator } from '../../executors/claude_code/claude_permission_prompt_coordinator.js';
+import type { ClaudePermissionPromptCoordinator } from '../../executors/claude_code/claude_mcp_protocol.js';
 import {
   createClaudeAgentLauncher,
   type ClaudeAgentLauncherOptions,
-} from '../executors/claude_code/claude_agent_launcher.js';
+} from '../../executors/claude_code/claude_agent_launcher.js';
 import {
   createClaudeAgentToolDispatcher,
   getClaudeAgentToolNames,
-} from '../executors/claude_code/claude_mcp_protocol.js';
+  type ClaudeAgentToolContext,
+} from '../../executors/claude_code/claude_mcp_protocol.js';
 import {
   createCodexAgentLauncher,
   type CodexAgentLauncherOptions,
-} from '../executors/codex_cli/codex_agent_launcher.js';
+} from '../../executors/codex_cli/codex_agent_launcher.js';
 import {
   createCodexAgentToolDispatcher,
   createCodexAgentToolProvider,
-} from '../executors/codex_cli/codex_agent_tools.js';
-import type { CodexDynamicToolProvider } from '../executors/codex_cli/app_server_dynamic_tools.js';
+} from '../../executors/codex_cli/codex_agent_tools.js';
+import type { CodexDynamicToolProvider } from '../../executors/codex_cli/app_server_dynamic_tools.js';
 import {
   AgentManager,
   createAgentManager,
   createAgentPreparation,
   type AgentLauncher,
-} from './index.js';
-import { AGENT_EXECUTORS, type AgentExecutor } from './contracts.js';
-import { DeferredAgentInputAdapter } from './agent_input_adapter.js';
-import type { AgentLaunchHandle, AgentLaunchRequest } from './agent_manager_types.js';
-import type { ClaudeAgentToolContext } from '../executors/claude_code/claude_mcp_protocol.js';
+} from '../../agent_messaging/index.js';
+import { AGENT_EXECUTORS, type AgentExecutor } from '../../agent_messaging/contracts.js';
+import { DeferredAgentInputAdapter } from '../../agent_messaging/agent_input_adapter.js';
+import type {
+  AgentLaunchHandle,
+  AgentLaunchRequest,
+} from '../../agent_messaging/agent_manager_types.js';
 
 export interface CollaborativeAgentSessionOptions {
   readonly planId: number;
   readonly repositoryRoot: string;
   readonly configPath?: string;
   readonly orchestratorExecutor: AgentExecutor;
-  readonly permissionPromptCoordinator: ClaudePermissionPromptCoordinator;
   readonly taskIndex?: string | string[];
   readonly noninteractive: boolean;
 }
 
 /**
- * Owns all activation-only state for one root `tim agent` session.
+ * Owns activation-only state for one root `tim agent` session.
  *
- * The manager is created before the provider contexts so its reserved root
- * identity and dispatcher are authoritative. Provider launchers are then
- * bound to that same dispatcher and reused for every StartAgent call.
+ * This composition belongs to the root command because it binds provider
+ * launchers and tool transports to the provider-neutral AgentManager. The
+ * agent-messaging package itself only owns the manager and its contracts.
  */
 export class CollaborativeAgentSession {
   public readonly manager: AgentManager;
+  public readonly claudePermissionPromptCoordinator: ClaudePermissionPromptCoordinator;
   public readonly claudeAgentToolContext: ClaudeAgentToolContext;
   public readonly codexDynamicToolProvider: CodexDynamicToolProvider;
   /** Deferred root input bound by the active Claude or Codex orchestrator turn. */
@@ -55,12 +59,13 @@ export class CollaborativeAgentSession {
 
   private constructor(
     manager: AgentManager,
+    permissionPromptCoordinator: ClaudePermissionPromptCoordinator,
     claudeAgentToolContext: ClaudeAgentToolContext,
     codexDynamicToolProvider: CodexDynamicToolProvider,
-    orchestratorInputAdapter: DeferredAgentInputAdapter,
-    private readonly permissionPromptCoordinator: ClaudePermissionPromptCoordinator
+    orchestratorInputAdapter: DeferredAgentInputAdapter
   ) {
     this.manager = manager;
+    this.claudePermissionPromptCoordinator = permissionPromptCoordinator;
     this.claudeAgentToolContext = claudeAgentToolContext;
     this.codexDynamicToolProvider = codexDynamicToolProvider;
     this.orchestratorInputAdapter = orchestratorInputAdapter;
@@ -69,6 +74,9 @@ export class CollaborativeAgentSession {
   public static async create(
     options: CollaborativeAgentSessionOptions
   ): Promise<CollaborativeAgentSession> {
+    const permissionPromptCoordinator = createClaudePermissionPromptCoordinator();
+    const orchestratorInputAdapter = new DeferredAgentInputAdapter();
+    let manager: AgentManager | undefined;
     let launcher: AgentLauncher | undefined;
     const deferredLauncher: AgentLauncher = {
       launch: async (request: AgentLaunchRequest): Promise<AgentLaunchHandle> => {
@@ -78,26 +86,26 @@ export class CollaborativeAgentSession {
         return launcher.launch(request);
       },
     };
-    const orchestratorInputAdapter = new DeferredAgentInputAdapter();
-    const agentPreparer = createAgentPreparation({
-      planId: options.planId,
-      taskIndex: options.taskIndex,
-      configPath: options.configPath,
-      repositoryRoot: options.repositoryRoot,
-    });
-    const manager = await createAgentManager({
-      orchestratorExecutor: options.orchestratorExecutor,
-      agentPreparer,
-      agentLauncher: deferredLauncher,
-      orchestratorInputAdapter,
-    });
 
     try {
+      const agentPreparer = createAgentPreparation({
+        planId: options.planId,
+        taskIndex: options.taskIndex,
+        configPath: options.configPath,
+        repositoryRoot: options.repositoryRoot,
+      });
+      manager = await createAgentManager({
+        orchestratorExecutor: options.orchestratorExecutor,
+        agentPreparer,
+        agentLauncher: deferredLauncher,
+        orchestratorInputAdapter,
+      });
+
       const claudeDispatcher = createClaudeAgentToolDispatcher(manager);
       const codexDispatcher = createCodexAgentToolDispatcher(manager);
       const claudeLauncherOptions: ClaudeAgentLauncherOptions = {
         dispatcher: claudeDispatcher,
-        permissionPromptCoordinator: options.permissionPromptCoordinator,
+        permissionPromptCoordinator,
         noninteractive: options.noninteractive,
       };
       const codexLauncherOptions: CodexAgentLauncherOptions = {
@@ -134,18 +142,20 @@ export class CollaborativeAgentSession {
 
       return new CollaborativeAgentSession(
         manager,
+        permissionPromptCoordinator,
         claudeAgentToolContext,
         codexDynamicToolProvider,
-        orchestratorInputAdapter,
-        options.permissionPromptCoordinator
+        orchestratorInputAdapter
       );
     } catch (error) {
-      await manager.close().catch(() => undefined);
+      await manager?.close().catch(() => undefined);
+      await orchestratorInputAdapter.release().catch(() => undefined);
+      await permissionPromptCoordinator.dispose().catch(() => undefined);
       throw error;
     }
   }
 
-  /** Shut down agents and their session runtime before the Claude coordinator. */
+  /** Shut down agents, root input, and the shared Claude coordinator in order. */
   public close(): Promise<void> {
     if (this.closePromise !== undefined) return this.closePromise;
     this.closePromise = (async (): Promise<void> => {
@@ -161,7 +171,7 @@ export class CollaborativeAgentSession {
         firstError ??= error;
       }
       try {
-        await this.permissionPromptCoordinator.dispose();
+        await this.claudePermissionPromptCoordinator.dispose();
       } catch (error) {
         firstError ??= error;
       }

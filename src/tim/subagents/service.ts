@@ -85,18 +85,13 @@ export const ROLE_DEFINITIONS = {
       progressGuidanceOptions: { mode: 'report'; useJj: boolean },
       promptContext?: SubagentPromptContext
     ) =>
-      getReviewerPrompt(
-        contextContent,
+      getReviewerPrompt(contextContent, {
         planId,
         customInstructions,
         model,
-        false,
-        false,
         progressGuidanceOptions,
-        false,
-        promptContext?.mode === 'persistent-agent',
-        promptContext
-      ),
+        promptContext,
+      }),
   },
 } satisfies Record<PreparedSubagentType, SubagentRoleDefinition>;
 

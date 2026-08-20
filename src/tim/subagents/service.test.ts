@@ -236,18 +236,13 @@ describe('reusable subagent service', () => {
       gitRoot,
       prepared.config
     );
-    expect(mocks.getReviewerPrompt).toHaveBeenCalledWith(
-      'prepared context',
-      '42',
-      'role instructions\n\nInspect without editing.',
-      prepared.model,
-      false,
-      false,
-      { mode: 'report', useJj: true },
-      false,
-      true,
-      promptContext
-    );
+    expect(mocks.getReviewerPrompt).toHaveBeenCalledWith('prepared context', {
+      planId: '42',
+      customInstructions: 'role instructions\n\nInspect without editing.',
+      model: prepared.model,
+      progressGuidanceOptions: { mode: 'report', useJj: true },
+      promptContext,
+    });
   });
 
   test('passes explicit persistent-agent prompt context only when supplied by the launch boundary', async () => {
