@@ -184,6 +184,21 @@ function buildSubagentExecutorFlag(options: OrchestrationOptions): string {
  * Builds the subagent executor selection guidance for dynamic mode.
  */
 function buildDynamicExecutorGuidance(options: OrchestrationOptions): string {
+  if (options.agentMessagingEnabled === true) {
+    const instructions =
+      options.dynamicSubagentInstructions || DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS;
+    const executorRule =
+      options.subagentExecutor === 'codex-cli' || options.subagentExecutor === 'claude-code'
+        ? `Use \`${options.subagentExecutor}\` as the executor value for every StartAgent call.`
+        : 'Choose `codex-cli` or `claude-code` in the executor field of each StartAgent call.';
+
+    return `## Subagent Executor Selection
+
+${executorRule}
+Both executors are supported for implementer, tester, tdd-tests, and reviewer agents. ${instructions}
+`;
+  }
+
   if (options.subagentExecutor && options.subagentExecutor !== 'dynamic') {
     return '';
   }
@@ -198,10 +213,333 @@ Decision guidance: ${instructions}
 `;
 }
 
+function buildCollaborativeToolGuidance(): string {
+  return `## Collaborative Agent Tools
+
+This root session has collaborative agent tools enabled. Use them for delegated implementation, testing, TDD test writing, and advisory review work.
+
+- **StartAgent** starts a persistent subagent without waiting for it to finish. Its type is one of \`implementer\`, \`tester\`, \`tdd-tests\`, or \`reviewer\`; its executor is \`claude-code\` or \`codex-cli\`; and its initial message must state the task, file scope, constraints, and expected handoff.
+- **ListAgents** returns the canonical names, types, executors, and visible lifecycle states for the orchestrator and active subagents. Use it when team state is unclear or before retrying a target.
+- **SendAgentMessage** sends useful context, questions, blockers, decisions, and handoffs. The runtime supplies trusted source attribution; agents must use the canonical names returned by ListAgents when replying.
+- **StopAgent** is available only to the orchestrator. Graceful stop is normal: request a final status and allow the manager to report terminal state. Use force only for an unresponsive agent or urgent shutdown.
+
+Use short descriptive names when a stable address helps, or omit the name to accept a generated name. After StartAgent returns, always use its returned canonical name. The session allows at most eight nonterminal subagents; \`orchestrator\` is reserved for the root and does not count. Agents in \`starting\`, \`running-active\`, \`running-idle\`, \`finishing\`, and \`stopping\` states all hold capacity. Starting agents remain visible while preparing and must not be assumed ready for another assignment. Finishing and stopping agents remain visible but reject new assignments.
+
+SendAgentMessage reports one of three successful delivery paths: \`steered\` for the active turn, \`queued\` when input waits in the recipient FIFO, or \`started-idle-turn\` when an idle provider begins a continuation. \`queued\` means accepted; do not resend it just because delivery was not immediate.
+
+FinishAgent is self-only. The root cannot call it; ask each subagent to call FinishAgent after its assignment and final handoff are complete. Use the manager's terminal notification as the final handoff rather than relying on repeated ListAgents polling alone.
+
+All agents share one working directory and see changes immediately. Before concurrent mutating work, assign disjoint file scopes or agree on one owner and an edit order for shared files. Read-only review and non-mutating inspection may overlap. Start only agents with a clear job; several agents of the same type are allowed when their scopes are safely separable.
+
+A StartAgent reviewer is read-only and advisory. It may inspect evolving work, run non-mutating checks, and send findings, but it is not the formal quality gate. The authoritative review is the separate one-shot \`tim review\` command with fresh context and no collaborative tools.
+`;
+}
+
+type CollaborativeAgentType = 'implementer' | 'tester' | 'tdd-tests' | 'reviewer';
+
+function buildCollaborativeAvailableAgents(
+  planId: string,
+  agentTypes: readonly CollaborativeAgentType[]
+): string {
+  const descriptions: Record<CollaborativeAgentType, string> = {
+    implementer:
+      'Change only the assigned implementation files and report the changes and verification.',
+    tester:
+      'Inspect or change only the assigned test and fixture files, run checks, and report failures and coverage gaps.',
+    'tdd-tests':
+      'Create the expected failing tests for the assigned scope and report the failure evidence before implementation starts.',
+    reviewer:
+      'Read-only inspect the evolving work, run non-mutating checks, and send advisory findings; do not edit or commit.',
+  };
+  const lines = agentTypes.map(
+    (agentType) =>
+      `- **${agentType}**: Call StartAgent with type \`${agentType}\`, the selected executor, and an initial message containing plan \`${planId}\`, the exact task and file scope, constraints, and expected handoff. ${descriptions[agentType]}`
+  );
+
+  return `## Available Collaborative Agents
+
+${lines.join('\n')}
+
+Start only the roles needed for clear, separable work. Keep task selection, plan updates, and the final integrated result with the orchestrator. Send follow-up context with SendAgentMessage instead of restarting a persistent agent.
+`;
+}
+
+function buildCollaborativeReviewCommand(planId: string, options: OrchestrationOptions): string {
+  return options.batchMode
+    ? buildFullPlanReviewCommand(planId, options)
+    : buildReviewCommand(planId, options);
+}
+
+function buildCollaborativeWorkflowInstructions(
+  planId: string,
+  options: OrchestrationOptions
+): string {
+  const implementationPhaseNumber = options.batchMode ? '2' : '1';
+  const testingPhaseNumber = options.batchMode ? '3' : '2';
+  const reviewPhaseNumber = options.batchMode ? '4' : '3';
+  const reviewCommand = buildCollaborativeReviewCommand(planId, options);
+  const batchSelection = options.batchMode
+    ? `1. **Task Selection Phase**
+   - Analyze all provided tasks, select a focused subset, and document the selection before starting agents.
+   - Keep task selection and plan updates with the orchestrator.
+
+`
+    : '';
+  const reviewPhase = options.batchMode
+    ? buildOrchestratorBatchReviewPhase(planId, options, reviewPhaseNumber)
+    : `${reviewPhaseNumber}. **Formal Review Phase**
+   - Run \`${reviewCommand}\` as a one-shot formal gate with the shell command tool.
+   - Pass relevant implementation and test notes through the review command's supported input and scope options.
+   - Do not replace this formal review with a StartAgent reviewer. The formal process has no collaborative tools.
+   - Apply the Review Iteration Policy for full scope, diff-scoped \`--since\` verification, closing full scope, severity, and bounded review handling.`;
+
+  return `## Workflow Instructions
+
+You MUST follow this collaborative development process:
+
+${batchSelection}${implementationPhaseNumber}. **Implementation Phase**
+   - Start one or more implementer agents only when each has a clear task and disjoint or explicitly coordinated file scope.
+   - Put the task, exact files, constraints, verification, and expected handoff in each initial message.
+   - Safe independent work may run concurrently, including multiple implementers of the same type. Coordinate before any shared-file edit.
+   - Keep the implementer assignments active for follow-up context when useful; use SendAgentMessage acknowledgements as described above and do not duplicate queued messages.
+
+${testingPhaseNumber}. **Testing Phase**
+   - Start tester agents for completed or stable implementation scopes. Test analysis may run early, but final validation must run against the completed implementation.
+   - Give each tester an explicit test or fixture file scope. A tester must claim that scope before editing it and must report the checks it ran and any remaining gaps.
+   - Do not claim success until the required implementation and testing work is complete.
+
+${reviewPhase}
+
+${options.batchMode ? '5' : '4'}. **Notes and Completion Phase**
+   - Update plan progress and task state only after the selected implementation, tests, and review gates are complete.
+   - Continue until checks pass, all blocking review findings are fixed or handled by the Review Iteration Policy, and the final required full-scope review is complete.
+   - Ask each finished subagent for its final handoff and FinishAgent call. The orchestrator remains responsible for the integrated workspace and completion decision.
+
+${options.batchMode ? '6' : '5'}. **Iteration**
+   - For a blocking fix, send the exact finding, owning task, and file scope to the existing implementer or start a new implementer with that scope.
+   - Keep formal review iterations within the existing four ordinary-review bound and preserve the structural-pass and bounded-handoff rules.
+   - Do not start a mutating agent for a scope that another mutating agent currently owns without an explicit handoff or edit order.
+
+${buildReviewIterationGuidance(reviewCommand, options)}`;
+}
+
+function buildCollaborativeSimpleWorkflowInstructions(
+  planId: string,
+  options: OrchestrationOptions
+): string {
+  const reviewCommand = buildCollaborativeReviewCommand(planId, options);
+  const reviewPhaseNumber = options.batchMode ? '3' : '2';
+  const batchSelection = options.batchMode
+    ? `1. **Task Selection Phase**
+   - Select and document a focused task subset before starting agents. The orchestrator owns selection and plan updates.
+
+`
+    : '';
+  return `## Workflow Instructions
+
+Use a small collaborative team while preserving all implementation, review, and completion gates:
+
+${batchSelection}${options.batchMode ? '2' : '1'}. **Implementation Phase**
+   - Start an implementer with a clear task, exact file scope, constraints, verification steps, and expected handoff.
+   - You may keep one implementer alive for follow-up work or add a read-only reviewer. Do not overlap mutating file ownership without coordination.
+   - Use SendAgentMessage for changed facts and handoffs; a queued acknowledgement is already successful.
+   - Before formal review, require the implementer to run the required tests and checks and report their results. Start a tester for independent validation when the scope needs one.
+
+${reviewPhaseNumber}. **Formal Review Phase**
+   - Run \`${reviewCommand}\` as the separate one-shot formal quality gate. A collaborative reviewer is advisory and cannot replace it.
+   - Preserve the full-scope, fix-verification, closing review, severity, structural, and bounded iteration rules.
+
+${options.batchMode ? '4' : '3'}. **Notes and Iteration**
+   - Update progress and completion state only after implementation, checks, and formal review satisfy the existing policy.
+   - Fix accepted blocking findings within their owning task and file scope, then repeat the same formal review mechanism.
+   - Ask the implementer to make its final handoff and call FinishAgent. FinishAgent is self-only and is not a root-callable tool.
+
+${buildReviewIterationGuidance(reviewCommand, options)}`;
+}
+
+function buildCollaborativeFailureProtocol(agentTypes: string): string {
+  return `## Failure Protocol (Conflicting/Impossible Requirements)
+
+- Monitor ${agentTypes} responses for a line starting with FAILED:.
+- A FAILED report is a signal to investigate, not an automatic reason to stop orchestration.
+- Inspect the current work and decide whether the problem is a recoverable code, test, lint, type-check, build, or setup error before stopping.
+- Treat the failure as genuine only when it cannot be resolved safely without a user decision or expected functionality is missing beyond this scope.
+- If a failure is recoverable, send a precise fix assignment and continue the required testing and formal review gates.
+`;
+}
+
+function buildCollaborativeImportantGuidelines(
+  planId: string,
+  options: OrchestrationOptions,
+  includeReviewPolicy: boolean = true
+): string {
+  const reviewCommand = buildCollaborativeReviewCommand(planId, options);
+  const reviewPolicy = includeReviewPolicy
+    ? `
+${buildReviewIterationGuidance(reviewCommand, options)}
+`
+    : '';
+  return `## Important Guidelines
+
+- Use StartAgent for delegated implementation, testing, TDD test writing, and advisory review work. Do not implement or write tests directly when an assigned agent owns that scope.
+- StartAgent-created reviewers are read-only and advisory. Always run the separate one-shot \`${reviewCommand}\` formal gate; it has fresh context and no messaging tools.
+- Preserve implementation, testing, plan update, completion, severity, structural, and bounded review policy. Parallel scheduling does not remove any gate.
+- Keep every initial assignment specific: task, files, constraints, verification, and expected handoff. Use SendAgentMessage for useful decisions, blockers, questions, and handoffs, not noisy status traffic.
+- Coordinate shared-workspace file ownership before concurrent mutating edits. The orchestrator owns task selection, final integration, plan updates, and completion.
+- Treat \`steered\`, \`queued\`, and \`started-idle-turn\` as successful delivery results. Never duplicate a message because it was queued.
+- Ask agents to call self-only FinishAgent after their assignment and final handoff. The root cannot call FinishAgent and must use terminal notifications for final status.
+${buildRejectedReviewIssueCleanupGuidance(planId)}
+- ${SUBAGENT_SPECIFICITY_GUIDANCE}
+- ${BRANCH_SETUP_GUIDANCE}${buildJjGuidance(options)}
+${reviewPolicy}
+${progressSectionGuidance(options.planFilePath, { useAtPrefix: options.useAtPrefix })}`;
+}
+
+function buildCollaborativeSimplePrompt(
+  contextContent: string,
+  planId: string,
+  options: OrchestrationOptions
+): string {
+  const header = `# Two-Phase Collaborative Orchestration Instructions
+
+You are coordinating a small tim team for the tasks below. Use persistent agents only for clear assignments and preserve the formal review policy.`;
+  const footer = `## Task Context
+
+Below is the original task context to execute with this collaborative workflow:
+
+---
+
+${contextContent}`;
+
+  return `${header}
+
+${buildBatchModeInstructions(options)}
+${buildCollaborativeToolGuidance()}
+${buildCollaborativeAvailableAgents(planId, ['implementer', 'reviewer'])}
+${buildDynamicExecutorGuidance(options)}
+${buildCollaborativeSimpleWorkflowInstructions(planId, options)}
+${buildCollaborativeFailureProtocol('agent')}
+${buildCollaborativeImportantGuidelines(planId, options, false)}
+${footer}`;
+}
+
+function buildCollaborativeTddPrompt(
+  contextContent: string,
+  planId: string,
+  options: OrchestrationOptions
+): string {
+  const isSimpleTdd = options.simpleMode === true;
+  const reviewCommand = buildCollaborativeReviewCommand(planId, options);
+  const implementationPhaseNumber = options.batchMode ? '3' : '2';
+  const verificationPhaseNumber = options.batchMode ? '4' : '3';
+  const reviewPhaseNumber = isSimpleTdd
+    ? options.batchMode
+      ? '4'
+      : '3'
+    : options.batchMode
+      ? '5'
+      : '4';
+  const notesPhaseNumber = isSimpleTdd
+    ? options.batchMode
+      ? '5'
+      : '4'
+    : options.batchMode
+      ? '6'
+      : '5';
+  const iterationPhaseNumber = isSimpleTdd
+    ? options.batchMode
+      ? '6'
+      : '5'
+    : options.batchMode
+      ? '7'
+      : '6';
+  const batchSelection = options.batchMode
+    ? `1. **Task Selection Phase**
+   - Select a focused task subset and record the selection before starting independent TDD pipelines.
+
+`
+    : '';
+  const testingPhase = isSimpleTdd
+    ? ''
+    : `
+${verificationPhaseNumber}. **Testing Phase**
+   - Start a tester for the completed implementation scope. It may prepare non-mutating analysis early, but final validation must run against the completed implementation.
+   - Give the tester an explicit test and fixture file scope, require it to coordinate before edits, and preserve its check output for review.
+`;
+  const reviewPhase = options.batchMode
+    ? buildOrchestratorBatchReviewPhase(planId, options, reviewPhaseNumber)
+    : `${reviewPhaseNumber}. **Formal Review Phase**
+   - Run ${reviewCommand} as the separate one-shot formal gate after the implementation and final checks.
+   - Do not treat a StartAgent reviewer as the formal gate. The formal review has fresh context and no collaborative tools.
+   - Preserve the existing scope, severity, four-review, structural, and bounded-handoff policy.`;
+  const header = `# TDD Collaborative Orchestration Instructions
+
+You are coordinating a tim Test-Driven Development workflow. Use persistent agents for separate scopes, but enforce red-before-green for every scope:
+1. The tdd-tests agent writes and runs expected failing tests.
+2. The implementer starts only after the orchestrator receives evidence that those tests fail for the expected behavioral reason.
+3. Testing and formal review run against the completed implementation.`;
+  const footer = `## Task Context
+
+Below is the original task context to execute with this collaborative TDD workflow:
+
+---
+
+${contextContent}`;
+
+  return `${header}
+
+${buildBatchModeInstructions(options)}
+${buildCollaborativeToolGuidance()}
+${buildCollaborativeAvailableAgents(
+  planId,
+  isSimpleTdd
+    ? ['tdd-tests', 'implementer', 'reviewer']
+    : ['tdd-tests', 'implementer', 'tester', 'reviewer']
+)}
+${buildDynamicExecutorGuidance(options)}
+## Workflow Instructions
+
+You MUST keep TDD ordering per implementation scope while allowing independent scopes to run in parallel:
+
+${batchSelection}${options.batchMode ? '2' : '1'}. **TDD Test Phase**
+   - Start one tdd-tests agent per independent scope with the exact task, files, expected behavior, and expected failure reason.
+   - Require each agent to write tests first, run them, and report evidence that the failure is behavioral rather than a syntax, import, setup, or environment failure.
+   - Independent scopes may run their red phases concurrently. Do not start the implementer for a scope until that scope's red evidence is verified.
+
+${implementationPhaseNumber}. **Implementation Phase**
+   - After each scope's expected failure is verified, start its implementer with the TDD output, exact file ownership, constraints, and expected handoff.
+   - Implementers for independent scopes may run concurrently. Coordinate before shared-file edits and do not let an implementer change a scope whose red phase is incomplete.
+   - Send follow-up facts through SendAgentMessage and treat queued delivery as accepted.
+${testingPhase}
+${reviewPhase}
+
+${notesPhaseNumber}. **Notes and Completion Phase**
+   - Update plan progress only after the selected implementation, final checks, and required formal review gates are complete.
+   - Ask each agent for a final handoff and self-only FinishAgent call. The orchestrator owns the integrated result.
+
+${iterationPhaseNumber}. **Iteration**
+   - Keep red-before-green intact for every new implementation scope and every substantial review-fix scope.
+   - Send accepted blocking findings with their owning task and file scope, then repeat targeted checks and the same formal review policy.
+
+${buildReviewIterationGuidance(reviewCommand, options)}
+
+${buildCollaborativeFailureProtocol('TDD agent')}
+${buildCollaborativeImportantGuidelines(planId, options, false)}
+${footer}`;
+}
+
 /**
  * Builds the available agents section
  */
 function buildAvailableAgents(planId: string, options: OrchestrationOptions): string {
+  if (options.agentMessagingEnabled === true) {
+    return `${buildCollaborativeToolGuidance()}\n${buildCollaborativeAvailableAgents(planId, [
+      'implementer',
+      'tester',
+      'reviewer',
+    ])}`;
+  }
+
   const executorFlag = buildSubagentExecutorFlag(options);
   const reviewer = options.batchMode
     ? `- **Full-plan reviewer**: Only when the selected batch completes every remaining task, run \`${buildFullPlanReviewCommand(planId)}\` via the shell command tool, without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use \`tim subagent reviewer\` for selected-task batch reviews.`
@@ -224,6 +562,10 @@ Each subagent command may take a long time to complete because it may run multip
  * Builds the workflow instructions section
  */
 function buildWorkflowInstructions(planId: string, options: OrchestrationOptions): string {
+  if (options.agentMessagingEnabled === true) {
+    return buildCollaborativeWorkflowInstructions(planId, options);
+  }
+
   const executorFlag = buildSubagentExecutorFlag(options);
 
   const taskSelectionPhase = options.batchMode
@@ -318,6 +660,10 @@ After marking tasks done, commit your changes with a descriptive message about w
  * Builds the important guidelines section
  */
 function buildImportantGuidelines(planId: string, options: OrchestrationOptions): string {
+  if (options.agentMessagingEnabled === true) {
+    return buildCollaborativeImportantGuidelines(planId, options);
+  }
+
   const reviewCommand = options.batchMode
     ? buildFullPlanReviewCommand(planId)
     : buildReviewCommand(planId, options);
@@ -392,6 +738,15 @@ function buildOrchestratorBatchReviewPhase(
   options: OrchestrationOptions,
   phaseNumber: string
 ): string {
+  if (options.agentMessagingEnabled === true) {
+    return `${phaseNumber}. **Review Phase**
+   - Review the selected task batch yourself. Inspect the implementation, diff, tests, and relevant plan requirements for correctness, regressions, missing coverage, and maintainability.
+${buildBatchReviewerInstructionsGuidance(options)}   - A StartAgent reviewer may provide read-only advisory findings, but the orchestrator owns this selected-task review and its result.
+${buildBatchReviewRejectionGuidance(planId)}
+${buildFinalBatchReviewGuidance(planId, options)}
+   - If the selected batch completes every remaining task, use the final full-plan tim review sequence described above.`;
+  }
+
   return `${phaseNumber}. **Review Phase**
    - Review the selected task batch yourself. Inspect the implementation, diff, tests, and relevant plan requirements for correctness, regressions, missing coverage, and maintainability.
 ${buildBatchReviewerInstructionsGuidance(options)}   - You may start your own native subagent to review all or part of the selected task batch if that would help, but you remain responsible for evaluating its findings and completing the review.
@@ -446,6 +801,10 @@ export function wrapWithOrchestrationSimple(
   planId: string,
   options: OrchestrationOptions = {}
 ): string {
+  if (options.agentMessagingEnabled === true) {
+    return buildCollaborativeSimplePrompt(contextContent, planId, options);
+  }
+
   const batchModeInstructions = buildBatchModeInstructions(options);
   const progressSection = progressSectionGuidance(options.planFilePath, {
     useAtPrefix: options.useAtPrefix,
@@ -608,6 +967,10 @@ export function wrapWithOrchestrationTdd(
   planId: string,
   options: OrchestrationOptions = {}
 ): string {
+  if (options.agentMessagingEnabled === true) {
+    return buildCollaborativeTddPrompt(contextContent, planId, options);
+  }
+
   const batchModeInstructions = buildBatchModeInstructions(options);
   const progressSection = progressSectionGuidance(options.planFilePath, {
     useAtPrefix: options.useAtPrefix,

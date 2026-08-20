@@ -6,15 +6,22 @@ export function structuralPassApplies(options: OrchestrationOptions): boolean {
 }
 
 export function buildReviewCommand(planId: string, options: OrchestrationOptions): string {
-  const baseCommand = `tim subagent reviewer ${planId} --print --output-file <output_path>`;
+  const commandName =
+    options.agentMessagingEnabled === true ? 'tim review' : 'tim subagent reviewer';
+  const baseCommand = `${commandName} ${planId} --print --output-file <output_path>`;
   if (options.reviewExecutor) {
     return `${baseCommand} --executor ${options.reviewExecutor}`;
   }
   return baseCommand;
 }
 
-export function buildFullPlanReviewCommand(planId: string): string {
-  return `tim subagent reviewer ${planId} --print --output-file <output_path>`;
+export function buildFullPlanReviewCommand(
+  planId: string,
+  options: OrchestrationOptions = {}
+): string {
+  const commandName =
+    options.agentMessagingEnabled === true ? 'tim review' : 'tim subagent reviewer';
+  return `${commandName} ${planId} --print --output-file <output_path>`;
 }
 
 export function buildReviewRejectionGuidance(planId: string): string {
@@ -30,8 +37,10 @@ export function buildBatchReviewRejectionGuidance(planId: string): string {
   return `   - When you reject one of your own batch-review findings, record it with \`tim review-issues reject ${planId} --content "<the finding>" --file <path> --line <line> --reason "..."\`. When it is valid but non-blocking, add \`--state non-blocking\` instead. If multiple findings in the same review describe the same underlying issue, record only one disposition; do not add a separate rejected issue for a duplicate. This often happens when different reviewer subagents report the same issue. This review produces no reviewer output file, so use the explicit fields rather than \`--from-review\`. Recording it keeps the final full-plan review from re-raising a finding you already settled.`;
 }
 
-function buildStructuralReviewCommand(planId: string): string {
-  return `tim subagent reviewer ${planId} --print --output-file <output_path> --structural-only`;
+function buildStructuralReviewCommand(planId: string, options: OrchestrationOptions): string {
+  const commandName =
+    options.agentMessagingEnabled === true ? 'tim review' : 'tim subagent reviewer';
+  return `${commandName} ${planId} --print --output-file <output_path> --structural-only`;
 }
 
 const CLOSING_FULL_SCOPE_REVIEW_GUIDANCE: string =
@@ -68,7 +77,7 @@ export function buildFinalBatchReviewGuidance(
   }
 
   const structuralPassWillRun: boolean = structuralPassApplies(options);
-  const reviewCommand = buildFullPlanReviewCommand(planId);
+  const reviewCommand = buildFullPlanReviewCommand(planId, options);
   const fixVerificationInvocation: string = buildReviewFixVerificationInvocation(
     reviewCommand,
     'full-plan'
@@ -88,13 +97,13 @@ export function buildFinalBatchReviewGuidance(
   if (!structuralPassWillRun) {
     return (
       ordinaryFinalPlanReviewGuidance +
-      `   - The standalone structural simplification pass has already run for this plan, so this run has no structural pass and no post-structural validation review. Do not run \`tim subagent reviewer\` with \`--structural-only\`, and do not improvise a substitute structural or simplification pass. Stop when the ordinary review loop reaches a Review Iteration Policy stopping condition.
+      `   - The standalone structural simplification pass has already run for this plan, so this run has no structural pass and no post-structural validation review. ${options.agentMessagingEnabled === true ? 'Do not run a collaborative agent for the structural pass or improvise a substitute structural or simplification pass.' : 'Do not run `tim subagent reviewer` with `--structural-only`, and do not improvise a substitute structural or simplification pass.'} Stop when the ordinary review loop reaches a Review Iteration Policy stopping condition.
    - Any review findings related to previous tasks in this plan should still be considered, even if those tasks were not performed in this batch of work. The idea is a final quality pass on the entire plan.
 `
     );
   }
 
-  const structuralCommand = buildStructuralReviewCommand(planId);
+  const structuralCommand = buildStructuralReviewCommand(planId, options);
   return (
     ordinaryFinalPlanReviewGuidance +
     `   - Only after the ordinary full-plan review loop has reached a Review Iteration Policy stopping condition—no new blocking findings, or the bounded handoff completed—run exactly one standalone structural simplification pass with \`${structuralCommand}\`, again without \`--task-index\`. Use it to find code-layout, ownership, duplication, and structural smells.
@@ -133,7 +142,7 @@ export function buildReviewIterationGuidance(
     'full-plan'
   );
   const reviewScopeGuidance = orchestratorReviewsBatch
-    ? `- For selected-task batch review passes, perform the review yourself. You may use your own native subagent mechanism as an aid, but do not invoke \`tim subagent reviewer\`.
+    ? `- For selected-task batch review passes, perform the review yourself. You may use your own native subagent mechanism as an aid, but do not invoke ${options.agentMessagingEnabled === true ? 'the one-shot formal review command' : '`tim subagent reviewer`'}.
 - When the batch completes all remaining plan tasks, the separate final full-plan sequence follows the same three tiers under its own separate four-review budget, counted independently of the orchestrator-owned per-batch reviews above: review #1 is full-plan with \`${reviewCommand}\` and no \`--task-index\` or \`--since\`; intermediate reruns 2..n are fix-verification reviews, so immediately before applying fixes ${REVIEW_COMMIT_HASH_CAPTURE_GUIDANCE} and then run ${finalPlanFixVerificationInvocation}. ${CLOSING_FULL_SCOPE_REVIEW_GUIDANCE} This is fresh eyes twice.`
     : `- Apply this budgeted three-tier scope rule to ordinary reviews. (1) The first ordinary review of a task batch covers the full declared scope: run \`${reviewCommand}\` with the same \`--task-index\` scope you worked on and no \`--since\`. (2) Intermediate fix-verification reviews are diff-scoped: immediately BEFORE applying fixes, ${REVIEW_COMMIT_HASH_CAPTURE_GUIDANCE}; after the fixes, run ${taskFixVerificationInvocation}. (3) Whenever the loop is about to stop because a complete review produced no new blocking findings or because the four-review bound is reached, the final review within the four-review budget is full declared scope again with no \`--since\`. ${CLOSING_FULL_SCOPE_REVIEW_GUIDANCE} This preserves full-scope fresh eyes at both bookends of the loop.`;
   const repeatReviewGuidance = orchestratorReviewsBatch
