@@ -28,6 +28,11 @@ interface TestConnection {
   readonly close: ReturnType<typeof vi.fn>;
 }
 
+interface TestConnectionExit {
+  readonly exitCode: number | null;
+  readonly signal?: NodeJS.Signals;
+}
+
 function createDeferred<T>(): Deferred<T> {
   let resolvePromise: ((value: T) => void) | undefined;
   let rejectPromise: ((error: unknown) => void) | undefined;
@@ -67,10 +72,14 @@ interface Harness {
   >;
   readonly callbacks: CodexPersistentAgentLifecycleCallbacks;
   readonly connection: TestConnection;
+  readonly logicalLifecycle: {
+    readonly markExited: ReturnType<typeof vi.fn>;
+  };
   readonly initialTurn: Deferred<{ turnId: string }>;
   readonly tunnelServerReady: Deferred<{ close: ReturnType<typeof vi.fn> }>;
   readonly tunnelServerClose: ReturnType<typeof vi.fn>;
   readonly tunnelCreate: ReturnType<typeof vi.fn>;
+  readonly onExit: (event: TestConnectionExit) => void;
   readonly notify: (method: string, params: unknown) => void;
 }
 
@@ -90,6 +99,7 @@ async function createHarness(
   const tunnelServerClose = vi.fn();
   const tunnelCreate = vi.fn(async () => tunnelServerReady.promise);
   let notify: ((method: string, params: unknown) => void) | undefined;
+  let onExit: ((event: TestConnectionExit) => void) | undefined;
   const connection: TestConnection = {
     isAlive: true,
     pid: 1234,
@@ -110,10 +120,16 @@ async function createHarness(
   const owner = {
     prepareLogicalExecutor: vi.fn(() => logicalLifecycle),
   };
-  const connectionCreate = vi.fn(async (options: { onNotification?: typeof notify }) => {
-    notify = options.onNotification;
-    return connection;
-  });
+  const connectionCreate = vi.fn(
+    async (options: {
+      onNotification?: typeof notify;
+      onExit?: (event: TestConnectionExit) => void;
+    }) => {
+      notify = options.onNotification;
+      onExit = options.onExit;
+      return connection;
+    }
+  );
 
   vi.doMock('./app_server_connection.js', () => ({
     CodexAppServerConnection: { create: connectionCreate },
@@ -197,10 +213,14 @@ async function createHarness(
     handle,
     callbacks,
     connection,
+    logicalLifecycle,
     initialTurn,
     tunnelServerReady,
     tunnelServerClose,
     tunnelCreate,
+    onExit: (event: TestConnectionExit): void => {
+      onExit?.(event);
+    },
     notify: (method: string, params: unknown): void => {
       notify?.(method, params);
     },
@@ -534,6 +554,19 @@ describe('persistent Codex turn state machine', () => {
     expect(harness.callbacks.exit).toHaveBeenCalledWith('graceful', undefined);
   });
 
+  it('marks the logical thread failed when graceful cleanup reports an error', async () => {
+    const harness = await createHarness();
+    harness.connection.close.mockRejectedValueOnce(new Error('close failed'));
+
+    await expect(harness.handle.lifecycle.requestCloseAfterCurrentTurn()).resolves.toBe('accepted');
+    completeTurn(harness, 'turn-1', 'Final implementation status');
+
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      error: expect.objectContaining({ message: 'close failed' }),
+    });
+    expect(harness.logicalLifecycle.markExited).toHaveBeenCalledWith({ exitCode: 1 });
+  });
+
   it('delivers an active graceful-stop instruction through turn/steer', async () => {
     const harness = await createHarness();
 
@@ -659,6 +692,19 @@ describe('persistent Codex turn state machine', () => {
     await expect(harness.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');
     await expect(graceful).resolves.toBe('already-exited');
     await expect(harness.handle.completion).resolves.toMatchObject({});
+  });
+
+  it('wakes a graceful control when a provider closes during startup', async () => {
+    const harness = await createHarness({ resolveInitialTurn: false });
+    const graceful = harness.handle.lifecycle.requestGracefulShutdown('Provide the final status.');
+
+    harness.onExit({ exitCode: 17 });
+
+    await expect(graceful).resolves.toBe('already-exited');
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      error: expect.objectContaining({ message: expect.stringContaining('exited unexpectedly') }),
+    });
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
   });
 
   it('preserves forced classification and diagnostics when connection close fails', async () => {

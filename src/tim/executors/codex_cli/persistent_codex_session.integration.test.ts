@@ -711,6 +711,24 @@ describe('persistent Codex setup', () => {
             .filter((node) => node.kind === 'executor')
             .every((node) => node.state === 'exited')
         ).toBe(true);
+        expect(
+          registry
+            .getSnapshot()
+            .filter((node) => node.kind === 'executor' && node.label.startsWith('Codex thread'))
+        ).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              label: 'Codex thread (worker-a)',
+              state: 'exited',
+              signal: 'SIGTERM',
+            }),
+            expect.objectContaining({
+              label: 'Codex thread (worker-b)',
+              state: 'exited',
+              signal: 'SIGTERM',
+            }),
+          ])
+        );
       });
     } finally {
       owner.dispose();

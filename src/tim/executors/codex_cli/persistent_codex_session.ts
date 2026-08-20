@@ -503,13 +503,21 @@ class PersistentCodexSession {
     }
     this.connection = undefined;
 
+    const completionError = combineCloseErrors(error, cleanupError);
+
     // Keep both End callbacks installed until the provider close has joined
     // the shared close promise. A second process-tree End request that races
     // cleanup must converge on this operation instead of seeing a half-cleaned
     // logical thread and returning a misleading unsupported-control result.
     try {
       this.logicalExecutorLifecycle?.setGracefulEndHandler(undefined);
-      this.logicalExecutorLifecycle?.markExited(error === undefined ? {} : { exitCode: 1 });
+      this.logicalExecutorLifecycle?.markExited(
+        classification === 'forced'
+          ? { signal: 'SIGTERM' }
+          : completionError === undefined
+            ? {}
+            : { exitCode: 1 }
+      );
     } catch (lifecycleError) {
       cleanupError ??= toError(lifecycleError);
       debugLog('Persistent Codex logical-thread cleanup failed:', lifecycleError);
@@ -530,14 +538,14 @@ class PersistentCodexSession {
     this.cleaned = true;
     this.state = 'terminal';
 
-    const completionError = combineCloseErrors(error, cleanupError);
+    const finalCompletionError = combineCloseErrors(error, cleanupError);
 
     if (!this.exitNotified) {
       this.exitNotified = true;
-      this.notifyObservers((observer) => observer.exit(classification, completionError));
+      this.notifyObservers((observer) => observer.exit(classification, finalCompletionError));
     }
     this.completionDeferred.resolve({
-      ...(completionError === undefined ? {} : { error: completionError }),
+      ...(finalCompletionError === undefined ? {} : { error: finalCompletionError }),
       ...(this.lastCompletedAssistantMessage === undefined
         ? {}
         : {
