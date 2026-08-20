@@ -59,7 +59,11 @@ export function executePersistentWithTerminalInput(
 
   return {
     resultPromise,
-    inputIsClosed: (): boolean => cleanupStarted || controller.state === 'closing',
+    inputIsClosed: (): boolean =>
+      cleanupStarted ||
+      controller.state === 'closing' ||
+      controller.state === 'exited' ||
+      controller.state === 'failed',
     onResultMessage: (resultWasSuccessful: boolean, resultText?: string): void => {
       if (cleanupStarted) return;
       controller.onResultMessage(resultWasSuccessful, resultText);

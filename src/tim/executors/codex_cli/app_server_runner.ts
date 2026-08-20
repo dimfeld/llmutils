@@ -242,6 +242,7 @@ export async function executeCodexStepViaAppServer(
   });
 
   let connection: CodexAppServerConnection | undefined;
+  let connectionClosePromise: Promise<void> | undefined;
   let logicalExecutorLifecycle: SessionLogicalExecutorLifecycle | undefined;
   let monitorHandle: SubprocessMonitorHandle | undefined;
   let activeInputQueue: UserInputQueue | undefined;
@@ -265,6 +266,12 @@ export async function executeCodexStepViaAppServer(
       clearTimeout(inactivityTimer);
       inactivityTimer = undefined;
     }
+  };
+
+  const closeAppServerConnection = async (): Promise<void> => {
+    if (!connection) return;
+    connectionClosePromise ??= connection.close();
+    await connectionClosePromise;
   };
 
   const resolveCurrentTurnStatus = (status: string) => {
@@ -548,18 +555,14 @@ export async function executeCodexStepViaAppServer(
           throwIfSessionEndRequested();
           currentAttemptActive = false;
           clearInactivityTimer();
+          if (turnStartError != null) {
+            throw turnStartError;
+          }
           await hooks.onAttemptSettled?.(status);
 
           if (status.toLowerCase() === 'completed') {
-            if (turnStartError != null) {
-              throw turnStartError;
-            }
             successfulTurns += 1;
             return;
-          }
-
-          if (turnStartError != null) {
-            throw turnStartError;
           }
 
           const inactivitySuffix = interruptedByInactivity ? ' (after inactivity timeout)' : '';
@@ -575,6 +578,7 @@ export async function executeCodexStepViaAppServer(
         } catch (err) {
           currentAttemptActive = false;
           clearInactivityTimer();
+          await hooks.onAttemptSettled?.('failed');
 
           throwIfSessionEndRequested();
 
@@ -626,7 +630,7 @@ export async function executeCodexStepViaAppServer(
         rootSteeringTail = Promise.resolve();
         if (closeConnection && activeConnection.isAlive) {
           try {
-            await activeConnection.close();
+            await closeAppServerConnection();
           } catch (error) {
             debugLog('Failed to close Codex after an unanswered root steering request:', error);
           }
@@ -768,7 +772,7 @@ export async function executeCodexStepViaAppServer(
           },
           onAttemptSettled: async (): Promise<void> => {
             rootInputAdapter?.setActivity('temporarily-unavailable');
-            await waitForRootSteeringTail();
+            await waitForRootSteeringTail(true);
           },
         });
       } finally {
@@ -1010,7 +1014,7 @@ export async function executeCodexStepViaAppServer(
 
     if (connection) {
       try {
-        await connection.close();
+        await closeAppServerConnection();
       } catch (err) {
         debugLog('Error while closing codex app-server connection:', err);
       }
