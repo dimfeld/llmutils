@@ -138,8 +138,12 @@ dispositioned findings into `--input-file`. Every review phase instructs it to r
 `tim review-issues reject ... --from-review <output.json> --issue <n>` right
 after each rejection. The orchestrator-owned batch review produces no reviewer
 output file, so that phase points at the explicit `--content/--file/--line`
-form instead. For a valid non-blocking finding, it adds `--state non-blocking`.
-`--input-file` remains available as a fallback.
+form instead. If multiple findings in the same review describe the same
+underlying issue, the orchestrator records only one disposition and does not
+add a separate rejected issue for the duplicate. This is most common when
+different reviewer subagents report the same issue. For a valid non-blocking
+finding, it adds the `--state non-blocking` option. `--input-file` remains
+available as a fallback.
 
 ## Structural-review marker
 

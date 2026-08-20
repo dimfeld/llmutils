@@ -342,6 +342,12 @@ describe('orchestrator_prompt rejected finding recording guidance', () => {
       expect(out).toContain(
         'Later reviews load these dispositions automatically, so do not re-type them.'
       );
+      expect(out).toContain(
+        'If multiple findings in the same review describe the same underlying issue, record only one disposition; do not add a separate rejected issue for a duplicate.'
+      );
+      expect(out).toContain(
+        'This often happens when different reviewer subagents report the same issue.'
+      );
       expect(out).not.toContain(
         'not relevant or acceptable to leave as-is, so the reviewer knows not to flag them again'
       );
@@ -398,6 +404,9 @@ describe('orchestrator_prompt batch-review rejection recording guidance', () => 
         `tim review-issues reject ${planId} --content "<the finding>" --file <path> --line <line> --reason "..."`
       );
       expect(out).toContain('This review produces no reviewer output file');
+      expect(out).toContain(
+        'If multiple findings in the same review describe the same underlying issue, record only one disposition; do not add a separate rejected issue for a duplicate.'
+      );
       expect(out).not.toContain(`--from-review <output.json> --issue <n>" --content`);
       // The --from-review guidance for the final full-plan reviewer command must still be present
       // alongside the new batch-review guidance; this addition must not displace it.

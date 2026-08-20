@@ -18,7 +18,7 @@ export function buildFullPlanReviewCommand(planId: string): string {
 }
 
 export function buildReviewRejectionGuidance(planId: string): string {
-  return `After each rejection, immediately record the finding with \`tim review-issues reject ${planId} --from-review <output.json> --issue <n> --reason "..."\`. When a finding is valid but non-blocking, record it instead with \`tim review-issues reject ${planId} --from-review <output.json> --issue <n> --state non-blocking --reason "..."\`. Use the same \`<output.json>\` path passed to the reviewer's \`--output-file\` and the finding's 1-based index in that output. Later reviews load these dispositions automatically, so do not re-type them.`;
+  return `After each rejection, immediately record the finding with \`tim review-issues reject ${planId} --from-review <output.json> --issue <n> --reason "..."\`. When a finding is valid but non-blocking, record it instead with \`tim review-issues reject ${planId} --from-review <output.json> --issue <n> --state non-blocking --reason "..."\`. If multiple findings in the same review describe the same underlying issue, record only one disposition; do not add a separate rejected issue for a duplicate. This often happens when different reviewer subagents report the same issue. Use the same \`<output.json>\` path passed to the reviewer's \`--output-file\` and the finding's 1-based index in that output. Later reviews load these dispositions automatically, so do not re-type them.`;
 }
 
 /**
@@ -27,7 +27,7 @@ export function buildReviewRejectionGuidance(planId: string): string {
  * reviewer re-raises findings the orchestrator already settled.
  */
 export function buildBatchReviewRejectionGuidance(planId: string): string {
-  return `   - When you reject one of your own batch-review findings, record it with \`tim review-issues reject ${planId} --content "<the finding>" --file <path> --line <line> --reason "..."\`. When it is valid but non-blocking, add \`--state non-blocking\` instead. This review produces no reviewer output file, so use the explicit fields rather than \`--from-review\`. Recording it keeps the final full-plan review from re-raising a finding you already settled.`;
+  return `   - When you reject one of your own batch-review findings, record it with \`tim review-issues reject ${planId} --content "<the finding>" --file <path> --line <line> --reason "..."\`. When it is valid but non-blocking, add \`--state non-blocking\` instead. If multiple findings in the same review describe the same underlying issue, record only one disposition; do not add a separate rejected issue for a duplicate. This often happens when different reviewer subagents report the same issue. This review produces no reviewer output file, so use the explicit fields rather than \`--from-review\`. Recording it keeps the final full-plan review from re-raising a finding you already settled.`;
 }
 
 function buildStructuralReviewCommand(planId: string): string {
