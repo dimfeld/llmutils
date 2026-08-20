@@ -27,20 +27,26 @@ Subagent launches are persistent and messageable rather than synchronous. See
 [agent-messaging.md](agent-messaging.md) for the full collaborative mode
 reference.
 
-## Dormant Codex dynamic tools
+## Codex dynamic tools
 
-The Codex app-server protocol for agent tools is dormant by default. The low-level
-Codex runner does not read `experimental.agentMessaging` and does not enable this
-protocol from repository configuration. A trusted caller must pass one cohesive
+The low-level Codex runner (`executeCodexStep()`) does not read
+`experimental.agentMessaging` and does not enable the app-server dynamic-tool
+protocol on its own. A trusted caller must pass one cohesive
 `dynamicToolProvider` to `CodexStepOptions`. The provider contains the trusted
 caller identity, the role-scoped definitions, and the handler. Definitions and a
 handler cannot be supplied as separate options.
 
-The provider is not installed unless the caller supplies it. This keeps normal
-Codex runs, formal reviews, planning, chat, and bare execution unchanged. The
-only current caller is the persistent Codex agent launcher described below.
-Collaboration prompts are still not activated for the ordinary orchestration
-prompt.
+The provider is not installed unless the caller supplies it. This keeps formal
+reviews, planning, chat, and bare execution unchanged. When
+`experimental.agentMessaging` is `true` for a new root `tim agent` session,
+`CollaborativeAgentSession` (`src/tim/agent_messaging/collaborative_session.ts`)
+builds one `codexDynamicToolProvider` for the session and passes it through
+`ExecutorCommonOptions.codexDynamicToolProvider`. The Codex root orchestrator
+(`orchestrator_mode.ts`) installs it for the root process, and the same session
+launches it for every StartAgent-created persistent Codex subagent. When the
+flag is absent or `false`, no `CollaborativeAgentSession` is created and no
+provider reaches `CodexStepOptions`, so ordinary Codex runs keep no agent
+tools.
 
 Relevant code:
 
@@ -187,9 +193,12 @@ It exports three wrappers:
 
 - `wrapWithOrchestration()` — normal mode: implementer → tester → reviewer.
 - `wrapWithOrchestrationSimple()` — simple mode: implementer → reviewer.
-- `wrapWithOrchestrationTdd()` — TDD mode: `tim subagent tdd-tests` before
-  implementation, then the tester/reviewer path, or the reviewer path when simple
-  TDD is enabled.
+- `wrapWithOrchestrationTdd()` — TDD mode: flag off runs
+  `tim subagent tdd-tests` before implementation, then the tester/reviewer
+  path, or the reviewer path when simple TDD is enabled. Flag on starts a
+  `StartAgent` `tdd-tests` agent per scope before that scope's implementer,
+  then `implementer`/`tester`/advisory `reviewer` agents; independent scopes
+  can run their red phases concurrently.
 
 Neither executor calls those wrappers directly. Both build one
 `OrchestrationOptions` object — the interface lives in

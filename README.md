@@ -770,7 +770,7 @@ Important config areas:
 - `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`
 - `inbox.prs` - PR inbox behavior; `enabled` plus an `ignoreUsers` list that concatenates across config layers (see [PR inbox](#pr-inbox))
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
-- `experimental` - opt-in flags for unfinished features; currently only `agentMessaging`, which is disabled unless set to `true`
+- `experimental` - opt-in flags for features not yet on by default; currently only `agentMessaging`, which is disabled unless set to `true`
 
 PR creation and dual-review issue merging share the `smallTasks` defaults. Override both
 in one place when you want to swap the lightweight model or executor:
@@ -805,7 +805,7 @@ simplify:
     - Generated files
 ```
 
-The `experimental` block holds opt-in flags for features that are still under construction. Every flag is optional and disabled when absent:
+The `experimental` block holds opt-in flags for features that are not yet on by default. Every flag is optional and disabled when absent:
 
 ```yaml
 experimental:
