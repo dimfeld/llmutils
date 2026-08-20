@@ -335,16 +335,21 @@ export class PersistentCodexSessionRuntime {
     if (this.isClosing) return;
     const notification = normalizeCodexAppServerNotification(method, params);
     if (method === 'thread/started' && this.threadId === undefined && this.threadStartPending) {
+      if (notification.threadId === undefined) return;
       const previous = this.pendingThreadStartedNotification;
-      if (
-        previous !== undefined &&
-        normalizeCodexAppServerNotification(previous.method, previous.params).threadId !==
-          notification.threadId
-      ) {
-        this.callbacks?.onUnexpectedExit(
-          new Error(`Codex reported conflicting startup thread IDs: ${notification.threadId}.`)
-        );
-        return;
+      if (previous !== undefined) {
+        const previousThreadId = normalizeCodexAppServerNotification(
+          previous.method,
+          previous.params
+        ).threadId;
+        if (previousThreadId !== undefined && previousThreadId !== notification.threadId) {
+          this.callbacks?.onUnexpectedExit(
+            new Error(
+              `Codex reported conflicting startup thread IDs: ${previousThreadId} and ${notification.threadId}.`
+            )
+          );
+          return;
+        }
       }
       this.pendingThreadStartedNotification = { method, params };
       return;

@@ -665,6 +665,7 @@ export class PersistentCodexTurnController {
       ) {
         return 'already-exited';
       }
+      this.throwIfProviderDeadDuringGracefulShutdown();
       const result = await this.runDeliveryAttempt(instruction, {
         kind: 'graceful',
         turnAccepted: (turn): void => {
@@ -709,14 +710,46 @@ export class PersistentCodexTurnController {
   }
 
   private async waitForStableInputState(): Promise<void> {
-    while (
-      this.state !== 'running-idle' &&
-      !(this.state === 'running-active' && this.currentTurn?.turnId !== undefined) &&
-      !this.closePromise &&
-      !this.forcedShutdownRequested
-    ) {
+    while (!this.isStableInputState()) {
+      if (this.closePromise !== undefined || this.forcedShutdownRequested) return;
+      this.throwIfProviderDeadDuringGracefulShutdown();
       await new Promise<void>((resolve) => this.stateWaiters.add(resolve));
     }
+  }
+
+  private isStableInputState(): boolean {
+    if (!this.input.isReady || this.closePromise !== undefined || !this.runtime.isAlive) {
+      return false;
+    }
+    if (
+      this.runtime.currentConnection === undefined ||
+      this.runtime.currentThreadId === undefined
+    ) {
+      return false;
+    }
+    if (this.state === 'running-idle') return true;
+    return (
+      this.state === 'running-active' &&
+      this.currentTurn !== undefined &&
+      !this.currentTurn.settled &&
+      this.currentTurn.turnId !== undefined
+    );
+  }
+
+  private throwIfProviderDeadDuringGracefulShutdown(): void {
+    if (
+      this.closePromise !== undefined ||
+      this.runtime.currentConnection === undefined ||
+      this.runtime.isAlive
+    ) {
+      return;
+    }
+    const error = new AgentProviderControlError(
+      'graceful-shutdown',
+      'Codex persistent provider is no longer alive while delivering its graceful shutdown instruction.'
+    );
+    void this.failProvider(error);
+    throw error;
   }
 
   private async interruptTurn(turn: PersistentCodexTurn): Promise<void> {

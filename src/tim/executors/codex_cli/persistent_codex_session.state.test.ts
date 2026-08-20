@@ -87,6 +87,8 @@ async function createHarness(
   options: {
     readonly resolveInitialTurn?: boolean;
     readonly earlyThreadId?: string;
+    readonly earlyThreadNotifications?: readonly unknown[];
+    readonly earlyTurnId?: string;
     readonly tunnelActive?: boolean;
     readonly assertReady?: boolean;
     readonly waitForInitialTurn?: boolean;
@@ -100,13 +102,20 @@ async function createHarness(
   const tunnelCreate = vi.fn(async () => tunnelServerReady.promise);
   let notify: ((method: string, params: unknown) => void) | undefined;
   let onExit: ((event: TestConnectionExit) => void) | undefined;
+  let initialTurnNotificationSent = false;
   const connection: TestConnection = {
     isAlive: true,
     pid: 1234,
     processControlId: 'codex-process-state-test',
     setGracefulEndHandler: vi.fn(),
     updateMetadata: vi.fn(),
-    turnStart: vi.fn(() => initialTurn.promise),
+    turnStart: vi.fn(() => {
+      if (options.earlyTurnId !== undefined && !initialTurnNotificationSent) {
+        initialTurnNotificationSent = true;
+        notify?.('turn/started', { turn: { id: options.earlyTurnId } });
+      }
+      return initialTurn.promise;
+    }),
     turnSteer: vi.fn(async () => ({ turnId: 'turn-1' })),
     turnInterrupt: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
@@ -137,8 +146,11 @@ async function createHarness(
   vi.doMock('./app_server_runner.js', () => ({
     createAppServerRequestHandler: vi.fn(() => vi.fn(async () => ({ success: true }))),
     startInitialThread: vi.fn(async () => {
-      if (options.earlyThreadId !== undefined) {
-        notify?.('thread/started', { threadId: options.earlyThreadId });
+      const earlyThreadNotifications =
+        options.earlyThreadNotifications ??
+        (options.earlyThreadId === undefined ? [] : [{ threadId: options.earlyThreadId }]);
+      for (const params of earlyThreadNotifications) {
+        notify?.('thread/started', params);
       }
       return { threadId: 'thread-state-test' };
     }),
@@ -309,6 +321,43 @@ describe('persistent Codex turn state machine', () => {
 
     harness.initialTurn.resolve({ turnId: 'turn-1' });
     await expect(harness.handle.ready).resolves.toBeUndefined();
+  });
+
+  it('parks graceful delivery until a pending initial turn start makes input ready', async () => {
+    const harness = await createHarness({
+      resolveInitialTurn: false,
+      earlyTurnId: 'turn-1',
+    });
+    const graceful = harness.handle.lifecycle.requestGracefulShutdown('Provide the final status.');
+
+    expect(harness.connection.turnSteer).not.toHaveBeenCalled();
+    harness.initialTurn.resolve({ turnId: 'turn-1' });
+    await expect(harness.handle.ready).resolves.toBeUndefined();
+    await expect(graceful).resolves.toBe('accepted');
+    expect(harness.connection.turnSteer).toHaveBeenCalledWith({
+      threadId: 'thread-state-test',
+      input: [{ type: 'text', text: 'Provide the final status.' }],
+      expectedTurnId: 'turn-1',
+    });
+
+    completeTurn(harness, 'turn-1', 'Final status');
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      finalMessage: 'Final status',
+    });
+  });
+
+  it('fails graceful delivery with a provider control error when the connection dies', async () => {
+    const harness = await createHarness();
+    harness.connection.isAlive = false;
+
+    await expect(
+      harness.handle.lifecycle.requestGracefulShutdown('Provide the final status.')
+    ).rejects.toMatchObject({
+      name: 'AgentProviderControlError',
+      operation: 'graceful-shutdown',
+    });
+    await expect(harness.handle.completion).resolves.toMatchObject({ error: expect.any(Error) });
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
   });
 
   it('returns temporary unavailability for concurrent idle sends while one start is pending', async () => {
@@ -727,6 +776,34 @@ describe('persistent Codex turn state machine', () => {
 
     expect(harness.handle.providerThreadId).toBe('thread-state-test');
     expect(harness.callbacks.outputActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an incomplete early thread/started notification before a valid one', async () => {
+    const harness = await createHarness({
+      earlyThreadNotifications: [{}, { threadId: 'thread-state-test' }],
+    });
+
+    expect(harness.handle.providerThreadId).toBe('thread-state-test');
+    expect(harness.callbacks.outputActivity).toHaveBeenCalledTimes(1);
+    expect(harness.callbacks.exit).not.toHaveBeenCalled();
+  });
+
+  it('includes both IDs in an early thread/started conflict', async () => {
+    const harness = await createHarness({
+      earlyThreadNotifications: [{ threadId: 'thread-one' }, { threadId: 'thread-two' }],
+      assertReady: false,
+      waitForInitialTurn: false,
+    });
+
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      error: expect.objectContaining({
+        message: expect.stringContaining('thread-one and thread-two'),
+      }),
+    });
+    expect(harness.callbacks.exit).toHaveBeenCalledWith(
+      'failed',
+      expect.objectContaining({ message: expect.stringContaining('thread-one and thread-two') })
+    );
   });
 
   it('rejects an unrelated early thread/started notification', async () => {

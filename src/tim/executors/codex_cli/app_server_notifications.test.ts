@@ -14,6 +14,25 @@ describe('Codex app-server notification normalization', () => {
     });
   });
 
+  it('normalizes the guarded flat turn identifier fallback', () => {
+    expect(
+      normalizeCodexAppServerNotification('turn/completed', {
+        id: 'turn-flat',
+        status: 'completed',
+      })
+    ).toMatchObject({
+      turnId: 'turn-flat',
+      turnStatus: 'completed',
+    });
+
+    expect(
+      normalizeCodexAppServerNotification('turn/completed', {
+        id: 'outer-id',
+        turn: { status: 'completed' },
+      }).turnId
+    ).toBeUndefined();
+  });
+
   it('normalizes status and item metadata for activity filtering', () => {
     expect(
       normalizeCodexAppServerNotification('thread/status/changed', {

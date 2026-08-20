@@ -67,9 +67,10 @@ function extractThreadId(payload: Record<string, unknown>): string | undefined {
 
 function extractTurnId(payload: Record<string, unknown>): string | undefined {
   const turn = isRecord(payload.turn) ? payload.turn : undefined;
-  const nestedId = stringValue(turn?.id) ?? stringValue(turn?.turnId) ?? stringValue(turn?.turn_id);
-  if (nestedId !== undefined) return nestedId;
-  return stringValue(payload.turnId) ?? stringValue(payload.turn_id);
+  if (turn !== undefined) {
+    return stringValue(turn.id) ?? stringValue(turn.turnId) ?? stringValue(turn.turn_id);
+  }
+  return stringValue(payload.turnId) ?? stringValue(payload.turn_id) ?? stringValue(payload.id);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
