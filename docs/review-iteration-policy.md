@@ -359,6 +359,28 @@ the `tim subagent` flags described above, while enabled prompts use scoped
 separate from the formal review command and does not remove any supported
 formal-review input or scope option.
 
+Review-phase ownership is identical in both modes:
+
+- The non-batch formal review phase runs the review command once as a separate
+  one-shot gate, passes implementation and test notes with `--input` or
+  `--input-file`, scopes the review with 1-based `--task-index` values for the
+  tasks it worked on, and records each rejection with
+  `tim review-issues reject ... --from-review`.
+- The selected-task batch review stays with the orchestrator. In an enabled
+  session an advisory `StartAgent` reviewer may supply read-only findings, but
+  the orchestrator performs the review, owns its result, and must not run the
+  one-shot formal review command for it. Its own rejections use the explicit
+  `--content/--file/--line` form.
+- The standalone structural pass keeps its marker gate and renders
+  `tim review <planId> --print --output-file <path> --structural-only` in an
+  enabled session. When the marker is already set, an enabled orchestrator must
+  not start a collaborative agent as a substitute structural or simplification
+  pass, exactly as a disabled orchestrator must not rerun the reviewer command
+  with `--structural-only`.
+- An enabled orchestrator may never replace the formal review with a
+  `StartAgent` reviewer. The formal process runs with fresh context and no
+  collaborative tools.
+
 The review policy itself — severity rubric, severity gate, scope tiers,
 fix-verification scoping, closing full-scope review, four-review bound,
 structural-review marker, rejected-findings ledger, and bounded handoff — is

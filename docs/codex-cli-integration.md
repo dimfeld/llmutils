@@ -218,9 +218,12 @@ command examples. The wrappers support `batchMode`, `planFilePath`,
 executor-selection guidance, `useJj` guidance, progress-section guidance, the
 failure protocol, and batch task selection / marking guidance.
 
-All three wrappers also teach the review-fix scope rule: a fix-round
-implementer / tester / `tdd-tests` run passes `--task-index` for the tasks that
-own the findings, while the first run of a batch passes no `--task-index`. See
+All three wrappers also teach the review-fix scope rule, in the spelling that
+matches the mode. With `experimental.agentMessaging` absent or `false`, a
+fix-round implementer / tester / `tdd-tests` run passes `--task-index` for the
+tasks that own the findings. With the flag `true`, the same scope travels in the
+`StartAgent` or `SendAgentMessage` assignment instead of CLI flags. In both
+modes the first run of a batch is not a fix round and carries no fix scope. See
 `docs/review-iteration-policy.md`.
 
 > **Gotcha — wording ≠ runtime config.** When "generalizing wording" in this
@@ -280,10 +283,17 @@ orchestrator to read and apply the file.
   `implementer`, optional `tester`, and advisory `reviewer`. Independent scopes
   can run parallel red-green pipelines.
 
-Formal review uses `tim review` (not `tim subagent reviewer`) for all modes.
-The review iteration policy is unchanged. StartAgent reviewers are advisory and
-read-only. `SendAgentMessage` replaces shell `--input` for follow-up context to
-persistent agents.
+Formal review uses `tim review` (not `tim subagent reviewer`) in every
+execution mode, including the standalone `--structural-only` pass. The review
+iteration policy is unchanged. StartAgent reviewers are advisory and read-only.
+`SendAgentMessage` replaces shell `--input` for follow-up context to persistent
+agents, but the formal review command keeps its own `--input` / `--input-file`
+notes.
+
+Batch review ownership is also unchanged: the orchestrator still performs the
+selected-task batch review itself and owns its result. An advisory StartAgent
+reviewer may contribute read-only findings, and the final full-plan sequence
+after the last task still runs through `tim review`.
 
 ### Option pass-through
 

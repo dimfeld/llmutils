@@ -186,6 +186,26 @@ Enabled orchestrators render `tim review` for formal reviews. Disabled
 orchestrators use the equivalent `tim subagent reviewer` alias. The alias
 remains available for external compatibility.
 
+### Review phase ownership
+
+Activation changes the command spelling and the delegation mechanism, not who
+owns a review:
+
+| Phase                      | Enabled behavior                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Non-batch formal review    | One-shot `tim review <planId> --print --output-file <path>` with `--task-index` scope and `--input(-file)` notes |
+| Selected-task batch review | Performed by the orchestrator; an advisory `StartAgent` reviewer may add read-only findings only                 |
+| Final full-plan sequence   | `tim review` after the batch completes every remaining task                                                      |
+| Standalone structural pass | `tim review ... --structural-only`, still gated by the `structuralReviewAt` marker                               |
+
+A StartAgent reviewer never replaces the formal gate, never becomes the
+orchestrator-owned batch review, and never substitutes for a structural or
+simplification pass that the marker has already retired. Rejection recording is
+unchanged: reviewer-command findings use
+`tim review-issues reject ... --from-review <output.json> --issue <n>`, and the
+orchestrator's own batch findings use the explicit `--content/--file/--line`
+form because that review writes no reviewer output file.
+
 ### Review-fix assignments
 
 Formal review invocation context and collaborative fix-agent delegation are
