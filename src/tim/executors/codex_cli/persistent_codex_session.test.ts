@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TimConfig } from '../../configSchema.js';
-import type { AgentIdentity } from '../../agent_messaging/agent_manager_types.js';
+import type {
+  AgentIdentity,
+  AgentProviderLifecycleObserver,
+} from '../../agent_messaging/agent_manager_types.js';
 import { formatAgentProcessLabel } from '../../agent_messaging/agent_process_labels.js';
 import type { CodexAgentToolDispatcher } from './codex_agent_tools.js';
 import { createCodexAgentToolProvider } from './codex_agent_tools.js';
-import {
-  CODEX_PERSISTENT_AGENT_MODE,
-  type CodexPersistentAgentLifecycleCallbacks,
-} from './persistent_agent_contract.js';
+import { CODEX_PERSISTENT_AGENT_MODE } from './persistent_agent_contract.js';
 import {
   startPersistentCodexAgent,
   validateCodexPersistentAgentLaunchOptions,
@@ -35,7 +35,7 @@ function createIdentity(): AgentIdentity {
   };
 }
 
-function createCallbacks(): CodexPersistentAgentLifecycleCallbacks {
+function createCallbacks(): AgentProviderLifecycleObserver {
   return {
     outputActivity: vi.fn(),
     completedAssistantMessage: vi.fn(),
@@ -81,7 +81,7 @@ function createOptions(
     timConfig: {} as TimConfig,
     dynamicToolProvider: createProvider(identity),
     processLabel: formatAgentProcessLabel('codex-cli', identity.name),
-    lifecycleCallbacks: createCallbacks(),
+    lifecycleObserver: createCallbacks(),
     ...overrides,
   };
 }
@@ -98,7 +98,7 @@ describe('persistent Codex launch validation', () => {
     ['identity', { identity: undefined }],
     ['process label', { processLabel: 'Codex thread (wrong-name)' }],
     ['dynamic provider', { dynamicToolProvider: undefined }],
-    ['lifecycle callbacks', { lifecycleCallbacks: undefined }],
+    ['lifecycle observer', { lifecycleObserver: undefined }],
     ['output schema', { outputSchema: {} }],
     ['output schema path', { outputSchemaPath: '/tmp/schema.json' }],
     ['one-shot app-server mode', { appServerMode: 'single-turn' }],
@@ -119,7 +119,7 @@ describe('persistent Codex launch validation', () => {
     ['identity', { identity: undefined }],
     ['process label', { processLabel: 'Codex thread (wrong-name)' }],
     ['dynamic provider', { dynamicToolProvider: undefined }],
-    ['lifecycle callbacks', { lifecycleCallbacks: undefined }],
+    ['lifecycle observer', { lifecycleObserver: undefined }],
     ['output schema', { outputSchema: {} }],
     ['output schema path', { outputSchemaPath: '/tmp/schema.json' }],
     ['one-shot app-server mode', { appServerMode: 'single-turn' }],

@@ -5,10 +5,10 @@ import type { TimConfig } from '../../configSchema.js';
 import type {
   AgentIdentity,
   AgentInputMessage,
+  AgentProviderLifecycleObserver,
 } from '../../agent_messaging/agent_manager_types.js';
 import { formatAgentProcessLabel } from '../../agent_messaging/agent_process_labels.js';
 import type { CodexAgentToolDispatcher } from './codex_agent_tools.js';
-import type { CodexPersistentAgentLifecycleCallbacks } from './persistent_agent_contract.js';
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -57,7 +57,7 @@ function createIdentity(): AgentIdentity {
   };
 }
 
-function createCallbacks(): CodexPersistentAgentLifecycleCallbacks {
+function createCallbacks(): AgentProviderLifecycleObserver {
   return {
     outputActivity: vi.fn(),
     completedAssistantMessage: vi.fn(),
@@ -70,7 +70,7 @@ interface Harness {
   readonly handle: Awaited<
     ReturnType<(typeof import('./persistent_codex_session.js'))['startPersistentCodexAgent']>
   >;
-  readonly callbacks: CodexPersistentAgentLifecycleCallbacks;
+  readonly callbacks: AgentProviderLifecycleObserver;
   readonly connection: TestConnection;
   readonly logicalLifecycle: {
     readonly markExited: ReturnType<typeof vi.fn>;
@@ -195,7 +195,7 @@ async function createHarness(
     timConfig: {} as TimConfig,
     dynamicToolProvider: provider,
     processLabel: formatAgentProcessLabel('codex-cli', identity.name),
-    lifecycleCallbacks: callbacks,
+    lifecycleObserver: callbacks,
     sessionProcessOwner: owner,
   });
 

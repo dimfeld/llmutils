@@ -15,7 +15,7 @@ const mocked = vi.hoisted(() => ({
 
 vi.mock('./persistent_codex_session.js', () => mocked);
 
-function createRequest(observer?: AgentProviderLifecycleObserver): AgentLaunchRequest {
+function createRequest(observer: AgentProviderLifecycleObserver): AgentLaunchRequest {
   return {
     identity: {
       id: 'agent-stable-id' as AgentLaunchRequest['identity']['id'],
@@ -26,7 +26,7 @@ function createRequest(observer?: AgentProviderLifecycleObserver): AgentLaunchRe
     },
     initialMessage: 'Initial assignment',
     processLabel: formatAgentProcessLabel('codex-cli', 'api-implementer'),
-    ...(observer === undefined ? {} : { lifecycleObserver: observer }),
+    lifecycleObserver: observer,
     preparedExecution: {
       agentType: 'implementer',
       executor: 'codex-cli',
@@ -81,7 +81,7 @@ describe('Codex AgentManager launch adapter', () => {
         reasoningLevel: 'high',
         timEnvironment: { context: { planId: 420 } },
         processLabel: 'Codex thread (api-implementer)',
-        lifecycleCallbacks: observer,
+        lifecycleObserver: observer,
       })
     );
 
@@ -93,29 +93,5 @@ describe('Codex AgentManager launch adapter', () => {
     };
     expect(launchOptions.dynamicToolProvider.context.caller.id).toBe('agent-stable-id');
     expect(launchOptions.dynamicToolProvider.definitions).toHaveLength(3);
-  });
-
-  it('uses a no-op lifecycle observer when an early launch caller has none', async () => {
-    mocked.startPersistentCodexAgent.mockResolvedValueOnce({} as AgentLaunchHandle);
-    const launcher = createCodexAgentLauncher({
-      dispatcher: {
-        startAgent: vi.fn(),
-        listAgents: vi.fn(),
-        sendAgentMessage: vi.fn(),
-        stopAgent: vi.fn(),
-        finishAgent: vi.fn(),
-      },
-    });
-
-    await launcher.launch(createRequest());
-    const launchOptions = mocked.startPersistentCodexAgent.mock.calls[0]?.[0] as {
-      readonly lifecycleCallbacks: AgentProviderLifecycleObserver;
-    };
-    expect(launchOptions.lifecycleCallbacks).toEqual({
-      outputActivity: expect.any(Function),
-      completedAssistantMessage: expect.any(Function),
-      turnComplete: expect.any(Function),
-      exit: expect.any(Function),
-    });
   });
 });

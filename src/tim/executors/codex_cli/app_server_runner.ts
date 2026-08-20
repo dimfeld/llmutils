@@ -15,6 +15,7 @@ import {
   type ThreadResult,
   type ThreadStartParams,
 } from './app_server_connection';
+import { normalizeCodexAppServerNotification } from './app_server_notifications.js';
 import {
   normalizeSubprocessMonitorRules,
   startSubprocessMonitor,
@@ -94,33 +95,6 @@ function getInactivityTimeoutMs(options?: CodexStepOptions): number {
       ? inactivityOverride
       : 10 * 60 * 1000)
   );
-}
-
-function extractTurnStatus(params: unknown): string {
-  const payload = params && typeof params === 'object' ? (params as Record<string, unknown>) : {};
-  const turn =
-    payload.turn && typeof payload.turn === 'object'
-      ? (payload.turn as Record<string, unknown>)
-      : payload;
-  return typeof turn.status === 'string' ? turn.status : 'completed';
-}
-
-function extractTurnId(params: unknown): string | undefined {
-  const payload = params && typeof params === 'object' ? (params as Record<string, unknown>) : {};
-  const turn =
-    payload.turn && typeof payload.turn === 'object'
-      ? (payload.turn as Record<string, unknown>)
-      : payload;
-  return typeof turn.id === 'string' ? turn.id : undefined;
-}
-
-function extractThreadStatusType(params: unknown): string | undefined {
-  const payload = params && typeof params === 'object' ? (params as Record<string, unknown>) : {};
-  const status =
-    payload.status && typeof payload.status === 'object'
-      ? (payload.status as Record<string, unknown>)
-      : undefined;
-  return typeof status?.type === 'string' ? status.type : undefined;
 }
 
 class UserInputQueue {
@@ -425,6 +399,7 @@ export async function executeCodexStepViaAppServer(
         handleUnexpectedConnectionExit(exitCode, signal);
       },
       onNotification: (method, params) => {
+        const notification = normalizeCodexAppServerNotification(method, params);
         const message = formatter.handleNotification(method, params);
         if (message.structured) {
           if (Array.isArray(message.structured)) {
@@ -448,12 +423,12 @@ export async function executeCodexStepViaAppServer(
 
         if (method === 'turn/completed') {
           chatTurnCompleted = true;
-          chatTurnId = extractTurnId(params) ?? chatTurnId;
-          resolveCurrentTurnStatus(extractTurnStatus(params));
+          chatTurnId = notification.turnId ?? chatTurnId;
+          resolveCurrentTurnStatus(notification.turnStatus);
           currentAttemptActive = false;
           clearInactivityTimer();
         } else if (keepSessionOpen && method === 'thread/status/changed') {
-          if (extractThreadStatusType(params) === 'idle') {
+          if (notification.threadStatusType === 'idle') {
             emitChatTurnReady();
             chatTurnCompleted = true;
             resolveCurrentTurnStatus('completed');
@@ -461,7 +436,7 @@ export async function executeCodexStepViaAppServer(
             clearInactivityTimer();
           }
         } else if (method === 'turn/started') {
-          currentTurnId = extractTurnId(params) ?? currentTurnId;
+          currentTurnId = notification.turnId ?? currentTurnId;
           chatTurnCompleted = false;
           chatTurnId = currentTurnId ?? chatTurnId;
         }

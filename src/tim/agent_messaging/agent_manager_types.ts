@@ -212,12 +212,8 @@ export interface AgentLaunchRequest {
   readonly initialMessage: string;
   readonly preparedExecution: PreparedAgentExecution;
   readonly processLabel: AgentProcessLabel;
-  /**
-   * Optional observer installed before provider startup begins. Providers that
-   * can emit lifecycle events before their readiness promise settles should
-   * bind this observer during launch.
-   */
-  readonly lifecycleObserver?: AgentProviderLifecycleObserver;
+  /** Observer installed before provider startup begins. */
+  readonly lifecycleObserver: AgentProviderLifecycleObserver;
 }
 
 /** Input needed by the provider-neutral plan 414 preparation boundary. */

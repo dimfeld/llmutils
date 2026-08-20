@@ -3,8 +3,6 @@ import type {
   AgentLaunchRequest,
   AgentLaunchHandle,
   AgentLauncher,
-  AgentProviderLifecycleObserver,
-  AgentProviderExitClassification,
 } from '../../agent_messaging/agent_manager_types.js';
 import { parseCodexModel } from './model.js';
 import {
@@ -20,13 +18,6 @@ export interface CodexAgentLauncherOptions {
   /** Test seam and explicit owner for callers outside the ambient session. */
   readonly sessionProcessOwner?: Pick<SessionProcessOwner, 'prepareLogicalExecutor'>;
 }
-
-const NOOP_LIFECYCLE_OBSERVER: AgentProviderLifecycleObserver = Object.freeze({
-  outputActivity: (): void => undefined,
-  completedAssistantMessage: (_message: string): void => undefined,
-  turnComplete: (): void => undefined,
-  exit: (_classification: AgentProviderExitClassification, _error?: Error): void => undefined,
-});
 
 /**
  * Create the Codex AgentManager launch adapter.
@@ -59,7 +50,7 @@ export function createCodexAgentLauncher(options: CodexAgentLauncherOptions): Ag
         timEnvironment: request.preparedExecution.timEnvironment,
         dynamicToolProvider,
         processLabel: request.processLabel,
-        lifecycleCallbacks: request.lifecycleObserver ?? NOOP_LIFECYCLE_OBSERVER,
+        lifecycleObserver: request.lifecycleObserver,
         ...(options.sessionProcessOwner === undefined
           ? {}
           : { sessionProcessOwner: options.sessionProcessOwner }),

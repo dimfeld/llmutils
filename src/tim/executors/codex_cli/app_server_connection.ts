@@ -19,6 +19,7 @@ import {
   CodexDynamicToolsCompatibilityError,
   type CodexDynamicToolDefinition,
 } from './app_server_dynamic_tools.js';
+import { extractCodexThreadId, extractCodexTurnId } from './app_server_notifications.js';
 
 export const TIM_CODEX_APP_SERVER_SOCKET = 'TIM_CODEX_APP_SERVER_SOCKET';
 const DEFAULT_CLOSE_TIMEOUT_MS = 2_000;
@@ -329,73 +330,8 @@ function summarizeRequestForError(method: string, params: unknown): string {
   return `request method=${method} params=${serializedParams}`;
 }
 
-function extractNestedId(
-  payload: unknown,
-  key: 'thread' | 'turn',
-  fallbackKey: 'threadId' | 'turnId'
-): string | undefined {
-  if (!payload || typeof payload !== 'object') {
-    return undefined;
-  }
-
-  const record = payload as Record<string, unknown>;
-  const directId = record[fallbackKey];
-  if (typeof directId === 'string' && directId.length > 0) {
-    return directId;
-  }
-
-  const nested = record[key];
-  if (!nested || typeof nested !== 'object') {
-    return undefined;
-  }
-
-  const nestedId = (nested as Record<string, unknown>).id;
-  if (typeof nestedId === 'string' && nestedId.length > 0) {
-    return nestedId;
-  }
-
-  return undefined;
-}
-
-function extractStringProperty(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
 function extractThreadIdFromParams(params: unknown): string | undefined {
-  if (!params || typeof params !== 'object') {
-    return undefined;
-  }
-
-  const record = params as Record<string, unknown>;
-  const directThreadId = extractStringProperty(record, 'threadId');
-  if (directThreadId) {
-    return directThreadId;
-  }
-
-  const thread = record.thread;
-  if (thread && typeof thread === 'object' && !Array.isArray(thread)) {
-    const threadRecord = thread as Record<string, unknown>;
-    const nestedThreadId =
-      extractStringProperty(threadRecord, 'threadId') ?? extractStringProperty(threadRecord, 'id');
-    if (nestedThreadId) {
-      return nestedThreadId;
-    }
-  }
-
-  for (const nestedKey of ['turn', 'item']) {
-    const nested = record[nestedKey];
-    if (!nested || typeof nested !== 'object' || Array.isArray(nested)) {
-      continue;
-    }
-
-    const nestedThreadId = extractStringProperty(nested as Record<string, unknown>, 'threadId');
-    if (nestedThreadId) {
-      return nestedThreadId;
-    }
-  }
-
-  return undefined;
+  return extractCodexThreadId(params);
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -743,7 +679,7 @@ export class CodexAppServerConnection {
     this.pendingThreadStarts += 1;
     try {
       const raw = await this.sendRequest('thread/start', params);
-      const threadId = extractNestedId(raw, 'thread', 'threadId');
+      const threadId = extractCodexThreadId(raw);
       if (!threadId) {
         throw new Error(
           `thread/start response did not include a thread id: ${JSON.stringify(raw ?? null)}`
@@ -762,7 +698,7 @@ export class CodexAppServerConnection {
 
   async turnStart(params: TurnStartParams): Promise<TurnResult> {
     const raw = await this.sendRequest('turn/start', params);
-    const turnId = extractNestedId(raw, 'turn', 'turnId');
+    const turnId = extractCodexTurnId(raw);
     if (!turnId) {
       throw new Error(
         `turn/start response did not include a turn id: ${JSON.stringify(raw ?? null)}`

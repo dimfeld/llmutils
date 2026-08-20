@@ -3,7 +3,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AgentIdentity } from '../../agent_messaging/agent_manager_types.js';
+import type {
+  AgentIdentity,
+  AgentProviderLifecycleObserver,
+} from '../../agent_messaging/agent_manager_types.js';
 import { formatAgentProcessLabel } from '../../agent_messaging/agent_process_labels.js';
 import {
   runWithSessionProcessOwner,
@@ -427,7 +430,7 @@ describe('persistent Codex setup', () => {
       timConfig: {},
       dynamicToolProvider: provider,
       processLabel: formatAgentProcessLabel('codex-cli', identity.name),
-      lifecycleCallbacks: callbacks,
+      lifecycleObserver: callbacks,
       sessionProcessOwner: owner,
     });
 
@@ -512,7 +515,7 @@ describe('persistent Codex setup', () => {
             timConfig: {},
             dynamicToolProvider: createProvider(identity),
             processLabel: formatAgentProcessLabel('codex-cli', identity.name),
-            lifecycleCallbacks: callbacks,
+            lifecycleObserver: callbacks,
             sessionProcessOwner: owner,
           })
         );
@@ -593,7 +596,7 @@ describe('persistent Codex setup', () => {
             timConfig: {},
             dynamicToolProvider: createProvider(identity),
             processLabel: formatAgentProcessLabel('codex-cli', identity.name),
-            lifecycleCallbacks: callbacks,
+            lifecycleObserver: callbacks,
             sessionProcessOwner: owner,
           })
         );
@@ -660,7 +663,7 @@ describe('persistent Codex setup', () => {
                 timConfig: {},
                 dynamicToolProvider: createProvider(identity),
                 processLabel: formatAgentProcessLabel('codex-cli', identity.name),
-                lifecycleCallbacks: createCallbacks(),
+                lifecycleObserver: createCallbacks(),
                 sessionProcessOwner: owner,
               })
             )
@@ -753,7 +756,7 @@ describe('persistent Codex setup', () => {
             timConfig: {},
             dynamicToolProvider: createProvider(identity),
             processLabel: formatAgentProcessLabel('codex-cli', identity.name),
-            lifecycleCallbacks: callbacks,
+            lifecycleObserver: callbacks,
             sessionProcessOwner: owner,
           })
         );
