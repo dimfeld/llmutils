@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import type {
   AgentLaunchHandle,
   AgentLaunchRequest,
+  AgentProviderExitClassification,
   AgentProviderLifecycleObserver,
 } from './agent_manager_types.js';
 import type { PreparedSubagentExecution } from '../subagents/types.js';
@@ -33,7 +34,10 @@ const { CollaborativeAgentSession } = await import('./collaborative_session.js')
 function createProviderHandle(
   executor: 'claude-code' | 'codex-cli',
   lifecycleEvents: string[] = []
-): AgentLaunchHandle {
+): AgentLaunchHandle & {
+  readonly emitTurnComplete: () => void;
+  readonly emitExit: (classification: AgentProviderExitClassification) => void;
+} {
   let observer: AgentProviderLifecycleObserver | undefined;
   const lifecycle = {
     requestGracefulShutdown: vi.fn(async () => {
@@ -60,7 +64,7 @@ function createProviderHandle(
     onAvailabilityChange: vi.fn(() => () => {}),
     release: vi.fn(async () => {}),
   };
-  return {
+  const handle: AgentLaunchHandle = {
     executor,
     processLabel: `${executor} label` as AgentLaunchHandle['processLabel'],
     input,
@@ -71,6 +75,12 @@ function createProviderHandle(
       lifecycleEvents.push(`${executor}-release`);
       await input.release?.();
     }),
+  };
+  return {
+    ...handle,
+    emitTurnComplete: (): void => observer?.turnComplete(),
+    emitExit: (classification: AgentProviderExitClassification): void =>
+      observer?.exit(classification),
   };
 }
 
@@ -157,6 +167,7 @@ describe('CollaborativeAgentSession root activation', () => {
             permissionPromptCoordinator: coordinator,
             agentToolContext: expect.objectContaining({
               caller: expect.objectContaining({ name: 'claude-worker', role: 'subagent' }),
+              allowedTools: new Set(['ListAgents', 'SendAgentMessage', 'FinishAgent']),
             }),
           }),
         })
@@ -169,6 +180,11 @@ describe('CollaborativeAgentSession root activation', () => {
             context: expect.objectContaining({
               caller: expect.objectContaining({ name: 'codex-review', role: 'subagent' }),
             }),
+            definitions: expect.arrayContaining([
+              expect.objectContaining({ name: 'ListAgents' }),
+              expect.objectContaining({ name: 'SendAgentMessage' }),
+              expect.objectContaining({ name: 'FinishAgent' }),
+            ]),
           }),
         })
       );
@@ -190,6 +206,155 @@ describe('CollaborativeAgentSession root activation', () => {
       'after-close',
     ]);
     expect(session.manager.isClosed).toBe(true);
+  });
+
+  test('routes root and subagent tool operations through one mixed-executor manager', async () => {
+    const disposeOrder: string[] = [];
+    const coordinator = createCoordinator(disposeOrder);
+    const claudeHandle = createProviderHandle('claude-code', disposeOrder);
+    const codexHandle = createProviderHandle('codex-cli', disposeOrder);
+    mocks.prepareSubagentExecution.mockImplementation(async (request) =>
+      preparedExecution(request)
+    );
+    mocks.runClaudeSubprocess.mockResolvedValueOnce(claudeHandle);
+    mocks.startPersistentCodexAgent.mockResolvedValueOnce(codexHandle);
+
+    const session = await CollaborativeAgentSession.create({
+      planId: 421,
+      repositoryRoot: '/repo',
+      orchestratorExecutor: 'claude-code',
+      permissionPromptCoordinator: coordinator,
+    });
+
+    try {
+      const rootCaller = {
+        id: session.manager.orchestratorIdentity.id,
+        role: 'orchestrator' as const,
+      };
+      const claudeStart = await session.claudeAgentToolContext.dispatcher.startAgent(rootCaller, {
+        name: 'claude-impl',
+        type: 'implementer',
+        executor: 'claude-code',
+        initialMessage: 'Implement the assigned files.',
+      });
+
+      const codexStartResponse = await session.codexDynamicToolProvider.handler({
+        threadId: 'root-thread',
+        turnId: 'root-turn',
+        callId: 'start-codex',
+        tool: 'StartAgent',
+        arguments: {
+          name: 'codex-tests',
+          type: 'tester',
+          executor: 'codex-cli',
+          initialMessage: 'Test the assigned files.',
+        },
+      });
+      expect(codexStartResponse.success).toBe(true);
+
+      const listedResponse = await session.codexDynamicToolProvider.handler({
+        threadId: 'root-thread',
+        turnId: 'root-turn',
+        callId: 'list-agents',
+        tool: 'ListAgents',
+        arguments: {},
+      });
+      expect(listedResponse.success).toBe(true);
+      expect(listedResponse.contentItems[0]?.text).toContain('claude-impl');
+      expect(listedResponse.contentItems[0]?.text).toContain('codex-tests');
+
+      const sentResponse = await session.codexDynamicToolProvider.handler({
+        threadId: 'root-thread',
+        turnId: 'root-turn',
+        callId: 'send-message',
+        tool: 'SendAgentMessage',
+        arguments: {
+          name: 'claude-impl',
+          message: 'The tester is ready for the handoff.',
+        },
+      });
+      expect(sentResponse).toMatchObject({ success: true });
+      expect(claudeHandle.input.deliver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: 'The tester is ready for the handoff.',
+          source: expect.objectContaining({ name: 'orchestrator' }),
+        })
+      );
+
+      const subagentToolContext =
+        mocks.runClaudeSubprocess.mock.calls[0]?.[0]?.claudeCodeOptions?.agentToolContext;
+      expect(subagentToolContext).toBeDefined();
+      session.manager.setAgentLifecycleState(claudeStart.id, 'running-active');
+      await expect(
+        subagentToolContext.dispatcher.finishAgent(
+          { id: claudeStart.id, role: 'subagent' },
+          { message: 'Implementation handoff is complete.' }
+        )
+      ).resolves.toEqual({ state: 'finishing' });
+
+      const stoppedResponse = await session.claudeAgentToolContext.dispatcher.stopAgent(
+        rootCaller,
+        { name: 'codex-tests', force: true }
+      );
+      expect(stoppedResponse).toMatchObject({ name: 'codex-tests', mode: 'forced' });
+      await session.manager.waitForAgentTerminal(
+        session.manager.getIdentityByName('codex-tests')?.id ?? ''
+      );
+      expect(session.manager.listAgents().agents).toEqual([
+        expect.objectContaining({ name: 'orchestrator' }),
+        expect.objectContaining({ name: 'claude-impl', state: 'finishing' }),
+      ]);
+      claudeHandle.emitTurnComplete();
+      claudeHandle.emitExit('natural');
+      await session.manager.waitForAgentTerminal(claudeStart.id);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test('rolls back the mailbox and reservation when a persistent provider fails to launch', async () => {
+    const disposeOrder: string[] = [];
+    const coordinator = createCoordinator(disposeOrder);
+    const launchError = new Error('persistent Claude launch failed');
+    mocks.prepareSubagentExecution.mockImplementation(async (request) =>
+      preparedExecution(request)
+    );
+    mocks.runClaudeSubprocess.mockRejectedValueOnce(launchError);
+
+    const session = await CollaborativeAgentSession.create({
+      planId: 421,
+      repositoryRoot: '/repo',
+      orchestratorExecutor: 'codex-cli',
+      permissionPromptCoordinator: coordinator,
+    });
+
+    try {
+      const rootCaller = {
+        id: session.manager.orchestratorIdentity.id,
+        role: 'orchestrator' as const,
+      };
+      await expect(
+        session.manager.startAgent(rootCaller, {
+          name: 'failed-claude',
+          type: 'implementer',
+          executor: 'claude-code',
+          initialMessage: 'This provider must fail before becoming visible.',
+        })
+      ).rejects.toThrow('persistent Claude launch failed');
+
+      expect(session.manager.subagentCount).toBe(0);
+      expect(session.manager.listAgents().agents).toEqual([
+        expect.objectContaining({ name: 'orchestrator' }),
+      ]);
+      expect(await session.manager.sessionRuntime.runtime.listRegistrations()).toEqual([
+        expect.objectContaining({ name: 'orchestrator' }),
+      ]);
+      expect(mocks.runClaudeSubprocess).toHaveBeenCalledTimes(1);
+    } finally {
+      await session.close();
+    }
+
+    expect(disposeOrder).toEqual(['coordinator']);
   });
 
   test('uses the same provider-neutral root semantics for a Codex orchestrator', async () => {
