@@ -283,6 +283,24 @@ describe('CollaborativeAgentSession root activation', () => {
     expect(coordinator.dispose).toHaveBeenCalledTimes(1);
   });
 
+  test('disposes the coordinator when manager setup fails before a manager is assigned', async () => {
+    const disposeOrder: string[] = [];
+    const coordinator = createCoordinator(disposeOrder);
+    mocks.createClaudePermissionPromptCoordinator.mockReturnValue(coordinator);
+
+    await expect(
+      CollaborativeAgentSession.create({
+        planId: 421,
+        repositoryRoot: '/repo',
+        orchestratorExecutor: 'unsupported-executor' as never,
+        noninteractive: false,
+      })
+    ).rejects.toThrow('Unsupported orchestrator executor');
+
+    expect(disposeOrder).toEqual(['coordinator']);
+    expect(coordinator.dispose).toHaveBeenCalledTimes(1);
+  });
+
   test('routes root and subagent tool operations through one mixed-executor manager', async () => {
     const disposeOrder: string[] = [];
     const coordinator = createCoordinator(disposeOrder);
