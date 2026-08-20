@@ -231,7 +231,7 @@ the full declared scope:
    (`git rev-parse HEAD`, or `jj log --no-graph -r @- -T commit_id` in a
    Jujutsu workspace). After the fixes it reruns the review with
    `--since <that commit>` plus the same `--task-index` scope, and enumerates the
-   findings being re-checked in `--input`.
+   findings being re-checked in `--input` or `--input-file`.
 3. **Closing review** — full declared scope again, no `--since`, whenever the
    loop is about to stop (no new blocking findings, or the four-review bound).
 
