@@ -50,6 +50,7 @@ export class PersistentCodexSessionRuntime {
   private tunnelServer: TunnelServer | undefined;
   private tunnelTempDir: string | undefined;
   private tunnelSocketPath: string | undefined;
+  private tunnelCreationPromise: Promise<void> | undefined;
   private threadId: string | undefined;
   private ownedProcessControlId: string | undefined;
   private closePromise: Promise<Error | undefined> | undefined;
@@ -243,6 +244,14 @@ export class PersistentCodexSessionRuntime {
     }
     this.connection = undefined;
 
+    const tunnelCreation = this.tunnelCreationPromise;
+    if (tunnelCreation !== undefined) {
+      await tunnelCreation.catch((error: unknown) => {
+        cleanupError ??= toError(error);
+        debugLog('Persistent Codex output tunnel cleanup failed:', error);
+      });
+    }
+
     try {
       this.logicalExecutorLifecycle?.setGracefulEndHandler(undefined);
       this.logicalExecutorLifecycle?.markExited(
@@ -272,7 +281,13 @@ export class PersistentCodexSessionRuntime {
     return combineCloseErrors(primaryError, cleanupError);
   }
 
-  private async createOutputTunnel(): Promise<void> {
+  private createOutputTunnel(): Promise<void> {
+    const creation = this.createOutputTunnelInternal();
+    this.tunnelCreationPromise = creation;
+    return creation;
+  }
+
+  private async createOutputTunnelInternal(): Promise<void> {
     if (isTunnelActive()) return;
 
     const tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
