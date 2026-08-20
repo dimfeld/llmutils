@@ -1,6 +1,7 @@
 import type { AgentDefinition } from './agent_generator.ts';
 import { progressSectionGuidance } from '../shared/orchestrator_prompt.ts';
 import { REVIEW_DUPLICATION_GUIDANCE, REVIEW_SEVERITY_GUIDANCE } from '../../review_severity.js';
+import type { SubagentPromptContext } from '../../subagents/types.js';
 
 const contextTaskFocus = `The "Context and Task" section may contain more tasks than are being worked on right now. Pay attention to your instructions on which tasks are actually in play and focus on those, but keep in mind that the instructions may not have all the details from the active tasks. The instructions should reference which tasks are being worked on.`;
 
@@ -248,6 +249,47 @@ function buildProgressGuidance(options?: ProgressGuidanceOptions): string {
   return progressReportingGuidance;
 }
 
+type PromptAgentRole = 'implementer' | 'tester' | 'tdd-tests' | 'reviewer';
+
+/**
+ * Add communication instructions only when the launch preparation explicitly
+ * selects the persistent-agent prompt contract. Direct one-shot subagents and
+ * formal reviewers intentionally receive no part of this section.
+ */
+function buildPersistentAgentCommunicationGuidance(
+  context: SubagentPromptContext | undefined,
+  role: PromptAgentRole
+): string {
+  if (context?.mode !== 'persistent-agent') {
+    return '';
+  }
+
+  const roleGuidance: Record<PromptAgentRole, string> = {
+    implementer:
+      '- Edit only the implementation files and task scope assigned to you. Before touching a file owned by another agent, use SendAgentMessage to agree on an owner or edit order.',
+    tester:
+      '- Inspect and run checks in parallel when useful. If you need to edit tests or fixtures, claim those files through SendAgentMessage before changing them.',
+    'tdd-tests':
+      '- Write and verify the expected failing tests for your assigned scope before implementation begins. Send the failure evidence and expected reason as soon as it is ready.',
+    reviewer:
+      '- You are a read-only, advisory reviewer. Inspect the evolving workspace and run only non-mutating checks; do not edit files or create commits. Your findings support the team but do not replace the separate formal `tim review` gate.',
+  };
+
+  return `
+## Team Communication
+
+You are a persistent team member in a shared live working directory. Other agents see workspace changes immediately, so coordinate file ownership before concurrent edits.
+
+- **ListAgents** shows the canonical names and current team state. Use the exact name returned there when addressing a participant.
+- **SendAgentMessage** is for useful questions, decisions, blockers, early findings, and handoffs. Send information as soon as another participant can act on it, without noisy status messages.
+- The runtime supplies trusted sender names. Do not claim or invent a sender identity in a message; use the sender name shown by the runtime when replying.
+- Keep your assigned task and file scope clear. Coordinate before editing a file another agent owns, and state the files and verification covered in each handoff.
+- **FinishAgent** is self-only. After your assignment and final handoff are complete, call FinishAgent with the final status. Do not use it to finish another agent.
+
+${roleGuidance[role]}
+`;
+}
+
 export const FAILED_PROTOCOL_INSTRUCTIONS = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
 
@@ -281,7 +323,8 @@ export function getImplementerPrompt(
   planId?: string | number,
   customInstructions?: string,
   model?: string,
-  progressGuidanceOptions?: ProgressGuidanceOptions
+  progressGuidanceOptions?: ProgressGuidanceOptions,
+  promptContext?: SubagentPromptContext
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -346,7 +389,7 @@ You may receive a single task or multiple related tasks to implement together. W
 - Add proper null/undefined checks where needed
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
-${progressGuidance}
+${progressGuidance}${buildPersistentAgentCommunicationGuidance(promptContext, 'implementer')}
 ${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ### Implementation Approach
@@ -371,7 +414,8 @@ export function getTesterPrompt(
   planId?: string | number,
   customInstructions?: string,
   model?: string,
-  progressGuidanceOptions?: ProgressGuidanceOptions
+  progressGuidanceOptions?: ProgressGuidanceOptions,
+  promptContext?: SubagentPromptContext
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -396,7 +440,7 @@ ${contextContent}${customInstructionsSection}
 5. Verify all tests work correctly with the implementation
 6. Take your time to ensure test coverage is complete and passing. Run testing commands even if they may take a while or use system resources.
 
-${progressGuidance}
+${progressGuidance}${buildPersistentAgentCommunicationGuidance(promptContext, 'tester')}
 ${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ## Handling Multiple Tasks:
@@ -472,7 +516,8 @@ export function getTddTestsPrompt(
   planId?: string | number,
   customInstructions?: string,
   model?: string,
-  progressGuidanceOptions?: ProgressGuidanceOptions
+  progressGuidanceOptions?: ProgressGuidanceOptions,
+  promptContext?: SubagentPromptContext
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -498,7 +543,7 @@ ${contextContent}${customInstructionsSection}
 6. Fix tests that fail for the wrong reasons (syntax errors, import issues, broken test setup)
 7. Report a summary of tests added and the behavior they define so the implementer can make them pass
 
-${progressGuidance}
+${progressGuidance}${buildPersistentAgentCommunicationGuidance(promptContext, 'tdd-tests')}
 ${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ## TDD-Specific Rules
@@ -535,7 +580,8 @@ export function getReviewerPrompt(
   includeTaskCompletionInstructions: boolean = false,
   progressGuidanceOptions?: ProgressGuidanceOptions,
   includePrReviewScopeGuidance: boolean = false,
-  suppressResponseFormat: boolean = false
+  suppressResponseFormat: boolean = false,
+  promptContext?: SubagentPromptContext
 ): AgentDefinition {
   const customInstructionsSection = customInstructions?.trim()
     ? `\n## Custom Instructions\n${customInstructions}\n`
@@ -605,7 +651,7 @@ ${contextContent}${customInstructionsSection}
 ${reviewerPrimaryResponsibilities.join('\n')}
 
 ${taskCompletionInstructions}
-${progressGuidance}
+${progressGuidance}${buildPersistentAgentCommunicationGuidance(promptContext, 'reviewer')}
 
 ## Reviewing Multiple Tasks:
 

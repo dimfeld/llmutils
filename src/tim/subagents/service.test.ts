@@ -213,6 +213,42 @@ describe('reusable subagent service', () => {
     expect(mocks.runClaudeSubprocess).not.toHaveBeenCalled();
   });
 
+  test('passes explicit persistent-agent prompt context only when supplied by the launch boundary', async () => {
+    const promptContext = { mode: 'persistent-agent' as const };
+
+    await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'codex-cli',
+      inputPolicy: resolvedInput('Persistent assignment'),
+      promptContext,
+    });
+
+    expect(mocks.getImplementerPrompt).toHaveBeenLastCalledWith(
+      'prepared context',
+      '42',
+      'role instructions\n\nPersistent assignment',
+      undefined,
+      { mode: 'report', useJj: true },
+      promptContext
+    );
+
+    await prepareSubagentExecution({
+      agentType: 'tester',
+      planId: 42,
+      executor: 'codex-cli',
+      inputPolicy: resolvedInput('Direct one-shot assignment'),
+    });
+
+    expect(mocks.getTesterPrompt).toHaveBeenLastCalledWith(
+      'prepared context',
+      '42',
+      'role instructions\n\nDirect one-shot assignment',
+      undefined,
+      { mode: 'report', useJj: true }
+    );
+  });
+
   test('uses the configured supported executor when the request omits one', async () => {
     mocks.loadEffectiveConfig.mockResolvedValue({
       defaultExecutor: 'claude-code',

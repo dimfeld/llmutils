@@ -5,6 +5,17 @@ import type { TimConfig } from '../configSchema.js';
 export type SubagentType = 'implementer' | 'tester' | 'tdd-tests';
 export type SubagentExecutor = 'codex-cli' | 'claude-code';
 
+/**
+ * Explicit prompt context for a provider-backed persistent agent.
+ *
+ * The AgentManager preparation boundary supplies this value. A missing value
+ * keeps the legacy one-shot prompt contract, including for direct
+ * `tim subagent` and formal review execution.
+ */
+export interface SubagentPromptContext {
+  readonly mode: 'persistent-agent';
+}
+
 export type SubagentInputPolicy =
   | {
       readonly type: 'resolved';
@@ -32,6 +43,8 @@ export interface SubagentPreparationRequest {
   configPath?: string;
   inputPolicy: SubagentInputPolicy;
   repositoryRoot?: string;
+  /** Optional context supplied only by the persistent-agent launch boundary. */
+  promptContext?: SubagentPromptContext;
 }
 
 /**

@@ -1112,6 +1112,7 @@ describe('AgentManager StartAgent startup and rollback', () => {
     expect(preparer.requests[0]).toMatchObject({
       identity: { id: result.id, name: request.name, type, executor },
       initialMessage: request.initialMessage,
+      promptContext: { mode: 'persistent-agent' },
     });
     expect(launch?.request).toMatchObject({
       identity: { id: result.id, name: request.name, type, executor },
@@ -2589,6 +2590,9 @@ describe('provider-neutral launch contracts and test fakes', () => {
         expect(prepared.prompt).toContain('Task 2: Prepare the second task');
         expect(prepared.prompt).toContain('This task must be in scope.');
         expect(prepared.prompt).toContain(initialMessage);
+        expect(prepared.prompt).toContain('## Team Communication');
+        expect(prepared.prompt).not.toContain('StartAgent');
+        expect(prepared.prompt).not.toContain('StopAgent');
         expect(prepared.prompt).not.toContain('Task 1: Ignore the first task');
       } finally {
         reservation.release();
@@ -2604,10 +2608,13 @@ describe('provider-neutral launch contracts and test fakes', () => {
       manager,
       reservationRequest('reviewer-prepared', 'reviewer')
     );
+    let receivedPromptContext: unknown;
     const reviewerPreparation = createAgentPreparation({
       planId: 1,
-      prepareReviewer: async (request): Promise<PreparedAgentExecution> =>
-        preparedExecutionFor(request),
+      prepareReviewer: async (request): Promise<PreparedAgentExecution> => {
+        receivedPromptContext = request.promptContext;
+        return preparedExecutionFor(request);
+      },
     });
 
     const prepared = await reviewerPreparation.prepare({
@@ -2617,6 +2624,7 @@ describe('provider-neutral launch contracts and test fakes', () => {
 
     expect(prepared.agentType).toBe('reviewer');
     expect(prepared.executor).toBe('codex-cli');
+    expect(receivedPromptContext).toEqual({ mode: 'persistent-agent' });
     reservation.release();
   });
 

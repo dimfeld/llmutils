@@ -1006,6 +1006,27 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     }
   );
 
+  test.each(['review', 'planning', 'bare'] as const)(
+    'keeps enabled %s execution free of messaging tools',
+    async (executionMode) => {
+      const harness = await setupHarness({
+        executionMode,
+        sharedOptions: { agentMessagingEnabled: true },
+      });
+
+      await harness.execute();
+
+      const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+      expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+      expect(args).not.toContain('--mcp-config');
+      expect(args.join(' ')).not.toContain('StartAgent');
+      expect(args.join(' ')).not.toContain('ListAgents');
+      expect(args.join(' ')).not.toContain('SendAgentMessage');
+      expect(args.join(' ')).not.toContain('StopAgent');
+      expect(args.join(' ')).not.toContain('FinishAgent');
+    }
+  );
+
   test('starts and stops monitor with spawned Claude PID when rules are configured', async () => {
     const monitorStop = vi.fn();
     const harness = await setupHarness({

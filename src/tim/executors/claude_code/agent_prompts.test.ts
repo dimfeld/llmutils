@@ -332,3 +332,145 @@ describe('agent_prompts failure protocol integration', () => {
     expect(def.prompt).toContain('None identified.');
   });
 });
+
+describe('persistent-agent role prompt communication guidance', () => {
+  const context = 'Context and Task...';
+  const persistentPromptContext = { mode: 'persistent-agent' as const };
+  const forbiddenRootTools = ['StartAgent', 'StopAgent'];
+  const sharedMarkers = [
+    '## Team Communication',
+    'ListAgents',
+    'SendAgentMessage',
+    'trusted sender names',
+    'shared live working directory',
+    'file ownership',
+    'questions, decisions, blockers',
+    'FinishAgent',
+    'self-only',
+  ];
+
+  it.each([
+    [
+      'implementer',
+      () =>
+        getImplementerPrompt(
+          context,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          persistentPromptContext
+        ),
+    ],
+    [
+      'tester',
+      () =>
+        getTesterPrompt(
+          context,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          persistentPromptContext
+        ),
+    ],
+    [
+      'tdd-tests',
+      () =>
+        getTddTestsPrompt(
+          context,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          persistentPromptContext
+        ),
+    ],
+    [
+      'reviewer',
+      () =>
+        getReviewerPrompt(
+          context,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          false,
+          undefined,
+          false,
+          false,
+          persistentPromptContext
+        ),
+    ],
+  ] as const)('adds communication guidance only to the persistent %s prompt', (_role, build) => {
+    const prompt = build().prompt;
+
+    for (const marker of sharedMarkers) {
+      expect(prompt).toContain(marker);
+    }
+    for (const forbiddenTool of forbiddenRootTools) {
+      expect(prompt).not.toContain(forbiddenTool);
+    }
+  });
+
+  it('adds role-specific scope and review rules', () => {
+    expect(
+      getImplementerPrompt(
+        context,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        persistentPromptContext
+      ).prompt
+    ).toContain('Edit only the implementation files');
+    expect(
+      getTesterPrompt(context, undefined, undefined, undefined, undefined, persistentPromptContext)
+        .prompt
+    ).toContain('edit tests or fixtures');
+    expect(
+      getTddTestsPrompt(
+        context,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        persistentPromptContext
+      ).prompt
+    ).toContain('expected failing tests');
+
+    const reviewer = getReviewerPrompt(
+      context,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      false,
+      undefined,
+      false,
+      false,
+      persistentPromptContext
+    ).prompt;
+    expect(reviewer).toContain('read-only, advisory reviewer');
+    expect(reviewer).toContain('separate formal `tim review` gate');
+    expect(reviewer).toContain('do not edit files or create commits');
+  });
+
+  it('keeps direct one-shot and formal reviewer prompts free of communication guidance', () => {
+    const prompts = [
+      getImplementerPrompt(context).prompt,
+      getTesterPrompt(context).prompt,
+      getTddTestsPrompt(context).prompt,
+      getReviewerPrompt(context).prompt,
+    ];
+
+    for (const prompt of prompts) {
+      expect(prompt).not.toContain('## Team Communication');
+      expect(prompt).not.toContain('ListAgents');
+      expect(prompt).not.toContain('SendAgentMessage');
+      expect(prompt).not.toContain('FinishAgent');
+      expect(prompt).not.toContain('StartAgent');
+      expect(prompt).not.toContain('StopAgent');
+    }
+  });
+});

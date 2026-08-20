@@ -27,6 +27,7 @@ import type {
   SubagentLaunchHandle,
   SubagentInputPolicy,
   SubagentPreparationRequest,
+  SubagentPromptContext,
   SubagentType,
 } from './types.js';
 import type { PlanSchema } from '../planSchema.js';
@@ -41,7 +42,8 @@ type SubagentPromptBuilder = (
   planId: string,
   customInstructions: string | undefined,
   model: string | undefined,
-  progressGuidanceOptions: { mode: 'report'; useJj: boolean }
+  progressGuidanceOptions: { mode: 'report'; useJj: boolean },
+  promptContext?: SubagentPromptContext
 ) => { name: string; prompt: string };
 
 interface SubagentRoleDefinition {
@@ -192,13 +194,23 @@ export async function prepareSubagentExecution(
     planFilePath,
     branch: planData.branch,
   });
-  const agentDefinition = roleDefinition.promptBuilder(
-    contextContent,
-    planIdLabel,
-    allInstructions || undefined,
-    selectedModel,
-    { mode: 'report', useJj }
-  );
+  const agentDefinition =
+    request.promptContext === undefined
+      ? roleDefinition.promptBuilder(
+          contextContent,
+          planIdLabel,
+          allInstructions || undefined,
+          selectedModel,
+          { mode: 'report', useJj }
+        )
+      : roleDefinition.promptBuilder(
+          contextContent,
+          planIdLabel,
+          allInstructions || undefined,
+          selectedModel,
+          { mode: 'report', useJj },
+          request.promptContext
+        );
 
   return {
     agentType: request.agentType,

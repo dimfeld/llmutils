@@ -304,6 +304,7 @@ export class AgentManager {
         this.options.agentPreparer.prepare({
           identity: reservation.identity,
           initialMessage: validated.initialMessage,
+          promptContext: { mode: 'persistent-agent' },
         })
       );
       operation.ensureActive();

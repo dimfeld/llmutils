@@ -700,6 +700,22 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(sharedOptions).toMatchObject({ agentMessagingEnabled: false });
   });
 
+  test('takes a fresh messaging snapshot for each new tim agent session', async () => {
+    const { timAgent } = await import('./agent.js');
+
+    await timAgent(123, { log: false } as any, {});
+    (defaultConfig as any).experimental = { agentMessaging: true };
+    await timAgent(123, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(2);
+    expect(buildExecutorAndLogSpy.mock.calls[0]?.[1]).toMatchObject({
+      agentMessagingEnabled: false,
+    });
+    expect(buildExecutorAndLogSpy.mock.calls[1]?.[1]).toMatchObject({
+      agentMessagingEnabled: true,
+    });
+  });
+
   test('passes review executor override through to executor builder', async () => {
     const { timAgent } = await import('./agent.js');
     await timAgent(123, { log: false, reviewExecutor: 'claude-code' } as any, {});

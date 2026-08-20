@@ -10,5 +10,6 @@ export type {
   SubagentInputPolicy,
   SubagentLaunchHandle,
   SubagentPreparationRequest,
+  SubagentPromptContext,
   SubagentType,
 } from './types.js';

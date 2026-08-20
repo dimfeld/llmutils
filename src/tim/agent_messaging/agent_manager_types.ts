@@ -1,5 +1,5 @@
 import type { AgentExecutor, AgentLifecycleState, AgentType } from './contracts.js';
-import type { PreparedSubagentExecution } from '../subagents/types.js';
+import type { PreparedSubagentExecution, SubagentPromptContext } from '../subagents/types.js';
 import type { AgentId, AgentName } from './agent_names.js';
 import type { AgentProcessLabel } from './agent_process_labels.js';
 
@@ -220,6 +220,8 @@ export interface AgentLaunchRequest {
 export interface AgentPreparationRequest {
   readonly identity: SubagentIdentity;
   readonly initialMessage: string;
+  /** Explicit context for prompts prepared for this persistent agent launch. */
+  readonly promptContext?: SubagentPromptContext;
 }
 
 /**
