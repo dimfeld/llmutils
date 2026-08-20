@@ -1291,16 +1291,11 @@ export function buildPlanlessReviewPrompt(
     ``,
   ].join('\n');
 
-  const reviewerPromptWithContext = getReviewerPrompt(
-    contextContent,
-    getPlanlessTargetId(target),
+  const reviewerPromptWithContext = getReviewerPrompt(contextContent, {
+    planId: getPlanlessTargetId(target),
     customInstructions,
-    undefined,
     useSubagents,
-    false,
-    undefined,
-    false
-  );
+  });
 
   return reviewerPromptWithContext.prompt;
 }
@@ -4105,16 +4100,11 @@ export function buildReviewPrompt(
   ].join('\n');
 
   // Use the reviewer agent template with our context and custom instructions
-  const reviewerPromptWithContext = getReviewerPrompt(
-    contextContent,
-    planData.id,
+  const reviewerPromptWithContext = getReviewerPrompt(contextContent, {
+    planId: planData.id,
     customInstructions,
-    undefined,
     useSubagents,
-    false,
-    undefined,
-    false
-  );
+  });
 
   return reviewerPromptWithContext.prompt;
 }

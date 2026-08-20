@@ -601,58 +601,13 @@ export interface ReviewerPromptOptions {
   readonly includeTaskCompletionInstructions?: boolean;
   readonly progressGuidanceOptions?: ProgressGuidanceOptions;
   readonly includePrReviewScopeGuidance?: boolean;
-  /** Used by structured one-shot review output, never by advisory reviewers. */
-  readonly suppressResponseFormat?: boolean;
   readonly promptContext?: SubagentPromptContext;
 }
 
-/**
- * Build a reviewer prompt from named options. The legacy overload remains for
- * callers that import this prompt helper directly; new call sites should use
- * the named form so prompt-context behavior stays explicit.
- */
 export function getReviewerPrompt(
   contextContent: string,
-  options?: ReviewerPromptOptions
-): AgentDefinition;
-export function getReviewerPrompt(
-  contextContent: string,
-  planId?: string | number,
-  customInstructions?: string,
-  model?: string,
-  useSubagents?: boolean,
-  includeTaskCompletionInstructions?: boolean,
-  progressGuidanceOptions?: ProgressGuidanceOptions,
-  includePrReviewScopeGuidance?: boolean,
-  suppressResponseFormat?: boolean,
-  promptContext?: SubagentPromptContext
-): AgentDefinition;
-export function getReviewerPrompt(
-  contextContent: string,
-  optionsOrPlanId: ReviewerPromptOptions | string | number | undefined,
-  legacyCustomInstructions?: string,
-  legacyModel?: string,
-  legacyUseSubagents: boolean = false,
-  legacyIncludeTaskCompletionInstructions: boolean = false,
-  legacyProgressGuidanceOptions?: ProgressGuidanceOptions,
-  legacyIncludePrReviewScopeGuidance: boolean = false,
-  legacySuppressResponseFormat: boolean = false,
-  legacyPromptContext?: SubagentPromptContext
+  options: ReviewerPromptOptions = {}
 ): AgentDefinition {
-  const options: ReviewerPromptOptions =
-    optionsOrPlanId !== undefined && typeof optionsOrPlanId === 'object'
-      ? optionsOrPlanId
-      : {
-          planId: optionsOrPlanId,
-          customInstructions: legacyCustomInstructions,
-          model: legacyModel,
-          useSubagents: legacyUseSubagents,
-          includeTaskCompletionInstructions: legacyIncludeTaskCompletionInstructions,
-          progressGuidanceOptions: legacyProgressGuidanceOptions,
-          includePrReviewScopeGuidance: legacyIncludePrReviewScopeGuidance,
-          suppressResponseFormat: legacySuppressResponseFormat,
-          promptContext: legacyPromptContext,
-        };
   const {
     planId,
     customInstructions,
@@ -661,7 +616,6 @@ export function getReviewerPrompt(
     includeTaskCompletionInstructions = false,
     progressGuidanceOptions,
     includePrReviewScopeGuidance = false,
-    suppressResponseFormat = false,
     promptContext,
   } = options;
   const customInstructionsSection = customInstructions?.trim()
@@ -701,10 +655,9 @@ Do this for each task that was successfully implemented and reviewed before prov
   const prReviewScopeGuidance = includePrReviewScopeGuidance
     ? `\n${buildPrReviewScopeGuidance()}\n`
     : '';
-  const responseFormatGuidance =
-    suppressResponseFormat || advisoryReviewer
-      ? ''
-      : `
+  const responseFormatGuidance = advisoryReviewer
+    ? ''
+    : `
 ## Response Format:
 
 Place three dashes after each issue to make it easier to parse out which issues are listed.
@@ -716,10 +669,7 @@ ${issueAndVerdictFormat}
 ### If a clear verdict is impossible due to conflicting or irreconcilable requirements
 Stop and follow the failure protocol instead of providing a verdict.
 `;
-  const failureProtocolGuidance =
-    suppressResponseFormat && !advisoryReviewer
-      ? ''
-      : `
+  const failureProtocolGuidance = `
 ${FAILED_PROTOCOL_INSTRUCTIONS}
 `;
   return {

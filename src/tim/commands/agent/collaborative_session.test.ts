@@ -4,10 +4,10 @@ import type {
   AgentLaunchRequest,
   AgentProviderExitClassification,
   AgentProviderLifecycleObserver,
-} from './agent_manager_types.js';
-import type { PreparedSubagentExecution } from '../subagents/types.js';
-import type { SubagentPreparationRequest } from '../subagents/types.js';
-import type { ClaudePermissionPromptCoordinator } from '../executors/claude_code/claude_mcp_protocol.js';
+} from '../../agent_messaging/agent_manager_types.js';
+import type { PreparedSubagentExecution } from '../../subagents/types.js';
+import type { SubagentPreparationRequest } from '../../subagents/types.js';
+import type { ClaudePermissionPromptCoordinator } from '../../executors/claude_code/claude_mcp_protocol.js';
 
 const mocks = vi.hoisted(() => ({
   prepareSubagentExecution: vi.fn(),
@@ -17,18 +17,20 @@ const mocks = vi.hoisted(() => ({
   throwDuringSessionCreate: false,
 }));
 
-vi.mock('../subagents/service.js', () => ({
+vi.mock('../../subagents/service.js', () => ({
   prepareSubagentExecution: mocks.prepareSubagentExecution,
 }));
 
-vi.mock('../executors/claude_code/run_claude_subprocess.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../executors/claude_code/run_claude_subprocess.js')>()),
+vi.mock('../../executors/claude_code/run_claude_subprocess.js', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../executors/claude_code/run_claude_subprocess.js')
+  >()),
   runClaudeSubprocess: mocks.runClaudeSubprocess,
 }));
 
-vi.mock('../executors/claude_code/claude_mcp_protocol.js', async (importOriginal) => {
+vi.mock('../../executors/claude_code/claude_mcp_protocol.js', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../executors/claude_code/claude_mcp_protocol.js')>();
+    await importOriginal<typeof import('../../executors/claude_code/claude_mcp_protocol.js')>();
   return {
     ...actual,
     createClaudeAgentToolDispatcher: vi.fn(
@@ -42,16 +44,18 @@ vi.mock('../executors/claude_code/claude_mcp_protocol.js', async (importOriginal
   };
 });
 
-vi.mock('../executors/claude_code/claude_permission_prompt_coordinator.js', () => ({
+vi.mock('../../executors/claude_code/claude_permission_prompt_coordinator.js', () => ({
   createClaudePermissionPromptCoordinator: mocks.createClaudePermissionPromptCoordinator,
 }));
 
-vi.mock('../executors/codex_cli/persistent_codex_session.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../executors/codex_cli/persistent_codex_session.js')>()),
+vi.mock('../../executors/codex_cli/persistent_codex_session.js', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../executors/codex_cli/persistent_codex_session.js')
+  >()),
   startPersistentCodexAgent: mocks.startPersistentCodexAgent,
 }));
 
-const { CollaborativeAgentSession } = await import('../commands/agent/collaborative_session.js');
+const { CollaborativeAgentSession } = await import('./collaborative_session.js');
 
 function createProviderHandle(
   executor: 'claude-code' | 'codex-cli',

@@ -2973,16 +2973,11 @@ index 1234567..abcdefg 100644
     buildReviewPrompt(planData, diffResult, false, true, [], []);
 
     expect(reviewerSpy).toHaveBeenCalledTimes(1);
-    expect(reviewerSpy).toHaveBeenCalledWith(
-      expect.any(String),
-      planData.id,
-      undefined,
-      undefined,
-      true,
-      false,
-      undefined,
-      false
-    );
+    expect(reviewerSpy).toHaveBeenCalledWith(expect.any(String), {
+      customInstructions: undefined,
+      planId: planData.id,
+      useSubagents: true,
+    });
   });
 
   test('handles plan without tasks', async () => {

@@ -39,7 +39,7 @@ handler cannot be supplied as separate options.
 The provider is not installed unless the caller supplies it. This keeps formal
 reviews, planning, chat, and bare execution unchanged. When
 `experimental.agentMessaging` is `true` for a new root `tim agent` session,
-`CollaborativeAgentSession` (`src/tim/agent_messaging/collaborative_session.ts`)
+`CollaborativeAgentSession` (`src/tim/commands/agent/collaborative_session.ts`)
 builds one `codexDynamicToolProvider` for the session and passes it through
 `ExecutorCommonOptions.codexDynamicToolProvider`. The Codex root orchestrator
 (`orchestrator_mode.ts`) installs it for the root process, and the same session

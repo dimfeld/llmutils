@@ -231,16 +231,7 @@ describe('agent_prompts failure protocol integration', () => {
   });
 
   it('can include PR review scope guidance in reviewer prompt when requested', () => {
-    const def = getReviewerPrompt(
-      context,
-      undefined,
-      undefined,
-      undefined,
-      false,
-      false,
-      undefined,
-      true
-    );
+    const def = getReviewerPrompt(context, { includePrReviewScopeGuidance: true });
     expect(def.prompt).toContain('For PR reviews, also check for outdated documentation');
     expect(def.prompt).toContain('Do not run tests, type checking, linting, formatting');
   });
@@ -279,31 +270,13 @@ describe('agent_prompts failure protocol integration', () => {
   });
 
   it('adds subagent directive to reviewer prompt when enabled', () => {
-    const def = getReviewerPrompt(context, undefined, undefined, undefined, true);
+    const def = getReviewerPrompt(context, { useSubagents: true });
     expect(def.prompt).toContain('Use the available sub-agents');
   });
 
   it('omits subagent directive from reviewer prompt when disabled', () => {
     const def = getReviewerPrompt(context);
     expect(def.prompt).not.toContain('Use the available sub-agents');
-  });
-
-  it('can suppress response format guidance for schema-backed review output', () => {
-    const def = getReviewerPrompt(
-      context,
-      undefined,
-      undefined,
-      undefined,
-      false,
-      false,
-      undefined,
-      false,
-      true
-    );
-    expect(def.prompt).not.toContain('## Response Format');
-    expect(def.prompt).not.toContain('Found Issues:');
-    expect(def.prompt).not.toContain('**VERDICT:**');
-    expect(def.prompt).toContain('## Critical Issues to Flag');
   });
 
   it('directs PR descriptions to copy manual testing runbooks from plan context', () => {
@@ -386,22 +359,7 @@ describe('persistent-agent role prompt communication guidance', () => {
           persistentPromptContext
         ),
     ],
-    [
-      'reviewer',
-      () =>
-        getReviewerPrompt(
-          context,
-          undefined,
-          undefined,
-          undefined,
-          false,
-          false,
-          undefined,
-          false,
-          false,
-          persistentPromptContext
-        ),
-    ],
+    ['reviewer', () => getReviewerPrompt(context, { promptContext: persistentPromptContext })],
   ] as const)('adds communication guidance only to the persistent %s prompt', (_role, build) => {
     const prompt = build().prompt;
 
@@ -439,18 +397,7 @@ describe('persistent-agent role prompt communication guidance', () => {
       ).prompt
     ).toContain('expected failing tests');
 
-    const reviewer = getReviewerPrompt(
-      context,
-      undefined,
-      undefined,
-      undefined,
-      false,
-      false,
-      undefined,
-      false,
-      false,
-      persistentPromptContext
-    ).prompt;
+    const reviewer = getReviewerPrompt(context, { promptContext: persistentPromptContext }).prompt;
     expect(reviewer).toContain('read-only, advisory reviewer');
     expect(reviewer).toContain('separate formal `tim review` gate');
     expect(reviewer).toContain('do not edit files or create commits');
