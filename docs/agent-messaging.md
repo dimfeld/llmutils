@@ -216,11 +216,12 @@ When the flag is absent or `false`:
 
 ### Non-orchestration entry points
 
-Formal `tim review`, planning, proof, chat, direct `tim subagent`, `tim run`,
-and bare executor modes never receive messaging tools or persistent-agent
-behavior, regardless of the flag value. They receive no `agentToolContext` and
-therefore the Claude bridge installs no agent tools, and the Codex runner
-installs no dynamic-tool provider.
+Formal `tim review`, planning, proof, chat, direct `tim subagent`, and bare
+executor modes never receive messaging tools or persistent-agent behavior,
+regardless of the flag value. They receive no `agentToolContext` and therefore
+the Claude bridge installs no agent tools, and the Codex runner installs no
+dynamic-tool provider. `tim run` is an alias of `tim agent`, so it uses the
+same flag-controlled orchestration behavior.
 
 ---
 
