@@ -410,6 +410,7 @@ describe('shared permission prompt coordination over real MCP sockets', () => {
         tool_name: 'Read',
         input: {},
       });
+      void firstResponse.catch(() => undefined);
       await promptShown;
 
       const secondResponse = secondClient.send({
@@ -418,10 +419,11 @@ describe('shared permission prompt coordination over real MCP sockets', () => {
         tool_name: 'Read',
         input: {},
       });
+      void secondResponse.catch(() => undefined);
 
-      await coordinator.dispose();
-      await firstSetup.cleanup();
       await secondSetup.cleanup();
+      await firstSetup.cleanup();
+      await coordinator.dispose();
 
       await expect(firstResponse).rejects.toThrow();
       await expect(secondResponse).rejects.toThrow();

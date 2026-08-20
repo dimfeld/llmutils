@@ -483,6 +483,103 @@ describe('timAgent lifecycle integration', () => {
     );
   });
 
+  test('disposes the enabled coordinator when executor construction fails', async () => {
+    effectiveConfig = {
+      ...effectiveConfig,
+      experimental: { agentMessaging: true },
+    };
+    const startupError = new Error('executor construction failed');
+    buildExecutorAndLogSpy.mockImplementationOnce(() => {
+      throw startupError;
+    });
+
+    const { timAgent } = await import('./agent.js');
+
+    await expect(timAgent(1, { log: false, summary: false }, {})).rejects.toBe(startupError);
+    expect(createClaudePermissionPromptCoordinatorSpy).toHaveBeenCalledTimes(1);
+    expect(claudePermissionCoordinatorDisposeSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('preserves an execution failure when coordinator disposal also fails', async () => {
+    effectiveConfig = {
+      ...effectiveConfig,
+      experimental: { agentMessaging: true },
+    };
+    const executionError = new Error('executor execution failed');
+    const disposalError = new Error('coordinator disposal failed');
+    const executionEvents: string[] = [];
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      };
+    };
+    buildExecutorAndLogSpy.mockImplementationOnce(() => ({
+      execute: vi.fn(async () => {
+        executionEvents.push('executor-started');
+        throw executionError;
+      }),
+      filePathPrefix: '',
+    }));
+    claudePermissionCoordinatorDisposeSpy.mockRejectedValueOnce(disposalError);
+
+    const { timAgent } = await import('./agent.js');
+
+    await expect(
+      timAgent(1, { log: false, summary: false, serialTasks: true }, {})
+    ).rejects.toThrow('Agent stopped due to error.');
+    expect(executionEvents).toEqual(['executor-started']);
+    expect(claudePermissionCoordinatorDisposeSpy).toHaveBeenCalledTimes(1);
+    expect(sendNotificationSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ errorMessage: executionError.message })
+    );
+  });
+
+  test('reports a coordinator cleanup failure after successful execution', async () => {
+    effectiveConfig = {
+      ...effectiveConfig,
+      experimental: { agentMessaging: true },
+    };
+    const disposalError = new Error('coordinator disposal failed');
+    const executionEvents: string[] = [];
+    let itemReturned = false;
+    findNextActionableItemImpl = () => {
+      if (itemReturned) return null;
+      itemReturned = true;
+      return {
+        type: 'step',
+        taskIndex: 0,
+        stepIndex: 0,
+        task: { title: 'Task 1', description: 'Do the work', steps: [{ prompt: 'implement' }] },
+      };
+    };
+    buildExecutorAndLogSpy.mockImplementationOnce(() => ({
+      execute: vi.fn(async () => {
+        executionEvents.push('executor-complete');
+        return { success: true };
+      }),
+      filePathPrefix: '',
+    }));
+    claudePermissionCoordinatorDisposeSpy.mockImplementationOnce(async () => {
+      executionEvents.push('coordinator-dispose');
+      throw disposalError;
+    });
+
+    const { timAgent } = await import('./agent.js');
+
+    await expect(
+      timAgent(1, { log: false, summary: false, serialTasks: true, finalReview: false }, {})
+    ).rejects.toBe(disposalError);
+    expect(executionEvents).toEqual(['executor-complete', 'coordinator-dispose']);
+    expect(claudePermissionCoordinatorDisposeSpy).toHaveBeenCalledTimes(1);
+  });
+
   test('passes selected workspace and plan environment context to lifecycle commands', async () => {
     const markerFile = path.join(tempDir, 'lifecycle-env-marker.txt');
     getWorkspaceInfoByPathSpy.mockReturnValue({

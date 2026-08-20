@@ -757,6 +757,24 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     expect(args[allowedToolsIndex + 1]).toContain('mcp__tim__StopAgent');
   });
 
+  test('passes the root-owned permission coordinator to the Claude MCP bridge', async () => {
+    const coordinator = {
+      enqueue: vi.fn(),
+      cancelRequester: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const harness = await setupHarness({
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      sharedOptions: { claudePermissionPromptCoordinator: coordinator },
+    });
+
+    await harness.execute();
+
+    expect(harness.setupPermissionsMcpMock).toHaveBeenCalledWith(
+      expect.objectContaining({ permissionPromptCoordinator: coordinator })
+    );
+  });
+
   test('keeps trusted agent tools in allow-all mode without approval prompting', async () => {
     const context = {
       caller: { id: 'orchestrator-id', name: 'orchestrator', role: 'orchestrator' },
