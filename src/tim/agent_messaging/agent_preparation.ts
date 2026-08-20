@@ -30,12 +30,11 @@ export type CollaborativeReviewerPreparation = (
 export function createAgentPreparation(options: AgentPreparationOptions): AgentPreparation {
   return {
     prepare: async (request: AgentPreparationRequest): Promise<PreparedAgentExecution> => {
-      const promptContext = request.promptContext ?? { mode: 'persistent-agent' as const };
       if (request.identity.type === 'reviewer') {
         if (options.prepareReviewer === undefined) {
           throw new Error('Collaborative reviewer preparation is not configured');
         }
-        return options.prepareReviewer({ ...request, promptContext });
+        return options.prepareReviewer(request);
       }
 
       const preparationRequest: SubagentPreparationRequest = {
@@ -50,7 +49,7 @@ export function createAgentPreparation(options: AgentPreparationOptions): AgentP
           type: 'resolved',
           initialMessage: request.initialMessage,
         },
-        promptContext,
+        promptContext: request.promptContext,
       };
       return prepareSubagentExecution(preparationRequest);
     },

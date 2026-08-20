@@ -541,10 +541,12 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
     tunnelActive?: boolean;
     claudeOptions?: Record<string, unknown>;
     sharedOptions?: Record<string, unknown>;
-    executionMode?: 'normal' | 'review' | 'planning' | 'bare';
+    executionMode?: 'normal' | 'simple' | 'tdd' | 'review' | 'planning' | 'bare';
     setupThrows?: Error;
     cleanupEvents?: string[];
     inputCleanupError?: Error;
+    planId?: string;
+    planFilePath?: string;
   }) {
     const streaming = options?.streaming ?? createStreamingProcessMock({ pid: 24680 });
     const spawnWithStreamingIOMock = vi.fn(async (_args: string[], spawnOptions: any) => {
@@ -659,9 +661,9 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
 
     const execute = () =>
       executor.execute('CTX', {
-        planId: '',
+        planId: options?.planId ?? '',
         planTitle: 'T',
-        planFilePath: '',
+        planFilePath: options?.planFilePath ?? '',
         executionMode: options?.executionMode ?? 'normal',
       });
 
@@ -1024,6 +1026,50 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
       expect(args.join(' ')).not.toContain('SendAgentMessage');
       expect(args.join(' ')).not.toContain('StopAgent');
       expect(args.join(' ')).not.toContain('FinishAgent');
+    }
+  );
+
+  test.each([
+    ['normal', true],
+    ['simple', true],
+    ['tdd', true],
+    ['normal', false],
+    ['simple', false],
+    ['tdd', false],
+    ['normal', undefined],
+    ['simple', undefined],
+    ['tdd', undefined],
+  ] as const)(
+    'uses the real %s orchestration prompt for agentMessagingEnabled=%s',
+    async (executionMode, agentMessagingEnabled) => {
+      vi.doUnmock('./shared/orchestrator_prompt.ts');
+      const harness = await setupHarness({
+        executionMode,
+        planId: '421',
+        planFilePath: `${tempDir}/421.plan.md`,
+        sharedOptions: { agentMessagingEnabled, subagentExecutor: 'dynamic' },
+      });
+
+      await harness.execute();
+
+      const prompt = harness.executeWithTerminalInputMock.mock.calls[0]?.[0]?.prompt as string;
+      expect(prompt).toEqual(expect.any(String));
+      if (agentMessagingEnabled === true) {
+        expect(prompt).toContain('StartAgent');
+        expect(prompt).toContain('ListAgents');
+        expect(prompt).toContain('SendAgentMessage');
+        expect(prompt).toContain('StopAgent');
+        expect(prompt).toContain('FinishAgent is self-only');
+        expect(prompt).toContain('tim review 421 --print --output-file <output_path>');
+        expect(prompt).not.toMatch(/tim subagent (implementer|tester|tdd-tests|reviewer)/);
+      } else {
+        expect(prompt).toContain('tim subagent');
+        expect(prompt).not.toContain('StartAgent');
+        expect(prompt).not.toContain('ListAgents');
+        expect(prompt).not.toContain('SendAgentMessage');
+        expect(prompt).not.toContain('StopAgent');
+        expect(prompt).not.toContain('FinishAgent');
+      }
     }
   );
 

@@ -2575,6 +2575,7 @@ describe('provider-neutral launch contracts and test fakes', () => {
         const prepared = await preparation.prepare({
           identity: reservation.identity,
           initialMessage,
+          promptContext: { mode: 'persistent-agent' },
         });
 
         expect(prepared).toMatchObject({
@@ -2594,6 +2595,18 @@ describe('provider-neutral launch contracts and test fakes', () => {
         expect(prepared.prompt).not.toContain('StartAgent');
         expect(prepared.prompt).not.toContain('StopAgent');
         expect(prepared.prompt).not.toContain('Task 1: Ignore the first task');
+
+        const oneShotPrepared = await preparation.prepare({
+          identity: reservation.identity,
+          initialMessage: 'Prepare the legacy one-shot prompt.',
+        });
+
+        expect(oneShotPrepared.prompt).not.toContain('## Team Communication');
+        expect(oneShotPrepared.prompt).not.toContain('ListAgents');
+        expect(oneShotPrepared.prompt).not.toContain('SendAgentMessage');
+        expect(oneShotPrepared.prompt).not.toContain('FinishAgent');
+        expect(oneShotPrepared.prompt).not.toContain('StartAgent');
+        expect(oneShotPrepared.prompt).not.toContain('StopAgent');
       } finally {
         reservation.release();
       }
@@ -2620,11 +2633,18 @@ describe('provider-neutral launch contracts and test fakes', () => {
     const prepared = await reviewerPreparation.prepare({
       identity: reservation.identity,
       initialMessage: 'Review without mutating the workspace.',
+      promptContext: { mode: 'persistent-agent' },
     });
 
     expect(prepared.agentType).toBe('reviewer');
     expect(prepared.executor).toBe('codex-cli');
     expect(receivedPromptContext).toEqual({ mode: 'persistent-agent' });
+
+    await reviewerPreparation.prepare({
+      identity: reservation.identity,
+      initialMessage: 'Review the current changes as a one-shot caller.',
+    });
+    expect(receivedPromptContext).toBeUndefined();
     reservation.release();
   });
 
