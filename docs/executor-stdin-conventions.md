@@ -137,7 +137,7 @@ The handler also clears tunnel and headless user input handlers, rejects pending
 
 ### Codex App-Server Headless End Session
 
-Codex app-server sessions do not use stdin closure or subprocess `SIGTERM` as their graceful end path. In app-server mode, the `HeadlessAdapter` `end_session` handler closes the local input queue and sends `turn/interrupt` for the active Codex turn when a turn id is known. If `end_session` arrives while `turn/start` is still pending, the runner sends `turn/interrupt` as soon as the turn id is returned.
+Legacy Codex app-server sessions do not use stdin closure or subprocess `SIGTERM` as their graceful end path. In those modes, the `HeadlessAdapter` `end_session` handler closes the local input queue and sends `turn/interrupt` for the active Codex turn when a turn id is known. If `end_session` arrives while `turn/start` is still pending, the runner sends `turn/interrupt` as soon as the turn id is returned. Persistent AgentManager sessions use their provider-neutral lifecycle controls instead.
 
 The normal and force web UI end-session actions both use this app-server path for Codex so the Codex side can shut down the turn cleanly instead of relying on subprocess stdin or signals.
 

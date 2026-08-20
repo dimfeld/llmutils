@@ -143,10 +143,10 @@ expanded into the display summary. Unknown status and future content shapes use
 stable fallback text.
 
 Persistent Codex agent turns, idle mailbox delivery, stop/finalization lifetime,
-and other provider lifetime changes remain in Plan 420. Prompt activation and
-collaborative orchestration remain later work. Until a later integration supplies
-a trusted provider, no Codex agent tools appear and the existing one-turn
-behavior remains in force.
+and other provider lifetime changes are provided by the AgentManager Codex
+launcher described below. Prompt activation and collaborative orchestration
+remain later work. Ordinary one-shot Codex execution still has no agent tools
+and keeps its existing lifetime.
 
 ## Persistent Codex agent sessions
 
