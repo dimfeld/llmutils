@@ -249,15 +249,21 @@ again.
 `--since` cannot be combined with `--structural-only`, so the structural pass
 always runs at full scope.
 
-## Review-fix subagent scope
+## Review-fix delegation scope
 
-When delegating a review fix, the orchestrator passes repeatable or
-comma-separated `--task-index` values to the implementer, tester, or `tdd-tests`
-subagent for exactly the tasks that own the findings. The indexes are
-plan-absolute and 1-based, numbered over every plan task including completed
-ones — the same numbering the reviewer's `--task-index` uses. The findings being
-fixed are passed through `--input` or `--input-file`, and the subagent must not
-touch code outside those findings.
+Formal review invocation context and fix-agent delegation scope are separate
+responsibilities. The one-shot formal reviewer keeps its supported
+`--task-index`, `--since`, `--input`, `--input-file`, and `--structural-only`
+options in both orchestration modes. The mode changes how an accepted finding
+is assigned to an implementer, tester, or `tdd-tests` agent.
+
+When `experimental.agentMessaging` is absent or `false`, the orchestrator uses
+the legacy subagent path. It passes repeatable or comma-separated
+`--task-index` values to the fix subagent for exactly the tasks that own the
+findings. The indexes are plan-absolute and 1-based, numbered over every plan
+task including completed ones — the same numbering the reviewer's
+`--task-index` uses. The findings being fixed are passed through `--input` or
+`--input-file`, and the subagent must not touch code outside those findings.
 
 The subagent flag differs from the reviewer's in one way: it accepts only tasks
 that are still incomplete, and fails on an index that names a completed task.
@@ -265,10 +271,29 @@ That check catches an orchestrator pointing a fix round at settled work. When a
 finding genuinely belongs to a task that is already done — which happens in the
 final full-plan sequence, after earlier iterations have completed their tasks —
 the orchestrator omits `--task-index` and states the scope of the fix in
-`--input` instead.
+`--input` instead. Only fix rounds are scoped. The first implementation,
+TDD-test, and testing run of a batch passes no `--task-index`.
 
-Only fix rounds are scoped. The first implementation, TDD-test, and testing run
-of a batch passes no `--task-index`.
+When `experimental.agentMessaging` is `true`, the orchestrator assigns the fix
+through `StartAgent` or `SendAgentMessage`, not through subagent CLI flags. Each
+assignment must include all of the following in its initial or follow-up
+message:
+
+- the owning task;
+- the exact files in scope;
+- the accepted findings being fixed;
+- constraints and non-goals; and
+- the verification steps and expected evidence.
+
+After `StartAgent` returns, use its canonical name for later messages. If the
+agent was already started, obtain the canonical name from `ListAgents`. Keep
+the fix within the stated scope and do not put `--task-index`, `--input`, or
+`--input-file` in the agent-delegation message as a substitute for this
+assignment context. If the owning task is already complete, describe the
+completed-task finding and its exact file scope in the message; do not change
+task state just to assign the fix. The first implementation, TDD-test, and
+testing assignments use their normal task and file scope and are not review-fix
+assignments.
 
 ### Where the index resolution lives
 
@@ -321,12 +346,18 @@ Naming: "consolidation proposal" is the cascade root-cause output; "structural
 pass" refers only to the standalone `--structural-only` reviewer invocation. The
 two are unrelated, and the batch guidance says so explicitly.
 
-## Review command spelling
+## Review command and delegation modes
 
 When `experimental.agentMessaging` is `true`, the orchestrator prompt renders
 `tim review` for ordinary, full-plan, and structural review commands. When the
 flag is absent or `false`, prompts use the equivalent `tim subagent reviewer`
 alias. Both commands share the same handler, options, and review policy.
+
+The flag also selects the review-fix delegation mechanism: disabled prompts use
+the `tim subagent` flags described above, while enabled prompts use scoped
+`StartAgent` or `SendAgentMessage` assignments. This delegation difference is
+separate from the formal review command and does not remove any supported
+formal-review input or scope option.
 
 The review policy itself — severity rubric, severity gate, scope tiers,
 fix-verification scoping, closing full-scope review, four-review bound,

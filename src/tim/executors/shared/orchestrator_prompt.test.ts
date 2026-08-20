@@ -707,7 +707,9 @@ describe('orchestrator_prompt review iteration policy (plan 394 task 8)', () => 
         'run `tim subagent reviewer 123 --print --output-file <output_path>` with `--since <that commit>`'
       );
       expect(out).toContain('plus the same `--task-index` scope');
-      expect(out).toContain('enumerate in `--input` the specific findings being re-checked');
+      expect(out).toContain(
+        'enumerate in `--input` (or provide through `--input-file <paths...>`) the specific findings being re-checked'
+      );
     });
 
     it('scopes subagent review fixes without changing initial implementation runs', () => {
@@ -836,7 +838,7 @@ describe('orchestrator_prompt review iteration policy (plan 394 task 8)', () => 
       // The batch branch renders the shared fix-verification helper; assert its full
       // contribution so the helper cannot regress silently on this path.
       expect(out).toContain(
-        'record the current commit hash with `git rev-parse HEAD` (or `jj log --no-graph -r @- -T commit_id` in a Jujutsu workspace) and then run `tim subagent reviewer 123 --print --output-file <output_path>` with `--since <that commit>` and the same full-plan scope (no `--task-index`), and enumerate in `--input` the specific findings being re-checked.'
+        'record the current commit hash with `git rev-parse HEAD` (or `jj log --no-graph -r @- -T commit_id` in a Jujutsu workspace) and then run `tim subagent reviewer 123 --print --output-file <output_path>` with `--since <that commit>` and the same full-plan scope (no `--task-index`), and enumerate in `--input` (or provide through `--input-file <paths...>`) the specific findings being re-checked.'
       );
     });
 

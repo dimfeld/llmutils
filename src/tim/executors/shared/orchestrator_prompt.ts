@@ -217,9 +217,11 @@ function buildCollaborativeFormalReviewPhase(
   extraGuidance: string = ''
 ): string {
   const reviewCommand = buildCollaborativeReviewCommand(planId, options);
+  const formalReviewerInputGuidance =
+    '   - Pass relevant implementation and test notes to the formal reviewer with `--input <text>` or `--input-file <paths...>`.\n';
   return `${phaseNumber}. **Formal Review Phase**
    - Run \`${reviewCommand}\` as a separate one-shot formal gate with the shell command tool.
-${extraGuidance}${buildFormalReviewScopeGuidance(planId)}
+${formalReviewerInputGuidance}${extraGuidance}${buildFormalReviewScopeGuidance(planId)}
    - Do not replace this formal review with a StartAgent reviewer. The formal process has fresh context and no collaborative tools.
    - Apply the Review Iteration Policy for full scope, diff-scoped \`--since\` verification, closing full scope, severity, and bounded review handling.`;
 }
@@ -241,12 +243,7 @@ function buildCollaborativeWorkflowInstructions(
     : '';
   const reviewPhase = options.batchMode
     ? buildOrchestratorBatchReviewPhase(planId, options, reviewPhaseNumber)
-    : buildCollaborativeFormalReviewPhase(
-        planId,
-        options,
-        reviewPhaseNumber,
-        "   - Pass relevant implementation and test notes through the review command's supported input and scope options.\n"
-      );
+    : buildCollaborativeFormalReviewPhase(planId, options, reviewPhaseNumber);
 
   return `## Workflow Instructions
 

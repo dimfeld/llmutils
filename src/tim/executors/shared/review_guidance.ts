@@ -66,17 +66,14 @@ const REVIEW_COMMIT_HASH_CAPTURE_GUIDANCE: string =
  */
 function buildReviewFixVerificationInvocation(
   reviewCommand: string,
-  scope: ReviewFixVerificationScope,
-  options: OrchestrationOptions
+  scope: ReviewFixVerificationScope
 ): string {
   const scopeGuidance: string =
     scope === 'full-plan'
       ? 'and the same full-plan scope (no `--task-index`)'
       : 'plus the same `--task-index` scope';
   const findingContextGuidance: string =
-    options.agentMessagingEnabled === true
-      ? 'and include the specific findings being re-checked in the review command context'
-      : 'and enumerate in `--input` the specific findings being re-checked';
+    'and enumerate in `--input` (or provide through `--input-file <paths...>`) the specific findings being re-checked';
   return `\`${reviewCommand}\` with \`--since <that commit>\` ${scopeGuidance}, ${findingContextGuidance}`;
 }
 
@@ -92,8 +89,7 @@ export function buildFinalBatchReviewGuidance(
   const reviewCommand = buildFullPlanReviewCommand(planId, options);
   const fixVerificationInvocation: string = buildReviewFixVerificationInvocation(
     reviewCommand,
-    'full-plan',
-    options
+    'full-plan'
   );
   const postStructuralFixGuidance = structuralPassWillRun
     ? ' The post-structural validation review, when needed, is a separate full-plan exception after the structural pass.'
@@ -148,13 +144,11 @@ export function buildReviewIterationGuidance(
   const structuralPassWillRun: boolean = structuralPassApplies(options);
   const taskFixVerificationInvocation: string = buildReviewFixVerificationInvocation(
     reviewCommand,
-    'task-index',
-    options
+    'task-index'
   );
   const finalPlanFixVerificationInvocation: string = buildReviewFixVerificationInvocation(
     reviewCommand,
-    'full-plan',
-    options
+    'full-plan'
   );
   const reviewScopeGuidance = orchestratorReviewsBatch
     ? `- For selected-task batch review passes, perform the review yourself. You may use your own native subagent mechanism as an aid, but do not invoke ${options.agentMessagingEnabled === true ? 'the one-shot formal review command' : '`tim subagent reviewer`'}.

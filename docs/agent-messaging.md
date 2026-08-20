@@ -186,6 +186,21 @@ Enabled orchestrators render `tim review` for formal reviews. Disabled
 orchestrators use the equivalent `tim subagent reviewer` alias. The alias
 remains available for external compatibility.
 
+### Review-fix assignments
+
+Formal review invocation context and collaborative fix-agent delegation are
+separate. The one-shot formal review keeps its supported `--task-index`,
+`--since`, `--input`, `--input-file`, and `--structural-only` options. In an
+enabled session, assign an accepted review fix through `StartAgent` or
+`SendAgentMessage` with the owning task, exact files, accepted findings,
+constraints, verification steps, and the canonical agent name. Do not replace
+that message context with `--task-index`, `--input`, or `--input-file` flags.
+
+Disabled sessions use the legacy `tim subagent` fix path, where the owning task
+is passed with `--task-index` and the findings are passed with `--input` or
+`--input-file`. The complete scope rules, including completed-task handling,
+are in [Review-fix delegation scope](review-iteration-policy.md#review-fix-delegation-scope).
+
 ### Process labels
 
 Named Claude and Codex agents appear in the process tree with labels such as

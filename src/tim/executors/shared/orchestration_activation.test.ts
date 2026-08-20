@@ -109,8 +109,14 @@ describe('collaborative orchestration activation matrix', () => {
         'tim review-issues reject 421 --from-review <output.json> --issue <n> --reason "..."'
       );
       expect(output).toContain('StartAgent or SendAgentMessage');
-      expect(output).not.toContain('--input');
-      expect(output).not.toContain('--input-file');
+      expect(output).toContain(
+        'enumerate in `--input` (or provide through `--input-file <paths...>`) the specific findings being re-checked'
+      );
+      if (!batchMode) {
+        expect(output).toContain(
+          'Pass relevant implementation and test notes to the formal reviewer with `--input <text>` or `--input-file <paths...>`.'
+        );
+      }
       expect(output).not.toContain('Scope every review-fix subagent run');
       expect(output).not.toContain('a subagent `--task-index`');
       expect(output).toContain('## Failure Protocol');
@@ -122,6 +128,19 @@ describe('collaborative orchestration activation matrix', () => {
       expect(output).not.toMatch(/tim subagent (implementer|tester|tdd-tests|reviewer)/);
       expect(output).not.toMatch(/^- \*\*FinishAgent\*\*/m);
       expect(output).not.toMatch(/`(?:--input|--input-file|--task-index).*tim subagent/m);
+
+      const reviewFixScopeStart = output.indexOf(
+        'Scope every review-fix agent assignment with StartAgent or SendAgentMessage.'
+      );
+      const reviewFixScopeEnd = output.indexOf(
+        'Scope only review-fix assignments.',
+        reviewFixScopeStart
+      );
+      expect(reviewFixScopeStart).toBeGreaterThanOrEqual(0);
+      expect(reviewFixScopeEnd).toBeGreaterThan(reviewFixScopeStart);
+      expect(output.slice(reviewFixScopeStart, reviewFixScopeEnd)).not.toMatch(
+        /--(?:task-index|input(?:-file)?)/
+      );
 
       if (batchMode) {
         expect(output).toContain('Review the selected task batch yourself');
@@ -374,7 +393,9 @@ describe('formal review rendering for collaborative activation', () => {
       expect(guidance).toContain('Allow at most 4 ordinary review runs per task batch');
       if (enabled) {
         expect(guidance).toContain('StartAgent or SendAgentMessage');
-        expect(guidance).not.toContain('--input-file');
+        expect(guidance).toContain(
+          'enumerate in `--input` (or provide through `--input-file <paths...>`) the specific findings being re-checked'
+        );
         expect(guidance).not.toContain('Include the findings being fixed in');
       } else {
         expect(guidance).not.toContain('StartAgent');
