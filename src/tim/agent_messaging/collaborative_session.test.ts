@@ -154,6 +154,8 @@ describe('CollaborativeAgentSession root activation', () => {
       repositoryRoot: '/repo',
       orchestratorExecutor: 'claude-code',
       permissionPromptCoordinator: coordinator,
+      noninteractive: false,
+      terminalInput: true,
     });
 
     try {
@@ -191,6 +193,8 @@ describe('CollaborativeAgentSession root activation', () => {
               allowedTools: new Set(['ListAgents', 'SendAgentMessage', 'FinishAgent']),
             }),
           }),
+          noninteractive: false,
+          terminalInput: false,
         })
       );
       expect(mocks.startPersistentCodexAgent).toHaveBeenCalledWith(
@@ -212,9 +216,14 @@ describe('CollaborativeAgentSession root activation', () => {
       expect(mocks.prepareSubagentExecution).toHaveBeenCalledWith(
         expect.objectContaining({
           agentType: 'reviewer',
+          executor: 'codex-cli',
           promptContext: { mode: 'persistent-agent' },
         })
       );
+      const codexPreparationCall = mocks.prepareSubagentExecution.mock.calls.find(
+        ([request]) => request.executor === 'codex-cli'
+      );
+      expect(codexPreparationCall?.[0]?.model).toBeUndefined();
     } finally {
       await session.close();
     }

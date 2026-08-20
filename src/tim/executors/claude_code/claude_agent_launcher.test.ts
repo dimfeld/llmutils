@@ -61,7 +61,7 @@ describe('ClaudeAgentLauncher', () => {
     const launcher = createClaudeAgentLauncher({
       dispatcher: {} as never,
       permissionPromptCoordinator: coordinator,
-      terminalInput: true,
+      noninteractive: false,
     });
 
     await launcher.launch(createRequest());
@@ -76,6 +76,25 @@ describe('ClaudeAgentLauncher', () => {
             allowedTools: new Set(['ListAgents', 'SendAgentMessage', 'FinishAgent']),
           }),
         }),
+      })
+    );
+  });
+
+  test('passes noninteractive root sessions through to persistent agents', async () => {
+    mocks.runClaudeSubprocess.mockResolvedValue({});
+    const coordinator = createCoordinator();
+    const launcher = createClaudeAgentLauncher({
+      dispatcher: {} as never,
+      permissionPromptCoordinator: coordinator,
+      noninteractive: true,
+    });
+
+    await launcher.launch(createRequest());
+
+    expect(mocks.runClaudeSubprocess).toHaveBeenCalledWith(
+      expect.objectContaining({
+        noninteractive: true,
+        terminalInput: false,
       })
     );
   });

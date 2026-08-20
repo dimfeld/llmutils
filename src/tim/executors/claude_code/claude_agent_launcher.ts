@@ -17,8 +17,7 @@ export interface ClaudeAgentLauncherOptions {
   /** One coordinator shared by the root and every Claude bridge in the session. */
   readonly permissionPromptCoordinator: ClaudePermissionPromptCoordinator;
   /** Root-session capability used to decide whether interactive approval is possible. */
-  readonly noninteractive?: boolean;
-  readonly terminalInput?: boolean;
+  readonly noninteractive: boolean;
 }
 
 /** Create the Claude AgentManager launch adapter. */
@@ -50,7 +49,7 @@ export function createClaudeAgentLauncher(options: ClaudeAgentLauncherOptions): 
           agentToolContext,
           permissionPromptCoordinator: options.permissionPromptCoordinator,
         },
-        noninteractive: options.noninteractive ?? options.terminalInput !== true,
+        noninteractive: options.noninteractive,
         // Subagents never consume the root stdin stream. The root terminal
         // capability only controls whether their permission bridge may ask.
         terminalInput: false,

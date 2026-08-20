@@ -726,7 +726,6 @@ export async function timAgent(
         configPath: globalCliOptions.config,
         orchestratorExecutor: collaborativeOrchestratorExecutor!,
         permissionPromptCoordinator: claudePermissionPromptCoordinator!,
-        model: agentExecutionModel,
         noninteractive,
         terminalInput: terminalInputEnabled,
       });

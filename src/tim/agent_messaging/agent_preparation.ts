@@ -9,6 +9,7 @@ import type {
 export interface AgentPreparationOptions {
   readonly planId: number;
   readonly configPath?: string;
+  /** Explicit subagent model override for callers that intentionally provide one. */
   readonly model?: string;
   readonly taskIndex?: string | string[];
   readonly repositoryRoot?: string;

@@ -402,6 +402,35 @@ describe('reusable subagent service', () => {
     expect(providerDefault.model).toBeUndefined();
   });
 
+  test('selects the configured model for each collaborative executor', async () => {
+    mocks.loadEffectiveConfig.mockResolvedValue({
+      defaultExecutor: 'claude-code',
+      executors: {},
+      subagents: {
+        implementer: {
+          model: { claude: 'role-claude-model', codex: 'role-codex-model' },
+        },
+      },
+      agents: {},
+    });
+
+    const claude = await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'claude-code',
+      inputPolicy: resolvedInput('Use the Claude role model.'),
+    });
+    const codex = await prepareSubagentExecution({
+      agentType: 'implementer',
+      planId: 42,
+      executor: 'codex-cli',
+      inputPolicy: resolvedInput('Use the Codex role model.'),
+    });
+
+    expect(claude.model).toBe('role-claude-model');
+    expect(codex.model).toBe('role-codex-model');
+  });
+
   test('passes Codex model and reasoning effort separately to the provider', async () => {
     const prepared = await prepareSubagentExecution({
       agentType: 'implementer',

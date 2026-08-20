@@ -155,7 +155,8 @@ export interface ExecuteWithTerminalInputResult {
   resultPromise: Promise<SpawnAndLogOutputResult>;
   onResultMessage: (resultWasSuccessful: boolean, resultText?: string) => void;
   observeFormattedMessage: (formatted: FormattedClaudeMessage) => void;
-  sendFollowUpForInterceptedResult: (content: string) => void;
+  /** Resolves true only when the provider accepted the input write. */
+  sendFollowUpForInterceptedResult: (content: string) => boolean | Promise<boolean>;
   acceptedSuccessfulFinalResult: () => boolean;
   endSession: () => void;
   cleanup: () => void;
@@ -350,17 +351,20 @@ function executeOneShotWithTerminalInput(
     }
   };
 
-  const sendFollowUp = (content: string): void => {
-    if (cleanupStarted) return;
-    if (stdinGuard.isClosed) {
-      return;
+  const sendFollowUp = (content: string): boolean => {
+    if (cleanupStarted || stdinGuard.isClosed) return false;
+    try {
+      sendFollowUpMessage(streaming.stdin, content);
+    } catch (error) {
+      debugLog('Failed to send follow-up input to subprocess:', error);
+      return false;
     }
-    sendFollowUpMessage(streaming.stdin, content);
     backgroundActivityTracker.onContinuationStarted();
+    return true;
   };
 
-  const sendFollowUpForInterceptedResult = (content: string): void => {
-    sendFollowUp(content);
+  const sendFollowUpForInterceptedResult = (content: string): boolean => {
+    return sendFollowUp(content);
   };
 
   // Branching: terminal input vs. non-terminal input (tunnel/headless/pure non-interactive).

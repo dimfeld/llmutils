@@ -586,6 +586,7 @@ export async function executeCodexStepViaAppServer(
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
       let clearHeadlessEndSessionHandlers: () => void = () => {};
+      let rootSteeringTail: Promise<void> = Promise.resolve();
 
       if (terminalInputEnabled) {
         terminalInputReader = new TerminalInputReader({
@@ -653,37 +654,35 @@ export async function executeCodexStepViaAppServer(
         throw new Error('Prompt is required when appServerMode is single-turn-with-steering.');
       }
 
-      currentTurnId = undefined;
-      sawFirstNotification = false;
-      interruptedByInactivity = false;
-      currentAttemptActive = true;
-      resetTurnTracking();
-      resetInactivityTimer();
-
-      const startResult = await activeConnection.turnStart({
-        threadId: activeThreadId,
-        input: [{ type: 'text', text: normalizedPrompt }],
-        model,
-        effort: reasoningLevel,
-        ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
-      });
-      currentTurnId = startResult.turnId;
-      if (sessionEndRequested) {
-        interruptActiveTurn();
-      }
-      resetInactivityTimer();
-
       if (options?.orchestratorInputAdapter !== undefined) {
         rootInputAdapter = new CallbackAgentInputAdapter({
           onDeliver: (message) => {
-            if (!currentAttemptActive || currentTurnId === undefined) {
-              return 'temporarily-unavailable';
-            }
-            inputQueue.push(message.content);
-            return 'steered';
+            const delivery = rootSteeringTail.then(async () => {
+              const turnId = currentTurnId;
+              if (!currentAttemptActive || turnId === undefined || !activeConnection.isAlive) {
+                return 'temporarily-unavailable' as const;
+              }
+              try {
+                await activeConnection.turnSteer({
+                  threadId: activeThreadId,
+                  input: [{ type: 'text', text: message.content }],
+                  expectedTurnId: turnId,
+                });
+                return 'steered' as const;
+              } catch (error) {
+                debugLog('Failed to send root turn/steer input:', error);
+                return 'temporarily-unavailable' as const;
+              }
+            });
+            rootSteeringTail = delivery.then(
+              () => undefined,
+              () => undefined
+            );
+            return delivery;
           },
         });
         rootInputAdapter.start();
+        rootInputAdapter.setActivity('temporarily-unavailable');
         options.orchestratorInputAdapter.bind(rootInputAdapter);
       }
 
@@ -713,22 +712,76 @@ export async function executeCodexStepViaAppServer(
       })();
 
       try {
-        if (!turnCompletedPromise) {
-          throw new Error('Codex app-server turn tracking was not initialized.');
-        }
+        let promptForAttempt = normalizedPrompt;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            throwIfConnectionExited();
+            throwIfSessionEndRequested();
+            currentTurnId = undefined;
+            sawFirstNotification = false;
+            interruptedByInactivity = false;
+            currentAttemptActive = true;
+            resetTurnTracking();
+            resetInactivityTimer();
 
-        const status = (await turnCompletedPromise) || 'completed';
-        throwIfConnectionExited();
-        throwIfSessionEndRequested();
-        currentAttemptActive = false;
-        clearInactivityTimer();
+            const startResult = await activeConnection.turnStart({
+              threadId: activeThreadId,
+              input: [{ type: 'text', text: promptForAttempt }],
+              model,
+              effort: reasoningLevel,
+              ...(options?.outputSchema ? { outputSchema: options.outputSchema } : {}),
+            });
+            currentTurnId = startResult.turnId;
+            if (sessionEndRequested) {
+              interruptActiveTurn();
+            }
+            rootInputAdapter?.setActivity('active');
+            resetInactivityTimer();
 
-        if (status.toLowerCase() !== 'completed') {
-          throw new Error(`codex single-turn session ended with status "${status}".`);
+            if (!turnCompletedPromise) {
+              throw new Error('Codex app-server turn tracking was not initialized.');
+            }
+
+            const status = (await turnCompletedPromise) || 'completed';
+            throwIfConnectionExited();
+            throwIfSessionEndRequested();
+            currentAttemptActive = false;
+            rootInputAdapter?.setActivity('temporarily-unavailable');
+            clearInactivityTimer();
+            await rootSteeringTail;
+
+            if (status.toLowerCase() === 'completed') {
+              successfulTurns += 1;
+              break;
+            }
+
+            const inactivitySuffix = interruptedByInactivity ? ' (after inactivity timeout)' : '';
+            if (attempt >= maxAttempts) {
+              throw new Error(
+                `codex failed after ${maxAttempts} attempts (turn status: ${status}${inactivitySuffix}).`
+              );
+            }
+            warn(
+              `Codex attempt ${attempt}/${maxAttempts} ended with turn status "${status}"${inactivitySuffix}; retrying...`
+            );
+            promptForAttempt = 'continue';
+          } catch (error) {
+            currentAttemptActive = false;
+            rootInputAdapter?.setActivity('temporarily-unavailable');
+            clearInactivityTimer();
+            await rootSteeringTail;
+            throwIfSessionEndRequested();
+            if (attempt >= maxAttempts) {
+              throw error;
+            }
+            warn(`Codex attempt ${attempt}/${maxAttempts} failed; retrying...`);
+            debugLog('Codex app-server attempt failure details:', error);
+            promptForAttempt = 'continue';
+          }
         }
-        successfulTurns += 1;
       } finally {
         rootInputAdapter?.setActivity('temporarily-unavailable');
+        await rootSteeringTail;
         if (rootInputAdapter !== undefined) {
           options?.orchestratorInputAdapter?.unbind(rootInputAdapter);
           await rootInputAdapter.release();

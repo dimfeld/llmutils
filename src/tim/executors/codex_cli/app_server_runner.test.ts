@@ -1235,6 +1235,116 @@ describe('executeCodexStepViaAppServer', () => {
     );
   });
 
+  test('acknowledges root steering only while the provider accepts the turn', async () => {
+    const harness = await createHarness();
+    type TestAdapter = {
+      readonly activity: string;
+      deliver(message: {
+        readonly messageId: string;
+        readonly content: string;
+      }): string | Promise<string>;
+    };
+    let boundAdapter: TestAdapter | undefined;
+    const rootInput = {
+      bind: (adapter: TestAdapter): void => {
+        boundAdapter = adapter;
+      },
+      unbind: (adapter: TestAdapter): void => {
+        if (boundAdapter === adapter) boundAdapter = undefined;
+      },
+    };
+
+    const execution = harness.executeCodexStepViaAppServer(
+      'initial prompt',
+      '/repo',
+      {},
+      {
+        appServerMode: 'single-turn-with-steering',
+        orchestratorInputAdapter: rootInput,
+      }
+    );
+
+    await waitFor(() => boundAdapter?.activity === 'active');
+    const activeAdapter = boundAdapter;
+    expect(activeAdapter).toBeDefined();
+    await expect(
+      activeAdapter!.deliver({ messageId: 'accepted', content: 'accepted while active' })
+    ).resolves.toBe('steered');
+    expect(harness.connection.turnSteer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: [{ type: 'text', text: 'accepted while active' }],
+        expectedTurnId: 'turn-1',
+      })
+    );
+
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'completed' },
+    });
+    await waitFor(() => activeAdapter!.activity === 'temporarily-unavailable');
+    expect(activeAdapter!.deliver({ messageId: 'late', content: 'queue after result close' })).toBe(
+      'temporarily-unavailable'
+    );
+
+    await expect(execution).resolves.toBe('final agent message');
+
+    const nextHarness = await createHarness();
+    const nextExecution = nextHarness.executeCodexStepViaAppServer(
+      'next orchestrator turn',
+      '/repo',
+      {},
+      {
+        appServerMode: 'single-turn-with-steering',
+        orchestratorInputAdapter: rootInput,
+      }
+    );
+    await waitFor(() => boundAdapter?.activity === 'active');
+    await expect(
+      boundAdapter!.deliver({ messageId: 'late', content: 'queue after result close' })
+    ).resolves.toBe('steered');
+    expect(nextHarness.connection.turnSteer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: [{ type: 'text', text: 'queue after result close' }],
+      })
+    );
+    nextHarness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'completed' },
+    });
+    await expect(nextExecution).resolves.toBe('final agent message');
+  });
+
+  test('retains three-attempt retry behavior for noninteractive root steering', async () => {
+    const harness = await createHarness();
+    const rootInput = {
+      bind: vi.fn(),
+      unbind: vi.fn(),
+    };
+    const execution = harness.executeCodexStepViaAppServer(
+      'initial prompt',
+      '/repo',
+      {},
+      {
+        appServerMode: 'single-turn-with-steering',
+        orchestratorInputAdapter: rootInput,
+      }
+    );
+
+    await waitFor(() => harness.connection.turnStart.mock.calls.length === 1);
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-1', status: 'failed' },
+    });
+
+    await waitFor(() => harness.connection.turnStart.mock.calls.length === 2);
+    harness.connectionHandlers.onNotification?.('turn/completed', {
+      turn: { id: 'turn-2', status: 'completed' },
+    });
+
+    await expect(execution).resolves.toBe('final agent message');
+    expect(harness.connection.turnStart).toHaveBeenCalledTimes(2);
+    expect(harness.connection.turnStart.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ input: [{ type: 'text', text: 'continue' }] })
+    );
+  });
+
   test('does not emit duplicate structured gui input messages in headless chat sessions', async () => {
     const harness = await createHarness({ loggerAdapterKind: 'headless' });
 

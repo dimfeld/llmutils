@@ -19,7 +19,7 @@ export interface OrchestrationOptions {
   simpleMode?: boolean;
   /**
    * Root-session snapshot of the experimental agent-messaging setting.
-   * This is dormant until a later activation plan consumes it.
+   * Collaborative prompt branches consume this immutable session value.
    */
   agentMessagingEnabled?: boolean;
   /**

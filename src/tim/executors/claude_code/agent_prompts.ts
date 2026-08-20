@@ -655,7 +655,13 @@ A sample response might look like this:
 ${issueAndVerdictFormat}
 
 ### If a clear verdict is impossible due to conflicting or irreconcilable requirements
-Stop and follow this failure protocol instead of providing a verdict:
+Stop and follow the failure protocol instead of providing a verdict.
+`;
+  const failureProtocolGuidance =
+    suppressResponseFormat && !advisoryReviewer
+      ? ''
+      : `
+## Failure Protocol
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
 `;
@@ -694,7 +700,7 @@ The plan file tasks may not be marked as done in the plan file, because they are
 
 ${buildReviewerCriticalIssuesGuidance()}
 
-${responseFormatGuidance}
+${responseFormatGuidance}${failureProtocolGuidance}
 
 DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.
 `,

@@ -46,10 +46,14 @@ export function executePersistentWithTerminalInput(
     }
   );
 
-  const sendFollowUp = (content: string): void => {
-    if (cleanupStarted) return;
-    void Promise.resolve(controller.sendContent(content)).catch((error: unknown) => {
+  const sendFollowUp = (content: string): boolean | Promise<boolean> => {
+    if (cleanupStarted) return false;
+    const result = controller.sendContent(content);
+    const accepted = (delivery: string): boolean => delivery !== 'temporarily-unavailable';
+    if (typeof result === 'string') return accepted(result);
+    return result.then(accepted).catch((error: unknown) => {
       debugLog('Failed to send persistent Claude input: %s', error);
+      return false;
     });
   };
 

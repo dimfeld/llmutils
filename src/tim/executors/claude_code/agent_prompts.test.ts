@@ -454,6 +454,7 @@ describe('persistent-agent role prompt communication guidance', () => {
     expect(reviewer).toContain('read-only, advisory reviewer');
     expect(reviewer).toContain('separate formal `tim review` gate');
     expect(reviewer).toContain('do not edit files or create commits');
+    expect(reviewer).toContain('FAILED:');
     expect(reviewer).not.toContain('**VERDICT:**');
     expect(reviewer).not.toContain('## Response Format');
   });

@@ -33,7 +33,6 @@ export interface CollaborativeAgentSessionOptions {
   readonly configPath?: string;
   readonly orchestratorExecutor: AgentExecutor;
   readonly permissionPromptCoordinator: ClaudePermissionPromptCoordinator;
-  readonly model?: string;
   readonly taskIndex?: string | string[];
   readonly noninteractive?: boolean;
   readonly terminalInput?: boolean;
@@ -83,7 +82,6 @@ export class CollaborativeAgentSession {
     const orchestratorInputAdapter = new DeferredAgentInputAdapter();
     const agentPreparer = createAgentPreparation({
       planId: options.planId,
-      model: options.model,
       taskIndex: options.taskIndex,
       configPath: options.configPath,
       repositoryRoot: options.repositoryRoot,
@@ -101,8 +99,7 @@ export class CollaborativeAgentSession {
       const claudeLauncherOptions: ClaudeAgentLauncherOptions = {
         dispatcher: claudeDispatcher,
         permissionPromptCoordinator: options.permissionPromptCoordinator,
-        noninteractive: options.noninteractive,
-        terminalInput: options.terminalInput,
+        noninteractive: options.noninteractive ?? options.terminalInput !== true,
       };
       const codexLauncherOptions: CodexAgentLauncherOptions = {
         dispatcher: codexDispatcher,

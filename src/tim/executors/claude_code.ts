@@ -696,6 +696,7 @@ export class ClaudeCodeExecutor implements Executor {
         // Close the shared input owner before removing the process and
         // transport handlers. Late provider output must not enqueue input
         // while the rest of this execution is being torn down.
+        rootInputAdapter?.setActivity('temporarily-unavailable');
         terminalInputResult?.cleanup();
         if (rootInputAdapter !== undefined) {
           this.sharedOptions.orchestratorInputAdapter?.unbind(rootInputAdapter);
@@ -842,7 +843,7 @@ export class ClaudeCodeExecutor implements Executor {
               if (followUpIndex < followUpPrompts.length && terminalInputResult) {
                 const nextPrompt = followUpPrompts[followUpIndex];
                 followUpIndex++;
-                terminalInputResult.sendFollowUpForInterceptedResult(nextPrompt);
+                void terminalInputResult.sendFollowUpForInterceptedResult(nextPrompt);
               } else if (
                 fastNoopOrchestratorRetryEnabled &&
                 resultMessageCount === 1 &&
@@ -873,7 +874,7 @@ export class ClaudeCodeExecutor implements Executor {
                         message:
                           'Claude orchestrator finished a single short turn without working copy changes; sending "continue".',
                       });
-                      terminalInputResult.sendFollowUpForInterceptedResult('continue');
+                      void terminalInputResult.sendFollowUpForInterceptedResult('continue');
                       return;
                     }
                   } catch (err) {
@@ -883,9 +884,11 @@ export class ClaudeCodeExecutor implements Executor {
                     );
                   }
 
+                  rootInputAdapter?.setActivity('temporarily-unavailable');
                   terminalInputResult.onResultMessage(resultWasSuccessful);
                 })();
               } else {
+                rootInputAdapter?.setActivity('temporarily-unavailable');
                 terminalInputResult?.onResultMessage(resultWasSuccessful);
               }
             }
@@ -950,10 +953,11 @@ export class ClaudeCodeExecutor implements Executor {
 
       if (this.sharedOptions.orchestratorInputAdapter !== undefined) {
         rootInputAdapter = new CallbackAgentInputAdapter({
-          onDeliver: (message) => {
+          onDeliver: async (message) => {
             if (terminalInputResult === undefined) return 'temporarily-unavailable';
-            terminalInputResult.sendFollowUpForInterceptedResult(message.content);
-            return 'steered';
+            return (await terminalInputResult.sendFollowUpForInterceptedResult(message.content))
+              ? 'steered'
+              : 'temporarily-unavailable';
           },
         });
         rootInputAdapter.start();

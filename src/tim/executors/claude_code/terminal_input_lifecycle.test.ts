@@ -565,6 +565,31 @@ describe('terminal_input_lifecycle', () => {
     controller.cleanup();
   });
 
+  it('reports intercepted input as unavailable after result-close cleanup', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy, result: new Promise(() => {}) }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: false,
+      tunnelForwardingEnabled: false,
+    });
+
+    controller.onResultMessage(true);
+
+    expect(controller.sendFollowUpForInterceptedResult('late message')).toBe(false);
+    expect(mockSendFollowUpMessage).not.toHaveBeenCalled();
+
+    controller.cleanup();
+  });
+
   it('non-interactive runs close on first result even when keepInteractiveInputOpenOnResult is true', () => {
     vi.useFakeTimers();
     const stdinEndSpy = vi.fn(async () => {});
