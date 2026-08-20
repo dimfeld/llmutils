@@ -13,7 +13,7 @@ import {
 } from './review_guidance.ts';
 import type { OrchestrationOptions } from './orchestration_options.ts';
 
-type WrapperName = 'normal' | 'simple' | 'tdd';
+type WrapperName = 'normal' | 'simple' | 'tdd' | 'tdd-simple';
 
 interface PromptWrapper {
   name: WrapperName;
@@ -39,6 +39,15 @@ const wrappers: readonly PromptWrapper[] = [
     build: (options: OrchestrationOptions): string =>
       wrapWithOrchestrationTdd('activation context', '421', options),
     legacyRoles: ['tdd-tests', 'implementer', 'tester', 'reviewer'],
+  },
+  {
+    name: 'tdd-simple',
+    build: (options: OrchestrationOptions): string =>
+      wrapWithOrchestrationTdd('activation context', '421', {
+        ...options,
+        simpleMode: true,
+      }),
+    legacyRoles: ['tdd-tests', 'implementer', 'reviewer'],
   },
 ];
 
@@ -118,6 +127,9 @@ describe('collaborative orchestration activation matrix', () => {
         expect(output).toContain('Review the selected task batch yourself');
         expect(output).toContain('final-plan review sequence');
         expect(output).toContain('--structural-only');
+        expect(output).toContain(
+          'run `tim review 421 --print --output-file <output_path>` with `--since <that commit>`'
+        );
         expect(output).toContain(
           'tim review-issues reject 421 --content "<the finding>" --file <path> --line <line> --reason "..."'
         );
@@ -210,6 +222,105 @@ describe('collaborative orchestration activation matrix', () => {
     expect(output).not.toMatch(/^.*(?:root|orchestrator).*call FinishAgent.*tool.*$/im);
     expect(output).not.toMatch(/^\s*- \*\*FinishAgent\*\*/m);
   });
+
+  it.each(
+    wrappers.flatMap((wrapper) =>
+      [false, true].map((structuralReviewCompleted) => ({ wrapper, structuralReviewCompleted }))
+    )
+  )(
+    'enabled $wrapper.name keeps formal review policy and gates the structural pass (completed=$structuralReviewCompleted)',
+    ({ wrapper, structuralReviewCompleted }) => {
+      const output = wrapper.build({
+        agentMessagingEnabled: true,
+        batchMode: true,
+        structuralReviewCompleted,
+        subagentExecutor: 'codex-cli',
+      });
+
+      expect(output).toContain(
+        'tim review-issues reject 421 --from-review <output.json> --issue <n> --reason "..."'
+      );
+      expect(output).toContain(
+        'Scope every review-fix agent assignment with StartAgent or SendAgentMessage.'
+      );
+      expect(output).toContain(
+        'Include the owning task, exact file scope, accepted findings, constraints, and verification'
+      );
+      expect(output).toContain(
+        'run `tim review 421 --print --output-file <output_path>` with `--since <that commit>`'
+      );
+      expect(output).toContain(
+        'Review #1 is the full-plan bookend: run `tim review 421 --print --output-file <output_path>` without any `--task-index` or `--since` arguments'
+      );
+      expect(output).not.toContain('Scope every review-fix subagent run');
+      expect(output).not.toContain(
+        'Include the findings being fixed in `--input` or `--input-file`'
+      );
+      expect(output).not.toMatch(/tim subagent (implementer|tester|tdd-tests|reviewer)/);
+      expect(output).not.toMatch(/tim subagent [^\n]*(?:--task-index|--input|--input-file|-x)/);
+
+      if (structuralReviewCompleted) {
+        expect(output).not.toContain(
+          'tim review 421 --print --output-file <output_path> --structural-only'
+        );
+        expect(output).toContain(
+          'The standalone structural simplification pass has already run for this plan, so this run has no structural pass and no post-structural validation review.'
+        );
+        expect(output).not.toContain(
+          'Only after the ordinary full-plan review loop has reached a Review Iteration Policy stopping condition'
+        );
+      } else {
+        expect(output).toContain(
+          'tim review 421 --print --output-file <output_path> --structural-only'
+        );
+        expect(output).toContain(
+          'Only after the ordinary full-plan review loop has reached a Review Iteration Policy stopping condition'
+        );
+      }
+    }
+  );
+
+  it.each(
+    wrappers.flatMap((wrapper) => [false, true].map((batchMode) => ({ wrapper, batchMode })))
+  )(
+    'disabled $wrapper.name keeps legacy formal-review and review-fix delegation (batch=$batchMode)',
+    ({ wrapper, batchMode }) => {
+      const output = wrapper.build({
+        agentMessagingEnabled: false,
+        batchMode,
+        structuralReviewCompleted: false,
+        subagentExecutor: 'codex-cli',
+      });
+
+      for (const tool of [
+        'StartAgent',
+        'ListAgents',
+        'SendAgentMessage',
+        'StopAgent',
+        'FinishAgent',
+      ]) {
+        expect(output).not.toContain(tool);
+      }
+      expect(output).toContain('Scope every review-fix subagent run');
+      expect(output).toContain('Include the findings being fixed in `--input` or `--input-file`');
+      expect(output).toContain('tim subagent reviewer 421 --print --output-file <output_path>');
+      for (const role of wrapper.legacyRoles) {
+        const executorFlag = role === 'reviewer' ? '' : ' -x codex-cli';
+        expect(output).toContain(`tim subagent ${role} 421${executorFlag}`);
+      }
+
+      if (batchMode) {
+        expect(output).toContain(
+          'tim subagent reviewer 421 --print --output-file <output_path> --structural-only'
+        );
+        expect(output).toContain('Review the selected task batch yourself');
+        expect(output).toContain('final-plan review sequence');
+      } else {
+        expect(output).not.toContain('--structural-only');
+        expect(output).not.toContain('final-plan review sequence');
+      }
+    }
+  );
 });
 
 describe('formal review rendering for collaborative activation', () => {
