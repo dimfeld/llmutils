@@ -172,7 +172,12 @@ class PersistentCodexInputAdapter implements AgentInputAdapter {
       message: AgentInputMessage
     ) => AgentInputDelivery | Promise<AgentInputDelivery>,
     private readonly onRelease: () => Promise<void>
-  ) {}
+  ) {
+    // The manager can cancel a launch before it attaches its readiness
+    // boundary. Keep an early startup rejection from becoming unhandled while
+    // preserving the rejected promise for the eventual consumer.
+    void this.readyPromise.catch(() => undefined);
+  }
 
   public get ready(): Promise<void> {
     return this.readyPromise;
@@ -286,6 +291,10 @@ class PersistentCodexSession {
   private exitNotified = false;
   private cleaned = false;
   private deliveryInFlight = false;
+  private threadStartPending = false;
+  private pendingThreadStartedNotification:
+    | { readonly method: string; readonly params: unknown }
+    | undefined;
 
   public constructor(private readonly options: CodexPersistentAgentLaunchOptions) {
     this.input = new PersistentCodexInputAdapter(
@@ -403,15 +412,38 @@ class PersistentCodexSession {
       });
     }
 
-    const threadResult = await startInitialThread(
-      connection,
-      this.buildThreadStartParams(approvalPolicy, sandbox),
-      this.options.dynamicToolProvider
-    );
+    this.threadStartPending = true;
+    let threadResult;
+    try {
+      threadResult = await startInitialThread(
+        connection,
+        this.buildThreadStartParams(approvalPolicy, sandbox),
+        this.options.dynamicToolProvider
+      );
+    } finally {
+      this.threadStartPending = false;
+    }
+    const earlyThreadStartedNotification = this.pendingThreadStartedNotification;
+    this.pendingThreadStartedNotification = undefined;
+    const earlyThreadId =
+      earlyThreadStartedNotification === undefined
+        ? undefined
+        : extractThreadId(earlyThreadStartedNotification.params);
+    if (earlyThreadId !== undefined && earlyThreadId !== threadResult.threadId) {
+      throw new Error(
+        `Codex reported conflicting thread IDs during startup: ${earlyThreadId} and ${threadResult.threadId}.`
+      );
+    }
     this.throwIfClosing();
     connection.updateMetadata({ threadId: threadResult.threadId });
     this.threadId = threadResult.threadId;
     this.registerLogicalThread(threadResult.threadId);
+    if (earlyThreadStartedNotification !== undefined) {
+      this.handleNotification(
+        earlyThreadStartedNotification.method,
+        earlyThreadStartedNotification.params
+      );
+    }
 
     const initialTurn = this.beginTurn();
     await this.startTurn(initialTurn, this.options.prompt);
@@ -443,6 +475,7 @@ class PersistentCodexSession {
     }
     this.input.markNotReady();
     this.closePromise = this.finishClose(effectiveClassification, error);
+    this.notifyStateWaiters();
     return this.closePromise;
   }
 
@@ -497,12 +530,11 @@ class PersistentCodexSession {
     this.cleaned = true;
     this.state = 'terminal';
 
-    const completionError = error ?? cleanupError;
-    const exitClassification = cleanupError === undefined ? classification : 'failed';
+    const completionError = combineCloseErrors(error, cleanupError);
 
     if (!this.exitNotified) {
       this.exitNotified = true;
-      this.notifyObservers((observer) => observer.exit(exitClassification, completionError));
+      this.notifyObservers((observer) => observer.exit(classification, completionError));
     }
     this.completionDeferred.resolve({
       ...(completionError === undefined ? {} : { error: completionError }),
@@ -519,16 +551,29 @@ class PersistentCodexSession {
   private async createOutputTunnel(): Promise<void> {
     if (isTunnelActive()) return;
 
-    this.tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
-    this.tunnelSocketPath = path.join(this.tunnelTempDir, 'output.sock');
+    const tunnelTempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-tunnel-'));
+    const tunnelSocketPath = path.join(tunnelTempDir, 'output.sock');
+    let tunnelServer: TunnelServer | undefined;
     try {
       const promptHandler = createPromptRequestHandler();
-      this.tunnelServer = await createExecutorTunnelServer(this.tunnelSocketPath, {
+      tunnelServer = await createExecutorTunnelServer(tunnelSocketPath, {
         onPromptRequest: promptHandler,
       });
     } catch (error) {
       debugLog('Could not create persistent Codex output tunnel:', error);
+      await fs.rm(tunnelTempDir, { recursive: true, force: true }).catch(() => {});
+      return;
     }
+
+    if (this.isClosing()) {
+      tunnelServer.close();
+      await fs.rm(tunnelTempDir, { recursive: true, force: true }).catch(() => {});
+      return;
+    }
+
+    this.tunnelTempDir = tunnelTempDir;
+    this.tunnelSocketPath = tunnelSocketPath;
+    this.tunnelServer = tunnelServer;
   }
 
   private buildThreadStartParams(
@@ -567,6 +612,19 @@ class PersistentCodexSession {
 
   private handleNotification(method: string, params: unknown): void {
     if (this.cleaned || this.closePromise !== undefined) return;
+    if (method === 'thread/started' && this.threadId === undefined && this.threadStartPending) {
+      const threadId = extractThreadId(params);
+      if (threadId === undefined) return;
+      const previous = this.pendingThreadStartedNotification;
+      if (previous !== undefined && extractThreadId(previous.params) !== threadId) {
+        void this.failProvider(
+          new Error(`Codex reported conflicting startup thread IDs: ${threadId}.`)
+        );
+        return;
+      }
+      this.pendingThreadStartedNotification = { method, params };
+      return;
+    }
     if (!this.isOwnedThreadNotification(method, params)) return;
 
     const formatter = this.formatter;
@@ -1021,7 +1079,7 @@ class PersistentCodexSession {
 
     this.forcedShutdownRequest = (async (): Promise<AgentProviderControlResult> => {
       const turn = this.currentTurn;
-      if (turn !== undefined && !turn.settled) await this.interruptTurn(turn);
+      if (turn !== undefined && !turn.settled) void this.interruptTurn(turn);
       await this.close('forced');
       return 'accepted';
     })();
@@ -1030,28 +1088,28 @@ class PersistentCodexSession {
 
   /** Wait until a normal input transition has released its serialization gate. */
   private async waitForDeliveryIdle(): Promise<void> {
-    if (!this.deliveryInFlight) return;
-    await new Promise<void>((resolve) => {
-      this.stateWaiters.add(resolve);
-    });
+    while (this.deliveryInFlight && !this.isClosing()) {
+      await new Promise<void>((resolve) => {
+        this.stateWaiters.add(resolve);
+      });
+    }
   }
 
   /** Wait for an active turn with an ID or an idle thread. */
   private async waitForStableInputState(): Promise<void> {
-    if (
-      this.state === 'running-idle' ||
-      (this.state === 'running-active' && this.currentTurn?.turnId !== undefined)
+    while (
+      this.state !== 'running-idle' &&
+      !(this.state === 'running-active' && this.currentTurn?.turnId !== undefined) &&
+      !this.isClosing() &&
+      !this.forcedShutdownRequested
     ) {
-      return;
+      await new Promise<void>((resolve) => {
+        this.stateWaiters.add(resolve);
+      });
     }
-    if (this.isClosing() || this.forcedShutdownRequested) return;
-    await new Promise<void>((resolve) => {
-      this.stateWaiters.add(resolve);
-    });
   }
 
   private notifyStateWaiters(): void {
-    if (this.deliveryInFlight) return;
     const waiters = [...this.stateWaiters];
     this.stateWaiters.clear();
     for (const resolve of waiters) resolve();
@@ -1289,4 +1347,18 @@ function createDeferred<T>(): {
 
 function toError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value));
+}
+
+function combineCloseErrors(
+  primary: Error | undefined,
+  cleanup: Error | undefined
+): Error | undefined {
+  if (primary === undefined) return cleanup;
+  if (cleanup === undefined || cleanup === primary) return primary;
+
+  const combined = new Error(
+    `${primary.message}; persistent Codex cleanup also failed: ${cleanup.message}`
+  );
+  combined.cause = primary;
+  return combined;
 }

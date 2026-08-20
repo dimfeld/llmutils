@@ -44,8 +44,6 @@ export function isCodexPersistentAgentState(value: unknown): value is CodexPersi
 export interface CodexPersistentAgentLifecycleCallbacks extends AgentProviderLifecycleObserver {}
 
 export interface CodexPersistentAgentCompletion extends AgentLaunchCompletion {
-  readonly exitCode?: number;
-  readonly signal?: NodeJS.Signals;
   readonly lastCompletedAssistantMessage?: string;
 }
 

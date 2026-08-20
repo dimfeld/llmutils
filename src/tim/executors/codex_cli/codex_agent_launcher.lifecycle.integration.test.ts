@@ -429,6 +429,35 @@ describe('Codex AgentManager lifecycle integration', () => {
     expect(rootInput.receivedMessages[0]?.content).toContain('Final status delivered.');
   });
 
+  it('force-escalates a graceful request whose steer RPC never answers', async () => {
+    const scheduler = new FakeAgentManagerScheduler();
+    const connection = createConnection('thread-graceful-wedged', 'process-graceful-wedged');
+    const neverAnswered = createDeferred<{ readonly turnId: string }>();
+    connection.turnSteer.mockImplementationOnce(() => neverAnswered.promise);
+    const { manager, root } = await createHarness({
+      connections: [connection],
+      scheduler,
+    });
+    const started = await startAgent(manager, root, 'graceful-wedged-worker');
+
+    await expect(
+      manager.stopAgent(root, {
+        name: 'graceful-wedged-worker',
+        message: 'Report the final status.',
+      })
+    ).resolves.toMatchObject({ mode: 'graceful-requested', state: 'stopping' });
+    await vi.waitFor(() => expect(connection.turnSteer).toHaveBeenCalledTimes(1));
+    expect(scheduler.pendingTimerCount).toBe(1);
+
+    const teardown = manager.close();
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS);
+    await teardown;
+
+    expect(connection.turnInterrupt).toHaveBeenCalledTimes(1);
+    expect(connection.close).toHaveBeenCalledTimes(1);
+    await manager.waitForAgentTerminal(started.id);
+  });
+
   it('force-stops once, upgrades a finishing agent, and rejects later input', async () => {
     const connection = createConnection('thread-force', 'process-force');
     const { manager, root, rootInput } = await createHarness({ connections: [connection] });
@@ -464,7 +493,7 @@ describe('Codex AgentManager lifecycle integration', () => {
     ).rejects.toMatchObject({ code: 'unknown_target' });
   });
 
-  it('converges a close error to one failure and cleans the logical lifecycle', async () => {
+  it('preserves forced terminal context when close cleanup fails', async () => {
     const connection = createConnection('thread-close-error', 'process-close-error');
     const closeError = new Error('connection close failed');
     connection.close.mockImplementationOnce(async () => {
@@ -475,6 +504,7 @@ describe('Codex AgentManager lifecycle integration', () => {
       connections: [connection],
     });
     const started = await startAgent(manager, root, 'close-error-worker');
+    completeTurn(connection, 'thread-close-error-turn-1', 'Last completed result.');
 
     await expect(
       manager.stopAgent(root, { name: 'close-error-worker', force: true })
@@ -487,7 +517,8 @@ describe('Codex AgentManager lifecycle integration', () => {
     expect(connection.close).toHaveBeenCalledTimes(1);
     expect(logicalLifecycles[0]?.markExited).toHaveBeenCalledTimes(1);
     expect(rootInput.receivedMessages).toHaveLength(1);
-    expect(rootInput.receivedMessages[0]?.content).toContain('failed before completing');
+    expect(rootInput.receivedMessages[0]?.content).toContain('Last completed result.');
+    expect(rootInput.receivedMessages[0]?.content).toContain('stale or out of context');
     expect(manager.getAgentSnapshot(started.id)).toBeUndefined();
   });
 

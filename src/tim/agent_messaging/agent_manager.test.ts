@@ -3300,7 +3300,7 @@ describe('AgentManager StopAgent lifecycle', () => {
       })
     ).resolves.toEqual({ name: 'stop-authorized', mode: 'already-stopping', state: 'stopping' });
     expect(lifecycle.gracefulShutdownCalls).toBe(1);
-    expect(scheduler.pendingTimerCount).toBe(0);
+    expect(scheduler.pendingTimerCount).toBe(1);
 
     lifecycle.resolveGracefulShutdown();
     await gracefulStarted;
@@ -3525,7 +3525,7 @@ describe('AgentManager StopAgent lifecycle', () => {
     expect(lifecycle.forcedShutdownCalls).toBe(1);
   });
 
-  test('starts the grace window at acceptance when acceptance is slow without output', async () => {
+  test('force-escalates from request issuance when graceful acceptance is slow without output', async () => {
     const launcher = new FakeAgentLauncher();
     const scheduler = new FakeAgentManagerScheduler();
     const manager = await createManager({
@@ -3539,13 +3539,10 @@ describe('AgentManager StopAgent lifecycle', () => {
 
     await manager.stopAgent(manager.orchestratorIdentity, { name: 'stop-acceptance-clock' });
     scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS);
+    expect(lifecycle.forcedShutdownCalls).toBe(1);
     lifecycle.resolveGracefulShutdown();
     await gracefulStarted;
     await flushLifecyclePromises();
-    expect(lifecycle.forcedShutdownCalls).toBe(0);
-    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
-    expect(lifecycle.forcedShutdownCalls).toBe(0);
-    scheduler.advanceBy(1);
     expect(lifecycle.forcedShutdownCalls).toBe(1);
   });
 

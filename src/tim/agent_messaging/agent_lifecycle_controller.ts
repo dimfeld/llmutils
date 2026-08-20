@@ -348,6 +348,11 @@ export class AgentLifecycleController {
   private requestGracefulStop(phase: GracefulStopPhase): void {
     if (this.providerLifecycle === undefined || this.phase !== phase) return;
     phase.kind = 'graceful-requesting';
+    // The provider control call can remain pending while the provider is
+    // wedged in turn/steer or turn/start. Start the manager-owned inactivity
+    // deadline before waiting for that call so root teardown can still force
+    // the provider to close.
+    this.armStopInactivityTimer(phase);
     const requestGeneration = phase.activityGeneration;
     let request: Promise<AgentProviderControlResult>;
     try {
@@ -414,7 +419,10 @@ export class AgentLifecycleController {
     if (phase === undefined) return;
     phase.lastActivityAt = this.options.scheduler.now();
     phase.activityGeneration += 1;
-    if (this.phase === phase && phase.kind === 'graceful-active') {
+    if (
+      this.phase === phase &&
+      (phase.kind === 'graceful-requesting' || phase.kind === 'graceful-active')
+    ) {
       this.armStopInactivityTimer(phase);
     }
   }
@@ -603,7 +611,7 @@ export class AgentLifecycleController {
       this.providerExit !== undefined ||
       this.terminal.terminalClaimed ||
       this.phase !== phase ||
-      phase.kind !== 'graceful-active'
+      (phase.kind !== 'graceful-requesting' && phase.kind !== 'graceful-active')
     ) {
       return;
     }

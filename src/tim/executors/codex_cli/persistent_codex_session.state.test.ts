@@ -1,3 +1,5 @@
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TimConfig } from '../../configSchema.js';
 import type {
@@ -15,7 +17,7 @@ interface Deferred<T> {
 }
 
 interface TestConnection {
-  readonly isAlive: boolean;
+  isAlive: boolean;
   readonly pid: number;
   readonly processControlId: string;
   readonly setGracefulEndHandler: ReturnType<typeof vi.fn>;
@@ -66,15 +68,27 @@ interface Harness {
   readonly callbacks: CodexPersistentAgentLifecycleCallbacks;
   readonly connection: TestConnection;
   readonly initialTurn: Deferred<{ turnId: string }>;
+  readonly tunnelServerReady: Deferred<{ close: ReturnType<typeof vi.fn> }>;
+  readonly tunnelServerClose: ReturnType<typeof vi.fn>;
+  readonly tunnelCreate: ReturnType<typeof vi.fn>;
   readonly notify: (method: string, params: unknown) => void;
 }
 
 async function createHarness(
-  options: { readonly resolveInitialTurn?: boolean } = {}
+  options: {
+    readonly resolveInitialTurn?: boolean;
+    readonly earlyThreadId?: string;
+    readonly tunnelActive?: boolean;
+    readonly assertReady?: boolean;
+    readonly waitForInitialTurn?: boolean;
+  } = {}
 ): Promise<Harness> {
   vi.resetModules();
 
   const initialTurn = createDeferred<{ turnId: string }>();
+  const tunnelServerReady = createDeferred<{ close: ReturnType<typeof vi.fn> }>();
+  const tunnelServerClose = vi.fn();
+  const tunnelCreate = vi.fn(async () => tunnelServerReady.promise);
   let notify: ((method: string, params: unknown) => void) | undefined;
   const connection: TestConnection = {
     isAlive: true,
@@ -106,7 +120,12 @@ async function createHarness(
   }));
   vi.doMock('./app_server_runner.js', () => ({
     createAppServerRequestHandler: vi.fn(() => vi.fn(async () => ({ success: true }))),
-    startInitialThread: vi.fn(async () => ({ threadId: 'thread-state-test' })),
+    startInitialThread: vi.fn(async () => {
+      if (options.earlyThreadId !== undefined) {
+        notify?.('thread/started', { threadId: options.earlyThreadId });
+      }
+      return { threadId: 'thread-state-test' };
+    }),
   }));
   vi.doMock('../../../common/session_process_control.js', () => ({
     getCurrentSessionProcessOwner: vi.fn(() => owner),
@@ -116,7 +135,10 @@ async function createHarness(
     sendStructured: vi.fn(),
   }));
   vi.doMock('../../../logging/tunnel_client.js', () => ({
-    isTunnelActive: vi.fn(() => true),
+    isTunnelActive: vi.fn(() => options.tunnelActive !== false),
+  }));
+  vi.doMock('../../../logging/tunnel_server.js', () => ({
+    createExecutorTunnelServer: tunnelCreate,
   }));
   vi.doMock('./app_server_approval.js', () => ({
     createApprovalHandler: vi.fn(() => vi.fn(async () => ({ decision: 'accept' }))),
@@ -161,10 +183,14 @@ async function createHarness(
     sessionProcessOwner: owner,
   });
 
-  await vi.waitFor(() => expect(connection.turnStart).toHaveBeenCalledTimes(1));
+  if (options.waitForInitialTurn !== false) {
+    await vi.waitFor(() => expect(connection.turnStart).toHaveBeenCalledTimes(1));
+  }
   if (options.resolveInitialTurn !== false) {
     initialTurn.resolve({ turnId: 'turn-1' });
-    await expect(handle.ready).resolves.toBeUndefined();
+    if (options.assertReady !== false) {
+      await expect(handle.ready).resolves.toBeUndefined();
+    }
   }
 
   return {
@@ -172,6 +198,9 @@ async function createHarness(
     callbacks,
     connection,
     initialTurn,
+    tunnelServerReady,
+    tunnelServerClose,
+    tunnelCreate,
     notify: (method: string, params: unknown): void => {
       notify?.(method, params);
     },
@@ -606,9 +635,11 @@ describe('persistent Codex turn state machine', () => {
     expect(harness.callbacks.exit).toHaveBeenCalledWith('forced', undefined);
   });
 
-  it('remembers a forced interrupt for a late turn/start response', async () => {
+  it('ignores a late turn/start response after production-style forced close', async () => {
     const harness = await createHarness({ resolveInitialTurn: false });
-    void harness.handle.ready.catch(() => undefined);
+    harness.connection.close.mockImplementationOnce(async () => {
+      harness.connection.isAlive = false;
+    });
 
     const forced = harness.handle.lifecycle.requestForcedShutdown();
     await expect(forced).resolves.toBe('accepted');
@@ -616,15 +647,21 @@ describe('persistent Codex turn state machine', () => {
     expect(harness.connection.turnInterrupt).not.toHaveBeenCalled();
 
     harness.initialTurn.resolve({ turnId: 'turn-late' });
-    await vi.waitFor(() => expect(harness.connection.turnInterrupt).toHaveBeenCalledTimes(1));
-    expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
-      threadId: 'thread-state-test',
-      turnId: 'turn-late',
-    });
+    await Promise.resolve();
+    expect(harness.connection.turnInterrupt).not.toHaveBeenCalled();
     await expect(harness.handle.completion).resolves.toMatchObject({});
   });
 
-  it('classifies a connection close failure as one failed provider exit', async () => {
+  it('wakes a graceful control waiting for startup when forced close begins', async () => {
+    const harness = await createHarness({ resolveInitialTurn: false });
+    const graceful = harness.handle.lifecycle.requestGracefulShutdown('Provide the final status.');
+
+    await expect(harness.handle.lifecycle.requestForcedShutdown()).resolves.toBe('accepted');
+    await expect(graceful).resolves.toBe('already-exited');
+    await expect(harness.handle.completion).resolves.toMatchObject({});
+  });
+
+  it('preserves forced classification and diagnostics when connection close fails', async () => {
     const harness = await createHarness();
     harness.connection.close.mockRejectedValueOnce(new Error('close failed'));
 
@@ -633,6 +670,47 @@ describe('persistent Codex turn state machine', () => {
       error: expect.objectContaining({ message: 'close failed' }),
     });
     expect(harness.callbacks.exit).toHaveBeenCalledTimes(1);
-    expect(harness.callbacks.exit).toHaveBeenCalledWith('failed', expect.any(Error));
+    expect(harness.callbacks.exit).toHaveBeenCalledWith('forced', expect.any(Error));
+    expect(harness.callbacks.exit.mock.calls[0]?.[1]).toMatchObject({
+      message: 'close failed',
+    });
+  });
+
+  it('keeps an early owned thread/started notification for startup observability', async () => {
+    const harness = await createHarness({ earlyThreadId: 'thread-state-test' });
+
+    expect(harness.handle.providerThreadId).toBe('thread-state-test');
+    expect(harness.callbacks.outputActivity).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an unrelated early thread/started notification', async () => {
+    const harness = await createHarness({
+      earlyThreadId: 'unrelated-thread',
+      assertReady: false,
+      waitForInitialTurn: false,
+    });
+
+    await expect(harness.handle.ready).rejects.toThrow(/conflicting thread IDs/i);
+    await expect(harness.handle.completion).resolves.toMatchObject({
+      error: expect.objectContaining({ message: expect.stringMatching(/conflicting thread IDs/i) }),
+    });
+    expect(harness.handle.providerThreadId).toBeUndefined();
+  });
+
+  it('closes a tunnel created after forced startup close and removes its temp directory', async () => {
+    const harness = await createHarness({
+      tunnelActive: false,
+      waitForInitialTurn: false,
+      assertReady: false,
+    });
+    await vi.waitFor(() => expect(harness.tunnelCreate).toHaveBeenCalledTimes(1));
+    const socketPath = harness.tunnelCreate.mock.calls[0]?.[0] as string;
+    const release = harness.handle.release?.();
+
+    harness.tunnelServerReady.resolve({ close: harness.tunnelServerClose });
+    await expect(release).resolves.toBeUndefined();
+    await expect(harness.handle.completion).resolves.toMatchObject({});
+    await vi.waitFor(() => expect(harness.tunnelServerClose).toHaveBeenCalledTimes(1));
+    await expect(fs.stat(path.dirname(socketPath))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
