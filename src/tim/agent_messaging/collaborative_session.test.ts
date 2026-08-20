@@ -100,12 +100,16 @@ function preparedExecution(request: SubagentPreparationRequest): PreparedSubagen
   } as PreparedSubagentExecution;
 }
 
-function createCoordinator(disposeOrder: string[]): ClaudePermissionPromptCoordinator {
+function createCoordinator(
+  disposeOrder: string[],
+  disposeError?: Error
+): ClaudePermissionPromptCoordinator {
   return {
     enqueue: vi.fn(),
     cancelRequester: vi.fn(),
     dispose: vi.fn(async () => {
       disposeOrder.push('coordinator');
+      if (disposeError !== undefined) throw disposeError;
     }),
   };
 }
@@ -208,6 +212,24 @@ describe('CollaborativeAgentSession root activation', () => {
     expect(session.manager.isClosed).toBe(true);
   });
 
+  test('closes only once and preserves cleanup errors after manager shutdown', async () => {
+    const disposeOrder: string[] = [];
+    const coordinator = createCoordinator(disposeOrder, new Error('coordinator close failed'));
+    const session = await CollaborativeAgentSession.create({
+      planId: 421,
+      repositoryRoot: '/repo',
+      orchestratorExecutor: 'claude-code',
+      permissionPromptCoordinator: coordinator,
+    });
+
+    const firstClose = session.close();
+    expect(session.close()).toBe(firstClose);
+    await expect(firstClose).rejects.toThrow('coordinator close failed');
+    expect(session.manager.isClosed).toBe(true);
+    expect(coordinator.dispose).toHaveBeenCalledTimes(1);
+    expect(disposeOrder).toEqual(['coordinator']);
+  });
+
   test('routes root and subagent tool operations through one mixed-executor manager', async () => {
     const disposeOrder: string[] = [];
     const coordinator = createCoordinator(disposeOrder);
@@ -227,6 +249,8 @@ describe('CollaborativeAgentSession root activation', () => {
     });
 
     try {
+      const rootInput = createProviderHandle('claude-code');
+      session.orchestratorInputAdapter.bind(rootInput.input);
       const rootCaller = {
         id: session.manager.orchestratorIdentity.id,
         role: 'orchestrator' as const,
@@ -284,6 +308,18 @@ describe('CollaborativeAgentSession root activation', () => {
       const subagentToolContext =
         mocks.runClaudeSubprocess.mock.calls[0]?.[0]?.claudeCodeOptions?.agentToolContext;
       expect(subagentToolContext).toBeDefined();
+      await expect(
+        subagentToolContext.dispatcher.sendAgentMessage(
+          { id: claudeStart.id, role: 'subagent' },
+          { name: 'orchestrator', message: 'The implementation handoff is ready.' }
+        )
+      ).resolves.toMatchObject({ delivery: 'started-idle-turn' });
+      expect(rootInput.input.deliver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: 'The implementation handoff is ready.',
+          source: expect.objectContaining({ name: 'claude-impl' }),
+        })
+      );
       session.manager.setAgentLifecycleState(claudeStart.id, 'running-active');
       await expect(
         subagentToolContext.dispatcher.finishAgent(
@@ -307,6 +343,12 @@ describe('CollaborativeAgentSession root activation', () => {
       claudeHandle.emitTurnComplete();
       claudeHandle.emitExit('natural');
       await session.manager.waitForAgentTerminal(claudeStart.id);
+      expect(rootInput.input.deliver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Agent claude-impl completed'),
+          source: expect.objectContaining({ name: 'claude-impl' }),
+        })
+      );
     } finally {
       await session.close();
     }

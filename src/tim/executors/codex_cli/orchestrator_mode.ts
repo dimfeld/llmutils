@@ -79,6 +79,7 @@ export async function executeOrchestratorMode(
     terminalInput: sharedOptions.terminalInput,
     timEnvironment: sharedOptions.timEnvironment,
     dynamicToolProvider: sharedOptions.codexDynamicToolProvider,
+    orchestratorInputAdapter: sharedOptions.orchestratorInputAdapter,
   });
 
   const parsed = parseFailedReportAnywhere(output);

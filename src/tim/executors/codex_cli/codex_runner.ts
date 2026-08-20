@@ -28,6 +28,7 @@ import {
   buildOutputSchemaCorrectionPrompt,
   validateJsonOutputAgainstSchema,
 } from './schema_output';
+import type { DeferredAgentInputAdapter } from '../../agent_messaging/agent_input_adapter.js';
 
 export {
   startPersistentCodexAgent,
@@ -59,6 +60,8 @@ export interface CodexStepOptions {
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   /** One trusted, role-bound provider for experimental Codex dynamic tools. */
   dynamicToolProvider?: CodexDynamicToolProvider;
+  /** Deferred root input bound by the active orchestrator app-server turn. */
+  orchestratorInputAdapter?: DeferredAgentInputAdapter;
 }
 
 /**

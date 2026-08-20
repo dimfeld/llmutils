@@ -2648,27 +2648,6 @@ describe('provider-neutral launch contracts and test fakes', () => {
     reservation.release();
   });
 
-  test('rejects reviewer preparation when no collaborative preparer is configured', async () => {
-    const manager = await createManager();
-    const reservation = reserveSubagentForTest(
-      manager,
-      reservationRequest('reviewer-without-preparer', 'reviewer')
-    );
-
-    try {
-      const preparation = createAgentPreparation({ planId: 1 });
-
-      await expect(
-        preparation.prepare({
-          identity: reservation.identity,
-          initialMessage: 'Review the current changes.',
-        })
-      ).rejects.toThrow('Collaborative reviewer preparation is not configured');
-    } finally {
-      reservation.release();
-    }
-  });
-
   test('formats named labels without conflating names and provider identities', () => {
     expect(formatAgentProcessLabel('claude-code', 'worker-one')).toBe('Claude agent (worker-one)');
     expect(formatAgentProcessLabel('codex-cli', 'worker-one')).toBe('Codex thread (worker-one)');

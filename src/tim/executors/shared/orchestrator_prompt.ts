@@ -391,8 +391,18 @@ ${buildReviewIterationGuidance(reviewCommand, options)}
 ${buildRejectedReviewIssueCleanupGuidance(planId)}
 - ${SUBAGENT_SPECIFICITY_GUIDANCE}
 - ${BRANCH_SETUP_GUIDANCE}${buildJjGuidance(options)}
+${buildCollaborativeFailureProtocol('collaborative agent')}
+${markTasksDoneGuidance(planId)}
+${buildPlanDocumentationGuidance()}
 ${reviewPolicy}
 ${progressSectionGuidance(options.planFilePath, { useAtPrefix: options.useAtPrefix })}`;
+}
+
+function buildPlanDocumentationGuidance(): string {
+  return `
+## Plan Documentation During Implementation
+
+If you or an agent discover that the plan needs to change during implementation, update the plan text so it reflects the current approach. Add a \`## Changes Made During Implementation\` section before \`## Current Progress\` and record what changed and why. Ask agents to report proposed plan changes rather than editing plan state on their own.`;
 }
 
 function buildCollaborativeSimplePrompt(
@@ -418,7 +428,6 @@ ${buildCollaborativeToolGuidance()}
 ${buildCollaborativeAvailableAgents(planId, ['implementer', 'reviewer'])}
 ${buildDynamicExecutorGuidance(options)}
 ${buildCollaborativeSimpleWorkflowInstructions(planId, options)}
-${buildCollaborativeFailureProtocol('agent')}
 ${buildCollaborativeImportantGuidelines(planId, options, false)}
 ${footer}`;
 }
@@ -469,7 +478,7 @@ ${verificationPhaseNumber}. **Testing Phase**
   const reviewPhase = options.batchMode
     ? buildOrchestratorBatchReviewPhase(planId, options, reviewPhaseNumber)
     : `${reviewPhaseNumber}. **Formal Review Phase**
-   - Run ${reviewCommand} as the separate one-shot formal gate after the implementation and final checks.
+   - Run \`${reviewCommand}\` as the separate one-shot formal gate after the implementation and final checks.
    - Do not treat a StartAgent reviewer as the formal gate. The formal review has fresh context and no collaborative tools.
    - Preserve the existing scope, severity, four-review, structural, and bounded-handoff policy.`;
   const header = `# TDD Collaborative Orchestration Instructions
@@ -523,7 +532,6 @@ ${iterationPhaseNumber}. **Iteration**
 
 ${buildReviewIterationGuidance(reviewCommand, options)}
 
-${buildCollaborativeFailureProtocol('TDD agent')}
 ${buildCollaborativeImportantGuidelines(planId, options, false)}
 ${footer}`;
 }
@@ -542,7 +550,7 @@ function buildAvailableAgents(planId: string, options: OrchestrationOptions): st
 
   const executorFlag = buildSubagentExecutorFlag(options);
   const reviewer = options.batchMode
-    ? `- **Full-plan reviewer**: Only when the selected batch completes every remaining task, run \`${buildFullPlanReviewCommand(planId)}\` via the shell command tool, without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use \`tim subagent reviewer\` for selected-task batch reviews.`
+    ? `- **Full-plan reviewer**: Only when the selected batch completes every remaining task, run \`${buildFullPlanReviewCommand(planId, options)}\` via the shell command tool, without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use \`tim subagent reviewer\` for selected-task batch reviews.`
     : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`;
   return `## Available Agents
 
@@ -596,7 +604,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - Include relevant context from the implementer's output in the input`;
 
   const reviewCommand = options.batchMode
-    ? buildFullPlanReviewCommand(planId)
+    ? buildFullPlanReviewCommand(planId, options)
     : buildReviewCommand(planId, options);
   const reviewExecutorGuidance = options.reviewExecutor
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
@@ -665,7 +673,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
   }
 
   const reviewCommand = options.batchMode
-    ? buildFullPlanReviewCommand(planId)
+    ? buildFullPlanReviewCommand(planId, options)
     : buildReviewCommand(planId, options);
   const reviewGuidelines = options.batchMode
     ? `- **Review each selected task batch yourself.** Do not run \`tim subagent reviewer\` for per-batch review. You may start your own native review subagent if useful, but you must assess its findings and own the result.
@@ -812,7 +820,7 @@ export function wrapWithOrchestrationSimple(
   const executorFlag = buildSubagentExecutorFlag(options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
   const reviewCommand = options.batchMode
-    ? buildFullPlanReviewCommand(planId)
+    ? buildFullPlanReviewCommand(planId, options)
     : buildReviewCommand(planId, options);
   const reviewExecutorGuidance = options.reviewExecutor
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`
@@ -994,7 +1002,7 @@ You MUST enforce TDD order:
 You have three specialized subagents available via the shell command tool:
 - **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildFullPlanReviewCommand(planId)}\` without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`${buildReviewCommand(planId, options)}\` via the shell command tool`}
+${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildFullPlanReviewCommand(planId, options)}\` without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`${buildReviewCommand(planId, options)}\` via the shell command tool`}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
@@ -1006,7 +1014,7 @@ You have four specialized subagents available via the shell command tool:
 - **TDD Tests**: Run \`tim subagent tdd-tests ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Implementer**: Run \`tim subagent implementer ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
 - **Tester**: Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)
-${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildFullPlanReviewCommand(planId)}\` without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`}
+${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is complete, run \`${buildFullPlanReviewCommand(planId, options)}\` without any \`--executor\` option so the review runs with all configured agents for full coverage. Do not use it for the selected-task batch review.` : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
@@ -1045,7 +1053,7 @@ Each subagent command may take a long time to complete because it may run multip
       : '6';
 
   const reviewCommand = options.batchMode
-    ? buildFullPlanReviewCommand(planId)
+    ? buildFullPlanReviewCommand(planId, options)
     : buildReviewCommand(planId, options);
   const reviewExecutorGuidance = options.reviewExecutor
     ? `   - Use the review executor override provided: \`--executor ${options.reviewExecutor}\`.`

@@ -6,6 +6,7 @@ import type {
   ClaudePermissionPromptCoordinator,
 } from './claude_code/claude_mcp_protocol.js';
 import type { CodexDynamicToolProvider } from './codex_cli/app_server_dynamic_tools.js';
+import type { DeferredAgentInputAdapter } from '../agent_messaging/agent_input_adapter.js';
 
 /**
  * Shared options/state from the agent command, passed to the executor.
@@ -34,7 +35,7 @@ export interface ExecutorCommonOptions {
   simpleMode?: boolean;
   /**
    * Root-session snapshot of the experimental agent-messaging setting.
-   * This is dormant until a later activation plan consumes it.
+   * Prompt and provider-tool activation consume this immutable value.
    */
   agentMessagingEnabled?: boolean;
   /**
@@ -67,6 +68,8 @@ export interface ExecutorCommonOptions {
   claudePermissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
   /** Root-session Codex dynamic tools, installed only for orchestration modes. */
   codexDynamicToolProvider?: CodexDynamicToolProvider;
+  /** Deferred root input bound by the active orchestrator provider turn. */
+  orchestratorInputAdapter?: DeferredAgentInputAdapter;
 }
 
 /**

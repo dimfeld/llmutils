@@ -701,6 +701,19 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(sharedOptions).toMatchObject({ agentMessagingEnabled: false });
   });
 
+  test('rejects an enabled session with an unsupported orchestrator before workspace setup', async () => {
+    (defaultConfig as any).experimental = { agentMessaging: true };
+    defaultConfig.defaultOrchestrator = 'test-executor';
+
+    const { timAgent } = await import('./agent.js');
+    await expect(timAgent(123, { log: false } as any, {})).rejects.toThrow(
+      'Experimental agent messaging requires the Claude or Codex orchestrator'
+    );
+
+    expect(setupWorkspace).not.toHaveBeenCalled();
+    expect(buildExecutorAndLogSpy).not.toHaveBeenCalled();
+  });
+
   test('takes a fresh messaging snapshot for each new tim agent session', async () => {
     const { timAgent } = await import('./agent.js');
 

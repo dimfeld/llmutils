@@ -454,6 +454,35 @@ describe('persistent-agent role prompt communication guidance', () => {
     expect(reviewer).toContain('read-only, advisory reviewer');
     expect(reviewer).toContain('separate formal `tim review` gate');
     expect(reviewer).toContain('do not edit files or create commits');
+    expect(reviewer).not.toContain('**VERDICT:**');
+    expect(reviewer).not.toContain('## Response Format');
+  });
+
+  it('keeps persistent mutating agents inside their assigned commit scope', () => {
+    for (const prompt of [
+      getImplementerPrompt(
+        context,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        persistentPromptContext
+      ).prompt,
+      getTesterPrompt(context, undefined, undefined, undefined, undefined, persistentPromptContext)
+        .prompt,
+      getTddTestsPrompt(
+        context,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        persistentPromptContext
+      ).prompt,
+    ]) {
+      expect(prompt).toContain('Commit only files in your assigned task and file scope');
+      expect(prompt).toContain('Do not sweep unexpected or foreign modifications');
+      expect(prompt).not.toContain('always include any unexpected modified files in the commit');
+    }
   });
 
   it('keeps direct one-shot and formal reviewer prompts free of communication guidance', () => {

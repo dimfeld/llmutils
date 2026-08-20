@@ -11,6 +11,7 @@ export {
   parseSubagentName,
 } from './agent_names.js';
 export { formatAgentProcessLabel } from './agent_process_labels.js';
+export { CallbackAgentInputAdapter, DeferredAgentInputAdapter } from './agent_input_adapter.js';
 export { DEFAULT_AGENT_MANAGER_SCHEDULER } from './lifecycle_scheduler.js';
 export { STOP_AGENT_INACTIVITY_TIMEOUT_MS } from './contracts.js';
 export type { AgentId, AgentIdGenerator, AgentName, AgentSlugGenerator } from './agent_names.js';

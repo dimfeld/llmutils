@@ -46,6 +46,7 @@ import {
   FAST_NOOP_ORCHESTRATOR_RETRY_MS,
   shouldRetryFastNoopOrchestratorTurn,
 } from './claude_code/fast_noop_retry.ts';
+import { CallbackAgentInputAdapter } from '../agent_messaging/agent_input_adapter.js';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -687,14 +688,20 @@ export class ClaudeCodeExecutor implements Executor {
     // Other modes (bare, planning, review) also don't use agent definitions.
 
     let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
+    let rootInputAdapter: CallbackAgentInputAdapter | undefined;
     let monitorHandle: SubprocessMonitorHandle | undefined;
     let sessionProcessLifecycle: SessionExecutorLifecycle | undefined;
     const cleanupState = createOrderedClaudeCleanup([
-      (): void => {
+      async (): Promise<void> => {
         // Close the shared input owner before removing the process and
         // transport handlers. Late provider output must not enqueue input
         // while the rest of this execution is being torn down.
         terminalInputResult?.cleanup();
+        if (rootInputAdapter !== undefined) {
+          this.sharedOptions.orchestratorInputAdapter?.unbind(rootInputAdapter);
+          await rootInputAdapter.release();
+          rootInputAdapter = undefined;
+        }
       },
       (): void => sessionProcessLifecycle?.setGracefulEndHandler(undefined),
       (): void => monitorHandle?.stop(),
@@ -941,7 +948,20 @@ export class ClaudeCodeExecutor implements Executor {
           (this.sharedOptions.closeTerminalInputOnResult ?? true) === false,
       });
 
+      if (this.sharedOptions.orchestratorInputAdapter !== undefined) {
+        rootInputAdapter = new CallbackAgentInputAdapter({
+          onDeliver: (message) => {
+            if (terminalInputResult === undefined) return 'temporarily-unavailable';
+            terminalInputResult.sendFollowUpForInterceptedResult(message.content);
+            return 'steered';
+          },
+        });
+        rootInputAdapter.start();
+        this.sharedOptions.orchestratorInputAdapter.bind(rootInputAdapter);
+      }
+
       const result = await terminalInputResult.resultPromise;
+      rootInputAdapter?.setActivity('temporarily-unavailable');
       await resultHandlingPromise;
       acceptedFinalResult = terminalInputResult.acceptedSuccessfulFinalResult();
 

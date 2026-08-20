@@ -96,6 +96,11 @@ describe('collaborative orchestration activation matrix', () => {
       expect(output).toContain('file scope');
       expect(output).toContain('read-only and advisory');
       expect(output).toContain('tim review 421 --print --output-file <output_path>');
+      expect(output).toContain('## Failure Protocol');
+      expect(output).toContain('tim set-task-done 421 --title "<taskTitle>"');
+      expect(output).toContain('After marking tasks done, commit your changes');
+      expect(output).toContain('## Plan Documentation During Implementation');
+      expect(output).toContain('## Progress Updates (Plan File)');
 
       expect(output).not.toMatch(/tim subagent (implementer|tester|tdd-tests|reviewer)/);
       expect(output).not.toMatch(/^- \*\*FinishAgent\*\*/m);

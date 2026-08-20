@@ -196,21 +196,24 @@ describe('reusable subagent service', () => {
       '42',
       'role instructions\n\nInitial implementer message',
       'gpt-5-codex',
-      { mode: 'report', useJj: true }
+      { mode: 'report', useJj: true },
+      undefined
     );
     expect(mocks.getTesterPrompt).toHaveBeenCalledWith(
       'prepared context',
       '42',
       'role instructions\n\nInitial tester message',
       'gpt-5-codex',
-      { mode: 'report', useJj: true }
+      { mode: 'report', useJj: true },
+      undefined
     );
     expect(mocks.getTddTestsPrompt).toHaveBeenCalledWith(
       'prepared context',
       '42',
       'role instructions\n\nInitial tdd-tests message',
       'gpt-5-codex',
-      { mode: 'report', useJj: true }
+      { mode: 'report', useJj: true },
+      undefined
     );
     expect(mocks.executeCodexStep).not.toHaveBeenCalled();
     expect(mocks.runClaudeSubprocess).not.toHaveBeenCalled();
@@ -242,7 +245,7 @@ describe('reusable subagent service', () => {
       false,
       { mode: 'report', useJj: true },
       false,
-      false,
+      true,
       promptContext
     );
   });
@@ -279,7 +282,8 @@ describe('reusable subagent service', () => {
       '42',
       'role instructions\n\nDirect one-shot assignment',
       undefined,
-      { mode: 'report', useJj: true }
+      { mode: 'report', useJj: true },
+      undefined
     );
   });
 
@@ -470,7 +474,8 @@ describe('reusable subagent service', () => {
         '42',
         'role instructions\n\nstdin fallback input',
         undefined,
-        { mode: 'report', useJj: true }
+        { mode: 'report', useJj: true },
+        undefined
       );
     } finally {
       restoreStdin();

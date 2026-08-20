@@ -15,10 +15,7 @@ export function buildReviewCommand(planId: string, options: OrchestrationOptions
   return baseCommand;
 }
 
-export function buildFullPlanReviewCommand(
-  planId: string,
-  options: OrchestrationOptions = {}
-): string {
+export function buildFullPlanReviewCommand(planId: string, options: OrchestrationOptions): string {
   const commandName =
     options.agentMessagingEnabled === true ? 'tim review' : 'tim subagent reviewer';
   return `${commandName} ${planId} --print --output-file <output_path>`;

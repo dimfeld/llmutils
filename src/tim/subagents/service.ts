@@ -94,7 +94,7 @@ export const ROLE_DEFINITIONS = {
         false,
         progressGuidanceOptions,
         false,
-        false,
+        promptContext?.mode === 'persistent-agent',
         promptContext
       ),
   },
@@ -220,23 +220,14 @@ export async function prepareSubagentExecution(
     planFilePath,
     branch: planData.branch,
   });
-  const agentDefinition =
-    request.promptContext === undefined
-      ? roleDefinition.promptBuilder(
-          contextContent,
-          planIdLabel,
-          allInstructions || undefined,
-          selectedModel,
-          { mode: 'report', useJj }
-        )
-      : roleDefinition.promptBuilder(
-          contextContent,
-          planIdLabel,
-          allInstructions || undefined,
-          selectedModel,
-          { mode: 'report', useJj },
-          request.promptContext
-        );
+  const agentDefinition = roleDefinition.promptBuilder(
+    contextContent,
+    planIdLabel,
+    allInstructions || undefined,
+    selectedModel,
+    { mode: 'report', useJj },
+    request.promptContext
+  );
 
   return {
     agentType: request.agentType,

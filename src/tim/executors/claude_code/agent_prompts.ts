@@ -31,6 +31,17 @@ const commitScopeGuidance = `
 When commiting changes to version control, always include any unexpected modified files in the commit. Do not ask the user for confirmation.
 `;
 
+function buildCommitGuidance(promptContext?: SubagentPromptContext): string {
+  if (promptContext?.mode === 'persistent-agent') {
+    return `
+## Commit Guidance
+
+Commit only files in your assigned task and file scope. Do not sweep unexpected or foreign modifications into your commit. Report foreign changes to the orchestrator and coordinate ownership before editing them. The orchestrator owns final integration commits.
+`;
+  }
+  return commitScopeGuidance;
+}
+
 const JJ_VCS_GUIDANCE = `
 ## Version Control: Use Jujutsu (jj), not git
 
@@ -47,7 +58,18 @@ function buildVcsGuidance(useJj?: boolean): string {
   return useJj ? `\n${JJ_VCS_GUIDANCE}` : '';
 }
 
-export function buildReviewerPromptIntro(useSubagents: boolean = false): string {
+export function buildReviewerPromptIntro(
+  useSubagents: boolean = false,
+  advisory: boolean = false
+): string {
+  if (advisory) {
+    return `You are a tim advisory code reviewer. Inspect the evolving shared workspace for useful correctness, security, testing, and maintainability findings. Report actionable observations to the team. You are not the formal review gate, do not edit or commit, and do not provide a formal verdict.
+
+Do not be polite or encouraging. Focus on actual problems that need attention.
+
+Use read-only inspection and non-mutating test commands. Other agents may be changing the workspace while you review it, so describe the observed scope and revision context in each finding.
+`;
+  }
   const subagentDirective = useSubagents
     ? 'CRITICAL: Use the available sub-agents to delegate in-depth analysis, run tests, and create findings before delivering your final verdict.\n\n'
     : '';
@@ -390,7 +412,7 @@ You may receive a single task or multiple related tasks to implement together. W
 
 ${FAILED_PROTOCOL_INSTRUCTIONS}
 ${progressGuidance}${buildPersistentAgentCommunicationGuidance(promptContext, 'implementer')}
-${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
+${buildCommitGuidance(promptContext)}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ### Implementation Approach
 1. First understand the existing code structure and patterns. If you have a plan file to reference and existing work has been done on the plan, you can find it described in the "# Implementation Notes" section of the plan file's details field.
@@ -441,7 +463,7 @@ ${contextContent}${customInstructionsSection}
 6. Take your time to ensure test coverage is complete and passing. Run testing commands even if they may take a while or use system resources.
 
 ${progressGuidance}${buildPersistentAgentCommunicationGuidance(promptContext, 'tester')}
-${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
+${buildCommitGuidance(promptContext)}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:
@@ -544,7 +566,7 @@ ${contextContent}${customInstructionsSection}
 7. Report a summary of tests added and the behavior they define so the implementer can make them pass
 
 ${progressGuidance}${buildPersistentAgentCommunicationGuidance(promptContext, 'tdd-tests')}
-${commitScopeGuidance}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
+${buildCommitGuidance(promptContext)}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ## TDD-Specific Rules
 - The tests should initially FAIL because the implementation is not complete yet.
@@ -616,12 +638,14 @@ Do this for each task that was successfully implemented and reviewed before prov
   }
 
   const progressGuidance = buildProgressGuidance(progressGuidanceOptions);
+  const advisoryReviewer = promptContext?.mode === 'persistent-agent';
   const prReviewScopeGuidance = includePrReviewScopeGuidance
     ? `\n${buildPrReviewScopeGuidance()}\n`
     : '';
-  const responseFormatGuidance = suppressResponseFormat
-    ? ''
-    : `
+  const responseFormatGuidance =
+    suppressResponseFormat || advisoryReviewer
+      ? ''
+      : `
 ## Response Format:
 
 Place three dashes after each issue to make it easier to parse out which issues are listed.
@@ -641,7 +665,7 @@ ${FAILED_PROTOCOL_INSTRUCTIONS}
       'Reviews implementation and tests for quality, security, and adherence to project standards',
     model,
     skills: ['using-tim'],
-    prompt: `${buildReviewerPromptIntro(useSubagents)}
+    prompt: `${buildReviewerPromptIntro(useSubagents, advisoryReviewer)}
 
 ${prReviewScopeGuidance}
 

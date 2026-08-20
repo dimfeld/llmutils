@@ -199,9 +199,9 @@ export interface AgentLaunchHandle {
 /**
  * Prepared provider input for any named agent.
  *
- * The reusable one-shot preparation service currently narrows `agentType` to
- * its legacy roles. AgentManager launch requests also support collaborative
- * reviewers, while preserving every other prepared-execution field.
+ * The reusable preparation service supports the same role set as AgentManager,
+ * including the read-only collaborative reviewer, while preserving every
+ * other prepared execution field.
  */
 export type PreparedAgentExecution = Omit<PreparedSubagentExecution, 'agentType'> & {
   readonly agentType: AgentType;
@@ -227,9 +227,10 @@ export interface AgentPreparationRequest {
 /**
  * Prepares one named agent without starting a provider.
  *
- * Implementations for the three established roles should delegate to
- * `prepareSubagentExecution()`. A caller may provide a narrow reviewer
- * implementation that prepares collaborative, read-only review context.
+ * Implementations should delegate to `prepareSubagentExecution()` and pass
+ * the explicit persistent-agent context when the provider installs messaging
+ * tools. Collaborative reviewers use the same preparation service with their
+ * read-only role prompt; formal review remains a separate one-shot path.
  */
 export interface AgentPreparation {
   prepare(request: AgentPreparationRequest): Promise<PreparedAgentExecution>;

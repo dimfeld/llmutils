@@ -41,6 +41,7 @@ import {
   getCurrentSessionProcessOwner,
   type SessionLogicalExecutorLifecycle,
 } from '../../../common/session_process_control.js';
+import { CallbackAgentInputAdapter } from '../../agent_messaging/agent_input_adapter.js';
 
 class SessionEndedError extends Error {
   constructor() {
@@ -194,9 +195,11 @@ export async function executeCodexStepViaAppServer(
   const headlessForwardingEnabled = loggerAdapter instanceof HeadlessAdapter;
   const hasInteractiveInputSource =
     terminalInputEnabled || tunnelForwardingEnabled || headlessForwardingEnabled;
+  const rootInputRequested = options?.orchestratorInputAdapter !== undefined;
   const keepSessionOpen = appServerMode === 'chat-session' && hasInteractiveInputSource;
   const singleTurnSteeringEnabled =
-    appServerMode === 'single-turn-with-steering' && hasInteractiveInputSource;
+    appServerMode === 'single-turn-with-steering' &&
+    (hasInteractiveInputSource || rootInputRequested);
   const hasOutputSchema = !!(options?.outputSchema || options?.outputSchemaPath);
   const outputSchemaForValidation =
     options?.outputSchema ??
@@ -578,6 +581,7 @@ export async function executeCodexStepViaAppServer(
     } else if (singleTurnSteeringEnabled) {
       const inputQueue = new UserInputQueue();
       activeInputQueue = inputQueue;
+      let rootInputAdapter: CallbackAgentInputAdapter | undefined;
       let terminalInputReader: TerminalInputReader | undefined;
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
@@ -669,6 +673,20 @@ export async function executeCodexStepViaAppServer(
       }
       resetInactivityTimer();
 
+      if (options?.orchestratorInputAdapter !== undefined) {
+        rootInputAdapter = new CallbackAgentInputAdapter({
+          onDeliver: (message) => {
+            if (!currentAttemptActive || currentTurnId === undefined) {
+              return 'temporarily-unavailable';
+            }
+            inputQueue.push(message.content);
+            return 'steered';
+          },
+        });
+        rootInputAdapter.start();
+        options.orchestratorInputAdapter.bind(rootInputAdapter);
+      }
+
       const steeringPump = (async () => {
         while (true) {
           throwIfConnectionExited();
@@ -710,6 +728,11 @@ export async function executeCodexStepViaAppServer(
         }
         successfulTurns += 1;
       } finally {
+        rootInputAdapter?.setActivity('temporarily-unavailable');
+        if (rootInputAdapter !== undefined) {
+          options?.orchestratorInputAdapter?.unbind(rootInputAdapter);
+          await rootInputAdapter.release();
+        }
         inputQueue.close();
         activeInputQueue = undefined;
         await steeringPump;

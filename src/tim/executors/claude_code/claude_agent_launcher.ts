@@ -7,6 +7,7 @@ import type {
   ClaudeAgentToolDispatcher,
   ClaudePermissionPromptCoordinator,
 } from './claude_mcp_protocol.js';
+import { getClaudeAgentToolNames } from './claude_mcp_protocol.js';
 import { CLAUDE_PERSISTENT_AGENT_MODE } from './persistent_agent_contract.js';
 import { runClaudeSubprocess, type ClaudeCodeSubprocessOptions } from './run_claude_subprocess.js';
 
@@ -15,6 +16,9 @@ export interface ClaudeAgentLauncherOptions {
   readonly dispatcher: ClaudeAgentToolDispatcher;
   /** One coordinator shared by the root and every Claude bridge in the session. */
   readonly permissionPromptCoordinator: ClaudePermissionPromptCoordinator;
+  /** Root-session capability used to decide whether interactive approval is possible. */
+  readonly noninteractive?: boolean;
+  readonly terminalInput?: boolean;
 }
 
 /** Create the Claude AgentManager launch adapter. */
@@ -31,7 +35,7 @@ export function createClaudeAgentLauncher(options: ClaudeAgentLauncherOptions): 
         ] as ClaudeCodeSubprocessOptions | undefined) ?? {};
       const agentToolContext = {
         caller: request.identity,
-        allowedTools: new Set(['ListAgents', 'SendAgentMessage', 'FinishAgent'] as const),
+        allowedTools: new Set(getClaudeAgentToolNames(request.identity.role)),
         dispatcher: options.dispatcher,
       };
 
@@ -46,7 +50,9 @@ export function createClaudeAgentLauncher(options: ClaudeAgentLauncherOptions): 
           agentToolContext,
           permissionPromptCoordinator: options.permissionPromptCoordinator,
         },
-        noninteractive: true,
+        noninteractive: options.noninteractive ?? options.terminalInput !== true,
+        // Subagents never consume the root stdin stream. The root terminal
+        // capability only controls whether their permission bridge may ask.
         terminalInput: false,
         model: request.preparedExecution.model,
         label: `agent ${request.identity.name}`,
