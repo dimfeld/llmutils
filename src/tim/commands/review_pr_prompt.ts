@@ -256,15 +256,17 @@ ${REVIEW_GUIDE_ANNOTATIONS_SECTION}
 Treat the guide as an architectural map of the change, not only as a transcription of the diff.
 - Start with a high-level overview of the change's purpose, the main components involved, and the important control or data flow between them. Explain how the changed pieces fit into the existing system and which boundaries or contracts they affect.
 - For every changed file or logical change, explain three things: what it is responsible for, how it implements that responsibility, and how it interacts with other changed files and relevant existing system components.
+- Give special attention to interactions across module or component boundaries. For each important changed module or component, explain how existing code uses it, when applicable, how new or changed code uses it, and what data, control flow, lifecycle, or contract crosses the boundary.
+- Do not stop at listing callers or dependencies. Trace representative end-to-end flows and identify whether the change preserves or alters the assumptions made by existing callers and consumers.
 - Include this context for tests, configuration, migrations, documentation, and other supporting files. Explain what they enable or verify and how they relate to the main implementation.
 - Keep the explanation grounded in the repository and the diff. Do not invent architecture or spend space on unrelated code.
 
 ## Required Workflow
 1. Enumerate all changed files from the ${getGuideWorkflowSubject(metadata)}.
-2. Trace the existing architecture around the change: identify the main entry points, responsibilities, dependencies, consumers, and data or control flow that the changed code participates in.
+2. Trace the existing and changed architecture around the change: identify the main entry points, responsibilities, dependencies, consumers, and data or control flow that the changed code participates in. Pay special attention to how existing code uses affected modules and how new or changed code uses them across module or component boundaries.
 3. Begin the guide with the high-level architectural overview described above.
 4. Group files into functional sections/subsections (core logic, data model, API, tests, docs, etc.).
-5. Within each section, cover every changed file with a concise what/how/interactions explanation before or alongside its diff.
+5. Within each section, cover every changed file with a concise what/how/interactions explanation before or alongside its diff. For important modules or components, include the relevant existing and new or changed usage, not only the direct callers or dependencies.
 6. Analyze each section with enough detail that a reviewer can walk the ${metadata.kind === 'pr' ? 'PR' : 'plan changes'} without opening every file.
 7. Ensure every changed file and every changed line is covered in at least one section.
 8. ${
@@ -358,15 +360,19 @@ ${precomputedNonTestStatsSection}
 ${ASSUME_CHECKS_PASS_SECTION}
 
 ## Review Guide Focus
-Use the short comment to give the reviewer an architectural map of the PR at a glance. Explain the PR's purpose, the main components or layers it changes, and how those pieces fit together. At the section level, summarize what changed, how it works, and how it interacts with the rest of the system. Keep this concise: do not turn the comment into a file-by-file inventory.
+Use the short comment to give the reviewer an architectural map of the PR at a glance. Explain the PR's purpose, the main components or layers it changes, and how those pieces fit together.
+
+Place special focus on interactions across module or component boundaries. For each important changed module or component, explain how existing code uses it, when applicable, how new or changed code uses it, and what data, control flow, lifecycle, or contract crosses the boundary. Do not stop at listing callers or dependencies; trace representative flows and identify whether the change preserves or alters the assumptions made by existing callers and consumers.
+
+At the section level, summarize what changed, how it works, and how it interacts with the rest of the system. Keep this concise: do not turn the comment into a file-by-file inventory.
 
 ## Required Workflow
 1. Determine the full set of changed files from the PR diff.
 ${nonTestStatsInstructions}
 ${shouldIncludeNonTestStats ? '3' : '2'}. Group the changes into a small number of logical sections (e.g. core logic, data model, API, UI, tests, docs). Aim for the fewest sections that capture the shape of the change.
 ${shouldIncludeNonTestStats ? '4' : '3'}. Write a brief overview that explains the PR's purpose, its main components or layers, and the key control or data flow between them.
-${shouldIncludeNonTestStats ? '5' : '4'}. For each section, write 1-3 sentences that explain what changed, how the change works, and how it connects to the rest of the system. Mention the most important files when useful, but do not list every file. Use parallel subagents if it makes sense.
-${shouldIncludeNonTestStats ? '6' : '5'}. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth changes, complex data migrations, public API or schema changes, architectural boundary changes, or anything subtle-but-important. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
+${shouldIncludeNonTestStats ? '5' : '4'}. For each section, write 1-3 sentences that explain what changed, how the change works, how existing code and new or changed code use the affected modules or components, and how those pieces connect across their boundaries. Mention the most important files when useful, but do not list every file. Use parallel subagents if it makes sense.
+${shouldIncludeNonTestStats ? '6' : '5'}. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth changes, complex data migrations, public API or schema changes, architectural boundary changes, changed cross-module contracts, altered data or control flow between components, or anything subtle-but-important. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
 ${shouldIncludeNonTestStats ? '7' : '6'}. After generating the comment, examine it critically to find special-attention items that are not really worthy of attention. This often happens when comment generation is not finding much but is looking to say something rather than nothing. Remove or trim down any items that fall into this trap.
 ${shouldIncludeNonTestStats ? '8' : '7'}. If nothing in the PR qualifies for this special scrutiny, say so plainly instead of inventing concerns.
 

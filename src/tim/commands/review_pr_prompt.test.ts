@@ -73,7 +73,14 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Treat the guide as an architectural map of the change');
     expect(prompt).toContain('what it is responsible for, how it implements that responsibility');
     expect(prompt).toContain('how it interacts with other changed files');
-    expect(prompt).toContain('Trace the existing architecture around the change');
+    expect(prompt).toContain('interactions across module or component boundaries');
+    expect(prompt).toContain('how existing code uses it');
+    expect(prompt).toContain('how new or changed code uses it');
+    expect(prompt).toContain(
+      'what data, control flow, lifecycle, or contract crosses the boundary'
+    );
+    expect(prompt).toContain('Trace representative end-to-end flows');
+    expect(prompt).toContain('Trace the existing and changed architecture around the change');
     expect(prompt).toContain(
       'cover every changed file with a concise what/how/interactions explanation'
     );
@@ -99,6 +106,13 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain(
       'what changed, how it works, and how it interacts with the rest of the system'
     );
+    expect(prompt).toContain('interactions across module or component boundaries');
+    expect(prompt).toContain('how existing code uses it');
+    expect(prompt).toContain('how new or changed code uses it');
+    expect(prompt).toContain(
+      'what data, control flow, lifecycle, or contract crosses the boundary'
+    );
+    expect(prompt).toContain('changed cross-module contracts');
     expect(prompt).toContain('do not turn the comment into a file-by-file inventory');
     expect(prompt).toContain('architectural boundary changes');
     expect(prompt).toContain('examine it critically to find special-attention items');
