@@ -265,7 +265,7 @@ Treat the guide as an architectural map of the change, not only as a transcripti
 ## Required Workflow
 1. Enumerate all changed files from the ${getGuideWorkflowSubject(metadata)}.
 2. Trace the existing and changed architecture around the change: identify the main entry points, responsibilities, dependencies, consumers, and data or control flow that the changed code participates in. Map the relevant call graph for the touched code, including important callers, callees, and representative paths, and explicitly note added, removed, rerouted, or otherwise changed call-graph edges. Pay special attention to how existing code uses affected modules and how new or changed code uses them across module or component boundaries.
-3. Begin the guide with the high-level architectural overview described above.
+3. Begin the guide with the high-level architectural overview and call graph as described above.
 4. Group files into functional sections/subsections (core logic, data model, API, tests, docs, etc.).
 5. Within each section, cover every changed file with a concise what/how/interactions explanation before or alongside its diff. For important modules or components, include the relevant existing and new or changed usage, not only the direct callers or dependencies.
 6. Analyze each section with enough detail that a reviewer can walk the ${metadata.kind === 'pr' ? 'PR' : 'plan changes'} without opening every file.
