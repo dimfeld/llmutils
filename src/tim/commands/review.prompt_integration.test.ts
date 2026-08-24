@@ -154,7 +154,7 @@ describe('buildReviewPrompt reviewer guidance', () => {
   });
 });
 
-describe('buildReviewPrompt previously rejected findings', () => {
+describe('buildReviewPrompt previously dispositioned findings', () => {
   test('includes rejected findings, reasons, and the re-raise instruction', () => {
     const planWithRejectedFindings: PlanSchema = {
       ...minimalPlan,
@@ -174,7 +174,7 @@ describe('buildReviewPrompt previously rejected findings', () => {
 
     const prompt = buildReviewPrompt(planWithRejectedFindings, minimalDiff);
 
-    expect(prompt).toContain('# Previously Rejected Findings');
+    expect(prompt).toContain('# Previously Dispositioned Findings');
     expect(prompt).toContain('1. [CRITICAL] security');
     expect(prompt).toContain('Location: src/db.ts:42');
     expect(prompt).toContain('Issue: SQL injection vulnerability in query builder');
@@ -184,14 +184,14 @@ describe('buildReviewPrompt previously rejected findings', () => {
     expect(prompt).toContain('2. [MINOR] style');
     expect(prompt).toContain('Rejection reason: The naming is required by the external API.');
     expect(prompt).toContain(
-      'Do not re-raise these absent new evidence; if you believe a rejection is wrong, say why explicitly.'
+      'Do not re-raise these absent new evidence; if you believe a disposition is wrong, say why explicitly.'
     );
 
-    const rejectedFindingsIndex = prompt.indexOf('# Previously Rejected Findings');
+    const dispositionedFindingsIndex = prompt.indexOf('# Previously Dispositioned Findings');
     const reviewInstructionsIndex = prompt.indexOf('# Review Instructions');
-    expect(rejectedFindingsIndex).toBeGreaterThan(-1);
+    expect(dispositionedFindingsIndex).toBeGreaterThan(-1);
     expect(reviewInstructionsIndex).toBeGreaterThan(-1);
-    expect(rejectedFindingsIndex).toBeLessThan(reviewInstructionsIndex);
+    expect(dispositionedFindingsIndex).toBeLessThan(reviewInstructionsIndex);
   });
 
   test('omits the section when reviewIssues is missing or empty', () => {
@@ -202,12 +202,12 @@ describe('buildReviewPrompt previously rejected findings', () => {
     ];
 
     for (const prompt of prompts) {
-      expect(prompt).not.toContain('# Previously Rejected Findings');
+      expect(prompt).not.toContain('# Previously Dispositioned Findings');
       expect(prompt).not.toContain('Do not re-raise these absent new evidence');
     }
   });
 
-  test('excludes non-rejected issues from the rejected findings section', () => {
+  test('excludes non-dispositioned issues from the dispositioned findings section', () => {
     const nonRejected: ReviewIssue = {
       severity: 'major',
       category: 'bug',
@@ -228,7 +228,7 @@ describe('buildReviewPrompt previously rejected findings', () => {
     };
 
     const prompt = buildReviewPrompt(planWithMixedIssues, minimalDiff);
-    const sectionStart = prompt.indexOf('# Previously Rejected Findings');
+    const sectionStart = prompt.indexOf('# Previously Dispositioned Findings');
     const sectionEnd = prompt.indexOf('# Review Instructions');
     expect(sectionStart).toBeGreaterThan(-1);
     const section = prompt.slice(sectionStart, sectionEnd);
@@ -245,7 +245,7 @@ describe('buildReviewPrompt previously rejected findings', () => {
     };
 
     const prompt = buildReviewPrompt(planWithUnexplainedRejection, minimalDiff);
-    expect(prompt).toContain('Rejection reason: No rejection reason recorded.');
+    expect(prompt).toContain('Rejection reason: No reason recorded.');
     expect(prompt).not.toContain('Rejection reason: undefined');
   });
 
@@ -283,7 +283,7 @@ describe('buildReviewPrompt previously rejected findings', () => {
     expect(scope.isScoped).toBe(true);
 
     const prompt = buildReviewPrompt(scope.planData, minimalDiff);
-    expect(prompt).toContain('# Previously Rejected Findings');
+    expect(prompt).toContain('# Previously Dispositioned Findings');
     expect(prompt).toContain('Rejection reason: Already addressed');
   });
 
@@ -308,7 +308,7 @@ describe('buildReviewPrompt previously rejected findings', () => {
       customInstructions
     );
 
-    expect(prompt).toContain('# Previously Rejected Findings');
+    expect(prompt).toContain('# Previously Dispositioned Findings');
     expect(prompt).toContain('Rejection reason: Handled previously');
     expect(prompt).toContain('## Additional Context from Orchestrator');
     expect(prompt).toContain('Please double-check the retry logic.');
@@ -337,7 +337,7 @@ describe('buildPreviouslyRejectedFindingsSection', () => {
     const lines = buildPreviouslyRejectedFindingsSection([rejected, sampleIssues[1]]);
     const joined = lines.join('\n');
 
-    expect(joined).toContain('# Previously Rejected Findings');
+    expect(joined).toContain('# Previously Dispositioned Findings');
     expect(joined).toContain('SQL injection vulnerability in query builder');
     expect(joined).toContain('Rejection reason: Intentional');
     expect(joined).not.toContain('Inconsistent naming convention');

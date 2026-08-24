@@ -216,6 +216,9 @@ class WebSocketSyncClient implements SyncClient {
     this.ws = ws;
 
     ws.addEventListener('open', () => {
+      if (ws !== this.ws || this.stopped) {
+        return;
+      }
       const cursor = getTimNodeCursor(this.options.db, this.options.nodeId);
       console.info(
         `[sync] WebSocket open, sending hello (node=${this.options.nodeId}, cursor=${cursor.last_known_sequence_id})`
@@ -228,13 +231,19 @@ class WebSocketSyncClient implements SyncClient {
       });
     });
     ws.addEventListener('message', (event) => this.handleMessage(event.data, ws));
-    ws.addEventListener('close', () => this.handleDisconnect());
+    ws.addEventListener('close', () => this.handleDisconnect(ws));
     ws.addEventListener('error', () => {
+      if (ws !== this.ws) {
+        return;
+      }
       this.emitError(new Error('Sync WebSocket error'));
     });
   }
 
   private async handleMessage(data: unknown, ws: WebSocket): Promise<void> {
+    if (ws !== this.ws || this.stopped) {
+      return;
+    }
     let frame: SyncServerFrame;
     try {
       frame = SyncServerFrameSchema.parse(JSON.parse(rawToString(data)));
@@ -554,7 +563,10 @@ class WebSocketSyncClient implements SyncClient {
     return snapshots;
   }
 
-  private handleDisconnect(): void {
+  private handleDisconnect(ws: WebSocket): void {
+    if (ws !== this.ws) {
+      return;
+    }
     const wasConnected = this.helloAccepted;
     this.ws = null;
     this.connecting = false;
