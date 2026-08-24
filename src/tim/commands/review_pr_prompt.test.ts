@@ -79,8 +79,10 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain(
       'what data, control flow, lifecycle, or contract crosses the boundary'
     );
+    expect(prompt).toContain('Show the relevant call graph for the code touched by the change');
+    expect(prompt).toContain('added, removed, rerouted, or otherwise changed call-graph edges');
     expect(prompt).toContain('Trace representative end-to-end flows');
-    expect(prompt).toContain('Trace the existing and changed architecture around the change');
+    expect(prompt).toContain('Map the relevant call graph for the touched code');
     expect(prompt).toContain(
       'cover every changed file with a concise what/how/interactions explanation'
     );
@@ -111,6 +113,10 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('how new or changed code uses it');
     expect(prompt).toContain(
       'what data, control flow, lifecycle, or contract crosses the boundary'
+    );
+    expect(prompt).toContain('Include a concise call-graph view for the code touched by the PR');
+    expect(prompt).toContain(
+      'Explicitly call out added, removed, rerouted, or otherwise changed call-graph edges'
     );
     expect(prompt).toContain('changed cross-module contracts');
     expect(prompt).toContain('do not turn the comment into a file-by-file inventory');
