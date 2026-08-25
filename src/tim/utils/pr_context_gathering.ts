@@ -27,6 +27,7 @@ const DEFAULT_PR_STATUS_MAX_AGE_MS = 30 * 60 * 1000;
 export interface PrReviewContext {
   prStatus: PrStatusRow;
   baseBranch: string;
+  baseSha: string;
   headBranch: string;
   headSha: string;
   owner: string;
@@ -157,18 +158,20 @@ export async function gatherPrContext(
   }
 
   let detail = deps.getPrStatusByUrl(options.db, prUrl);
-  if (!detail || isStatusStale(detail, maxStatusAgeMs)) {
+  if (!detail || isStatusStale(detail, maxStatusAgeMs) || !detail.status.base_sha) {
     detail = await deps.refreshPrStatus(options.db, prUrl, { authToken: options.authToken });
   }
 
   const baseBranch = detail.status.base_branch;
+  const baseSha = detail.status.base_sha;
   const headBranch = detail.status.head_branch;
   const headSha = detail.status.head_sha;
 
-  if (!baseBranch || !headBranch || !headSha) {
+  if (!baseBranch || !baseSha || !headBranch || !headSha) {
     throw new Error(
       `PR metadata is incomplete for ${prUrl}. Missing ${[
         !baseBranch ? 'base branch' : null,
+        !baseSha ? 'base SHA' : null,
         !headBranch ? 'head branch' : null,
         !headSha ? 'head SHA' : null,
       ]
@@ -180,6 +183,7 @@ export async function gatherPrContext(
   return {
     prStatus: detail.status,
     baseBranch,
+    baseSha,
     headBranch,
     headSha,
     owner: parsed.owner,
@@ -195,6 +199,8 @@ export interface CheckoutPrBranchOptions {
   prNumber?: number;
   /** Base branch to fetch so agents can compute diffs against it. */
   baseBranch?: string;
+  /** Immutable base commit to use when the base branch may no longer exist. */
+  baseSha?: string;
   /** Skip the dirty working tree check. The caller is responsible for ensuring workspace isolation. */
   skipDirtyCheck?: boolean;
   cwd?: string;
@@ -250,7 +256,7 @@ export async function checkoutPrBranch(
   // Fetch the base branch so agents can compute diffs against it.
   // Prompts instruct agents to diff against origin/<base> / <base>@origin,
   // so a failed fetch would lead to incorrect diffs.
-  if (options.baseBranch) {
+  if (options.baseBranch && !options.baseSha) {
     const fetchArgs = usingJj
       ? ['jj', 'git', 'fetch', '--branch', options.baseBranch]
       : ['git', 'fetch', 'origin', options.baseBranch];

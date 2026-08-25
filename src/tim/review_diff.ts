@@ -50,6 +50,7 @@ export async function generateDiffForReview(
   gitRoot: string,
   options?: {
     baseBranch?: string;
+    baseSha?: string;
     sinceCommit?: string;
   }
 ): Promise<DiffResult> {
@@ -63,6 +64,10 @@ export async function generateDiffForReview(
   const usingJj = await getUsingJj(gitRoot);
   if (options?.sinceCommit) {
     return generateDiffSinceCommit(gitRoot, options.sinceCommit, safeBranch, usingJj);
+  }
+
+  if (options?.baseSha) {
+    return generateDiffSinceCommit(gitRoot, options.baseSha, safeBranch, usingJj);
   }
 
   return usingJj ? generateJjDiff(gitRoot, safeBranch) : generateGitDiff(gitRoot, safeBranch);

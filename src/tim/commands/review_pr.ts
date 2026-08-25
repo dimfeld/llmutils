@@ -112,7 +112,19 @@ async function resolveReviewedShaAfterCheckout(
   return result.exitCode === 0 && sha ? sha : fallbackReviewedSha;
 }
 
-async function resolveReviewGuideBaseSha(baseDir: string, baseBranch: string): Promise<string> {
+async function resolveReviewGuideBaseSha(
+  baseDir: string,
+  baseBranch: string,
+  baseSha: string
+): Promise<string> {
+  const baseCommitResult = await $`git cat-file -e ${baseSha}^{commit}`
+    .cwd(baseDir)
+    .quiet()
+    .nothrow();
+  if (baseCommitResult.exitCode === 0) {
+    return baseSha;
+  }
+
   const remoteBaseRef = `origin/${baseBranch}`;
   const gitResult = await $`git merge-base HEAD ${remoteBaseRef}`.cwd(baseDir).quiet().nothrow();
   const gitBaseSha = gitResult.stdout.toString().trim();
@@ -318,6 +330,7 @@ export async function handleReviewGuideCommand(
           branch: prContext.headBranch,
           baseBranch: prContext.baseBranch,
           prNumber: prContext.prNumber,
+          baseSha: prContext.baseSha,
           skipDirtyCheck: options.autoWorkspace === true,
           cwd: baseDir,
         });
@@ -325,7 +338,11 @@ export async function handleReviewGuideCommand(
         // checkoutPrBranch uses Git fetch/checkout even for colocated jj repositories so review
         // diffs should resolve against the Git refs that checkout just fetched.
         const reviewedSha = await resolveReviewedShaAfterCheckout(baseDir, prContext.headSha);
-        const baseSha = await resolveReviewGuideBaseSha(baseDir, prContext.baseBranch);
+        const baseSha = await resolveReviewGuideBaseSha(
+          baseDir,
+          prContext.baseBranch,
+          prContext.baseSha
+        );
         const diffCatalog = await loadReviewGuideDiffCatalog({
           baseDir,
           baseSha,

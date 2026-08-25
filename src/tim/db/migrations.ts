@@ -1421,6 +1421,15 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 53,
+    up: `SELECT 1;`,
+    afterUp: (db: Database) => {
+      if (tableExists(db, 'pr_status') && !tableColumns(db, 'pr_status').has('base_sha')) {
+        db.exec('ALTER TABLE pr_status ADD COLUMN base_sha TEXT');
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

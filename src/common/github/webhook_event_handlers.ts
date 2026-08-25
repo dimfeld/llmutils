@@ -122,6 +122,7 @@ interface ParsedPullRequestPayload {
     state: string;
     draft: boolean;
     headSha: string | null;
+    baseSha: string | null;
     baseRef: string | null;
     headRef: string | null;
     mergedAt: string | null;
@@ -188,6 +189,7 @@ interface ParsedReviewThreadPayload {
     state: string;
     draft: boolean;
     headSha: string | null;
+    baseSha: string | null;
     baseRef: string | null;
     headRef: string | null;
     mergedAt: string | null;
@@ -359,6 +361,10 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
       headSha:
         head && typeof head === 'object' && typeof (head as { sha?: unknown }).sha === 'string'
           ? ((head as { sha: string }).sha ?? null)
+          : null,
+      baseSha:
+        base && typeof base === 'object' && typeof (base as { sha?: unknown }).sha === 'string'
+          ? ((base as { sha: string }).sha ?? null)
           : null,
       baseRef:
         base && typeof base === 'object' && typeof (base as { ref?: unknown }).ref === 'string'
@@ -610,6 +616,8 @@ function parseReviewThreadPayload(payload: unknown): ParsedReviewThreadPayload |
       draft,
       headSha:
         typeof head === 'object' && head ? (head as { sha?: string | null }).sha || null : null,
+      baseSha:
+        typeof base === 'object' && base ? (base as { sha?: string | null }).sha || null : null,
       baseRef:
         typeof base === 'object' && base ? (base as { ref?: string | null }).ref || null : null,
       headRef:
@@ -742,6 +750,7 @@ export function handlePullRequestEvent(
         draft: pullRequest.draft,
         mergeable: null,
         headSha: pullRequest.headSha,
+        baseSha: pullRequest.baseSha,
         baseBranch: pullRequest.baseRef,
         headBranch: pullRequest.headRef,
         requestedReviewers: pullRequest.requestedReviewers,

@@ -1652,6 +1652,7 @@ async function buildPlanlessExecutionContext(
 
   const diffResult = await generateDiffForReview(baseDir, {
     baseBranch: target.baseBranch,
+    baseSha: target.kind === 'pr' ? target.baseSha : undefined,
     sinceCommit: options.since,
   });
   return {

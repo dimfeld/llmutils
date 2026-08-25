@@ -81,6 +81,7 @@ describe('tim db/pr_status', () => {
       draft: false,
       mergeable: 'MERGEABLE',
       headSha: 'sha-1',
+      baseSha: 'base-sha-1',
       baseBranch: 'main',
       headBranch: 'feature/a',
       reviewDecision: 'REVIEW_REQUIRED',
@@ -108,6 +109,7 @@ describe('tim db/pr_status', () => {
     });
 
     expect(created.status.pr_number).toBe(101);
+    expect(created.status.base_sha).toBe('base-sha-1');
     expect(created.status.author).toBe('alice');
     expect(created.status.requested_reviewers).toBe('[]');
     expect(created.status.created_at).toBeTruthy();

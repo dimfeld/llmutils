@@ -53,6 +53,7 @@ export interface PullRequestReviewTarget {
   owner: string;
   repo: string;
   baseBranch: string;
+  baseSha?: string;
   headBranch: string;
   headSha: string;
   prStatusId?: number;
@@ -301,6 +302,7 @@ async function resolvePrTarget(
   });
   const repoIdentity = await deps.getRepositoryIdentity({ cwd: repoRoot });
   validatePrMatchesCurrentRepository(prContext, repoIdentity.repositoryId);
+  const explicitBase = normalizeSelectorValue(options.base);
 
   return {
     kind: 'pr',
@@ -310,7 +312,8 @@ async function resolvePrTarget(
     title: prContext.prStatus.title ?? undefined,
     owner: prContext.owner,
     repo: prContext.repo,
-    baseBranch: normalizeSelectorValue(options.base) ?? prContext.baseBranch,
+    baseBranch: explicitBase ?? prContext.baseBranch,
+    baseSha: explicitBase ? undefined : prContext.baseSha,
     headBranch: prContext.headBranch,
     headSha: prContext.headSha,
     prStatusId: prContext.prStatus.id,

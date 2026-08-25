@@ -22,6 +22,7 @@ function makeDetail(overrides?: Partial<PrStatusDetail['status']>): PrStatusDeta
       draft: 0,
       mergeable: 'MERGEABLE',
       head_sha: 'abc123',
+      base_sha: 'base123',
       base_branch: 'main',
       head_branch: 'feature/pr-123',
       requested_reviewers: null,

@@ -56,4 +56,27 @@ describe('generateDiffForReview', () => {
       'Invalid value for --since: " abc1234 ". Expected a 7- to 40-character hexadecimal commit hash.'
     );
   });
+
+  test('uses an immutable base SHA when the base branch is deleted', async () => {
+    const repoRoot = await mkdtemp(join(tmpdir(), 'tim-review-diff-deleted-base-'));
+    await $`git init -q`.cwd(repoRoot);
+    await $`git config user.email test@example.com`.cwd(repoRoot);
+    await $`git config user.name Test`.cwd(repoRoot);
+    await writeFile(join(repoRoot, 'file.ts'), 'export const value = 1;\n', 'utf8');
+    await $`git add file.ts && git commit -qm base && git branch -M main`.cwd(repoRoot);
+    const baseSha = (await $`git rev-parse HEAD`.cwd(repoRoot).text()).trim();
+    await $`git checkout -qb feature/review`.cwd(repoRoot);
+    await writeFile(join(repoRoot, 'file.ts'), 'export const value = 2;\n', 'utf8');
+    await $`git add file.ts && git commit -qm feature`.cwd(repoRoot);
+    await $`git branch -D main`.cwd(repoRoot);
+
+    const result = await generateDiffForReview(repoRoot, {
+      baseBranch: 'main',
+      baseSha,
+    });
+
+    expect(result.mergeBaseCommit).toBe(baseSha);
+    expect(result.changedFiles).toEqual(['file.ts']);
+    expect(result.diffContent).toContain('export const value = 2');
+  });
 });

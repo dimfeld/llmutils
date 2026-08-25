@@ -51,6 +51,7 @@ function createPrStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
     draft: 0,
     mergeable: 'MERGEABLE',
     head_sha: 'abc123',
+    base_sha: 'base123',
     base_branch: 'main',
     head_branch: 'feature/widgets',
     requested_reviewers: null,
@@ -75,6 +76,7 @@ function createPrContext(overrides: Partial<PrReviewContext> = {}): PrReviewCont
   return {
     prStatus,
     baseBranch: 'main',
+    baseSha: 'base123',
     headBranch: 'feature/widgets',
     headSha: 'abc123',
     owner: 'acme',

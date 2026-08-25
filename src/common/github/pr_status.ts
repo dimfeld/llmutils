@@ -77,6 +77,7 @@ export interface PrFullStatus {
   mergeable: PrMergeableState;
   mergedAt: string | null;
   headSha: string | null;
+  baseSha: string | null;
   baseRefName: string | null;
   headRefName: string | null;
   reviewDecision: PrReviewDecision;
@@ -162,6 +163,7 @@ interface GraphQlPullRequestFullStatus {
   mergeable: string | null;
   mergedAt: string | null;
   headRefOid: string | null;
+  baseRefOid: string | null;
   baseRefName: string | null;
   headRefName: string | null;
   reviewDecision: string | null;
@@ -303,6 +305,7 @@ const fullStatusQuery = `
         deletions
         changedFiles
         headRefOid
+        baseRefOid
         baseRefName
         headRefName
         labels(first: 20) {
@@ -996,6 +999,7 @@ export async function fetchPrFullStatus(
     mergeable: normalizeMergeableState(pullRequest.mergeable),
     mergedAt: pullRequest.mergedAt,
     headSha: pullRequest.headRefOid,
+    baseSha: pullRequest.baseRefOid,
     baseRefName: pullRequest.baseRefName,
     headRefName: pullRequest.headRefName,
     reviewDecision: normalizeReviewDecision(pullRequest.reviewDecision),

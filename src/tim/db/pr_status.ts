@@ -16,6 +16,7 @@ export interface PrStatusRow {
   draft: number;
   mergeable: string | null;
   head_sha: string | null;
+  base_sha: string | null;
   base_branch: string | null;
   head_branch: string | null;
   requested_reviewers: string | null;
@@ -179,6 +180,7 @@ export interface UpsertPrStatusInput {
   draft: boolean;
   mergeable?: string | null;
   headSha?: string | null;
+  baseSha?: string | null;
   baseBranch?: string | null;
   headBranch?: string | null;
   requestedReviewers?: string[] | null;
@@ -614,6 +616,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           draft,
           mergeable,
           head_sha,
+          base_sha,
           base_branch,
           head_branch,
           requested_reviewers,
@@ -629,7 +632,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           ready_at,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         ON CONFLICT(pr_url) DO UPDATE SET
           owner = excluded.owner,
           repo = excluded.repo,
@@ -640,6 +643,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           draft = excluded.draft,
           mergeable = excluded.mergeable,
           head_sha = excluded.head_sha,
+          base_sha = excluded.base_sha,
           base_branch = excluded.base_branch,
           head_branch = excluded.head_branch,
           requested_reviewers = excluded.requested_reviewers,
@@ -666,6 +670,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
       nextInput.draft ? 1 : 0,
       nextInput.mergeable ?? null,
       nextInput.headSha ?? null,
+      nextInput.baseSha ?? null,
       nextInput.baseBranch ?? null,
       nextInput.headBranch ?? null,
       JSON.stringify(nextInput.requestedReviewers ?? []),
@@ -729,6 +734,7 @@ export function upsertPrStatusMetadata(
             draft,
             mergeable,
             head_sha,
+            base_sha,
             base_branch,
             head_branch,
             requested_reviewers,
@@ -744,7 +750,7 @@ export function upsertPrStatusMetadata(
             ready_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
           ON CONFLICT(pr_url) DO UPDATE SET
             owner = excluded.owner,
             repo = excluded.repo,
@@ -755,6 +761,7 @@ export function upsertPrStatusMetadata(
             draft = excluded.draft,
             mergeable = COALESCE(excluded.mergeable, mergeable),
             head_sha = excluded.head_sha,
+            base_sha = excluded.base_sha,
             base_branch = excluded.base_branch,
             head_branch = excluded.head_branch,
             requested_reviewers = excluded.requested_reviewers,
@@ -785,6 +792,7 @@ export function upsertPrStatusMetadata(
           nextInput.draft ? 1 : 0,
           nextInput.mergeable ?? null,
           nextInput.headSha ?? null,
+          nextInput.baseSha ?? null,
           nextInput.baseBranch ?? null,
           nextInput.headBranch ?? null,
           JSON.stringify(nextInput.requestedReviewers ?? []),
