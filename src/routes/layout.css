@@ -303,6 +303,10 @@
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 
+.dark .plan-rendered-content pre code {
+  background: inherit;
+}
+
 .plan-rendered-content pre code {
   background: none;
   border: none;
