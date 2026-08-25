@@ -322,6 +322,28 @@ describe('gatherPlanContext', () => {
     });
   });
 
+  test('can skip the tracked base commit for review guide diffs', async () => {
+    let capturedOptions: any;
+    basePlan = { ...basePlan, baseCommit: 'tracked-base-commit' };
+    mockDeps.generateDiffForReview = async (_gitRoot: string, options?: any) => {
+      capturedOptions = options;
+      return {
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: options?.baseBranch ?? 'main',
+        diffContent: 'diff',
+      };
+    };
+
+    await gatherPlanContext(123, { useTrackedBaseCommit: false }, {}, mockDeps);
+
+    expect(capturedOptions).toEqual({
+      baseBranch: 'main',
+      baseSha: undefined,
+      sinceCommit: undefined,
+    });
+  });
+
   test('should resolve effective plan base for review diffs when no base is provided', async () => {
     let resolverInput: any;
     let capturedOptions: any;

@@ -160,7 +160,7 @@ async function cloneCleanWorkspace(sourceRepoDir: string, workspaceDir: string):
   runGit(workspaceDir, ['config', 'user.name', 'Test User']);
 }
 
-async function seedPlan(repoDir: string): Promise<number> {
+async function seedPlan(repoDir: string, options: { baseCommit?: string } = {}): Promise<number> {
   const db = getDatabase();
   const repository = await getRepositoryIdentity({ cwd: repoDir });
   const project = getOrCreateProject(db, repository.repositoryId, {
@@ -174,6 +174,7 @@ async function seedPlan(repoDir: string): Promise<number> {
     goal: 'Generate review guides without requiring a PR.',
     details: 'Reuse the PR review-guide workflow for plan-only work.',
     status: 'in_progress',
+    baseCommit: options.baseCommit,
     tasks: [
       {
         title: 'Implement CLI command',
@@ -437,7 +438,8 @@ describe('handlePlanReviewGuideCommand', () => {
       committedFeatureChange: 'export const feature = true;\n',
     });
     process.chdir(repoDir);
-    await seedPlan(repoDir);
+    const initialCommit = runGit(repoDir, ['rev-list', '--max-parents=0', 'HEAD']);
+    await seedPlan(repoDir, { baseCommit: initialCommit });
     mockSetupWorkspace.mockResolvedValue({
       baseDir: repoDir,
       planFile: path.join(repoDir, '.tim', 'plans', '348.plan.md'),

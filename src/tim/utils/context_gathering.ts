@@ -90,6 +90,8 @@ export async function gatherPlanContext(
     since?: string;
     base?: string;
     cwd?: string;
+    /** Use the plan's tracked base commit when the resolved base branch is unavailable. */
+    useTrackedBaseCommit?: boolean;
   },
   globalOpts: {
     config?: string;
@@ -186,7 +188,10 @@ export async function gatherPlanContext(
 
   const diffOptions = {
     baseBranch,
-    baseSha: explicitBaseBranch ? undefined : planData.baseCommit,
+    baseSha:
+      explicitBaseBranch || options.useTrackedBaseCommit === false
+        ? undefined
+        : planData.baseCommit,
     sinceCommit: options.since,
   };
 

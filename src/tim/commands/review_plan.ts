@@ -169,7 +169,11 @@ export async function handlePlanReviewGuideCommand(
           updateHeadlessSessionInfo({ workspacePath: baseDir });
         }
 
-        const context = await gatherPlanContext(planId, { cwd: baseDir }, globalOpts);
+        const context = await gatherPlanContext(
+          planId,
+          { cwd: baseDir, useTrackedBaseCommit: false },
+          globalOpts
+        );
         if (context.noChangesDetected) {
           log('No changes detected for plan review guide. Nothing to do.');
           return;
