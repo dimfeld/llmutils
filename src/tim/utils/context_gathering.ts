@@ -175,8 +175,9 @@ export async function gatherPlanContext(
   }
 
   const config = await deps.loadEffectiveConfig(globalOpts.config);
+  const explicitBaseBranch = options.base;
   const baseBranch =
-    options.base ??
+    explicitBaseBranch ??
     (await deps.resolveEffectivePlanBase({
       plan: planData,
       config,
@@ -185,6 +186,7 @@ export async function gatherPlanContext(
 
   const diffOptions = {
     baseBranch,
+    baseSha: explicitBaseBranch ? undefined : planData.baseCommit,
     sinceCommit: options.since,
   };
 

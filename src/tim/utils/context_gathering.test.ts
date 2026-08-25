@@ -300,6 +300,28 @@ describe('gatherPlanContext', () => {
     expect(capturedOptions.baseBranch).toBe('main');
   });
 
+  test('uses tracked base commit when the effective base branch may be deleted', async () => {
+    let capturedOptions: any;
+    basePlan = { ...basePlan, baseCommit: 'tracked-base-commit' };
+    mockDeps.generateDiffForReview = async (_gitRoot: string, options?: any) => {
+      capturedOptions = options;
+      return {
+        hasChanges: true,
+        changedFiles: ['test.ts'],
+        baseBranch: options?.baseBranch ?? 'main',
+        diffContent: 'diff',
+      };
+    };
+
+    await gatherPlanContext(123, {}, {}, mockDeps);
+
+    expect(capturedOptions).toEqual({
+      baseBranch: 'main',
+      baseSha: 'tracked-base-commit',
+      sinceCommit: undefined,
+    });
+  });
+
   test('should resolve effective plan base for review diffs when no base is provided', async () => {
     let resolverInput: any;
     let capturedOptions: any;
