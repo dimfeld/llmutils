@@ -320,9 +320,6 @@ const fullStatusQuery = `
             author {
               login
             }
-            replyTo {
-              id
-            }
             state
             body
             submittedAt
@@ -412,9 +409,6 @@ const mergeableStatusQuery = `
           nodes {
             author {
               login
-            }
-            replyTo {
-              id
             }
             state
             body

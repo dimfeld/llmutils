@@ -101,6 +101,8 @@ describe('common/github/pr_status', () => {
     const { fetchPrFullStatus } = await import('./pr_status.ts');
     const result = await fetchPrFullStatus('owner', 'repo', 42);
 
+    expect(graphql.mock.calls[0]?.[0]).not.toContain('replyTo');
+
     expect(result).toEqual({
       author: null,
       number: 42,
@@ -1001,6 +1003,8 @@ describe('common/github/pr_status', () => {
         },
       ],
     });
+
+    expect(graphql.mock.calls[0]?.[0]).not.toContain('replyTo');
   });
 
   test('fetchPrIssueComments normalizes conversation comments and paginates', async () => {
