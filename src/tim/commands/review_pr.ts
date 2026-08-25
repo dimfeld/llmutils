@@ -6,6 +6,7 @@ import {
   getGitInfoExcludePath,
   getMergeBase,
   getGitRoot,
+  getTrunkBranch,
   isIgnoredByGitSharedExcludes,
 } from '../../common/git.js';
 import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_requests.js';
@@ -132,10 +133,11 @@ async function resolveReviewGuideBaseSha(
     return gitBaseSha;
   }
 
-  const fallbackBaseSha = await getMergeBase(baseDir, baseBranch, 'HEAD');
+  const trunkBranch = await getTrunkBranch(baseDir);
+  const fallbackBaseSha = await getMergeBase(baseDir, trunkBranch, 'HEAD');
   if (fallbackBaseSha) {
     log(
-      `Resolved PR review diff base with repository merge-base fallback for ${baseBranch}: ${fallbackBaseSha}.`
+      `Resolved PR review diff base with repository merge-base fallback for ${trunkBranch}: ${fallbackBaseSha}.`
     );
     return fallbackBaseSha;
   }

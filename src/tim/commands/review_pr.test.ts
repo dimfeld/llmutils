@@ -38,6 +38,7 @@ vi.mock('../../common/git.js', () => ({
   getGitInfoExcludePath: vi.fn(),
   getMergeBase: vi.fn(),
   getGitRoot: vi.fn(),
+  getTrunkBranch: vi.fn(),
   getUsingJj: vi.fn(),
   isIgnoredByGitSharedExcludes: vi.fn(),
 }));
@@ -135,6 +136,7 @@ import {
   getGitInfoExcludePath,
   getMergeBase,
   getGitRoot,
+  getTrunkBranch,
   getUsingJj,
   isIgnoredByGitSharedExcludes,
 } from '../../common/git.js';
@@ -168,6 +170,7 @@ import {
 const mockGetGitInfoExcludePath = vi.mocked(getGitInfoExcludePath);
 const mockGetMergeBase = vi.mocked(getMergeBase);
 const mockGetGitRoot = vi.mocked(getGitRoot);
+const mockGetTrunkBranch = vi.mocked(getTrunkBranch);
 const mockGetUsingJj = vi.mocked(getUsingJj);
 const mockIsIgnoredByGitSharedExcludes = vi.mocked(isIgnoredByGitSharedExcludes);
 const mockLoadEffectiveConfig = vi.mocked(loadEffectiveConfig);
@@ -578,6 +581,7 @@ describe('review_pr command', () => {
     mockGetDatabase.mockReturnValue({} as any);
     mockGetGitRoot.mockResolvedValue(tempDir);
     mockGetMergeBase.mockResolvedValue(defaultBaseSha);
+    mockGetTrunkBranch.mockResolvedValue('main');
     mockGetUsingJj.mockResolvedValue(false);
     mockGetRepositoryIdentity.mockResolvedValue({
       repositoryId: 'github.com__acme__repo',
@@ -769,6 +773,8 @@ describe('review_pr command', () => {
     expect(mockLog).toHaveBeenCalledWith(
       expect.stringContaining('Generating review diff catalog from not-a-valid-sha')
     );
+    expect(mockGetTrunkBranch).toHaveBeenCalledWith(tempDir);
+    expect(mockGetMergeBase).toHaveBeenCalledWith(tempDir, 'main', 'HEAD');
   });
 
   test.skipIf(!process.env.SLOW_TESTS)(
