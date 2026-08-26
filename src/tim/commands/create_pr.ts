@@ -83,6 +83,9 @@ interface CommandResult {
 
 const CREATE_PR_ALLOWED_BASH_TOOLS = [
   'Bash(gh pr create:*)',
+  'Bash(gh pr edit:*)',
+  'Bash(gh pr list:*)',
+  'Bash(gh pr view:*)',
   'Bash(jj bookmark track:*)',
   'Bash(jj bookmark list:*)',
   'Bash(jj git push --branch:*)',
@@ -239,6 +242,10 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     `- PR title: ${prTitleInstruction.replace(/\n/g, ' ')}`,
     titlePrefixLine,
     '- Include issue references when available (for Linear keep the full key, e.g. DF-123)',
+    '',
+    '5d. After creating or editing the PR, verify the published body with `gh pr view <branch-name> --json body --jq .body`.',
+    'Be very careful with shell quoting and backslash escaping when you create or update the body. Markdown line breaks must be real newline characters, not the two literal characters `\\n`.',
+    'If the verification shows literal `\\n` text where line breaks should be, immediately rewrite the body with a body file or stdin that contains real newlines, then verify the body again. Do not finish until this check passes.',
     '',
     'Do not include generated-by or co-author lines. Do not make any changes to the code. You are only creating the PR right now.',
   ];

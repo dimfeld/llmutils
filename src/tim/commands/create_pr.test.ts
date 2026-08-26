@@ -178,6 +178,9 @@ describe('create_pr command helpers', () => {
       expect(prompt).toContain('latest(ancestors(trunk()) & ancestors(@))');
       expect(prompt).toContain('omit this section when the plan details do not contain');
       expect(prompt).toContain('include an "Out of scope" subsection');
+      expect(prompt).toContain('Be very careful with shell quoting and backslash escaping');
+      expect(prompt).toContain('not the two literal characters `\\n`');
+      expect(prompt).toContain('verify the body again');
     });
 
     test('instructs PR creation to preserve runbooks from plan details', () => {
