@@ -868,6 +868,35 @@ describe('executeCodexStepViaAppServer', () => {
     );
   });
 
+  test('headless end session interrupts an active default single-turn', async () => {
+    const harness = await createHarness({ loggerAdapterKind: 'headless' });
+
+    harness.connection.turnStart.mockImplementationOnce(async () => ({ turnId: 'turn-single' }));
+
+    const result = harness.executeCodexStepViaAppServer('generate the plan', '/repo', {});
+
+    await waitFor(
+      () => (harness.loggerAdapter?.setEndSessionHandler?.mock.calls.length ?? 0) === 1
+    );
+    await waitFor(() => harness.connection.turnStart.mock.calls.length === 1);
+
+    const handler = harness.loggerAdapter?.setEndSessionHandler?.mock.calls[0]?.[0] as
+      | (() => void)
+      | undefined;
+    expect(handler).toBeDefined();
+    handler?.();
+
+    await expect(result).resolves.toBe('final agent message');
+    expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      turnId: 'turn-single',
+    });
+    expect(harness.loggerAdapter?.setForceEndSessionHandler?.mock.calls[0]?.[0]).toEqual(
+      expect.any(Function)
+    );
+    expect(harness.loggerAdapter?.setForceEndSessionHandler).toHaveBeenLastCalledWith(undefined);
+  });
+
   test('does not emit duplicate structured gui input messages in headless chat sessions', async () => {
     const harness = await createHarness({ loggerAdapterKind: 'headless' });
 

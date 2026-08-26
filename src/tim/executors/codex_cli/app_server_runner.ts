@@ -216,6 +216,7 @@ export async function executeCodexStepViaAppServer(
   let chatTurnCompleted = true;
   let connectionExitError: Error | undefined;
   let sessionEndRequested = false;
+  let clearHeadlessEndSessionHandlers: () => void = () => {};
 
   const clearInactivityTimer = () => {
     if (inactivityTimer) {
@@ -411,6 +412,15 @@ export async function executeCodexStepViaAppServer(
 
     connection.setGracefulEndHandler(endActiveSession);
 
+    if (headlessForwardingEnabled && loggerAdapter instanceof HeadlessAdapter) {
+      loggerAdapter.setEndSessionHandler(endActiveSession);
+      loggerAdapter.setForceEndSessionHandler(endActiveSession);
+      clearHeadlessEndSessionHandlers = () => {
+        loggerAdapter.setEndSessionHandler(undefined);
+        loggerAdapter.setForceEndSessionHandler(undefined);
+      };
+    }
+
     if (subprocessMonitorRules?.length && connection.pid !== undefined) {
       monitorHandle = startSubprocessMonitor({
         rootPid: connection.pid,
@@ -539,7 +549,6 @@ export async function executeCodexStepViaAppServer(
       let terminalInputReader: TerminalInputReader | undefined;
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
-      let clearHeadlessEndSessionHandlers: () => void = () => {};
 
       if (terminalInputEnabled) {
         terminalInputReader = new TerminalInputReader({
@@ -593,12 +602,6 @@ export async function executeCodexStepViaAppServer(
         });
         clearHeadlessUserInputHandler = () => {
           loggerAdapter.setUserInputHandler(undefined);
-        };
-        loggerAdapter.setEndSessionHandler(endActiveSession);
-        loggerAdapter.setForceEndSessionHandler(endActiveSession);
-        clearHeadlessEndSessionHandlers = () => {
-          loggerAdapter.setEndSessionHandler(undefined);
-          loggerAdapter.setForceEndSessionHandler(undefined);
         };
       }
 
@@ -674,7 +677,6 @@ export async function executeCodexStepViaAppServer(
         terminalInputReader?.stop();
         clearTunnelUserInputHandler();
         clearHeadlessUserInputHandler();
-        clearHeadlessEndSessionHandlers();
       }
     } else {
       const inputQueue = new UserInputQueue();
@@ -682,7 +684,6 @@ export async function executeCodexStepViaAppServer(
       let terminalInputReader: TerminalInputReader | undefined;
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
-      let clearHeadlessEndSessionHandlers: () => void = () => {};
 
       if (prompt.trim().length > 0) {
         inputQueue.push(prompt);
@@ -741,12 +742,6 @@ export async function executeCodexStepViaAppServer(
         clearHeadlessUserInputHandler = () => {
           loggerAdapter.setUserInputHandler(undefined);
         };
-        loggerAdapter.setEndSessionHandler(endActiveSession);
-        loggerAdapter.setForceEndSessionHandler(endActiveSession);
-        clearHeadlessEndSessionHandlers = () => {
-          loggerAdapter.setEndSessionHandler(undefined);
-          loggerAdapter.setForceEndSessionHandler(undefined);
-        };
       }
 
       try {
@@ -801,7 +796,6 @@ export async function executeCodexStepViaAppServer(
         terminalInputReader?.stop();
         clearTunnelUserInputHandler();
         clearHeadlessUserInputHandler();
-        clearHeadlessEndSessionHandlers();
         inputQueue.close();
         activeInputQueue = undefined;
       }
@@ -893,6 +887,7 @@ export async function executeCodexStepViaAppServer(
     throw err;
   } finally {
     clearInactivityTimer();
+    clearHeadlessEndSessionHandlers();
     activeInputQueue?.close();
     monitorHandle?.stop();
     logicalExecutorLifecycle?.markExited();
