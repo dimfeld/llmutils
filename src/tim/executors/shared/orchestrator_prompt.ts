@@ -29,6 +29,8 @@ const REVIEW_FIX_TASK_INDEX_GUIDANCE =
 const SUBAGENT_SPECIFICITY_GUIDANCE =
   'Subagents may use a less capable model than you. Be specific when asking them to make changes: name the files, required behavior, constraints, and verification steps.';
 
+const SUBAGENT_RUNTIME_GUIDANCE = `Subagents may take a very long time to complete. This is especially true for the reviewer, and for any subagent that runs integration tests, end-to-end tests, large test suites, builds, or multiple iterations of checks. A subagent may also produce no output while it is working. Elapsed time or a lack of output is not a timeout: never assume that a long-running subagent has timed out, and never stop, retry, or report it as failed for that reason. Wait for the shell command tool to finish or to explicitly report a process timeout or failure. Always use the longest practical timeout when invoking subagents.`;
+
 const BRANCH_SETUP_GUIDANCE =
   '- **The git branch for this task has already been set up.** Do not create, switch, or check out any branches. Do not use git worktrees. Work in the current directory as-is.';
 
@@ -216,7 +218,7 @@ ${reviewer}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
-Each subagent command may take a long time to complete because it may run multiple iterations of builds and test suites, and is expected to print no output until it finishes. Always use a long timeout when invoking them via the shell command tool.
+${SUBAGENT_RUNTIME_GUIDANCE}
 `;
 }
 
@@ -267,7 +269,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
    - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. ${buildReviewRejectionGuidance(planId)}
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
-   - The review command may take up to 15 minutes; use a long timeout.
+   - The reviewer may take a very long time, especially when it runs integration or end-to-end tests. Do not infer a timeout from elapsed time or silence; wait for the shell command tool to finish.
    - The review output focuses on problems; don't expect positive feedback even if the code is perfect.`;
 
   const finalPhases = `${options.batchMode ? '5' : '4'}. **Notes Phase**
@@ -474,7 +476,7 @@ ${reviewerAgent}
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
-Each subagent command may take a long time to complete because it may run multiple iterations of builds and test suites. Always use a long timeout when invoking them via the shell command tool.
+${SUBAGENT_RUNTIME_GUIDANCE}
 `;
 
   const taskSelectionPhase = options.batchMode
@@ -499,7 +501,7 @@ Each subagent command may take a long time to complete because it may run multip
    - ${buildReviewRejectionGuidance(planId)}
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
-   - The review command may take up to 15 minutes; use a long timeout.
+   - The reviewer may take a very long time, especially when it runs integration or end-to-end tests. Do not infer a timeout from elapsed time or silence; wait for the shell command tool to finish.
    - The review output focuses on problems; don't expect positive feedback even if the code is perfect.
    - If the review identifies accepted blocking issues, return to the implementer with the findings`;
 
@@ -635,7 +637,7 @@ ${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is c
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
-Each subagent command may take a long time to complete because it may run multiple iterations of builds and test suites. Always use a long timeout when invoking them via the shell command tool.
+${SUBAGENT_RUNTIME_GUIDANCE}
 `
     : `## Available Agents
 
@@ -647,7 +649,7 @@ ${options.batchMode ? `- **Full-plan reviewer**: Only after every plan task is c
 
 ${REVIEW_FIX_TASK_INDEX_GUIDANCE}
 
-Each subagent command may take a long time to complete because it may run multiple iterations of builds and test suites. Always use a long timeout when invoking them via the shell command tool.
+${SUBAGENT_RUNTIME_GUIDANCE}
 `;
 
   const taskSelectionPhase = options.batchMode
@@ -703,7 +705,7 @@ Each subagent command may take a long time to complete because it may run multip
    - ${buildReviewRejectionGuidance(planId)}
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
-   - The review command may take up to 15 minutes; use a long timeout.`
+   - The reviewer may take a very long time, especially when it runs integration or end-to-end tests. Do not infer a timeout from elapsed time or silence; wait for the shell command tool to finish.`
     : `${verificationPhaseNumber}. **Testing Phase**
    - Run \`tim subagent tester ${planId}${executorFlag} --input "<instructions>"\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), include:
@@ -721,7 +723,7 @@ ${
    - Pass any relevant notes to the reviewer via \`--input-file <paths...>\` so it has the full picture of what was intended and why. ${buildReviewRejectionGuidance(planId)}
    - Scope the review to the tasks you worked on using \`--task-index\` (1-based). Pass each task index separately: \`--task-index 1 --task-index 3\` for tasks 1 and 3.
 ${reviewExecutorGuidance}
-   - The review command may take up to 15 minutes; use a long timeout.`
+   - The reviewer may take a very long time, especially when it runs integration or end-to-end tests. Do not infer a timeout from elapsed time or silence; wait for the shell command tool to finish.`
 }`;
 
   const reviewIterationGuidance = `

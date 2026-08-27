@@ -48,7 +48,24 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('tim subagent reviewer 123 --print');
     expect(out).not.toContain('--review-mode');
     expect(out).toContain('tim subagent reviewer 123 --input "<instructions>"');
-    expect(out).toContain('15 minutes');
+    expect(out).toContain('reviewer may take a very long time');
+  });
+
+  it('warns every orchestration mode not to infer subagent timeouts', () => {
+    const outputs = [
+      wrapWithOrchestration('Context', '123'),
+      wrapWithOrchestrationSimple('Context', '123'),
+      wrapWithOrchestrationTdd('Context', '123'),
+    ];
+
+    for (const out of outputs) {
+      expect(out).toContain('especially true for the reviewer');
+      expect(out).toContain('integration tests, end-to-end tests');
+      expect(out).toContain('Elapsed time or a lack of output is not a timeout');
+      expect(out).toContain('never assume that a long-running subagent has timed out');
+      expect(out).toContain('never stop, retry, or report it as failed for that reason');
+      expect(out).not.toContain('15 minutes');
+    }
   });
 
   it('requires a full-plan bookend review when a batch completes all remaining tasks', () => {
