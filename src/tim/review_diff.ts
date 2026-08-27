@@ -4,7 +4,7 @@
 
 import { $ } from 'bun';
 
-import { getMergeBase, getTrunkBranch, getUsingJj } from '../common/git.js';
+import { ensureLocalJjBookmark, getMergeBase, getTrunkBranch, getUsingJj } from '../common/git.js';
 
 export interface DiffResult {
   hasChanges: boolean;
@@ -70,7 +70,10 @@ export async function generateDiffForReview(
     return generateDiffSinceCommit(gitRoot, options.baseSha, safeBranch, usingJj);
   }
 
-  return usingJj ? generateJjDiff(gitRoot, safeBranch) : generateGitDiff(gitRoot, safeBranch);
+  if (usingJj) {
+    return generateJjDiff(gitRoot, safeBranch);
+  }
+  return generateGitDiff(gitRoot, safeBranch);
 }
 
 async function generateDiffSinceCommit(
@@ -181,6 +184,7 @@ function parseGitChangedFiles(output: string): string[] {
 async function generateJjDiff(gitRoot: string, baseBranch: string): Promise<DiffResult> {
   const mergeBaseRevset = `heads(::@ & ::${baseBranch})`;
   try {
+    await ensureLocalJjBookmark(gitRoot, baseBranch);
     const mergeBaseCommit =
       (await getMergeBase(gitRoot, baseBranch, 'HEAD', { useRemoteRef: false })) ?? undefined;
     const filesResult = await $`jj diff --from ${mergeBaseRevset} --summary`

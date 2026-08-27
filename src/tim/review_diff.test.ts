@@ -1,5 +1,5 @@
 import { $ } from 'bun';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
@@ -78,5 +78,54 @@ describe('generateDiffForReview', () => {
     expect(result.mergeBaseCommit).toBe(baseSha);
     expect(result.changedFiles).toEqual(['file.ts']);
     expect(result.diffContent).toContain('export const value = 2');
+  });
+
+  test('tracks a JJ diff base that exists only as a remote bookmark', async () => {
+    const jjAvailable = await $`jj --version`.cwd(tmpdir()).nothrow().quiet();
+    if (jjAvailable.exitCode !== 0) {
+      return;
+    }
+
+    const tempRoot = await mkdtemp(join(tmpdir(), 'tim-review-diff-jj-'));
+    const remoteDir = join(tempRoot, 'origin.git');
+    const sourceDir = join(tempRoot, 'source');
+    const workDir = join(tempRoot, 'work');
+
+    await $`git init --bare ${remoteDir}`.quiet();
+    await mkdir(sourceDir);
+    await $`jj git init --colocate`.cwd(sourceDir);
+    await $`jj config set --repo user.email test@example.com`.cwd(sourceDir);
+    await $`jj config set --repo user.name Test`.cwd(sourceDir);
+    await $`jj git remote add origin ${remoteDir}`.cwd(sourceDir);
+
+    await writeFile(join(sourceDir, 'base.txt'), 'base\n', 'utf8');
+    await $`jj commit -m base`.cwd(sourceDir);
+    await $`jj bookmark set -r @- main`.cwd(sourceDir);
+    await $`jj new main`.cwd(sourceDir);
+    await writeFile(join(sourceDir, 'stacked.txt'), 'stacked\n', 'utf8');
+    await $`jj commit -m stacked`.cwd(sourceDir);
+    await $`jj bookmark set -r @- feature/base`.cwd(sourceDir);
+    await $`jj new feature/base`.cwd(sourceDir);
+    await writeFile(join(sourceDir, 'child.txt'), 'child\n', 'utf8');
+    await $`jj commit -m child`.cwd(sourceDir);
+    await $`jj bookmark set -r @- feature/child`.cwd(sourceDir);
+    await $`jj git push --bookmark main --bookmark feature/base --bookmark feature/child`.cwd(
+      sourceDir
+    );
+
+    await $`jj git clone ${remoteDir} ${workDir}`.quiet();
+    await $`jj config set --repo user.email test@example.com`.cwd(workDir);
+    await $`jj config set --repo user.name Test`.cwd(workDir);
+    await $`jj new feature/child@origin`.cwd(workDir);
+
+    const result = await generateDiffForReview(workDir, { baseBranch: 'feature/base' });
+
+    expect(result.changedFiles).toEqual(['child.txt']);
+    expect(result.diffContent).toContain('child.txt');
+
+    const localBaseBookmark = await $`jj log -r feature/base --no-graph -T commit_id --limit 1`
+      .cwd(workDir)
+      .text();
+    expect(localBaseBookmark.trim()).not.toBe('');
   });
 });
