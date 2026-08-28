@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
-import { resolveTimExecutable } from '../../common/tim_executable.js';
+import { resolveConfiguredTimExecutable } from '../../common/tim_executable.js';
 import {
   readDaemonProcessStatus,
   TIM_DAEMON_PAYLOAD_ENV,
@@ -9,6 +9,7 @@ import {
 } from '../../common/daemon_process.js';
 import { buildWorkspaceCommandEnv } from '$common/env.js';
 import { TIM_LINKED_PR_URL_ENV } from '$tim/headless.js';
+import { loadEffectiveConfig } from '$tim/configLoader.js';
 import {
   createLogFile as createLogFileImpl,
   formatLogFileName as formatLogFileNameImpl,
@@ -87,12 +88,20 @@ async function spawnTimProcess(
 
   try {
     const command = args[0];
+    const projectConfig = await loadEffectiveConfig(undefined, { cwd, quiet: true });
+    const configuredTimPath = projectConfig.timPath?.trim();
+    const executable = resolveConfiguredTimExecutable(configuredTimPath);
     console.info(`[web-ui] Starting ${describeCommand(args)} for ${targetLabel} in ${cwd}`);
     logFile = createLogFile(command, planId ?? 0);
     logFileIsOpen = true;
-    const env = { ...(await buildWorkspaceCommandEnv(cwd, envOverrides)) };
+    const env: Record<string, string> = {
+      ...(await buildWorkspaceCommandEnv(
+        cwd,
+        configuredTimPath ? { ...envOverrides, TIM_PATH: executable } : envOverrides
+      )),
+      ...(configuredTimPath ? { TIM_PATH: executable } : {}),
+    };
 
-    const executable = resolveTimExecutable();
     statusPath = `${logFile.path}.${randomUUID()}.daemon-status`;
     const payload: DaemonProcessPayload = {
       launcherCommand: [executable],

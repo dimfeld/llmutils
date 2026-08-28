@@ -6,10 +6,15 @@ const daemonMock = vi.hoisted(() => ({
     | { state: 'running'; pid: number }
     | { state: 'exited'; pid: number; exitCode: number },
 }));
+const configMock = vi.hoisted(() => ({ timPath: undefined as string | undefined }));
 
 vi.mock('../../common/daemon_process.js', () => ({
   TIM_DAEMON_PAYLOAD_ENV: 'TIM_INTERNAL_DAEMON_PAYLOAD',
   readDaemonProcessStatus: vi.fn(() => daemonMock.status),
+}));
+
+vi.mock('../../tim/configLoader.js', () => ({
+  loadEffectiveConfig: vi.fn(async () => ({ timPath: configMock.timPath })),
 }));
 
 vi.mock('node:fs', async (importOriginal) => {
@@ -99,6 +104,7 @@ describe('lib/server/plan_actions', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.mocked(buildWorkspaceCommandEnv).mockClear();
+    configMock.timPath = undefined;
     delete process.env.TIM_PATH;
     vi.setSystemTime(new Date('2026-04-19T00:00:00.000Z'));
     vi.mocked(fs.mkdirSync).mockImplementation(() => {});
@@ -174,6 +180,36 @@ describe('lib/server/plan_actions', () => {
         '--auto-workspace',
         '--no-terminal-input',
       ],
+    });
+    expect(result).toEqual({ success: true, planId: 189 });
+  });
+
+  test('spawnGenerateProcess uses project timPath over TIM_PATH and passes it to the child', async () => {
+    process.env.TIM_PATH = '/env/tim';
+    configMock.timPath = '/branch-build/tim';
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnGenerateProcess(189, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['/branch-build/tim', '__daemon-launch']);
+    expect(daemonPayload(options as never)).toMatchObject({
+      launcherCommand: ['/branch-build/tim'],
+      workerCommand: [
+        '/branch-build/tim',
+        'generate',
+        '189',
+        '--auto-workspace',
+        '--no-terminal-input',
+      ],
+    });
+    expect(options.env).toMatchObject({ TIM_PATH: '/branch-build/tim' });
+    expect(buildWorkspaceCommandEnv).toHaveBeenCalledWith('/tmp/primary-workspace', {
+      TIM_PATH: '/branch-build/tim',
     });
     expect(result).toEqual({ success: true, planId: 189 });
   });

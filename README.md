@@ -277,7 +277,7 @@ without stopping other executors. **End Session** and **Force End** remain sessi
 Process tracking is explicit and session-scoped; it does not add a PID-based control API or write
 process state to the plan database.
 
-Commands launched from the web UI are fully daemonized on macOS and Linux. They run in sessions and process groups separate from the web server and are reparented outside its process tree, so agent sessions continue through web server or PM2 restarts. Set `TIM_PATH` in the web server environment when the daemon stages should use a specific `tim` executable.
+Commands launched from the web UI are fully daemonized on macOS and Linux. They run in sessions and process groups separate from the web server and are reparented outside its process tree, so agent sessions continue through web server or PM2 restarts. Set `TIM_PATH` in the web server environment when the daemon stages should use a specific `tim` executable. A project's `timPath` config value takes precedence over `TIM_PATH` for launches from that project and is also passed to the child as `TIM_PATH`, so nested `tim` commands use the same executable.
 
 Completed sessions are retained in memory with command-aware limits. Short-lived automation such
 as review-guide comments expires quickly, while agent and chat sessions retain a longer, compacted
@@ -760,6 +760,7 @@ Important config areas:
 - `branchPrefix` - prefix for generated branches, such as `di/`
 - `requireBranchPrefix` - fail branch-creating flows if no prefix is configured
 - `githubUsername` - avoids an API call when classifying PRs
+- `timPath` - executable path for web-launched `tim` commands; overrides `TIM_PATH` for this project
 - `lifecycle.commands` - start/stop dev servers or services around agent runs
 - `lifecycle.env` - merge selected values into each managed workspace `.env`
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses

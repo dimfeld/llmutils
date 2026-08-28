@@ -12,6 +12,17 @@ export function resolveTimExecutable(env: NodeJS.ProcessEnv = process.env): stri
 }
 
 /**
+ * Resolves the tim executable using a project configuration override when one
+ * is available, then falls back to the normal environment-based resolution.
+ */
+export function resolveConfiguredTimExecutable(
+  configuredPath: string | undefined,
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  return configuredPath?.trim() || resolveTimExecutable(env);
+}
+
+/**
  * Resolves the directory that should be first on PATH for spawned child
  * processes, so anything they run (including a nested `tim` invocation) sees
  * the same tim binary as the current process. Prefers the directory of

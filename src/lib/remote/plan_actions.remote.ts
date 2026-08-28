@@ -32,7 +32,7 @@ import { hasUploadableArtifacts } from '$lib/utils/artifact_upload_eligibility.j
 import { isMediaHostConfigured } from '$tim/configSchema.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
-import { resolveTimExecutable } from '../../common/tim_executable.js';
+import { resolveConfiguredTimExecutable } from '../../common/tim_executable.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getAgentMultiPlansForProject } from '$tim/commands/agent_multi/plan_loader.js';
 import { removeAssignment } from '$tim/db/assignment.js';
@@ -405,9 +405,14 @@ export const openInEditor = command(openInEditorSchema, async ({ planUuid }) => 
     error(400, 'Project does not have a primary workspace');
   }
 
+  const projectConfig = await loadEffectiveConfig(undefined, {
+    cwd: primaryWorkspacePath,
+    quiet: true,
+  });
+
   await openTerminalWithCommand(
     primaryWorkspacePath,
-    [resolveTimExecutable(), 'edit', String(plan.planId)],
+    [resolveConfiguredTimExecutable(projectConfig.timPath), 'edit', String(plan.planId)],
     config.terminalApp
   );
 });

@@ -532,6 +532,13 @@ const chatExecutorOptionsSchema = z
  */
 export const timConfigSchema = z
   .object({
+    /** Executable to use for tim commands launched by the web UI. */
+    timPath: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe('Executable path to use for tim commands launched by the web UI'),
     /** GitHub username used for project-wide PR filtering. */
     githubUsername: z.string().optional().describe('GitHub username for PR filtering'),
     /** Prefix to prepend to auto-generated branch names. */

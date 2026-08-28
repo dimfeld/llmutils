@@ -11,6 +11,19 @@ import {
 } from './environment.js';
 
 describe('configSchema', () => {
+  describe('timPath', () => {
+    test('accepts a non-empty executable path without applying a default', () => {
+      const result = timConfigSchema.parse({ timPath: '  /branch-build/tim  ' });
+
+      expect(result.timPath).toBe('/branch-build/tim');
+      expect(timConfigSchema.parse({}).timPath).toBeUndefined();
+    });
+
+    test('rejects an empty executable path', () => {
+      expect(() => timConfigSchema.parse({ timPath: '   ' })).toThrow();
+    });
+  });
+
   describe('chat', () => {
     test('accepts executor and model choices without applying a default', () => {
       const result = timConfigSchema.parse({
