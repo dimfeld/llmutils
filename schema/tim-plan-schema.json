@@ -271,6 +271,13 @@
               "codex-cli"
             ]
           },
+          "state": {
+            "type": "string",
+            "enum": [
+              "rejected",
+              "non-blocking"
+            ]
+          },
           "rejected": {
             "type": "boolean"
           },

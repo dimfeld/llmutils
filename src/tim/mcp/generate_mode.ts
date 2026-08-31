@@ -271,17 +271,22 @@ function extractLinearIssueKey(issueUrl: string): string | null {
   return match ? match[1].toUpperCase() : null;
 }
 
-function buildLinearChildIssueGuidance(plan: { issue?: string[] }): string {
+function buildLinearChildIssueGuidance(
+  plan: { issue?: string[] },
+  linearChildIssueLabel?: string
+): string {
   const parentIssueKey = plan.issue?.map(extractLinearIssueKey).find((key) => key !== null);
 
   if (!parentIssueKey) {
     return '';
   }
 
+  const labelOption = linearChildIssueLabel ? ` --label "${linearChildIssueLabel}"` : '';
+
   return `
 - Because the parent plan is linked to Linear issue ${parentIssueKey}, create and link a Linear child issue for each child tim plan after that child plan has been created and populated:
   1. Find the parent's Linear project and milestone once with \`linear issue view ${parentIssueKey}\`; the view output shows \`**Project:** <name>\` and, if the parent issue is linked to a milestone, \`**Milestone:** <name>\`.
-  2. Create each child issue with project + parent in one command: \`linear issue create --no-interactive --assignee self --state Todo --parent ${parentIssueKey} --project "<project name>" --title "<title>" --description "<short description>"\`. If the parent issue is linked to a milestone, also pass \`--milestone "<milestone name>"\` so each child issue is linked to that same milestone. The last line of output is the new issue URL.
+  2. Create each child issue with project + parent in one command: \`linear issue create --no-interactive --assignee self --state Todo --parent ${parentIssueKey} --project "<project name>"${labelOption} --title "<title>" --description "<short description>"\`. If the parent issue is linked to a milestone, also pass \`--milestone "<milestone name>"\` so each child issue is linked to that same milestone. The last line of output is the new issue URL.
   3. Link the child tim plan to that new issue URL with \`tim set <child-plan-id> --issue "<new-issue-url>"\`.`;
 }
 
@@ -305,7 +310,10 @@ export async function loadResearchPrompt(
   }
 
   const parentPlanLabel = parentPlanId !== undefined ? String(parentPlanId) : 'the current plan ID';
-  const linearChildIssueGuidance = buildLinearChildIssueGuidance(plan);
+  const linearChildIssueGuidance = buildLinearChildIssueGuidance(
+    plan,
+    context.config.generate?.linearChildIssueLabel
+  );
   const multiplePlansGuidance = allowMultiplePlans
     ? `
 
@@ -500,7 +508,9 @@ export async function loadGeneratePrompt(
   const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
 
   const parentPlanLabel = parentPlanId !== undefined ? String(parentPlanId) : 'the current plan ID';
-  const linearChildIssueGuidance = currentPlan ? buildLinearChildIssueGuidance(currentPlan) : '';
+  const linearChildIssueGuidance = currentPlan
+    ? buildLinearChildIssueGuidance(currentPlan, context.config.generate?.linearChildIssueLabel)
+    : '';
   const multiplePlansGuidance = allowMultiplePlans
     ? `
 

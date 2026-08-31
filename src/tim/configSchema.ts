@@ -798,6 +798,12 @@ export const timConfigSchema = z
           .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
           .optional()
           .describe('Default executor to use for the generate command'),
+        linearChildIssueLabel: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe('Label to apply to Linear issues created for child plans during generation'),
         model: z
           .object({
             claude: z.string().optional().describe('Model override for claude-code generation'),

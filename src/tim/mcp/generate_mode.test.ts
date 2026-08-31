@@ -228,6 +228,21 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('tim set <child-plan-id> --issue "<new-issue-url>"');
   });
 
+  test('loadResearchPrompt includes the configured Linear child issue label', async () => {
+    context.config.generate = { linearChildIssueLabel: 'subplan' };
+    await writePlanFile(planPath, {
+      ...basePlan,
+      issue: ['https://linear.app/acme/issue/DF-3445/split-linked-child-issues'],
+    });
+
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain(
+      'linear issue create --no-interactive --assignee self --state Todo --parent DF-3445 --project "<project name>" --label "subplan"'
+    );
+  });
+
   test('loadQuestionsPrompt encourages iterative questioning', async () => {
     const prompt = await loadQuestionsPrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;
@@ -283,6 +298,21 @@ describe('tim MCP generate mode helpers', () => {
       'linear issue create --no-interactive --assignee self --state Todo --parent DF-3445 --project "<project name>"'
     );
     expect(messageText).toContain('tim set <child-plan-id> --issue "<new-issue-url>"');
+  });
+
+  test('loadGeneratePrompt includes the configured Linear child issue label', async () => {
+    context.config.generate = { linearChildIssueLabel: 'subplan' };
+    await writePlanFile(planPath, {
+      ...basePlan,
+      issue: ['https://linear.app/acme/issue/DF-3445/split-linked-child-issues'],
+    });
+
+    const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).toContain(
+      'linear issue create --no-interactive --assignee self --state Todo --parent DF-3445 --project "<project name>" --label "subplan"'
+    );
   });
 
   describe('issueDocPaths — Linked Issue Documents section', () => {

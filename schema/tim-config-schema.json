@@ -2,6 +2,11 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
+    "timPath": {
+      "description": "Executable path to use for tim commands launched by the web UI",
+      "type": "string",
+      "minLength": 1
+    },
     "githubUsername": {
       "description": "GitHub username for PR filtering",
       "type": "string"
@@ -894,6 +899,11 @@
             "claude-code",
             "codex-cli"
           ]
+        },
+        "linearChildIssueLabel": {
+          "description": "Label to apply to Linear issues created for child plans during generation",
+          "type": "string",
+          "minLength": 1
         },
         "model": {
           "type": "object",

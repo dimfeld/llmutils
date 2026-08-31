@@ -766,6 +766,7 @@ Important config areas:
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
 - `smallTasks` - executor/model for lightweight helper passes (defaults to `codex-cli` with `gpt-5.6-luna:medium`)
 - `chat` - executor and model choices shown in the web Chat dialog
+- `generate.linearChildIssueLabel` - optional Linear label to apply to issues created for child plans during generation
 - `updateDocs` - controls automatic agent documentation updates; `applyLessons` is retained for manual finalization compatibility
 - `artifactRetentionDays` - days before soft-deleted artifacts and artifacts on completed plans are eligible for purge (default 30)
 - `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`

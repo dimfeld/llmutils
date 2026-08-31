@@ -116,6 +116,15 @@ tim generate 456 --commit
 
 When `tim generate` runs for a plan linked to Linear issues, tim also checks for native Linear Documents attached to each issue and to each issue's project. If documents are found, interactive runs show a checkbox list labeled by source, such as `[Issue] API Spec` or `[Project] Architecture Overview`, with all documents selected by default. Non-interactive and headless runs skip the prompt and include all discovered documents automatically.
 
+To apply a label to Linear issues created for child plans during generation, set `generate.linearChildIssueLabel` in the tim configuration:
+
+```yaml
+generate:
+  linearChildIssueLabel: subplan
+```
+
+When set, the generate prompt tells the agent to pass this label when it creates each child issue. The setting does not affect imported issues or existing issues.
+
 Selected documents are downloaded as markdown files into `.tim/issue-docs/<planId>/` in the execution workspace. This cache is git-excluded and transient; the generated prompt tells the planning agent to read the files immediately and copy any implementation-relevant details into the plan details and task descriptions so the plan remains self-contained. Only native Linear Documents with markdown content are included. External-link attachments and other attachment resources are out of scope.
 
 Document fetching degrades gracefully: GitHub-tracked plans and plans without a Linear issue URL skip the step entirely with no behavior change, and if `LINEAR_API_KEY` is missing or the Linear fetch fails, tim emits a warning and continues generation without documents.

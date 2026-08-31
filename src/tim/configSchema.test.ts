@@ -1984,6 +1984,18 @@ describe('configSchema', () => {
       }
     });
 
+    test('accepts a non-empty Linear child issue label for generate', () => {
+      const result = timConfigSchema.parse({
+        generate: { linearChildIssueLabel: ' subplan ' },
+      });
+
+      expect(result.generate?.linearChildIssueLabel).toBe('subplan');
+    });
+
+    test('rejects an empty Linear child issue label for generate', () => {
+      expect(() => timConfigSchema.parse({ generate: { linearChildIssueLabel: '   ' } })).toThrow();
+    });
+
     test('rejects invalid generate.executor values', () => {
       expect(() => timConfigSchema.parse({ generate: { executor: 'invalid-executor' } })).toThrow();
     });
