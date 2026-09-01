@@ -10,6 +10,7 @@ import {
   runWithLogWriter,
   writeToLogFile,
 } from './common.js';
+import { runWithAgentName } from './adapter.js';
 import { vi } from 'vitest';
 
 describe('logging/common', () => {
@@ -53,6 +54,18 @@ describe('logging/common', () => {
     await expect(readFile(logPath, 'utf8')).resolves.toBe(
       '[01:02:03] [worker-a] first\n[01:02:03] [worker-a] \n[01:02:03] [worker-a] third\n'
     );
+  });
+
+  test('uses the scoped agent name when no log writer override is set', async () => {
+    const logPath = path.join(tempDir, 'tim.log');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-28T01:02:03.000Z'));
+
+    openLogFile(logPath);
+    runWithAgentName('worker-a', () => writeToLogFile('worker output\n'));
+    await closeLogFile();
+
+    await expect(readFile(logPath, 'utf8')).resolves.toBe('[01:02:03] [worker-a] worker output\n');
   });
 
   test('formats empty data without adding a line', () => {

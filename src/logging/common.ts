@@ -2,6 +2,7 @@ import { createWriteStream, type WriteStream } from 'node:fs';
 import { finished } from 'node:stream/promises';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import stripAnsi from 'strip-ansi';
+import { getCurrentAgentName } from './adapter.js';
 
 /**
  * File sink for writing log output to a file.
@@ -13,7 +14,8 @@ const logWriterStorage = new AsyncLocalStorage<string>();
 const DEFAULT_LOG_WRITER_NAME = 'orchestrator';
 
 function currentLogWriterName(): string {
-  const writerName = logWriterStorage.getStore() ?? process.env.TIM_AGENT_NAME;
+  const writerName =
+    logWriterStorage.getStore() ?? getCurrentAgentName() ?? process.env.TIM_AGENT_NAME;
   return writerName && writerName.length > 0 ? writerName : DEFAULT_LOG_WRITER_NAME;
 }
 
