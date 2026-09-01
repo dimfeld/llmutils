@@ -1,5 +1,5 @@
 import net from 'node:net';
-import type { LoggerAdapter } from './adapter.js';
+import { getCurrentAgentName, type LoggerAdapter } from './adapter.js';
 import { writeToLogFile } from './common.js';
 import { debug } from '../common/process.js';
 import {
@@ -141,6 +141,10 @@ export class TunnelAdapter implements LoggerAdapter {
       this.connected = false;
       this.rejectAllPending(new Error('Tunnel connection closed'));
     });
+  }
+
+  private currentAgentName(): string | undefined {
+    return getCurrentAgentName() ?? this.agentName;
   }
 
   /**
@@ -371,42 +375,52 @@ export class TunnelAdapter implements LoggerAdapter {
 
   log(...args: any[]): void {
     const serialized = serializeArgs(args);
-    this.send({ type: 'log', args: serialized, agentName: this.agentName });
+    this.send({ type: 'log', args: serialized, agentName: this.currentAgentName() });
     writeToLogFile(serialized.join(' ') + '\n');
   }
 
   error(...args: any[]): void {
     const serialized = serializeArgs(args);
-    this.send({ type: 'error', args: serialized, agentName: this.agentName });
+    this.send({ type: 'error', args: serialized, agentName: this.currentAgentName() });
     writeToLogFile(serialized.join(' ') + '\n');
   }
 
   warn(...args: any[]): void {
     const serialized = serializeArgs(args);
-    this.send({ type: 'warn', args: serialized, agentName: this.agentName });
+    this.send({ type: 'warn', args: serialized, agentName: this.currentAgentName() });
     writeToLogFile(serialized.join(' ') + '\n');
   }
 
   writeStdout(data: string, options?: WriteOptions): void {
-    this.send({ type: 'stdout', data, origin: options?.origin, agentName: this.agentName });
+    this.send({
+      type: 'stdout',
+      data,
+      origin: options?.origin,
+      agentName: this.currentAgentName(),
+    });
     writeToLogFile(data);
   }
 
   writeStderr(data: string, options?: WriteOptions): void {
-    this.send({ type: 'stderr', data, origin: options?.origin, agentName: this.agentName });
+    this.send({
+      type: 'stderr',
+      data,
+      origin: options?.origin,
+      agentName: this.currentAgentName(),
+    });
     writeToLogFile(data);
   }
 
   debugLog(...args: any[]): void {
     if (debug) {
       const serialized = serializeArgs(args);
-      this.send({ type: 'debug', args: serialized, agentName: this.agentName });
+      this.send({ type: 'debug', args: serialized, agentName: this.currentAgentName() });
       writeToLogFile('[DEBUG] ' + serialized.join(' ') + '\n');
     }
   }
 
   sendStructured(message: StructuredMessage): void {
-    this.send({ type: 'structured', message, agentName: this.agentName });
+    this.send({ type: 'structured', message, agentName: this.currentAgentName() });
     const formatted = formatStructuredMessage(message);
     if (formatted.length > 0) {
       writeToLogFile(formatted + '\n');

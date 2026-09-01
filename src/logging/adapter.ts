@@ -39,12 +39,25 @@ export interface LoggerAdapter {
  */
 export const adapterStorage = new AsyncLocalStorage<LoggerAdapter>();
 
+/** Async-local sender identity used when one process forwards another agent's output. */
+export const agentNameStorage = new AsyncLocalStorage<string>();
+
 /**
  * Retrieves the current LoggerAdapter for the current async context.
  * @returns The current LoggerAdapter, or undefined if none is set
  */
 export function getLoggerAdapter(): LoggerAdapter | undefined {
   return adapterStorage.getStore();
+}
+
+/** Returns the sender identity for the current output context, if one is set. */
+export function getCurrentAgentName(): string | undefined {
+  return agentNameStorage.getStore();
+}
+
+/** Runs a callback with a sender identity for output attribution. */
+export function runWithAgentName<T>(agentName: string, callback: () => T): T {
+  return agentNameStorage.run(agentName, callback);
 }
 
 /**

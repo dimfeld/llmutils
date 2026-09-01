@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
 import { createTunnelServer, type TunnelServer, structuredMessageTypes } from './tunnel_server.ts';
 import { structuredMessageTypeList } from './structured_messages.ts';
-import { runWithLogger } from './adapter.ts';
+import { getCurrentAgentName, runWithLogger, type LoggerAdapter } from './adapter.ts';
 import { closeLogFile, openLogFile } from './common.ts';
 import { SilentAdapter } from './silent.ts';
 import type { TunnelMessage } from './tunnel_protocol.ts';
@@ -232,6 +232,39 @@ describe('createTunnelServer', () => {
       type: 'workflow_progress',
       message: 'Generating context',
     });
+  });
+
+  it('preserves the tunneled agent name in the logging context', async () => {
+    const sp = uniqueSocketPath();
+    const { adapter: recording, calls } = createRecordingAdapter();
+    const observedAgentNames: Array<string | undefined> = [];
+    const adapter: LoggerAdapter = {
+      ...recording,
+      sendStructured(message) {
+        observedAgentNames.push(getCurrentAgentName());
+        recording.sendStructured(message);
+      },
+    };
+
+    await runWithLogger(adapter, async () => {
+      tunnelServer = await createTunnelServer(sp);
+      await connectAndSend(sp, [
+        {
+          type: 'structured',
+          agentName: 'worker-a',
+          message: {
+            type: 'workflow_progress',
+            timestamp: '2026-08-28T01:02:03.000Z',
+            phase: 'context',
+            message: 'from worker',
+          },
+        },
+      ]);
+
+      await waitForCalls(calls, 1);
+    });
+
+    expect(observedAgentNames).toEqual(['worker-a']);
   });
 
   it('should handle multiple messages from a single connection', async () => {

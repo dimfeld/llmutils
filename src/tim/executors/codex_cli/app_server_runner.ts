@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import type { TimConfig } from '../../configSchema';
 import { debugLog, error, log, sendStructured, warn } from '../../../logging';
-import { getLoggerAdapter } from '../../../logging/adapter.js';
+import { getLoggerAdapter, runWithAgentName } from '../../../logging/adapter.js';
 import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { isTunnelActive, TunnelAdapter } from '../../../logging/tunnel_client.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
@@ -153,7 +153,7 @@ class UserInputQueue {
 /**
  * Runs a single-step Codex execution via app-server JSON-RPC and returns the final agent message.
  */
-export async function executeCodexStepViaAppServer(
+async function executeCodexStepViaAppServerInternal(
   prompt: string,
   cwd: string,
   timConfig: TimConfig,
@@ -966,4 +966,19 @@ export async function executeCodexStepViaAppServer(
       }
     }
   }
+}
+
+export async function executeCodexStepViaAppServer(
+  prompt: string,
+  cwd: string,
+  timConfig: TimConfig,
+  options?: CodexStepOptions
+): Promise<string> {
+  const agentName = options?.agentEnvironmentIdentity?.name;
+  if (agentName === undefined) {
+    return await executeCodexStepViaAppServerInternal(prompt, cwd, timConfig, options);
+  }
+  return await runWithAgentName(agentName, () =>
+    executeCodexStepViaAppServerInternal(prompt, cwd, timConfig, options)
+  );
 }

@@ -4,6 +4,7 @@ import type {
   SessionProcessOwner,
 } from '../../../common/session_process_control.js';
 import type { StructuredMessage } from '../../../logging/structured_messages.js';
+import { runWithAgentName } from '../../../logging/adapter.js';
 import type {
   AgentProviderControlResult,
   AgentProviderLifecycleControls,
@@ -28,6 +29,7 @@ export interface PersistentClaudeSessionRuntimeOptions {
   readonly processLabel: AgentProcessLabel;
   readonly debugLog: (...args: unknown[]) => void;
   readonly sendStructured: (message: StructuredMessage) => void;
+  readonly agentName?: string;
   readonly onOutputActivity?: () => void | Promise<void>;
   readonly sessionProcessOwner?: SessionProcessOwner;
   readonly lifecycleObserver?: AgentProviderLifecycleObserver;
@@ -406,7 +408,12 @@ export class PersistentClaudeSessionRuntime {
 
     if (this.lastSessionEndMessage !== undefined) {
       try {
-        this.options.sendStructured(this.lastSessionEndMessage);
+        const send = (): void => this.options.sendStructured(this.lastSessionEndMessage!);
+        if (this.options.agentName) {
+          runWithAgentName(this.options.agentName, send);
+        } else {
+          send();
+        }
       } catch (error) {
         this.options.debugLog(`Claude ${this.options.label} final session message failed:`, error);
       }

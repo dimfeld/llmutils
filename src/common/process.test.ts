@@ -13,7 +13,7 @@ import {
   createLineSplitter,
 } from './process';
 import { runWithLogger } from '../logging.ts';
-import type { LoggerAdapter } from '../logging/adapter.ts';
+import { getCurrentAgentName, type LoggerAdapter } from '../logging/adapter.ts';
 import type { StructuredMessage } from '../logging/structured_messages.ts';
 
 describe('process utilities', () => {
@@ -414,6 +414,34 @@ describe('process utilities', () => {
       expect(result.stdout).toContain('start');
       expect(result.stdout).toContain('end');
     });
+  });
+
+  it('attributes streamed formatter output to the configured agent', async () => {
+    const observedAgentNames: Array<string | undefined> = [];
+    const adapter: LoggerAdapter = {
+      log: () => {},
+      error: () => {},
+      warn: () => {},
+      writeStdout: () => {},
+      writeStderr: () => {},
+      debugLog: () => {},
+      sendStructured: () => {
+        observedAgentNames.push(getCurrentAgentName());
+      },
+    };
+
+    await runWithLogger(adapter, async () => {
+      await spawnAndLogOutput(['echo', 'hello'], {
+        agentName: 'worker-a',
+        formatStdout: () => ({
+          type: 'workflow_progress',
+          timestamp: '2026-08-28T01:02:03.000Z',
+          message: 'formatted',
+        }),
+      });
+    });
+
+    expect(observedAgentNames).toEqual(['worker-a']);
   });
 
   describe('spawnWithStreamingIO', () => {

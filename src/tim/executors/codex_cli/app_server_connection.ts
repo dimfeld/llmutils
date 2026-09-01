@@ -14,6 +14,7 @@ import {
   type AgentEnvironmentIdentity,
 } from '../../agent_messaging/environment.js';
 import { debugLog, writeStderr } from '../../../logging';
+import { runWithAgentName } from '../../../logging/adapter.js';
 import {
   getCurrentSessionProcessOwner,
   type SessionExecutorLifecycle,
@@ -101,6 +102,8 @@ export interface ConnectionOptions {
   experimentalApi?: boolean;
   /** Display label used when the owned app-server process is tracked. */
   sessionProcessLabel?: string;
+  /** Sender identity used for output emitted by this app-server. */
+  agentName?: string;
   /** Installed before a spawned process becomes visible to End controls. */
   onGracefulEnd?: () => void;
   onNotification?: (method: string, params: unknown) => void;
@@ -648,7 +651,10 @@ export class CodexAppServerConnection {
       socketTempDir,
       closing: false,
       lifecycle,
-      stderrTask: CodexAppServerConnection.consumeProcessStderr(proc),
+      stderrTask: CodexAppServerConnection.consumeProcessStderr(
+        proc,
+        options.agentName ?? options.agentEnvironmentIdentity?.name
+      ),
       exitTask: Promise.resolve(),
     };
     owner.exitTask = CodexAppServerConnection.monitorProcessExit(
@@ -864,18 +870,31 @@ export class CodexAppServerConnection {
     }
   }
 
-  private static async consumeProcessStderr(proc: CodexProcessWithStderr): Promise<void> {
+  private static async consumeProcessStderr(
+    proc: CodexProcessWithStderr,
+    agentName?: string
+  ): Promise<void> {
     const decoder = new TextDecoder();
     try {
       for await (const chunk of proc.stderr) {
         const text = decoder.decode(chunk, { stream: true });
         if (text.length > 0) {
-          writeStderr(text);
+          const write = (): void => writeStderr(text);
+          if (agentName) {
+            runWithAgentName(agentName, write);
+          } else {
+            write();
+          }
         }
       }
       const remaining = decoder.decode();
       if (remaining.length > 0) {
-        writeStderr(remaining);
+        const write = (): void => writeStderr(remaining);
+        if (agentName) {
+          runWithAgentName(agentName, write);
+        } else {
+          write();
+        }
       }
     } catch (err) {
       debugLog('Failed while reading codex app-server stderr:', err);
@@ -892,7 +911,13 @@ export class CodexAppServerConnection {
     const signal = proc.signalCode;
     lifecycle?.markExited({ exitCode, signal });
     if (!isClosing()) {
-      options.onExit?.({ exitCode, signal: signal ?? undefined });
+      const notify = (): void => options.onExit?.({ exitCode, signal: signal ?? undefined });
+      const agentName = options.agentName ?? options.agentEnvironmentIdentity?.name;
+      if (agentName) {
+        runWithAgentName(agentName, notify);
+      } else {
+        notify();
+      }
     }
   }
 
@@ -955,7 +980,13 @@ export class CodexAppServerConnection {
       }
 
       try {
-        this.options.onNotification?.(message.method, message.params);
+        const notify = (): void => this.options.onNotification?.(message.method!, message.params);
+        const agentName = this.options.agentName ?? this.options.agentEnvironmentIdentity?.name;
+        if (agentName) {
+          runWithAgentName(agentName, notify);
+        } else {
+          notify();
+        }
       } catch (err) {
         debugLog('Notification handler error:', err);
       }

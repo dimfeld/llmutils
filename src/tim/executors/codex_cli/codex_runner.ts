@@ -213,6 +213,7 @@ export async function executeCodexStep(
             TIM_NOTIFY_SUPPRESS: '1',
             ...tunnelEnv,
           },
+          agentName: options.agentEnvironmentIdentity?.name,
           timEnvironment: options.timEnvironment,
           transformEnvironment: options.agentEnvironmentIdentity
             ? (env: Record<string, string>): Record<string, string> =>

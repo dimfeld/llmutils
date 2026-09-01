@@ -1,4 +1,4 @@
-import type { LoggerAdapter } from './adapter.js';
+import { getCurrentAgentName, type LoggerAdapter } from './adapter.js';
 import { ConsoleAdapter } from './console.js';
 import type {
   HeadlessOutputMessage,
@@ -193,12 +193,16 @@ export class HeadlessAdapter implements LoggerAdapter {
     }
   }
 
+  private currentAgentName(): string {
+    return getCurrentAgentName() ?? this.agentName;
+  }
+
   log(...args: any[]): void {
     this.wrappedAdapter.log(...args);
     this.enqueueTunnelMessage({
       type: 'log',
       args: serializeArgs(args),
-      agentName: this.agentName,
+      agentName: this.currentAgentName(),
     });
   }
 
@@ -207,7 +211,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.enqueueTunnelMessage({
       type: 'error',
       args: serializeArgs(args),
-      agentName: this.agentName,
+      agentName: this.currentAgentName(),
     });
   }
 
@@ -216,7 +220,7 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.enqueueTunnelMessage({
       type: 'warn',
       args: serializeArgs(args),
-      agentName: this.agentName,
+      agentName: this.currentAgentName(),
     });
   }
 
@@ -226,7 +230,7 @@ export class HeadlessAdapter implements LoggerAdapter {
       type: 'stdout',
       data,
       origin: options?.origin,
-      agentName: this.agentName,
+      agentName: this.currentAgentName(),
     });
   }
 
@@ -236,7 +240,7 @@ export class HeadlessAdapter implements LoggerAdapter {
       type: 'stderr',
       data,
       origin: options?.origin,
-      agentName: this.agentName,
+      agentName: this.currentAgentName(),
     });
   }
 
@@ -249,13 +253,13 @@ export class HeadlessAdapter implements LoggerAdapter {
     this.enqueueTunnelMessage({
       type: 'debug',
       args: serializeArgs(args),
-      agentName: this.agentName,
+      agentName: this.currentAgentName(),
     });
   }
 
   sendStructured(message: StructuredMessage): void {
     this.wrappedAdapter.sendStructured(message);
-    this.enqueueTunnelMessage({ type: 'structured', message, agentName: this.agentName });
+    this.enqueueTunnelMessage({ type: 'structured', message, agentName: this.currentAgentName() });
   }
 
   sendPlanContent(content: string, tasks: HeadlessPlanTask[] = []): void {

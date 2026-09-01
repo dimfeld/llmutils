@@ -524,6 +524,7 @@ export async function runClaudeSubprocess(
           processLabel: sessionProcessLabel as AgentProcessLabel,
           debugLog,
           sendStructured,
+          agentName: options.agentEnvironmentIdentity?.name,
           onOutputActivity: options.onOutputActivity,
           sessionProcessOwner,
           lifecycleObserver: options.lifecycleObserver,
@@ -551,6 +552,7 @@ export async function runClaudeSubprocess(
         ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
         CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
       },
+      agentName: options.agentEnvironmentIdentity?.name,
       timEnvironment: options.timEnvironment,
       transformEnvironment: options.agentEnvironmentIdentity
         ? (env: Record<string, string>): Record<string, string> =>

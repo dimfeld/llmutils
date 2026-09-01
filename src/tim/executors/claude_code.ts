@@ -822,6 +822,7 @@ export class ClaudeCodeExecutor implements Executor {
           ANTHROPIC_API_KEY: process.env.CLAUDE_API ? (process.env.ANTHROPIC_API_KEY ?? '') : '',
           CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: 'true',
         },
+        agentName: this.sharedOptions.agentEnvironmentIdentity?.name,
         timEnvironment: this.sharedOptions.timEnvironment,
         transformEnvironment: this.sharedOptions.agentEnvironmentIdentity
           ? (env: Record<string, string>): Record<string, string> =>

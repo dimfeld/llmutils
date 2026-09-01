@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { HeadlessAdapter } from './headless_adapter.ts';
+import { runWithAgentName } from './adapter.ts';
 import type { HeadlessMessage, HeadlessServerMessage } from './headless_protocol.ts';
 import { createRecordingAdapter } from './test_helpers.ts';
 import { readSessionInfoFile } from '../tim/session_server/runtime_dir.ts';
@@ -131,6 +132,30 @@ describe('HeadlessAdapter', () => {
     const internals = adapter as any;
     expect(internals.history).toHaveLength(3);
     expect(internals.historyOutputBytes).toBeGreaterThan(0);
+
+    await adapter.destroy();
+  });
+
+  it('uses the scoped agent name for forwarded output', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+
+    runWithAgentName('worker-a', () => {
+      adapter.log('worker log');
+      adapter.sendStructured({
+        type: 'workflow_progress',
+        timestamp: '2026-08-28T01:02:03.000Z',
+        phase: 'context',
+        message: 'worker progress',
+      });
+    });
+
+    const history = (adapter as any).history as Array<{ payload: string }>;
+    const envelopes = history.map((entry) => JSON.parse(entry.payload));
+    expect(envelopes.map((envelope) => envelope.message.agentName)).toEqual([
+      'worker-a',
+      'worker-a',
+    ]);
 
     await adapter.destroy();
   });

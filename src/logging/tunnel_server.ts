@@ -10,7 +10,7 @@ import {
   sendStructured,
 } from '../logging.js';
 import { CleanupRegistry } from '../common/cleanup_registry.js';
-import { getLoggerAdapter } from './adapter.js';
+import { getLoggerAdapter, runWithAgentName } from './adapter.js';
 import { runWithLogWriter } from './common.js';
 import { ConsoleAdapter } from './console.js';
 import { indentEveryLine } from './console_formatter.js';
@@ -540,7 +540,7 @@ function dispatchMessage(message: TunnelMessage): void {
   };
 
   if ('agentName' in message && message.agentName !== undefined) {
-    runWithLogWriter(message.agentName, dispatch);
+    runWithAgentName(message.agentName, () => runWithLogWriter(message.agentName!, dispatch));
   } else {
     dispatch();
   }
@@ -841,7 +841,9 @@ export function createTunnelServer(
             const promptMessage = parsed.message;
             // Still dispatch for logging/visibility
             if (parsed.agentName !== undefined) {
-              runWithLogWriter(parsed.agentName, () => sendStructured(promptMessage));
+              runWithAgentName(parsed.agentName, () =>
+                runWithLogWriter(parsed.agentName!, () => sendStructured(promptMessage))
+              );
             } else {
               sendStructured(promptMessage);
             }

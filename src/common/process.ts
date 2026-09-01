@@ -17,6 +17,7 @@
 
 import type { FileSink, SpawnOptions } from 'bun';
 import { debugLog, log, sendStructured, writeStderr, writeStdout } from '../logging.js';
+import { runWithAgentName } from '../logging/adapter.js';
 import { getUsingJj, hasUncommittedChanges } from './git.js';
 import { debug, quiet, setDebug, setQuiet } from './process_state.js';
 import type { StructuredMessage } from '../logging/structured_messages.js';
@@ -122,6 +123,8 @@ export type SpawnAndLogOutputOptions = {
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   /** Apply trusted process-specific values after workspace environment rendering. */
   transformEnvironment?: (env: Record<string, string>) => Record<string, string>;
+  /** Attribute streamed output to this agent. */
+  agentName?: string;
   quiet?: boolean;
   stdin?: string;
   formatStdout?: (output: string) => StructuredMessage | StructuredMessage[] | string;
@@ -282,28 +285,35 @@ function setupOutputProcessing(
       for await (const value of proc.stdout) {
         const rawOutput = stdoutDecoder.decode(value, { stream: true });
 
-        if (options?.formatStdout) {
-          const formatted = options.formatStdout(rawOutput);
-          if (typeof formatted === 'string') {
-            if (captureStdout) stdout.push(formatted);
-            if (!options?.quiet) {
-              writeStdout(formatted);
-            }
-          } else {
-            const messages = Array.isArray(formatted) ? formatted : [formatted];
-            // Keep returned stdout as raw process output for downstream parsers.
-            if (captureStdout) stdout.push(rawOutput);
-            for (const message of messages) {
+        const processOutput = (): void => {
+          if (options?.formatStdout) {
+            const formatted = options.formatStdout(rawOutput);
+            if (typeof formatted === 'string') {
+              if (captureStdout) stdout.push(formatted);
               if (!options?.quiet) {
-                sendStructured(message);
+                writeStdout(formatted);
+              }
+            } else {
+              const messages = Array.isArray(formatted) ? formatted : [formatted];
+              // Keep returned stdout as raw process output for downstream parsers.
+              if (captureStdout) stdout.push(rawOutput);
+              for (const message of messages) {
+                if (!options?.quiet) {
+                  sendStructured(message);
+                }
               }
             }
+          } else {
+            if (captureStdout) stdout.push(rawOutput);
+            if (!options?.quiet) {
+              writeStdout(rawOutput);
+            }
           }
+        };
+        if (options?.agentName) {
+          runWithAgentName(options.agentName, processOutput);
         } else {
-          if (captureStdout) stdout.push(rawOutput);
-          if (!options?.quiet) {
-            writeStdout(rawOutput);
-          }
+          processOutput();
         }
 
         // Activity observed; mark output seen and reset inactivity timer
@@ -318,13 +328,20 @@ function setupOutputProcessing(
       for await (const value of proc.stderr) {
         let output = stderrDecoder.decode(value, { stream: true });
 
-        if (options?.formatStderr) {
-          output = options.formatStderr(output);
-        }
+        const processOutput = (): void => {
+          if (options?.formatStderr) {
+            output = options.formatStderr(output);
+          }
 
-        if (captureStderr) stderr.push(output);
-        if (!options?.quiet) {
-          writeStderr(output);
+          if (captureStderr) stderr.push(output);
+          if (!options?.quiet) {
+            writeStderr(output);
+          }
+        };
+        if (options?.agentName) {
+          runWithAgentName(options.agentName, processOutput);
+        } else {
+          processOutput();
         }
 
         // Activity observed; mark output seen and reset inactivity timer
