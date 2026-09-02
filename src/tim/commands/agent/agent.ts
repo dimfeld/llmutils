@@ -738,6 +738,7 @@ export async function timAgent(
       claudeAgentToolContext: collaborativeAgentSession?.claudeAgentToolContext,
       codexDynamicToolProvider: collaborativeAgentSession?.codexDynamicToolProvider,
       orchestratorInputAdapter: collaborativeAgentSession?.orchestratorInputAdapter,
+      hasActiveCollaborativeSubagents: collaborativeAgentSession?.hasActiveSubagents,
       reviewExecutor: options.reviewExecutor,
       subagentExecutor,
       dynamicSubagentInstructions,

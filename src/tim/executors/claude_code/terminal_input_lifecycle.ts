@@ -149,6 +149,8 @@ export interface ExecuteWithTerminalInputOptions {
   tunnelForwardingEnabled: boolean;
   /** Keep stdin open on result only when an interactive input source is active. */
   keepInteractiveInputOpenOnResult?: boolean;
+  /** Keep stdin open while provider-external work can still send a continuation. */
+  hasExternalActivity?: () => boolean;
   /** Explicit persistent-agent policy. Omitted means the existing one-shot path. */
   persistentAgent?: Omit<PersistentClaudeTurnControllerOptions, 'stdin' | 'debugLog'>;
   /** Timer hooks used by the one-shot background-activity tracker. */
@@ -208,6 +210,7 @@ function executeOneShotWithTerminalInput(
     terminalInputEnabled,
     tunnelForwardingEnabled,
     keepInteractiveInputOpenOnResult = false,
+    hasExternalActivity,
     setTimeoutFn,
     clearTimeoutFn,
   } = options;
@@ -337,6 +340,7 @@ function executeOneShotWithTerminalInput(
       backgroundActivityTracker.acceptResultWithoutClosing(resultWasSuccessful);
       return;
     }
+    backgroundActivityTracker.externalActivityChanged(hasExternalActivity?.() === true);
     backgroundActivityTracker.onResultMessage(resultWasSuccessful);
   };
 

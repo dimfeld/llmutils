@@ -10,6 +10,7 @@ Claude Code reads stdin until EOF when using `--input-format stream-json`. This 
 - **Use `safeEndStdin()`** for all stdin close operations in cleanup paths. It wraps `stdin.end()` to handle both synchronous throws and async rejections (e.g., when the subprocess has already exited).
 - **Tunnel children need multi-message lifecycle.** When a child process receives input via tunnel (not TTY), stdin must be kept open using `sendInitialPrompt()` and closed only through the shared result-time or forced-shutdown paths.
 - **Background keep-alive depends on stdin staying open until the result-time decision.** Claude Code can end a turn while a background task is pending, then resume later through the same stream-json session. `executeWithTerminalInput()` therefore sends non-interactive prompts with `sendInitialPrompt()` and keeps stdin open until `onResultMessage()` consults the background-activity tracker. Normal turns still close stdin immediately on the first result; deferred turns close only after pending activity drains and the grace window elapses. The `streaming.result.finally(...)` close is only a cleanup backstop, not the primary close decision.
+- **Collaborative subagents are also a result-time keep-alive reason.** When agent messaging is enabled, the root Claude executor keeps stdin open if the session manager still has a nonterminal subagent. A later subagent message can then continue the same Claude session. Explicit End, Force End, and signal shutdown still close input immediately.
 
 ## Explicit Persistent Claude Agent Mode
 
@@ -54,6 +55,7 @@ Claude Code can end a turn (emit a `result` message) while work is still pending
 ### Two unrelated "task" concepts — do not conflate
 
 - **Background tasks** (this tracker's subject): Claude Code's own subprocess/subagent jobs, represented authoritatively by `type:"system", subtype:"background_tasks_changed"` messages.
+- **Collaborative subagents**: persistent agents owned by `AgentManager`. The root Claude executor samples their nonterminal count at each result and supplies it as a separate external keep-alive reason.
 - **Agent todo tasks**: the `TaskCreate`/`TaskUpdate` tool calls Claude makes to manage its display todo list (`pendingTaskCreates`, `sessionTaskLists`, owned by each `ClaudeMessageFormatter` instance in `format.ts`). These are display-only and out of scope for lifecycle decisions — never reuse their state maps for background-task tracking.
 
 ### Lifecycle signals from `format.ts`

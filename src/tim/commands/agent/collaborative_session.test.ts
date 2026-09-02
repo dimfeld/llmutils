@@ -355,6 +355,7 @@ describe('CollaborativeAgentSession root activation', () => {
         executor: 'claude-code',
         initialMessage: 'Implement the assigned files.',
       });
+      expect(session.hasActiveSubagents()).toBe(true);
 
       const codexStartResponse = await session.codexDynamicToolProvider.handler({
         threadId: 'root-thread',
@@ -437,6 +438,7 @@ describe('CollaborativeAgentSession root activation', () => {
       claudeHandle.emitTurnComplete();
       claudeHandle.emitExit('natural');
       await session.manager.waitForAgentTerminal(claudeStart.id);
+      expect(session.hasActiveSubagents()).toBe(false);
       expect(rootInput.input.deliver).toHaveBeenCalledWith(
         expect.objectContaining({
           content: expect.stringContaining('Agent claude-impl completed'),

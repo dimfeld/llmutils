@@ -107,6 +107,38 @@ describe('BackgroundActivityTracker', () => {
     expect(tracker.acceptedSuccessfulFinalResult()).toBe(true);
   });
 
+  it('keeps stdin open while external activity is present without a stall timeout', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.externalActivityChanged(true);
+    tracker.onResultMessage(true);
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(timer.hasPending()).toBe(false);
+
+    tracker.externalActivityChanged(false);
+    expect(timer.hasPending()).toBe(true);
+    expect(timer.getLastScheduledMs()).toBe(10);
+
+    timer.fire();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps external activity independent from Claude background task status', () => {
+    const { tracker, timer, onClose } = makeTracker();
+
+    tracker.externalActivityChanged(true);
+    tracker.backgroundTasksChanged(true);
+    tracker.onResultMessage(true);
+    tracker.backgroundTasksChanged(false);
+
+    expect(tracker.hasPendingActivity()).toBe(true);
+    expect(onClose).not.toHaveBeenCalled();
+
+    tracker.externalActivityChanged(false);
+    expect(timer.hasPending()).toBe(true);
+  });
+
   it('treats each status message as the complete authoritative task state', () => {
     const { tracker, timer, onClose } = makeTracker();
 

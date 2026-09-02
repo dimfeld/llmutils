@@ -2261,6 +2261,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
   });
 
   test('uses multi-message streaming path when terminal input is enabled', async () => {
+    const hasActiveCollaborativeSubagents = vi.fn(() => true);
     const executeWithTerminalInputSpy = vi.fn(() => ({
       resultPromise: Promise.resolve({
         exitCode: 0,
@@ -2299,7 +2300,7 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
       const { ClaudeCodeExecutor } = await import('./claude_code.js');
       const exec = new ClaudeCodeExecutor(
         { permissionsMcp: { enabled: false } } as any,
-        { baseDir: tempDir, terminalInput: true } as any,
+        { baseDir: tempDir, terminalInput: true, hasActiveCollaborativeSubagents } as any,
         {} as any
       );
 
@@ -2314,6 +2315,9 @@ describe('ClaudeCodeExecutor - terminal input integration', () => {
     }
 
     expect(executeWithTerminalInputSpy).toHaveBeenCalledTimes(1);
+    expect(executeWithTerminalInputSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ hasExternalActivity: hasActiveCollaborativeSubagents })
+    );
   });
 
   test('queues root messages after result-close and drains them on the next execute turn', async () => {

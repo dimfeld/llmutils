@@ -502,6 +502,74 @@ describe('terminal_input_lifecycle', () => {
     controller.cleanup();
   });
 
+  it('keeps stdin open on result while external activity is active', () => {
+    vi.useFakeTimers();
+    const stdinEndSpy = vi.fn(async () => {});
+    let hasExternalActivity = true;
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockTerminalInputReaderFactory = (_options: TerminalInputReaderOptions) => ({
+      start: () => true,
+      stop: () => {},
+    });
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+      hasExternalActivity: (): boolean => hasExternalActivity,
+    });
+
+    controller.onResultMessage(true);
+    expect(stdinEndSpy).not.toHaveBeenCalled();
+
+    hasExternalActivity = false;
+    controller.onResultMessage(true);
+    expect(stdinEndSpy).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(10_000);
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    controller.cleanup();
+  });
+
+  it('explicitly ends a session even while external activity is active', () => {
+    const stdinEndSpy = vi.fn(async () => {});
+
+    mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+    mockTerminalInputReaderFactory = (_options: TerminalInputReaderOptions) => ({
+      start: () => true,
+      stop: () => {},
+    });
+
+    const controller = executeWithTerminalInput({
+      streaming: makeStreaming({ stdinEnd: stdinEndSpy }),
+      prompt: 'initial prompt',
+      sendStructured: vi.fn(() => {}),
+      debugLog: vi.fn(() => {}),
+      errorLog: vi.fn(() => {}),
+      log: vi.fn(() => {}),
+      label: 'Claude',
+      terminalInputEnabled: true,
+      tunnelForwardingEnabled: false,
+      hasExternalActivity: (): boolean => true,
+    });
+
+    controller.onResultMessage(true);
+    expect(stdinEndSpy).not.toHaveBeenCalled();
+
+    controller.endSession();
+    expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+    controller.cleanup();
+  });
+
   it('ends an active session by stopping input and closing stdin', () => {
     const stdinEndSpy = vi.fn(async () => {});
     const stopSpy = vi.fn(() => {});

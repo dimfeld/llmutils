@@ -482,6 +482,7 @@ describe('timAgent lifecycle integration', () => {
             expect.objectContaining({ name: 'StopTimAgent' }),
           ]),
         }),
+        hasActiveCollaborativeSubagents: expect.any(Function),
       }),
       expect.anything()
     );

@@ -13,6 +13,7 @@ export interface BackgroundActivityTrackerOptions {
 
 export class BackgroundActivityTracker {
   private hasRunningBackgroundTasks = false;
+  private hasExternalActivity = false;
   private everDeferred = false;
   private pendingResultSuccessful: boolean | undefined;
   private closed = false;
@@ -57,6 +58,22 @@ export class BackgroundActivityTracker {
     this.evaluateDrain();
   }
 
+  externalActivityChanged(hasActivity: boolean): void {
+    if (this.closed) {
+      return;
+    }
+
+    this.hasExternalActivity = hasActivity;
+    if (hasActivity) {
+      this.invalidateAcceptedFinalResult();
+      this.everDeferred = true;
+      this.cancelGraceTimer();
+      return;
+    }
+
+    this.evaluateDrain();
+  }
+
   onTurnActivity(): void {
     if (this.closed) {
       return;
@@ -78,7 +95,7 @@ export class BackgroundActivityTracker {
   }
 
   hasPendingActivity(): boolean {
-    return this.hasRunningBackgroundTasks;
+    return this.hasRunningBackgroundTasks || this.hasExternalActivity;
   }
 
   /** True while a result is waiting for background settlement or grace. */

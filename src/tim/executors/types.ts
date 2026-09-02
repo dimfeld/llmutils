@@ -73,6 +73,8 @@ export interface ExecutorCommonOptions {
   codexDynamicToolProvider?: CodexDynamicToolProvider;
   /** Deferred root input bound by the active orchestrator provider turn. */
   orchestratorInputAdapter?: DeferredAgentInputAdapter;
+  /** True while the collaborative session owns any nonterminal subagent. */
+  hasActiveCollaborativeSubagents?: () => boolean;
 }
 
 /**

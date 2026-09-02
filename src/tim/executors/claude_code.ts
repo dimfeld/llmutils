@@ -967,6 +967,7 @@ export class ClaudeCodeExecutor implements Executor {
         tunnelForwardingEnabled: isTunnelActive(),
         keepInteractiveInputOpenOnResult:
           (this.sharedOptions.closeTerminalInputOnResult ?? true) === false,
+        hasExternalActivity: this.sharedOptions.hasActiveCollaborativeSubagents,
       });
 
       if (this.sharedOptions.orchestratorInputAdapter !== undefined) {

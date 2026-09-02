@@ -58,6 +58,8 @@ export class CollaborativeAgentSession {
   public readonly orchestratorEnvironmentIdentity: OrchestratorEnvironmentIdentity;
   /** Deferred root input bound by the active Claude or Codex orchestrator turn. */
   public readonly orchestratorInputAdapter: DeferredAgentInputAdapter;
+  /** Result-time keep-alive check used by the root Claude executor. */
+  public readonly hasActiveSubagents = (): boolean => this.manager.subagentCount > 0;
 
   private closePromise: Promise<void> | undefined;
 
