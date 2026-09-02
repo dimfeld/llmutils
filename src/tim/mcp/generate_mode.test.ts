@@ -246,7 +246,10 @@ describe('tim MCP generate mode helpers', () => {
   test('loadQuestionsPrompt encourages iterative questioning', async () => {
     const prompt = await loadQuestionsPrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;
-    expect(message?.text).toContain('Ask one concise, high-impact question');
+    expect(message?.text).toContain('ask a batch of about four or five questions at a time');
+    expect(message?.text).toContain('number each question clearly');
+    expect(message?.text).toContain('one continuous, monotonically increasing sequence');
+    expect(message?.text).toContain('first batch 1–5 and the next batch 6–10');
     expect(message?.text).toContain('Do not use AskUserQuestion');
     expect(message?.text).toContain('Initial details about the plan.');
   });
