@@ -1107,11 +1107,11 @@
   <div class="space-y-6 pb-4">
     <!-- Status badges + actions -->
     <div>
-      <div class="flex items-center gap-2">
+      <div class="flex flex-wrap items-center gap-2">
         <StatusBadge status={plan.displayStatus} />
         <PriorityBadge priority={plan.priority} />
 
-        <div class="ml-auto flex items-center gap-2">
+        <div class="ml-auto flex flex-wrap items-center gap-2">
           <Button
             href={`/projects/${projectId}/plans/${plan.uuid}/edit`}
             size="xs"

@@ -15,6 +15,7 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$app/state', () => ({
   page: {
     params: {},
+    route: { id: '/projects/[projectId]/prs' },
   },
 }));
 

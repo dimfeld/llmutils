@@ -27,6 +27,7 @@
 
   let selectedPlanUuid = $derived(page.params.planUuid ?? null);
   let selectedPrNumber = $derived(page.params.prNumber ? Number(page.params.prNumber) : null);
+  let detailActive = $derived(page.route.id !== '/projects/[projectId]/active');
 
   let projectNamesById = $derived.by(() => {
     if (!showProject) return {};
@@ -101,139 +102,137 @@
   });
 </script>
 
-<div class="flex h-full w-full">
-  <CollapsibleItemSidebar label="Active work" class="overflow-y-auto">
-    <div class="space-y-4 p-4">
-      {#if allEmpty && sessionManager.initialized}
-        <div class="flex flex-col items-center justify-center py-16">
-          <p class="text-lg font-medium text-muted-foreground">All clear</p>
-          <p class="mt-1 text-sm text-muted-foreground">No items need attention right now.</p>
-        </div>
-      {:else}
-        {#if attentionCount > 0}
-          <DashboardSection title="Needs Attention" count={attentionCount}>
-            {#each attentionItems.planItems as item (item.planUuid)}
-              <NeedsAttentionCard
-                {item}
-                {projectId}
-                projectName={showProject ? projectNamesById[item.projectId] : undefined}
-                selected={selectedPlanUuid === item.planUuid}
-                developmentWorkflow={data.developmentWorkflowByProjectId[item.projectId] ??
-                  'pr-based'}
-              />
-            {/each}
-            {#if attentionItems.sessionItems.length > 0}
-              {#if attentionItems.planItems.length > 0}
-                <div class="my-1 border-t border-border/50"></div>
-              {/if}
-              <p class="px-1 text-xs text-muted-foreground">Notifications</p>
-              {#each attentionItems.sessionItems as session (session.connectionId)}
-                <RunningNowRow
-                  {session}
-                  {projectId}
-                  hasNotification={true}
-                  projectName={showProject && session.projectId
-                    ? projectNamesById[session.projectId]
-                    : undefined}
-                />
-              {/each}
+<CollapsibleItemSidebar
+  label="Active work"
+  class="overflow-y-auto"
+  {detailActive}
+  detailClass="overflow-y-auto"
+>
+  <div class="space-y-4 p-4">
+    {#if allEmpty && sessionManager.initialized}
+      <div class="flex flex-col items-center justify-center py-16">
+        <p class="text-lg font-medium text-muted-foreground">All clear</p>
+        <p class="mt-1 text-sm text-muted-foreground">No items need attention right now.</p>
+      </div>
+    {:else}
+      {#if attentionCount > 0}
+        <DashboardSection title="Needs Attention" count={attentionCount}>
+          {#each attentionItems.planItems as item (item.planUuid)}
+            <NeedsAttentionCard
+              {item}
+              {projectId}
+              projectName={showProject ? projectNamesById[item.projectId] : undefined}
+              selected={selectedPlanUuid === item.planUuid}
+              developmentWorkflow={data.developmentWorkflowByProjectId[item.projectId] ??
+                'pr-based'}
+            />
+          {/each}
+          {#if attentionItems.sessionItems.length > 0}
+            {#if attentionItems.planItems.length > 0}
+              <div class="my-1 border-t border-border/50"></div>
             {/if}
-          </DashboardSection>
-        {/if}
-
-        {#if prReviewCount > 0}
-          <DashboardSection title="PRs to Review" count={prReviewCount}>
-            {#each attentionItems.prReviewItems as item (item.actionablePr.prUrl)}
-              <PrAttentionCard
-                {item}
-                projectName={showProject
-                  ? projectNamesById[item.actionablePr.projectId]
-                  : undefined}
-                selected={selectedPrNumber === item.actionablePr.prNumber}
-              />
-            {/each}
-          </DashboardSection>
-        {/if}
-
-        {#if ownedPrCount > 0}
-          <DashboardSection title="My PRs" count={ownedPrCount}>
-            {#each attentionItems.ownedPrItems as item (item.actionablePr.prUrl)}
-              <PrAttentionCard
-                {item}
-                projectName={showProject
-                  ? projectNamesById[item.actionablePr.projectId]
-                  : undefined}
-                selected={selectedPrNumber === item.actionablePr.prNumber}
-              />
-            {/each}
-          </DashboardSection>
-        {/if}
-
-        {#if runningSessions.length > 0}
-          <DashboardSection title="Running Now" count={runningSessions.length}>
-            {#each runningSessions as session (session.connectionId)}
+            <p class="px-1 text-xs text-muted-foreground">Notifications</p>
+            {#each attentionItems.sessionItems as session (session.connectionId)}
               <RunningNowRow
                 {session}
                 {projectId}
+                hasNotification={true}
                 projectName={showProject && session.projectId
                   ? projectNamesById[session.projectId]
                   : undefined}
               />
             {/each}
-          </DashboardSection>
-        {/if}
-
-        {#if readyPlans.length > 0}
-          <DashboardSection title="Ready to Start" count={readyPlans.length}>
-            {#each readyPlans as plan (plan.uuid)}
-              <ReadyToStartRow
-                {plan}
-                {projectId}
-                projectName={showProject ? projectNamesById[plan.projectId] : undefined}
-                selected={selectedPlanUuid === plan.uuid}
-              />
-            {/each}
-          </DashboardSection>
-        {/if}
-
-        {#if stackedCount > 0}
-          <DashboardSection title="Stacked" count={stackedCount}>
-            {#each attentionItems.stackedPlanItems as item (item.planUuid)}
-              <NeedsAttentionCard
-                {item}
-                {projectId}
-                projectName={showProject ? projectNamesById[item.projectId] : undefined}
-                selected={selectedPlanUuid === item.planUuid}
-                developmentWorkflow={data.developmentWorkflowByProjectId[item.projectId] ??
-                  'pr-based'}
-              />
-            {/each}
-          </DashboardSection>
-        {/if}
-
-        {#if reviewedCount > 0}
-          <DashboardSection title="Reviewed" count={reviewedCount}>
-            {#each attentionItems.reviewedPlanItems as item (item.planUuid)}
-              <NeedsAttentionCard
-                {item}
-                {projectId}
-                projectName={showProject ? projectNamesById[item.projectId] : undefined}
-                selected={selectedPlanUuid === item.planUuid}
-                developmentWorkflow={data.developmentWorkflowByProjectId[item.projectId] ??
-                  'pr-based'}
-              />
-            {/each}
-          </DashboardSection>
-        {/if}
-
-        {#if !sessionManager.initialized}
-          <p class="py-2 text-center text-xs text-muted-foreground">Connecting to sessions...</p>
-        {/if}
+          {/if}
+        </DashboardSection>
       {/if}
-    </div>
-  </CollapsibleItemSidebar>
 
-  <div class="min-w-0 flex-1 overflow-y-auto">
-    {@render children()}
+      {#if prReviewCount > 0}
+        <DashboardSection title="PRs to Review" count={prReviewCount}>
+          {#each attentionItems.prReviewItems as item (item.actionablePr.prUrl)}
+            <PrAttentionCard
+              {item}
+              projectName={showProject ? projectNamesById[item.actionablePr.projectId] : undefined}
+              selected={selectedPrNumber === item.actionablePr.prNumber}
+            />
+          {/each}
+        </DashboardSection>
+      {/if}
+
+      {#if ownedPrCount > 0}
+        <DashboardSection title="My PRs" count={ownedPrCount}>
+          {#each attentionItems.ownedPrItems as item (item.actionablePr.prUrl)}
+            <PrAttentionCard
+              {item}
+              projectName={showProject ? projectNamesById[item.actionablePr.projectId] : undefined}
+              selected={selectedPrNumber === item.actionablePr.prNumber}
+            />
+          {/each}
+        </DashboardSection>
+      {/if}
+
+      {#if runningSessions.length > 0}
+        <DashboardSection title="Running Now" count={runningSessions.length}>
+          {#each runningSessions as session (session.connectionId)}
+            <RunningNowRow
+              {session}
+              {projectId}
+              projectName={showProject && session.projectId
+                ? projectNamesById[session.projectId]
+                : undefined}
+            />
+          {/each}
+        </DashboardSection>
+      {/if}
+
+      {#if readyPlans.length > 0}
+        <DashboardSection title="Ready to Start" count={readyPlans.length}>
+          {#each readyPlans as plan (plan.uuid)}
+            <ReadyToStartRow
+              {plan}
+              {projectId}
+              projectName={showProject ? projectNamesById[plan.projectId] : undefined}
+              selected={selectedPlanUuid === plan.uuid}
+            />
+          {/each}
+        </DashboardSection>
+      {/if}
+
+      {#if stackedCount > 0}
+        <DashboardSection title="Stacked" count={stackedCount}>
+          {#each attentionItems.stackedPlanItems as item (item.planUuid)}
+            <NeedsAttentionCard
+              {item}
+              {projectId}
+              projectName={showProject ? projectNamesById[item.projectId] : undefined}
+              selected={selectedPlanUuid === item.planUuid}
+              developmentWorkflow={data.developmentWorkflowByProjectId[item.projectId] ??
+                'pr-based'}
+            />
+          {/each}
+        </DashboardSection>
+      {/if}
+
+      {#if reviewedCount > 0}
+        <DashboardSection title="Reviewed" count={reviewedCount}>
+          {#each attentionItems.reviewedPlanItems as item (item.planUuid)}
+            <NeedsAttentionCard
+              {item}
+              {projectId}
+              projectName={showProject ? projectNamesById[item.projectId] : undefined}
+              selected={selectedPlanUuid === item.planUuid}
+              developmentWorkflow={data.developmentWorkflowByProjectId[item.projectId] ??
+                'pr-based'}
+            />
+          {/each}
+        </DashboardSection>
+      {/if}
+
+      {#if !sessionManager.initialized}
+        <p class="py-2 text-center text-xs text-muted-foreground">Connecting to sessions...</p>
+      {/if}
+    {/if}
   </div>
-</div>
+  {#snippet detail()}
+    {@render children()}
+  {/snippet}
+</CollapsibleItemSidebar>

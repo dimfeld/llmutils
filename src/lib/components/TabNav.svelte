@@ -18,12 +18,12 @@
   }
 </script>
 
-<nav class="flex items-center gap-1" aria-label="Main navigation">
+<nav class="flex items-center gap-1 whitespace-nowrap" aria-label="Main navigation">
   {#each tabs as tab (tab.slug)}
     {@const active = isActive(tab.slug)}
     <a
       href={projectUrl(projectId, tab.slug)}
-      class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {active
+      class="shrink-0 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors md:px-3 {active
         ? 'bg-white/20 text-white'
         : 'text-gray-300 hover:bg-white/10 hover:text-white'}"
       aria-current={active ? 'page' : undefined}

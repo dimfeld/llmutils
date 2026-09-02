@@ -170,17 +170,24 @@
 <svelte:head><link rel="icon" href="/favicon.png" /></svelte:head>
 
 <Tooltip.Provider delayDuration={500}>
-  <div class="flex h-screen min-h-screen flex-col bg-background">
+  <div class="flex h-dvh min-h-dvh flex-col bg-background">
     <a
       href="#main-content"
       class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-background focus:p-2 focus:text-foreground"
     >
       Skip to main content
     </a>
-    <header class="flex items-center justify-between bg-gray-800 px-4 py-2 dark:bg-gray-900">
+    <header
+      class="flex flex-wrap items-center gap-x-2 gap-y-1 bg-gray-800 px-3 py-2 md:flex-nowrap md:px-4 dark:bg-gray-900"
+    >
       <a href="/" class="text-lg font-semibold text-white" title="Home"> tim </a>
-      <div class="flex items-center gap-2">
+      <!-- On small screens the tabs wrap onto their own full-width, scrollable row. -->
+      <div
+        class="order-last -mx-3 w-[calc(100%+1.5rem)] [scrollbar-width:none] overflow-x-auto px-3 md:order-none md:mx-0 md:ml-auto md:w-auto md:px-0"
+      >
         <TabNav {projectId} {showSessionsAttentionDot} />
+      </div>
+      <div class="ml-auto flex items-center gap-2 md:ml-0">
         <Tooltip.Root>
           <Tooltip.Trigger>
             {#snippet child({ props })}

@@ -10,45 +10,45 @@
   const sessionManager = useSessionManager();
   let status = $derived(sessionManager.connectionStatus);
   let selectedId = $derived(page.params.connectionId ?? null);
+  let detailActive = $derived(page.route.id !== '/projects/[projectId]/sessions');
   let projectId = $derived(page.params.projectId);
   let hasInactiveSessions = $derived(
     [...sessionManager.sessions.values()].some((s) => s.status !== 'active')
   );
 </script>
 
-<div class="flex h-full min-h-0 w-full">
-  <!-- Left pane: session list -->
-  <CollapsibleItemSidebar label="Sessions" class="overflow-y-auto">
-    <div class="flex items-center justify-between border-b border-border px-3 py-2">
-      <div class="flex items-center gap-2">
-        <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Sessions
-        </h3>
-        {#if hasInactiveSessions}
-          <button
-            class="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            onclick={() => sessionManager.dismissInactiveSessions()}
-          >
-            Clear Inactive
-          </button>
-        {/if}
-      </div>
-      {#if status === 'reconnecting'}
-        <span class="text-xs text-amber-500">Reconnecting...</span>
-      {:else if status === 'disconnected'}
-        <span class="text-xs text-red-500">Disconnected</span>
+<!-- Left pane: session list; right pane: session detail or empty state -->
+<CollapsibleItemSidebar
+  label="Sessions"
+  class="overflow-y-auto"
+  {detailActive}
+  detailClass="overflow-hidden"
+>
+  <div class="flex items-center justify-between border-b border-border px-3 py-2">
+    <div class="flex items-center gap-2">
+      <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Sessions</h3>
+      {#if hasInactiveSessions}
+        <button
+          class="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+          onclick={() => sessionManager.dismissInactiveSessions()}
+        >
+          Clear Inactive
+        </button>
       {/if}
     </div>
-    <SessionList
-      groups={sessionManager.sessionGroups}
-      selectedSessionId={selectedId}
-      sessionHref={(connectionId) =>
-        `/projects/${projectId}/sessions/${encodeURIComponent(connectionId)}`}
-    />
-  </CollapsibleItemSidebar>
-
-  <!-- Right pane: session detail or empty state -->
-  <div class="min-h-0 flex-1 overflow-hidden">
-    {@render children()}
+    {#if status === 'reconnecting'}
+      <span class="text-xs text-amber-500">Reconnecting...</span>
+    {:else if status === 'disconnected'}
+      <span class="text-xs text-red-500">Disconnected</span>
+    {/if}
   </div>
-</div>
+  <SessionList
+    groups={sessionManager.sessionGroups}
+    selectedSessionId={selectedId}
+    sessionHref={(connectionId) =>
+      `/projects/${projectId}/sessions/${encodeURIComponent(connectionId)}`}
+  />
+  {#snippet detail()}
+    {@render children()}
+  {/snippet}
+</CollapsibleItemSidebar>

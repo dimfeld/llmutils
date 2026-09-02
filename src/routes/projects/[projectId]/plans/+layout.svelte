@@ -25,6 +25,7 @@
   });
 
   let selectedPlanUuid = $derived(page.params.planId ?? null);
+  let detailActive = $derived(page.route.id !== '/projects/[projectId]/plans');
   let importIssueHref = $derived(
     data.issueTrackerAvailable && data.projectId !== 'all'
       ? `/projects/${data.projectId}/import`
@@ -35,22 +36,19 @@
   );
 </script>
 
-<div class="flex h-full w-full">
-  <!-- Plan list — key forces re-mount on project switch to reset filters -->
-  {#key data.projectId}
-    <CollapsibleItemSidebar label="Plans">
-      <PlansList
-        plans={data.plans}
-        {selectedPlanUuid}
-        projectNames={showProject ? projectNamesByPlanProjectId : undefined}
-        {importIssueHref}
-        {newPlanHref}
-      />
-    </CollapsibleItemSidebar>
-  {/key}
-
-  <!-- Plan detail (child route) -->
-  <div class="flex-1 overflow-y-auto">
-    {@render children()}
-  </div>
-</div>
+<!-- Plan list — key forces re-mount on project switch to reset filters -->
+{#key data.projectId}
+  <CollapsibleItemSidebar label="Plans" {detailActive} detailClass="overflow-y-auto">
+    <PlansList
+      plans={data.plans}
+      {selectedPlanUuid}
+      projectNames={showProject ? projectNamesByPlanProjectId : undefined}
+      {importIssueHref}
+      {newPlanHref}
+    />
+    <!-- Plan detail (child route) -->
+    {#snippet detail()}
+      {@render children()}
+    {/snippet}
+  </CollapsibleItemSidebar>
+{/key}
