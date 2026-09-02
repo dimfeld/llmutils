@@ -49,6 +49,7 @@ import {
 import { CallbackAgentInputAdapter } from '../agent_messaging/agent_input_adapter.js';
 import { withAgentEnvironmentIdentity } from '../agent_messaging/environment.js';
 import { formatAgentInputForProvider } from '../agent_messaging/provider_input.js';
+import { isRecognizedClaudeModel, parseClaudeModel } from './claude_code/model.js';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -574,6 +575,8 @@ export class ClaudeCodeExecutor implements Executor {
     // Store plan information for use in agent file generation
     this.planInfo = planInfo;
 
+    const parsedModel = parseClaudeModel(this.sharedOptions.model);
+
     // Handle review mode with dedicated JSON schema execution path
     if (planInfo.executionMode === 'review') {
       if (contextContent == null) {
@@ -762,18 +765,18 @@ export class ClaudeCodeExecutor implements Executor {
       applyClaudeMcpLaunchArgs(args, mcpLaunch, mcpConfigFile);
 
       // Automatic model selection for review and planning modes
-      let modelToUse = this.sharedOptions.model;
-      if (
-        modelToUse?.includes('haiku') ||
-        modelToUse?.includes('sonnet') ||
-        modelToUse?.includes('opus') ||
-        modelToUse?.includes('fable')
-      ) {
+      const modelToUse = parsedModel.model;
+      if (isRecognizedClaudeModel(modelToUse)) {
         log(`Using model: ${modelToUse}\n`);
         args.push('--model', modelToUse);
       } else {
         log(`Using default model: ${DEFAULT_CLAUDE_MODEL}\n`);
         args.push('--model', DEFAULT_CLAUDE_MODEL);
+      }
+
+      const reasoningEffort = parsedModel.reasoningEffort ?? this.options.reasoningEffort;
+      if (reasoningEffort) {
+        args.push('--effort', reasoningEffort);
       }
 
       if (debug) {

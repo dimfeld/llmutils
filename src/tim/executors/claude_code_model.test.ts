@@ -257,6 +257,49 @@ describe('ClaudeCodeExecutor model selection', () => {
     expect(capturedArgs[modelIndex + 1]).toBe('claude-fable-latest');
   });
 
+  test('separates reasoning effort suffix from the selected model', async () => {
+    let capturedArgs: string[] = [];
+
+    vi.mocked(processModule.spawnWithStreamingIO).mockImplementation((args: string[]) => {
+      capturedArgs = args;
+      return makeStreamingProcessMock() as any;
+    });
+    vi.mocked(processModule.createLineSplitter).mockReturnValue(
+      (output: string) => output.split('\n') as any
+    );
+    vi.mocked(gitModule.getGitRoot).mockResolvedValue('/tmp/test-base');
+    formatJsonMessage.mockImplementation(
+      (line: string) =>
+        ({
+          message: line,
+        }) as any
+    );
+
+    const executor = new ClaudeCodeExecutor(
+      {
+        allowedTools: [],
+        disallowedTools: [],
+        allowAllTools: false,
+        reasoningEffort: 'low',
+        permissionsMcp: { enabled: false },
+      },
+      { ...mockSharedOptions, model: 'claude-opus-4:high' },
+      mockConfig
+    );
+
+    await executor.execute('test content', {
+      planId: '127',
+      planTitle: 'Test Model Effort',
+      planFilePath: '/test/plans/test-plan.md',
+      executionMode: 'normal',
+    });
+
+    const modelIndex = capturedArgs.indexOf('--model');
+    expect(capturedArgs[modelIndex + 1]).toBe('claude-opus-4');
+    const effortIndex = capturedArgs.indexOf('--effort');
+    expect(capturedArgs[effortIndex + 1]).toBe('high');
+  });
+
   test('invokes simple-mode orchestration without agent definitions (uses tim subagent instead)', async () => {
     let capturedArgs: string[] = [];
 

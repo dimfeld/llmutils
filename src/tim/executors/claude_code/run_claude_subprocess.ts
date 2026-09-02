@@ -58,6 +58,7 @@ import type {
   ClaudePersistentAgentLaunchHandle,
   ClaudePersistentAgentMode,
 } from './persistent_agent_contract.js';
+import { isRecognizedClaudeModel, parseClaudeModel } from './model.js';
 const DEFAULT_CLAUDE_MODEL = 'opus';
 
 const JS_TASK_RUNNERS = ['npm', 'pnpm', 'yarn', 'bun'];
@@ -326,6 +327,7 @@ export async function runClaudeSubprocess(
     processFormattedMessages,
     logModelSelection,
   } = options;
+  const parsedModel = parseClaudeModel(model);
   const persistentAgent = options.mode === 'persistent-agent';
 
   const inactivityTimeoutMs = options.inactivityTimeoutMs ?? 30 * 60 * 1000;
@@ -480,13 +482,8 @@ export async function runClaudeSubprocess(
     }
 
     // Model selection
-    let modelToUse = model;
-    if (
-      modelToUse?.includes('haiku') ||
-      modelToUse?.includes('sonnet') ||
-      modelToUse?.includes('opus') ||
-      modelToUse?.includes('fable')
-    ) {
+    const modelToUse = parsedModel.model;
+    if (isRecognizedClaudeModel(modelToUse)) {
       if (logModelSelection) {
         log(`Using model: ${modelToUse}\n`);
       }
@@ -498,8 +495,9 @@ export async function runClaudeSubprocess(
       args.push('--model', DEFAULT_CLAUDE_MODEL);
     }
 
-    if (claudeCodeOptions.reasoningEffort) {
-      args.push('--effort', claudeCodeOptions.reasoningEffort);
+    const reasoningEffort = parsedModel.reasoningEffort ?? claudeCodeOptions.reasoningEffort;
+    if (reasoningEffort) {
+      args.push('--effort', reasoningEffort);
     }
 
     // Streaming JSON I/O
