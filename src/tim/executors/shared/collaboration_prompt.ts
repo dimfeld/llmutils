@@ -21,7 +21,11 @@ Use short descriptive names when a stable address helps, or omit the name to acc
 
 SendTimAgentMessage reports one of three successful delivery paths: \`steered\` for the active turn, \`queued\` when input waits in the recipient FIFO, or \`started-idle-turn\` when an idle provider begins a continuation. \`queued\` means accepted; do not resend it just because delivery was not immediate.
 
-FinishTimAgent is self-only. The root cannot call it, and does not need to request it. Let each subagent decide when its full assignment and final handoff are complete. A progress message, interim handoff, or end of one turn is not a reason to finish. Use the manager's terminal notification as the final handoff rather than relying on repeated ListTimAgents polling.
+FinishTimAgent is self-only. The root cannot call it. Let each subagent decide when its full assignment and final handoff are complete. A progress message, interim handoff, or end of one turn is not a reason to finish. Use the manager's terminal notification as the final handoff rather than relying on repeated ListTimAgents polling.
+
+## Root Shutdown
+
+Before finishing your own orchestration turn or allowing the root session to shut down, make sure every subagent has completed its assignment and reached a terminal state (\`exited\` or \`failed\`). After a subagent gives its final handoff and needs no more work, send a message asking it to call its self-only \`FinishTimAgent\`, then wait for its terminal notification. A \`finishing\` or \`stopping\` state is not terminal. If a subagent cannot finish after its final handoff, use \`StopTimAgent\` with the appropriate shutdown context and wait for the terminal notification. Do not shut down the root while any subagent is nonterminal.
 
 ## Agent Autonomy
 

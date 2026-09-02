@@ -424,6 +424,11 @@ describe('orchestrator_prompt collaborative activation', () => {
       expect(output).toContain(
         'Do not stop an agent just because its expected work appears complete'
       );
+      expect(output).toContain('## Root Shutdown');
+      expect(output).toContain(
+        'Before finishing your own orchestration turn or allowing the root session to shut down'
+      );
+      expect(output).toContain('Do not shut down the root while any subagent is nonterminal');
       expect(output).toContain('file scope');
       expect(output).toContain('read-only and advisory');
       expect(output).toContain('tim review 421 --print --output-file <output_path>');

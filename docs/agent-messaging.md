@@ -63,9 +63,11 @@ The root orchestrator receives these tools through the provider transport:
 | `StopTimAgent`        | Graceful or forced stop of a named subagent                                         |
 
 The orchestrator does **not** receive `FinishTimAgent`. A subagent can call its own
-self-only `FinishTimAgent` after its assignment and final handoff. The orchestrator
-does not need to request this just because it expects the work to be complete;
-subagents should finish when they are ready.
+self-only `FinishTimAgent` after its assignment and final handoff. Before the root
+session shuts down, the orchestrator must make sure every subagent has reached a
+terminal state (`exited` or `failed`). After a final handoff, it can ask the
+subagent to call `FinishTimAgent`; if the subagent cannot finish, the orchestrator
+can use `StopTimAgent` and wait for the terminal notification.
 
 ### Subagent tool set (flag true, StartTimAgent-created)
 
