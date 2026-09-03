@@ -6,6 +6,7 @@ const {
   detectExistingPrUrlSpy,
   isTunnelActiveSpy,
   loadEffectiveConfigSpy,
+  MockPlanNotFoundError,
   resolvePlanByBranchSpy,
   resolvePlanByNumericIdSpy,
   resolveRepoRootSpy,
@@ -16,6 +17,7 @@ const {
   detectExistingPrUrlSpy: vi.fn(async () => 'https://github.com/acme/repo/pull/42'),
   isTunnelActiveSpy: vi.fn(() => false),
   loadEffectiveConfigSpy: vi.fn(async () => ({ terminalInput: false })),
+  MockPlanNotFoundError: class MockPlanNotFoundError extends Error {},
   resolvePlanByBranchSpy: vi.fn(),
   resolvePlanByNumericIdSpy: vi.fn(),
   resolveRepoRootSpy: vi.fn(async () => '/repo'),
@@ -39,6 +41,7 @@ vi.mock('../configLoader.js', () => ({
   loadEffectiveConfig: loadEffectiveConfigSpy,
 }));
 vi.mock('../plans.js', () => ({
+  PlanNotFoundError: MockPlanNotFoundError,
   parsePlanIdFromCliArg: (arg: string) => Number(arg),
   resolvePlanByBranch: resolvePlanByBranchSpy,
   resolvePlanByNumericId: resolvePlanByNumericIdSpy,
@@ -94,7 +97,7 @@ describe('handlePrStackCommand', () => {
   });
 
   test('runs manually without requiring stacking configuration', async () => {
-    await handlePrStackCommand('12', { nonInteractive: true }, {});
+    await handlePrStackCommand('12', { base: 'develop', nonInteractive: true }, {});
 
     expect(detectExistingPrUrlSpy).toHaveBeenCalledWith('feature/stack', '/repo');
     expect(resolvePlanByNumericIdSpy).toHaveBeenCalledWith(12, '/repo');
@@ -107,6 +110,7 @@ describe('handlePrStackCommand', () => {
       config,
       terminalInput: false,
       manual: true,
+      baseBranch: 'develop',
     });
   });
 
@@ -143,5 +147,29 @@ describe('handlePrStackCommand', () => {
 
     expect(resolvePlanByBranchSpy).toHaveBeenCalledWith('feature/stack', '/repo');
     expect(resolvePlanByNumericIdSpy).not.toHaveBeenCalled();
+  });
+
+  test('stacks an unresolved branch when an explicit base is provided', async () => {
+    resolvePlanByBranchSpy.mockRejectedValue(new MockPlanNotFoundError('No matching plan'));
+
+    await handlePrStackCommand('feature/untracked', { base: 'main', nonInteractive: true }, {});
+
+    expect(runPrStackingSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plan: { branch: 'feature/untracked' },
+        mainPrUrl: 'https://github.com/acme/repo/pull/42',
+        baseBranch: 'main',
+        manual: true,
+      })
+    );
+  });
+
+  test('rejects an unresolved branch without an explicit base', async () => {
+    resolvePlanByBranchSpy.mockRejectedValue(new MockPlanNotFoundError('No matching plan'));
+
+    await expect(
+      handlePrStackCommand('feature/untracked', { nonInteractive: true }, {})
+    ).rejects.toThrow('No matching plan');
+    expect(runPrStackingSpy).not.toHaveBeenCalled();
   });
 });

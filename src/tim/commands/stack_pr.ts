@@ -2,10 +2,15 @@ import { detectExistingPrUrl } from './create_pr.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
-import { parsePlanIdFromCliArg, resolvePlanByBranch, resolvePlanByNumericId } from '../plans.js';
+import {
+  parsePlanIdFromCliArg,
+  PlanNotFoundError,
+  resolvePlanByBranch,
+  resolvePlanByNumericId,
+} from '../plans.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
-import { runPrStacking } from '../pr_stacking/runner.js';
+import { runPrStacking, type PrStackingPlan } from '../pr_stacking/runner.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -19,6 +24,7 @@ interface PrStackCommandOptions {
   autoWorkspace?: boolean;
   nonInteractive?: boolean;
   terminalInput?: boolean;
+  base?: string;
 }
 
 function getRootOptions(command: RootCommandLike | undefined): { config?: string } {
@@ -32,9 +38,10 @@ function getRootOptions(command: RootCommandLike | undefined): { config?: string
 
 async function resolvePlanByIdOrBranch(
   planIdOrBranch: string,
-  repoRoot: string
+  repoRoot: string,
+  baseBranch: string | undefined
 ): Promise<{
-  plan: Awaited<ReturnType<typeof resolvePlanByNumericId>>['plan'];
+  plan: PrStackingPlan;
   planPath: string | null;
 }> {
   const normalizedArgument = planIdOrBranch.trim();
@@ -42,7 +49,18 @@ async function resolvePlanByIdOrBranch(
     return resolvePlanByNumericId(parsePlanIdFromCliArg(normalizedArgument), repoRoot);
   }
 
-  return resolvePlanByBranch(normalizedArgument, repoRoot);
+  try {
+    return await resolvePlanByBranch(normalizedArgument, repoRoot);
+  } catch (error) {
+    if (!(error instanceof PlanNotFoundError) || baseBranch === undefined) {
+      throw error;
+    }
+
+    return {
+      plan: { branch: normalizedArgument },
+      planPath: null,
+    };
+  }
 }
 
 export async function handlePrStackCommand(
@@ -50,12 +68,13 @@ export async function handlePrStackCommand(
   options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
-  const { workspace, autoWorkspace, nonInteractive, terminalInput } =
+  const { workspace, autoWorkspace, nonInteractive, terminalInput, base } =
     options as PrStackCommandOptions;
+  const baseBranch = base?.trim() || undefined;
   const globalOpts = getRootOptions(command);
   const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot });
-  const { plan, planPath } = await resolvePlanByIdOrBranch(planIdOrBranch, repoRoot);
+  const { plan, planPath } = await resolvePlanByIdOrBranch(planIdOrBranch, repoRoot, baseBranch);
 
   if (!plan.branch) {
     throw new Error(`Plan ${plan.id ?? planIdOrBranch} does not have a branch for PR stacking.`);
@@ -116,6 +135,7 @@ export async function handlePrStackCommand(
         config,
         terminalInput: effectiveTerminalInput,
         manual: true,
+        baseBranch,
       });
     },
   });

@@ -1945,11 +1945,10 @@ prCommand
 
 prCommand
   .command('stack <planIdOrBranch>')
-  .description(
-    'Split a plan pull request into a stack and associate the stack with the plan (accepts a plan ID or branch name)'
-  )
+  .description('Split a pull request into a stack (accepts a plan ID or branch name)')
   .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
   .option('-w, --workspace <name>', 'Use a specific workspace')
+  .option('--base <branch>', 'Override the PR stack base branch')
   .option('--no-terminal-input', 'Disable terminal input')
   .option('--non-interactive', 'No user prompts')
   .action(async (planIdOrBranch, options, command) => {

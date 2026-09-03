@@ -203,6 +203,23 @@ describe('runPrStacking', () => {
     );
   });
 
+  test('uses an explicit base branch override', async () => {
+    const result = await runPrStacking({
+      plan,
+      planFilePath: '/repo/.tim/plans/12.yml',
+      mainPrUrl: 'https://github.com/acme/repo/pull/20',
+      baseDir: '/repo',
+      baseBranch: 'feature/previous-slice',
+      config: config(),
+    });
+
+    expect(result).toEqual({ ran: true, changedLines: 500 });
+    expect(resolveEffectivePrBaseSpy).not.toHaveBeenCalled();
+    expect(generateDiffForReviewSpy).toHaveBeenCalledWith('/repo', {
+      baseBranch: 'feature/previous-slice',
+    });
+  });
+
   test('uses the changed-line count when the review file list omits deletion-only changes', async () => {
     generateDiffForReviewSpy.mockResolvedValue({
       hasChanges: false,

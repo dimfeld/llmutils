@@ -27,8 +27,18 @@ const PR_STACKING_ALLOWED_BASH_TOOLS = [
   'Bash(gh pr view:*)',
 ];
 
+export interface PrStackingPlan {
+  id?: number;
+  uuid?: string;
+  title?: string;
+  goal?: string;
+  details?: string;
+  branch?: string;
+  pullRequest?: string[];
+}
+
 export interface RunPrStackingOptions {
-  plan: PlanSchema;
+  plan: PrStackingPlan;
   planFilePath: string;
   mainPrUrl: string;
   baseDir: string;
@@ -36,6 +46,7 @@ export interface RunPrStackingOptions {
   config: TimConfig;
   terminalInput?: boolean;
   manual?: boolean;
+  baseBranch?: string;
 }
 
 export interface PrStackingResult {
@@ -45,7 +56,7 @@ export interface PrStackingResult {
 }
 
 export interface PrStackingPromptOptions {
-  plan: PlanSchema;
+  plan: PrStackingPlan;
   vcsType: 'git' | 'jj';
   mainBranch: string;
   mainPrUrl: string;
@@ -208,7 +219,17 @@ export async function runPrStacking(options: RunPrStackingOptions): Promise<PrSt
     throw new Error(`Plan ${options.plan.id ?? '(unknown)'} has no branch for PR stacking`);
   }
 
-  const baseBranch = await resolveEffectivePrBase(options.plan, options.baseDir, options.config);
+  let baseBranch = options.baseBranch;
+  if (baseBranch === undefined) {
+    if (options.plan.id === undefined) {
+      throw new Error('A base branch is required when stacking a branch without a plan');
+    }
+    baseBranch = await resolveEffectivePrBase(
+      options.plan as PlanSchema,
+      options.baseDir,
+      options.config
+    );
+  }
   const diffResult = await generateDiffForReview(options.baseDir, { baseBranch });
   if (!diffResult.mergeBaseCommit) {
     if (!diffResult.hasChanges) {
