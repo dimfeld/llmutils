@@ -1954,6 +1954,39 @@ defaultExecutor: direct-call
       expect(config.proofGeneration?.model).toBe('local-model');
     });
 
+    test('loadEffectiveConfig deep merges prStacking from local config', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          prStacking: {
+            minChangedLines: 500,
+            executor: 'claude-code',
+            model: 'main-model',
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          prStacking: {
+            model: 'local-model',
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.prStacking?.minChangedLines).toBe(500);
+      expect(config.prStacking?.executor).toBe('claude-code');
+      expect(config.prStacking?.model).toBe('local-model');
+    });
+
     test('loadEffectiveConfig deep merges review guide comment instructions from local config', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');

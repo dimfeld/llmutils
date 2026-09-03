@@ -404,6 +404,24 @@ export const proofGenerationSchema = z
   })
   .strict();
 
+export const prStackingSchema = z
+  .object({
+    minChangedLines: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Minimum additions plus deletions required before the post-completion PR stacking phase runs'
+      ),
+    executor: z
+      .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
+      .optional()
+      .describe('Executor to use for PR stacking'),
+    model: z.string().optional().describe('Model to use for PR stacking'),
+  })
+  .strict();
+
 /**
  * The media host routes from root and returns root-absolute signed URLs, so the configured
  * `baseUrl` must be origin-only: an http(s) URL with no credentials, no path prefix, no query,
@@ -1249,6 +1267,9 @@ export const timConfigSchema = z
     proofGeneration: proofGenerationSchema
       .optional()
       .describe('Configuration for proof artifact generation'),
+    prStacking: prStackingSchema
+      .optional()
+      .describe('Configuration for splitting a completed change into a stack of reviewable PRs'),
     mediaHost: mediaHostSchema
       .optional()
       .describe('Media host server used to upload and serve signed artifact URLs'),
@@ -1267,6 +1288,7 @@ export type TimConfig = z.output<typeof timConfigSchema> & TimRuntimeConfigMetad
 export type TimConfigInput = z.input<typeof timConfigSchema>;
 export type CiFixConfig = NonNullable<z.output<typeof timConfigSchema>['ciFix']>;
 export type ProofGenerationConfig = z.output<typeof proofGenerationSchema>;
+export type PrStackingConfig = z.output<typeof prStackingSchema>;
 export type MediaHostConfig = z.output<typeof mediaHostSchema>;
 export type TimEnvironmentConfig = z.output<typeof timEnvironmentConfigSchema>;
 export type ChatExecutorOption = z.output<typeof chatExecutorOptionSchema>;

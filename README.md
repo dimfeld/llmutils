@@ -964,6 +964,21 @@ Proof artifacts can be published to a PR with `tim pr upload-artifacts <planId>`
 
 See [`docs/proof-generation.md`](docs/proof-generation.md) for more detail.
 
+## Pull Request Stacking
+
+The optional `prStacking` block adds a final `tim agent` phase for large changes. The phase runs after the main PR exists and after automatic proof upload. It asks the configured Claude Code or Codex CLI executor to rewrite the branch into one commit per vertical slice, create a branch and draft PR for each lower slice, and keep the original branch and PR at the top of the stack.
+
+Set `minChangedLines` to enable the phase. Tim measures additions plus deletions against the effective base of the main PR. It skips the phase when the measured value is lower than the configured value. If `minChangedLines` is absent, Tim skips the complete phase, including the GitHub PR lookup. No default threshold is applied.
+
+```yaml
+prStacking:
+  minChangedLines: 500
+  executor: codex-cli # optional; falls back to defaultExecutor
+  model: gpt-5.6-sol # optional; falls back to models.execution
+```
+
+The executor can decide that the change has no useful vertical split. In that case, it must leave the history and PR unchanged. When it creates a stack, each PR body contains a marked Stack section that lists the PRs in merge order and explains the scope of each slice. Tim associates every PR in the stack with the original plan without changing the plan file. New lower PRs are drafts. The original PR keeps its existing draft or ready state. Lower-slice branch names do not repeat a trailing Linear issue tag from the original branch, and lower-slice PR descriptions use non-closing issue references such as `Related to ENG-123`. A stacking failure produces a warning and does not change the successful agent result.
+
 ## Subprocess Monitor
 
 Agent sessions can get stuck when Claude Code or Codex starts a long-running tool command, such as `pnpm test`, and that command hangs. `subprocessMonitor` lets the main tim process watch descendants of the Claude/Codex executor and kill matching commands that exceed a configured timeout, returning control to the coding agent.

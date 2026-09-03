@@ -1561,6 +1561,37 @@ export function linkPlanToPr(
   linkInTransaction.immediate(planUuid, prStatusId, source);
 }
 
+export function linkPlanToPrs(
+  db: Database,
+  planUuid: string,
+  prStatusIds: number[],
+  source: PlanPrSource = 'explicit'
+): void {
+  if (prStatusIds.length === 0) {
+    return;
+  }
+
+  const linkInTransaction = db.transaction(
+    (nextPlanUuid: string, nextPrStatusIds: number[], nextSource: PlanPrSource): void => {
+      const insertLink = db.prepare(
+        `
+        INSERT OR IGNORE INTO plan_pr (
+          plan_uuid,
+          pr_status_id,
+          source
+        ) VALUES (?, ?, ?)
+      `
+      );
+
+      for (const prStatusId of nextPrStatusIds) {
+        insertLink.run(nextPlanUuid, prStatusId, nextSource);
+      }
+    }
+  );
+
+  linkInTransaction.immediate(planUuid, prStatusIds, source);
+}
+
 /** Removes explicit link between a plan and a PR.
  * Auto-linked rows (from webhook branch matching) are preserved since they would
  * regenerate on the next matching webhook event anyway. */

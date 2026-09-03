@@ -83,8 +83,9 @@ import {
   toHeadlessPlanSummary,
 } from '../plan_discovery.js';
 import { clearTmpDir } from '../../batch_review_cache.js';
-import { autoCreatePrForPlan } from '../create_pr.js';
+import { autoCreatePrForPlan, detectExistingPrUrl } from '../create_pr.js';
 import { autoUploadArtifactsToPr } from '../upload_artifacts.js';
+import { runPrStacking } from '../../pr_stacking/runner.js';
 import { withPlanAutoSync } from '../../plan_materialize.js';
 import { isCodexAppServerEnabled } from '../../executors/codex_cli/app_server_mode.js';
 import { CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE } from '../../executors/codex_cli/app_server_dynamic_tools.js';
@@ -1642,6 +1643,7 @@ export async function timAgent(
 
     // Auto-create PR if configured and plan completed successfully
     if (!isShuttingDown() && !executionError && lastKnownPlan) {
+      let mainPrUrl: string | null = null;
       const autoCreateSetting = config.prCreation?.autoCreatePr ?? 'never';
       const completionStatus = lastKnownPlan.status;
       const shouldAutoCreate =
@@ -1652,7 +1654,7 @@ export async function timAgent(
 
       if (shouldAutoCreate) {
         try {
-          await autoCreatePrForPlan(lastKnownPlan, currentPlanFile || null, {
+          mainPrUrl = await autoCreatePrForPlan(lastKnownPlan, currentPlanFile || null, {
             baseDir: currentBaseDir,
             repoPath: originalBaseDir,
             config,
@@ -1673,6 +1675,27 @@ export async function timAgent(
           });
         } catch (err) {
           warn(`Failed to auto-upload proof artifacts: ${err as Error}`);
+        }
+      }
+
+      if (config.prStacking?.minChangedLines !== undefined && lastKnownPlan.branch) {
+        try {
+          mainPrUrl ??= await detectExistingPrUrl(lastKnownPlan.branch, currentBaseDir);
+          if (!mainPrUrl) {
+            log('Skipping PR stacking: no pull request exists for the plan branch.');
+          } else {
+            await runPrStacking({
+              plan: lastKnownPlan,
+              planFilePath: currentPlanFile,
+              mainPrUrl,
+              baseDir: currentBaseDir,
+              repoPath: originalBaseDir,
+              config,
+              terminalInput: false,
+            });
+          }
+        } catch (err) {
+          warn(`Failed to split pull request into a stack: ${err as Error}`);
         }
       }
     }

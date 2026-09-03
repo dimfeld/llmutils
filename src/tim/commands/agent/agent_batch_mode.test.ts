@@ -36,6 +36,9 @@ const {
   runProofGenerationSpy,
   promptConfirmSpy,
   autoCreatePrForPlanSpy,
+  detectExistingPrUrlSpy,
+  autoUploadArtifactsToPrSpy,
+  runPrStackingSpy,
 } = vi.hoisted(() => {
   const executorExecuteSpy = vi.fn(async () => {});
   return {
@@ -74,6 +77,9 @@ const {
     })),
     promptConfirmSpy: vi.fn(async () => false),
     autoCreatePrForPlanSpy: vi.fn(async () => null),
+    detectExistingPrUrlSpy: vi.fn(async () => null),
+    autoUploadArtifactsToPrSpy: vi.fn(async () => null),
+    runPrStackingSpy: vi.fn(async () => ({ ran: true, changedLines: 500 })),
   };
 });
 
@@ -184,6 +190,15 @@ vi.mock('../../proof/runner.js', () => {
 
 vi.mock('../create_pr.js', () => ({
   autoCreatePrForPlan: autoCreatePrForPlanSpy,
+  detectExistingPrUrl: detectExistingPrUrlSpy,
+}));
+
+vi.mock('../upload_artifacts.js', () => ({
+  autoUploadArtifactsToPr: autoUploadArtifactsToPrSpy,
+}));
+
+vi.mock('../../pr_stacking/runner.js', () => ({
+  runPrStacking: runPrStackingSpy,
 }));
 
 vi.mock('../../plans.js', () => {
@@ -335,6 +350,13 @@ describe('timAgent - Batch Mode Execution Loop', () => {
     promptConfirmSpy.mockClear();
     promptConfirmSpy.mockResolvedValue(false);
     autoCreatePrForPlanSpy.mockClear();
+    autoCreatePrForPlanSpy.mockResolvedValue(null);
+    detectExistingPrUrlSpy.mockClear();
+    detectExistingPrUrlSpy.mockResolvedValue(null);
+    autoUploadArtifactsToPrSpy.mockClear();
+    autoUploadArtifactsToPrSpy.mockResolvedValue(null);
+    runPrStackingSpy.mockClear();
+    runPrStackingSpy.mockResolvedValue({ ran: true, changedLines: 500 });
     (removePlanAssignment as ReturnType<typeof vi.fn>).mockClear();
     resetShutdownState();
 
@@ -2803,6 +2825,115 @@ describe('timAgent - Batch Mode Execution Loop', () => {
         expect.objectContaining({ status: 'done', branch: 'feature/my-branch' }),
         planFile,
         expect.objectContaining({ terminalInput: false })
+      );
+    });
+
+    test('runs PR stacking after proof upload when the threshold is configured', async () => {
+      await createPlanFile({
+        uuid: 'stack-plan',
+        status: 'in_progress',
+        branch: 'feature/my-branch',
+        tasks: [pendingTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        planAutocompleteStatus: 'done',
+        prCreation: { autoCreatePr: 'done' },
+        proofGeneration: {
+          mode: 'after-completion',
+          instructions: 'Capture proof artifacts.',
+        },
+        prStacking: { minChangedLines: 400 },
+      });
+      autoCreatePrForPlanSpy.mockResolvedValue('https://github.com/acme/repo/pull/20');
+      executorExecuteSpy.mockImplementationOnce(async () => {
+        await createPlanFile({
+          uuid: 'stack-plan',
+          status: 'in_progress',
+          branch: 'feature/my-branch',
+          tasks: [completedTask],
+        });
+      });
+
+      await timAgent(1, { log: false, nonInteractive: true, finalReview: false } as any, {});
+
+      expect(autoUploadArtifactsToPrSpy).toHaveBeenCalledTimes(1);
+      expect(runPrStackingSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mainPrUrl: 'https://github.com/acme/repo/pull/20',
+          plan: expect.objectContaining({ branch: 'feature/my-branch' }),
+          terminalInput: false,
+        })
+      );
+      expect(autoUploadArtifactsToPrSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        runPrStackingSpy.mock.invocationCallOrder[0]!
+      );
+    });
+
+    test('does not inspect or stack a PR when minChangedLines is absent', async () => {
+      await createPlanFile({
+        status: 'in_progress',
+        branch: 'feature/my-branch',
+        tasks: [pendingTask],
+      });
+
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        planAutocompleteStatus: 'done',
+        prCreation: { autoCreatePr: 'done' },
+        prStacking: { executor: 'codex-cli' },
+      });
+      autoCreatePrForPlanSpy.mockResolvedValue('https://github.com/acme/repo/pull/20');
+      mockExecutorCompletingTasks('feature/my-branch');
+
+      await timAgent(1, { log: false, nonInteractive: true, finalReview: false } as any, {});
+
+      expect(detectExistingPrUrlSpy).not.toHaveBeenCalled();
+      expect(runPrStackingSpy).not.toHaveBeenCalled();
+    });
+
+    test('detects an existing main PR before stacking when auto-create is disabled', async () => {
+      await createPlanFile({
+        status: 'needs_review',
+        branch: 'feature/my-branch',
+        tasks: [donePlanTask],
+      });
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        prStacking: { minChangedLines: 400 },
+      });
+      detectExistingPrUrlSpy.mockResolvedValue('https://github.com/acme/repo/pull/20');
+
+      await timAgent(1, { log: false, nonInteractive: true, finalReview: false } as any, {});
+
+      expect(detectExistingPrUrlSpy).toHaveBeenCalledWith('feature/my-branch', tempDir);
+      expect(runPrStackingSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test('treats PR stacking failure as non-fatal', async () => {
+      await createPlanFile({
+        status: 'needs_review',
+        branch: 'feature/my-branch',
+        tasks: [donePlanTask],
+      });
+      loadEffectiveConfigSpy.mockResolvedValue({
+        models: { execution: 'test-model' },
+        postApplyCommands: [],
+        prStacking: { minChangedLines: 400 },
+      });
+      detectExistingPrUrlSpy.mockResolvedValue('https://github.com/acme/repo/pull/20');
+      runPrStackingSpy.mockRejectedValueOnce(new Error('force push failed'));
+
+      await expect(
+        timAgent(1, { log: false, nonInteractive: true, finalReview: false } as any, {})
+      ).resolves.toBeUndefined();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to split pull request into a stack')
       );
     });
 

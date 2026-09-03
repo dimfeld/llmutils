@@ -45,6 +45,28 @@ describe('configSchema', () => {
     });
   });
 
+  describe('prStacking', () => {
+    test('accepts executor and model without enabling the phase', () => {
+      expect(
+        timConfigSchema.parse({
+          prStacking: { executor: 'codex-cli', model: 'gpt-5.6-sol' },
+        }).prStacking
+      ).toEqual({ executor: 'codex-cli', model: 'gpt-5.6-sol' });
+    });
+
+    test('accepts a positive integer changed-line threshold', () => {
+      expect(timConfigSchema.parse({ prStacking: { minChangedLines: 500 } }).prStacking).toEqual({
+        minChangedLines: 500,
+      });
+    });
+
+    test('rejects non-positive and fractional changed-line thresholds', () => {
+      for (const minChangedLines of [0, -1, 1.5]) {
+        expect(() => timConfigSchema.parse({ prStacking: { minChangedLines } })).toThrow();
+      }
+    });
+  });
+
   describe('chat', () => {
     test('accepts executor and model choices without applying a default', () => {
       const result = timConfigSchema.parse({

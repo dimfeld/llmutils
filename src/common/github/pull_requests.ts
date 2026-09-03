@@ -46,6 +46,7 @@ export interface OpenPullRequest {
   number: number;
   title: string;
   headRefName: string;
+  baseRefName?: string;
   html_url: string;
   user: { login: string } | null;
 }
@@ -126,6 +127,7 @@ export async function fetchOpenPullRequests(
       number: pr.number,
       title: pr.title,
       headRefName: pr.head.ref,
+      baseRefName: pr.base?.ref,
       html_url: pr.html_url,
       user: pr.user ? { login: pr.user.login } : null,
     }));
@@ -213,6 +215,7 @@ export async function fetchOpenPullRequestsWithReviewers(
       number: pr.number,
       title: pr.title,
       headRefName: pr.head.ref,
+      baseRefName: pr.base?.ref,
       html_url: pr.html_url,
       user: pr.user ? { login: pr.user.login } : null,
       requestedReviewers: (pr.requested_reviewers ?? [])

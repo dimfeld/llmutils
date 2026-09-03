@@ -19,6 +19,7 @@ import {
   getPrStatusForPlan,
   listExistingPrStatusProjectNumbers,
   linkPlanToPr,
+  linkPlanToPrs,
   recomputeCheckRollupState,
   unlinkPlanFromPr,
   updatePrCheckRuns,
@@ -694,6 +695,41 @@ describe('tim db/pr_status', () => {
     planStatuses = getPrStatusForPlan(db, 'plan-1');
     expect(planStatuses).toHaveLength(1);
     expect(planStatuses[0]?.status.pr_url).toBe('https://github.com/example/repo/pull/102');
+  });
+
+  test('linkPlanToPrs links multiple PRs in one batch', () => {
+    const first = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/103',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 103,
+      title: 'PR 103',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    const second = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/104',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 104,
+      title: 'PR 104',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+
+    linkPlanToPrs(db, 'plan-1', [first.status.id, second.status.id], 'auto');
+
+    expect(getPrStatusForPlan(db, 'plan-1').map((detail) => detail.status.pr_url)).toEqual([
+      'https://github.com/example/repo/pull/103',
+      'https://github.com/example/repo/pull/104',
+    ]);
+    expect(
+      db
+        .prepare('SELECT source FROM plan_pr WHERE plan_uuid = ? ORDER BY pr_status_id')
+        .all('plan-1')
+    ).toEqual([{ source: 'auto' }, { source: 'auto' }]);
   });
 
   test('getPrStatusByUrls and getPrStatusForPlan fall back to cached rows by URL when plan_pr is missing', () => {

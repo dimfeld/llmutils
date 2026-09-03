@@ -1759,6 +1759,31 @@
       },
       "additionalProperties": false
     },
+    "prStacking": {
+      "description": "Configuration for splitting a completed change into a stack of reviewable PRs",
+      "type": "object",
+      "properties": {
+        "minChangedLines": {
+          "description": "Minimum additions plus deletions required before the post-completion PR stacking phase runs",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "executor": {
+          "description": "Executor to use for PR stacking",
+          "type": "string",
+          "enum": [
+            "claude-code",
+            "codex-cli"
+          ]
+        },
+        "model": {
+          "description": "Model to use for PR stacking",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "mediaHost": {
       "description": "Media host server used to upload and serve signed artifact URLs",
       "type": "object",
