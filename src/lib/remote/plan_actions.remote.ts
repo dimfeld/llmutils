@@ -20,6 +20,7 @@ import {
   spawnGenerateProcess,
   spawnRebaseProcess,
   spawnPrCreateProcess,
+  spawnPrStackProcess,
   spawnPlanReviewGuideProcess,
   spawnReviewProcess,
   spawnProofProcess,
@@ -668,5 +669,28 @@ export const startCreatePr = command(startCreatePrSchema, async ({ planUuid }) =
     isPlanEligibleForCreatePr,
     'Plan is not eligible for PR creation',
     spawnPrCreateProcess
+  );
+});
+
+const PR_STACK_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'reviewed', 'done']);
+
+function isPlanEligibleForPrStack(plan: PlanDetail): plan is PlanDetailResult {
+  if (plan == null) return false;
+  if (!PR_STACK_ELIGIBLE_STATUSES.has(plan.status)) return false;
+  if (plan.epic || plan.branch == null) return false;
+  return plan.prStatuses.length > 0 || plan.pullRequests.length > 0;
+}
+
+const startPrStackSchema = z.object({
+  planUuid: z.string().min(1),
+});
+
+export const startPrStack = command(startPrStackSchema, async ({ planUuid }) => {
+  return launchTimCommand(
+    'pr stack',
+    planUuid,
+    isPlanEligibleForPrStack,
+    'Plan is not eligible for PR stacking',
+    spawnPrStackProcess
   );
 });

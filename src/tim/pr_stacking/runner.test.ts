@@ -166,6 +166,22 @@ describe('runPrStacking', () => {
     expect(executeSpy).not.toHaveBeenCalled();
   });
 
+  test('runs manually without the automatic threshold configuration', async () => {
+    countChangedLinesSpy.mockResolvedValue(20);
+
+    const result = await runPrStacking({
+      plan,
+      planFilePath: '/repo/.tim/plans/12.yml',
+      mainPrUrl: 'https://github.com/acme/repo/pull/20',
+      baseDir: '/repo',
+      config: { ...config(), prStacking: undefined },
+      manual: true,
+    });
+
+    expect(result).toEqual({ ran: true, changedLines: 20 });
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+  });
+
   test('runs at the configured threshold and supplies the resolved stack context', async () => {
     countChangedLinesSpy.mockResolvedValue(400);
 

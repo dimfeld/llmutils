@@ -979,6 +979,8 @@ prStacking:
 
 The executor can decide that the change has no useful vertical split. In that case, it must leave the history and PR unchanged. When it creates a stack, each PR body contains a marked Stack section that lists the PRs in merge order and explains the scope of each slice. Tim associates every PR in the stack with the original plan without changing the plan file. New lower PRs are drafts. The original PR keeps its existing draft or ready state. Lower-slice branch names do not repeat a trailing Linear issue tag from the original branch, and lower-slice PR descriptions use non-closing issue references such as `Related to ENG-123`. A stacking failure produces a warning and does not change the successful agent result.
 
+Run `tim pr stack <planId>` to start PR stacking manually. This command runs the phase even when the automatic `minChangedLines` threshold is not configured or the change is below that threshold. The same action is available from the plan detail page and the dashboard attention actions.
+
 ## Subprocess Monitor
 
 Agent sessions can get stuck when Claude Code or Codex starts a long-running tool command, such as `pnpm test`, and that command hangs. `subprocessMonitor` lets the main tim process watch descendants of the Claude/Codex executor and kill matching commands that exceed a configured timeout, returning control to the coding agent.

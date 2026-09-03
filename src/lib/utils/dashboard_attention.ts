@@ -115,6 +115,7 @@ const AGENT_FINISHED_COMMANDS = new Set([
   'generate',
   'chat',
   'pr-create',
+  'pr-stack',
   'pr-fix',
   'ci-fix',
 ]);
@@ -125,6 +126,7 @@ const RUNNING_NOW_INCLUDED_NONINTERACTIVE_COMMANDS = new Set([
   'generate',
   'chat',
   'pr-create',
+  'pr-stack',
   'pr-fix',
   'ci-fix',
 ]);

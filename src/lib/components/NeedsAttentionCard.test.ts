@@ -12,6 +12,7 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
+  startPrStack: vi.fn(),
   finishPlanQuick: vi.fn(),
 }));
 

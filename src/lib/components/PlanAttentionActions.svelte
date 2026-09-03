@@ -5,6 +5,7 @@
   import {
     startUpdateDocs,
     startCreatePr,
+    startPrStack,
     startReview,
     finishPlanQuick,
   } from '$lib/remote/plan_actions.remote.js';
@@ -66,9 +67,13 @@
 
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
+  let startingPrStack = $state(false);
   let startingReview = $state(false);
   let showCreatePr = $derived(
     hasNeedsReview && !epic && !canUpdateDocs && !hasPr && developmentWorkflow === 'pr-based'
+  );
+  let showPrStack = $derived(
+    hasNeedsReview && !epic && hasPr && developmentWorkflow === 'pr-based'
   );
 
   async function handleCreatePr(event?: MouseEvent) {
@@ -83,6 +88,21 @@
       toast.error(`Failed to create PR: ${(err as Error).message}`);
     } finally {
       startingCreatePr = false;
+    }
+  }
+
+  async function handlePrStack(event?: MouseEvent) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    if (startingPrStack) return;
+    startingPrStack = true;
+    try {
+      await startPrStack({ planUuid });
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to start PR stacking: ${(err as Error).message}`);
+    } finally {
+      startingPrStack = false;
     }
   }
 
@@ -193,7 +213,7 @@
             starting: startingFinish,
           },
         ]}
-        disabled={startingCreatePr || startingFinish || startingReview}
+        disabled={startingCreatePr || startingPrStack || startingFinish || startingReview}
         size="xs"
       />
     {:else}
@@ -214,8 +234,19 @@
             colorClass: '',
             starting: startingReview,
           },
+          ...(showPrStack
+            ? [
+                {
+                  label: 'Stack PRs',
+                  startingLabel: 'Starting PR Stacking…',
+                  onclick: handlePrStack,
+                  colorClass: '',
+                  starting: startingPrStack,
+                },
+              ]
+            : []),
         ]}
-        disabled={startingFinish || startingReview}
+        disabled={startingFinish || startingPrStack || startingReview}
         size="xs"
       />
     {/if}

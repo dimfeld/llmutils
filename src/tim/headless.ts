@@ -48,6 +48,7 @@ export type HeadlessCommand =
   | 'update-docs'
   | 'proof'
   | 'pr-create'
+  | 'pr-stack'
   | 'pr-fix'
   | 'ci-fix'
   | 'shell';

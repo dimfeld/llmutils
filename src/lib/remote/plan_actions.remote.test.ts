@@ -21,6 +21,7 @@ const spawnAgentMultiProcessMock = vi.fn();
 const spawnChatProcessMock = vi.fn();
 const spawnRebaseProcessMock = vi.fn();
 const spawnPrCreateProcessMock = vi.fn();
+const spawnPrStackProcessMock = vi.fn();
 const spawnUpdateDocsProcessMock = vi.fn();
 const spawnPlanReviewGuideProcessMock = vi.fn();
 const spawnProofProcessMock = vi.fn();
@@ -54,6 +55,8 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnRebaseProcessMock(...args),
   spawnPrCreateProcess: (...args: Parameters<typeof spawnPrCreateProcessMock>) =>
     spawnPrCreateProcessMock(...args),
+  spawnPrStackProcess: (...args: Parameters<typeof spawnPrStackProcessMock>) =>
+    spawnPrStackProcessMock(...args),
   spawnUpdateDocsProcess: (...args: Parameters<typeof spawnUpdateDocsProcessMock>) =>
     spawnUpdateDocsProcessMock(...args),
   spawnPlanReviewGuideProcess: (...args: Parameters<typeof spawnPlanReviewGuideProcessMock>) =>
@@ -78,6 +81,7 @@ import {
   startAgentMulti,
   startChat,
   startCreatePr,
+  startPrStack,
   startUpdateDocs,
   startGenerate,
   startRebase,
@@ -105,6 +109,7 @@ describe('plan remote actions', () => {
     spawnChatProcessMock.mockReset();
     spawnRebaseProcessMock.mockReset();
     spawnPrCreateProcessMock.mockReset();
+    spawnPrStackProcessMock.mockReset();
     spawnUpdateDocsProcessMock.mockReset();
     spawnPlanReviewGuideProcessMock.mockReset();
     spawnProofProcessMock.mockReset();
@@ -2356,6 +2361,47 @@ describe('plan remote actions', () => {
     });
   });
 
+  describe('startPrStack', () => {
+    test('rejects plans without an existing pull request', async () => {
+      seedPlan({
+        uuid: 'pr-stack-no-pr',
+        planId: 4010,
+        status: 'needs_review',
+        branch: 'feature/pr-stack-no-pr',
+      });
+
+      await expect(
+        invokeCommand(startPrStack, { planUuid: 'pr-stack-no-pr' })
+      ).rejects.toMatchObject({
+        status: 400,
+        body: { message: 'Plan is not eligible for PR stacking' },
+      });
+      expect(spawnPrStackProcessMock).not.toHaveBeenCalled();
+    });
+
+    test('starts stacking for a ready plan with a pull request', async () => {
+      seedPlan({
+        uuid: 'pr-stack-ready',
+        planId: 4011,
+        status: 'needs_review',
+        branch: 'feature/pr-stack-ready',
+        pullRequest: ['https://github.com/owner/repo/pull/11'],
+      });
+      recordWorkspace(currentDb, {
+        projectId,
+        workspacePath: '/tmp/primary-workspace',
+        workspaceType: 'primary',
+      });
+      spawnPrStackProcessMock.mockResolvedValue({ success: true, planId: 4011 });
+
+      await expect(invokeCommand(startPrStack, { planUuid: 'pr-stack-ready' })).resolves.toEqual({
+        status: 'started',
+        planId: 4011,
+      });
+      expect(spawnPrStackProcessMock).toHaveBeenCalledWith(4011, '/tmp/primary-workspace');
+    });
+  });
+
   describe('startPlanReviewGuide', () => {
     test('returns 404 when plan does not exist in project', async () => {
       await expect(
@@ -2635,6 +2681,7 @@ describe('plan remote actions', () => {
       | 'deferred';
     epic?: boolean;
     parentUuid?: string;
+    branch?: string | null;
     basePlanUuid?: string | null;
     dependencyUuids?: string[];
     tasks?: Array<{ title: string; description: string; done?: boolean }>;
@@ -2647,6 +2694,7 @@ describe('plan remote actions', () => {
       planId: options.planId,
       title: `Plan ${options.planId}`,
       status: options.status ?? 'pending',
+      branch: options.branch,
       priority: 'medium',
       epic: options.epic ?? false,
       parentUuid: options.parentUuid,

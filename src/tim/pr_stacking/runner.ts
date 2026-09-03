@@ -35,6 +35,7 @@ export interface RunPrStackingOptions {
   repoPath?: string;
   config: TimConfig;
   terminalInput?: boolean;
+  manual?: boolean;
 }
 
 export interface PrStackingResult {
@@ -190,7 +191,8 @@ async function linkStackPullRequests(options: {
 
 export async function runPrStacking(options: RunPrStackingOptions): Promise<PrStackingResult> {
   const stackingConfig = options.config.prStacking;
-  if (stackingConfig?.minChangedLines === undefined) {
+  const minChangedLines = stackingConfig?.minChangedLines;
+  if (minChangedLines === undefined && options.manual !== true) {
     return { ran: false, changedLines: 0, reason: 'not-configured' };
   }
   if (!options.plan.branch) {
@@ -218,17 +220,17 @@ export async function runPrStacking(options: RunPrStackingOptions): Promise<PrSt
     log('Skipping PR stacking: no changed lines against the PR base.');
     return { ran: false, changedLines: 0, reason: 'no-changes' };
   }
-  if (changedLines < stackingConfig.minChangedLines) {
+  if (options.manual !== true && minChangedLines !== undefined && changedLines < minChangedLines) {
     log(
-      `Skipping PR stacking: ${changedLines} changed lines is below the configured ${stackingConfig.minChangedLines}-line threshold.`
+      `Skipping PR stacking: ${changedLines} changed lines is below the configured ${minChangedLines}-line threshold.`
     );
     return { ran: false, changedLines, reason: 'below-threshold' };
   }
 
   const executorName =
-    stackingConfig.executor ?? options.config.defaultExecutor ?? DEFAULT_EXECUTOR;
+    stackingConfig?.executor ?? options.config.defaultExecutor ?? DEFAULT_EXECUTOR;
   const model =
-    stackingConfig.model ??
+    stackingConfig?.model ??
     options.config.models?.execution ??
     defaultModelForExecutor(executorName, 'execution');
   const sharedExecutorOptions: ExecutorCommonOptions = {

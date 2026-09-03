@@ -26,6 +26,7 @@
     startShell,
     startUpdateDocs,
     startCreatePr,
+    startPrStack,
     startPlanReviewGuide,
     startProof,
     startUploadArtifacts,
@@ -236,6 +237,13 @@
       colorClass: '',
       starting: startingCreatePr,
     };
+    const prStackItem: ActionItem = {
+      label: 'Stack PRs',
+      startingLabel: 'Starting PR Stacking…',
+      onclick: handlePrStack,
+      colorClass: '',
+      starting: startingPrStack,
+    };
     const finishNoMarkDoneItem: ActionItem = {
       label: 'Update Docs',
       startingLabel: 'Starting Updating Docs…',
@@ -267,6 +275,7 @@
       primary = finishNoMarkDoneItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      if (isEligibleForPrStack) menuItems.push(prStackItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
       menuItems.push(chatItem);
       menuItems.push(finishItem);
@@ -277,6 +286,7 @@
       primary = finishItem;
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      if (isEligibleForPrStack) menuItems.push(prStackItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
       menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
@@ -286,6 +296,7 @@
       fixedActions = [agentItem, autoreviewItem, shellItem];
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      if (isEligibleForPrStack) menuItems.push(prStackItem);
       menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
       if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
@@ -296,6 +307,7 @@
         fixedActions = [agentItem, autoreviewItem, shellItem];
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
+        if (isEligibleForPrStack) menuItems.push(prStackItem);
         menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
         if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
@@ -306,6 +318,7 @@
         fixedActions = [generateItem, autoreviewItem, shellItem];
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
+        if (isEligibleForPrStack) menuItems.push(prStackItem);
         menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
         if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
@@ -316,6 +329,7 @@
       fixedActions = [autoreviewItem];
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
+      if (isEligibleForPrStack) menuItems.push(prStackItem);
       if (showUpdateDocsInDropdown) {
         menuItems.push(finishNoMarkDoneItem);
       }
@@ -354,11 +368,18 @@
   let isEligibleForReview = $derived(plan.status === 'needs_review');
 
   const CREATE_PR_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'reviewed', 'done']);
+  const PR_STACK_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'reviewed', 'done']);
   let isEligibleForCreatePr = $derived(
     CREATE_PR_ELIGIBLE_STATUSES.has(plan.status) &&
       !plan.epic &&
       visiblePrStatuses.length === 0 &&
       visiblePullRequests.length === 0
+  );
+  let isEligibleForPrStack = $derived(
+    PR_STACK_ELIGIBLE_STATUSES.has(plan.status) &&
+      !plan.epic &&
+      plan.branch !== null &&
+      (plan.prStatuses.length > 0 || plan.pullRequests.length > 0)
   );
 
   let startingGenerate = $state(false);
@@ -370,6 +391,7 @@
   let startingChat: string | false = $state(false);
   let startingFinish = $state(false);
   let startingCreatePr = $state(false);
+  let startingPrStack = $state(false);
   let reviewGuideRunning: 'full' | 'guide-only' | false = $state(false);
   let artifactDialogOpen = $state(false);
   let startingProof = $state(false);
@@ -751,6 +773,7 @@
       startingChat ||
       startingFinish ||
       startingCreatePr ||
+      startingPrStack ||
       startingProof
   );
   let controlsDisabled = $derived(starting || startedSuccessfully);
@@ -845,6 +868,21 @@
       applyStartError(actionPlanUuid, err);
     } finally {
       startingCreatePr = false;
+    }
+  }
+
+  async function handlePrStack() {
+    const actionPlanUuid = plan.uuid;
+    startingPrStack = true;
+    errorMessage = null;
+    successMessage = null;
+    try {
+      const result = await startPrStack({ planUuid: actionPlanUuid });
+      applyStartResult(actionPlanUuid, result, 'PR stacking started');
+    } catch (err) {
+      applyStartError(actionPlanUuid, err);
+    } finally {
+      startingPrStack = false;
     }
   }
 
@@ -1166,7 +1204,9 @@
                     ? 'Agent Multi Running...'
                     : activeSession.command === 'update-docs'
                       ? 'Updating Docs...'
-                      : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
+                      : activeSession.command === 'pr-stack'
+                        ? 'PR Stacking...'
+                        : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
             </a>
           {:else}
             {@const { primary, menuItems, fixedActions } = actionConfig}

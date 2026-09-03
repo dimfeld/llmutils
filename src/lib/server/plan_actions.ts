@@ -359,6 +359,18 @@ export async function spawnPrCreateProcess(
   );
 }
 
+export async function spawnPrStackProcess(
+  planId: number,
+  cwd: string
+): Promise<SpawnProcessResult> {
+  return spawnPlanTimProcess(
+    describeTarget('plan', planId),
+    planId,
+    ['pr', 'stack', String(planId), '--auto-workspace', '--no-terminal-input'],
+    cwd
+  );
+}
+
 export async function spawnReviewProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
   return spawnPlanTimProcess(
     describeTarget('plan', planId),

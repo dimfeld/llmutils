@@ -22,6 +22,7 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startShell: vi.fn(),
   startUpdateDocs: vi.fn(),
   startCreatePr: vi.fn(),
+  startPrStack: vi.fn(),
   startAgentMulti: vi.fn(),
   startPlanReviewGuide: vi.fn(),
   startProof: vi.fn(),
@@ -520,6 +521,21 @@ describe('PlanDetail', () => {
     });
 
     expect(body).not.toContain('Generate Proof');
+  });
+
+  test('shows Stack PRs when a ready plan has a linked pull request', () => {
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          status: 'needs_review',
+          displayStatus: 'needs_review',
+          canUpdateDocs: false,
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('Stack PRs');
   });
 
   test('shows Run Agent without Generate for a taskless simple plan', () => {

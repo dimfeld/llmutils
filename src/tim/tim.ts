@@ -1944,6 +1944,19 @@ prCommand
   });
 
 prCommand
+  .command('stack <planId>')
+  .description('Split a plan pull request into a stack and associate the stack with the plan')
+  .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
+  .option('-w, --workspace <name>', 'Use a specific workspace')
+  .option('--no-terminal-input', 'Disable terminal input')
+  .option('--non-interactive', 'No user prompts')
+  .action(async (planIdArg, options, command) => {
+    const { handlePrStackCommand } = await import('./commands/stack_pr.js');
+    const planId = parsePlanIdFromCliArg(planIdArg);
+    await handlePrStackCommand(planId, options, command).catch(handleCommandError);
+  });
+
+prCommand
   .command('upload-artifacts <planId>')
   .description('Upload plan artifacts to the linked GitHub PR comment')
   .option('--aw, --auto-workspace', 'Accepted for UI compatibility; no workspace checkout is used')
