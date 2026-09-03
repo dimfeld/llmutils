@@ -12,6 +12,7 @@ import {
   parsePlanIdFromCliArg,
   parsePlanIdentifier,
   readPlanFile,
+  resolvePlanByBranch,
   resolvePlanByNumericId,
   resolvePlanByUuid,
   setPlanStatus,
@@ -297,6 +298,24 @@ describe('plans', () => {
     const resolved = await resolvePlanByNumericId(77, repoDir);
     expect(resolved.plan.id).toBe(77);
     expect(resolved.plan.title).toBe('Numeric resolver plan');
+  });
+
+  test('resolvePlanByBranch resolves a plan stored in the current project', async () => {
+    await writePlanToDb(
+      {
+        id: 78,
+        uuid: '78787878-7878-4787-8787-787878787878',
+        title: 'Branch resolver plan',
+        goal: 'Resolve by branch',
+        branch: 'feature/branch-input',
+        tasks: [],
+      },
+      { cwdForIdentity: repoDir }
+    );
+
+    const resolved = await resolvePlanByBranch('feature/branch-input', repoDir);
+    expect(resolved.plan.id).toBe(78);
+    expect(resolved.plan.title).toBe('Branch resolver plan');
   });
 
   test('resolvePlanByUuid rejects non-UUID strings', async () => {

@@ -6,6 +6,7 @@ const {
   detectExistingPrUrlSpy,
   isTunnelActiveSpy,
   loadEffectiveConfigSpy,
+  resolvePlanByBranchSpy,
   resolvePlanByNumericIdSpy,
   resolveRepoRootSpy,
   runPrStackingSpy,
@@ -15,6 +16,7 @@ const {
   detectExistingPrUrlSpy: vi.fn(async () => 'https://github.com/acme/repo/pull/42'),
   isTunnelActiveSpy: vi.fn(() => false),
   loadEffectiveConfigSpy: vi.fn(async () => ({ terminalInput: false })),
+  resolvePlanByBranchSpy: vi.fn(),
   resolvePlanByNumericIdSpy: vi.fn(),
   resolveRepoRootSpy: vi.fn(async () => '/repo'),
   runPrStackingSpy: vi.fn(async () => ({ ran: true, changedLines: 500 })),
@@ -37,6 +39,8 @@ vi.mock('../configLoader.js', () => ({
   loadEffectiveConfig: loadEffectiveConfigSpy,
 }));
 vi.mock('../plans.js', () => ({
+  parsePlanIdFromCliArg: (arg: string) => Number(arg),
+  resolvePlanByBranch: resolvePlanByBranchSpy,
   resolvePlanByNumericId: resolvePlanByNumericIdSpy,
 }));
 vi.mock('../plan_repo_root.js', () => ({
@@ -70,6 +74,8 @@ describe('handlePrStackCommand', () => {
     isTunnelActiveSpy.mockClear();
     loadEffectiveConfigSpy.mockClear();
     loadEffectiveConfigSpy.mockResolvedValue(config);
+    resolvePlanByBranchSpy.mockReset();
+    resolvePlanByBranchSpy.mockResolvedValue({ plan, planPath: '/repo/12.plan.md' });
     resolvePlanByNumericIdSpy.mockReset();
     resolvePlanByNumericIdSpy.mockResolvedValue({ plan, planPath: '/repo/12.plan.md' });
     resolveRepoRootSpy.mockClear();
@@ -88,9 +94,10 @@ describe('handlePrStackCommand', () => {
   });
 
   test('runs manually without requiring stacking configuration', async () => {
-    await handlePrStackCommand(12, { nonInteractive: true }, {});
+    await handlePrStackCommand('12', { nonInteractive: true }, {});
 
     expect(detectExistingPrUrlSpy).toHaveBeenCalledWith('feature/stack', '/repo');
+    expect(resolvePlanByNumericIdSpy).toHaveBeenCalledWith(12, '/repo');
     expect(runPrStackingSpy).toHaveBeenCalledWith({
       plan,
       planFilePath: '/repo/12.plan.md',
@@ -104,7 +111,7 @@ describe('handlePrStackCommand', () => {
   });
 
   test('uses the selected workspace for the stacking run', async () => {
-    await handlePrStackCommand(12, { workspace: 'stack-workspace', nonInteractive: true }, {});
+    await handlePrStackCommand('12', { workspace: 'stack-workspace', nonInteractive: true }, {});
 
     expect(setupWorkspaceSpy).toHaveBeenCalledWith(
       {
@@ -129,5 +136,12 @@ describe('handlePrStackCommand', () => {
         manual: true,
       })
     );
+  });
+
+  test('resolves a branch name to its plan', async () => {
+    await handlePrStackCommand('feature/stack', { nonInteractive: true }, {});
+
+    expect(resolvePlanByBranchSpy).toHaveBeenCalledWith('feature/stack', '/repo');
+    expect(resolvePlanByNumericIdSpy).not.toHaveBeenCalled();
   });
 });

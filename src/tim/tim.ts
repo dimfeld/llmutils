@@ -1944,16 +1944,17 @@ prCommand
   });
 
 prCommand
-  .command('stack <planId>')
-  .description('Split a plan pull request into a stack and associate the stack with the plan')
+  .command('stack <planIdOrBranch>')
+  .description(
+    'Split a plan pull request into a stack and associate the stack with the plan (accepts a plan ID or branch name)'
+  )
   .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
   .option('-w, --workspace <name>', 'Use a specific workspace')
   .option('--no-terminal-input', 'Disable terminal input')
   .option('--non-interactive', 'No user prompts')
-  .action(async (planIdArg, options, command) => {
+  .action(async (planIdOrBranch, options, command) => {
     const { handlePrStackCommand } = await import('./commands/stack_pr.js');
-    const planId = parsePlanIdFromCliArg(planIdArg);
-    await handlePrStackCommand(planId, options, command).catch(handleCommandError);
+    await handlePrStackCommand(planIdOrBranch, options, command).catch(handleCommandError);
   });
 
 prCommand

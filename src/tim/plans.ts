@@ -274,6 +274,45 @@ export async function resolvePlanByNumericId(
   return loadPlanSnapshot({ type: 'planId', planId }, projectId, projectContext, repoRoot, planId);
 }
 
+export async function resolvePlanByBranch(
+  branch: string,
+  repoRoot: string
+): Promise<ResolvedPlanFromDb> {
+  const normalizedBranch = branch.trim();
+  if (!normalizedBranch) {
+    throw new PlanNotFoundError('Plan branch cannot be empty');
+  }
+
+  const db = getDatabase();
+  const repository = await getRepositoryIdentity({ cwd: repoRoot });
+  const projectId = getOrCreateProject(db, repository.repositoryId, {
+    remoteUrl: repository.remoteUrl,
+    lastGitRoot: repository.gitRoot,
+  }).id;
+  const matchingRows = getPlansByProject(db, projectId).filter(
+    (row) => row.branch === normalizedBranch
+  );
+
+  if (matchingRows.length === 0) {
+    throw new PlanNotFoundError(
+      `No plan found with branch "${normalizedBranch}" in the current project`
+    );
+  }
+  if (matchingRows.length > 1) {
+    throw new PlanNotFoundError(
+      `Multiple plans found with branch "${normalizedBranch}" in the current project`
+    );
+  }
+
+  return loadPlanSnapshot(
+    { type: 'planId', planId: matchingRows[0].plan_id },
+    projectId,
+    undefined,
+    repoRoot,
+    normalizedBranch
+  );
+}
+
 export async function resolvePlanByUuid(
   uuid: string,
   repoRoot: string,

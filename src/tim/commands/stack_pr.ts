@@ -2,7 +2,7 @@ import { detectExistingPrUrl } from './create_pr.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
-import { resolvePlanByNumericId } from '../plans.js';
+import { parsePlanIdFromCliArg, resolvePlanByBranch, resolvePlanByNumericId } from '../plans.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { runPrStacking } from '../pr_stacking/runner.js';
@@ -30,8 +30,23 @@ function getRootOptions(command: RootCommandLike | undefined): { config?: string
   return current?.opts?.() ?? {};
 }
 
+async function resolvePlanByIdOrBranch(
+  planIdOrBranch: string,
+  repoRoot: string
+): Promise<{
+  plan: Awaited<ReturnType<typeof resolvePlanByNumericId>>['plan'];
+  planPath: string | null;
+}> {
+  const normalizedArgument = planIdOrBranch.trim();
+  if (/^\d+$/.test(normalizedArgument)) {
+    return resolvePlanByNumericId(parsePlanIdFromCliArg(normalizedArgument), repoRoot);
+  }
+
+  return resolvePlanByBranch(normalizedArgument, repoRoot);
+}
+
 export async function handlePrStackCommand(
-  planId: number,
+  planIdOrBranch: string,
   options: Record<string, unknown>,
   command: RootCommandLike
 ): Promise<void> {
@@ -40,10 +55,10 @@ export async function handlePrStackCommand(
   const globalOpts = getRootOptions(command);
   const repoRoot = await resolveRepoRoot(globalOpts.config, process.cwd());
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: repoRoot });
-  const { plan, planPath } = await resolvePlanByNumericId(planId, repoRoot);
+  const { plan, planPath } = await resolvePlanByIdOrBranch(planIdOrBranch, repoRoot);
 
   if (!plan.branch) {
-    throw new Error(`Plan ${plan.id ?? planId} does not have a branch for PR stacking.`);
+    throw new Error(`Plan ${plan.id ?? planIdOrBranch} does not have a branch for PR stacking.`);
   }
 
   const mainPrUrl = plan.pullRequest?.[0] ?? (await detectExistingPrUrl(plan.branch, repoRoot));
