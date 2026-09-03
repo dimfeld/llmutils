@@ -2860,7 +2860,8 @@ index 1234567..abcdefg 100644
     expect(prompt).toContain('2. **Add data validation**');
 
     // Verify diff content is included
-    expect(prompt).toContain('Diff Base:** main');
+    expect(prompt).toContain('Diff Base SHA:** (unavailable)');
+    expect(prompt).toContain('Diff Base Branch (context only):** main');
     expect(prompt).toContain('Changed Files (2):**');
     expect(prompt).toContain('- src/auth.ts');
     expect(prompt).toContain('- src/validation.ts');
@@ -3047,7 +3048,8 @@ index 1234567..abcdefg 100644
     expect(prompt).not.toContain('Details:**');
     expect(prompt).toContain('1. **Task 1**');
     expect(prompt).toContain('Description 1');
-    expect(prompt).toContain('Diff Base:** master');
+    expect(prompt).toContain('Diff Base SHA:** (unavailable)');
+    expect(prompt).toContain('Diff Base Branch (context only):** master');
   });
 
   test('uses originalIndex for task numbering when tasks have originalIndex', async () => {
@@ -3175,8 +3177,9 @@ describe('buildPlanlessReviewPrompt', () => {
     expect(prompt).toContain('**Target Kind:** current');
     expect(prompt).toContain('**Current Branch:** feature/current-review');
     expect(prompt).toContain('**Base Branch:** main');
-    expect(prompt).toContain('origin/main');
-    expect(prompt).toContain('main@origin');
+    expect(prompt).toContain('Diff Base SHA:** abc123');
+    expect(prompt).not.toContain('origin/main');
+    expect(prompt).not.toContain('main@origin');
     expect(prompt).toContain('not associated with a tim plan');
     expect(prompt).toContain('Findings are ephemeral');
     expect(prompt).toContain('- src/review.ts');
@@ -3241,8 +3244,9 @@ describe('buildPlanlessReviewPrompt', () => {
     expect(prompt).toContain('**Target Kind:** branch');
     expect(prompt).toContain('**Requested Branch:** feature/review-target');
     expect(prompt).toContain('**Base Branch:** release/base');
-    expect(prompt).toContain('origin/release/base');
-    expect(prompt).toContain('release/base@origin');
+    expect(prompt).toContain('Diff Base SHA:** abc123');
+    expect(prompt).not.toContain('origin/release/base');
+    expect(prompt).not.toContain('release/base@origin');
   });
 
   test('includes PR target metadata', () => {

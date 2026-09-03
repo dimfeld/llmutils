@@ -33,6 +33,8 @@ export interface PrReviewMetadata {
   title: string | null;
   author: string | null;
   baseBranch: string;
+  /** The immutable commit used as the start of the review diff. */
+  baseSha: string;
   headBranch: string;
   owner: string;
   repo: string;
@@ -49,6 +51,8 @@ export interface PlanReviewMetadata {
   parentChain: Array<{ planId: number; title: string }>;
   completedChildren: Array<{ planId: number; title: string }>;
   baseBranch: string;
+  /** The immutable commit used as the start of the review diff, when available. */
+  baseSha: string | null;
   headRef: string;
 }
 
@@ -95,27 +99,32 @@ interface IssueCombinationPromptOptions {
 }
 
 function getDiffInstructions(metadata: ReviewSubjectMetadata, useJj: boolean): string {
-  const baseBranch = metadata.baseBranch;
-  // Quote the branch name to avoid issues with special characters in command examples.
-  const quotedBranch = baseBranch.replace(/'/g, "'\\''");
+  const baseSha = metadata.baseSha?.trim();
 
-  if (useJj) {
-    const fromRevset =
-      metadata.kind === 'pr'
-        ? `heads(::@ & ::${quotedBranch}@origin)`
-        : `heads(::@ & ::${quotedBranch})`;
+  if (!baseSha) {
     return [
-      `Repository is jj-based. Determine the merge-base diff yourself; do not ask for inline diffs.`,
-      `Primary command: \`jj diff --from '${fromRevset}'\``,
-      `Use \`jj diff ... -s\` for file lists and \`jj diff ... <path>\` for file-specific analysis.`,
+      `The calculated review base SHA is unavailable. Do not choose a moving base branch or remote ref to define the review scope.`,
+      `Use the changed-file context and any supplied diff references as the authoritative review scope.`,
     ].join('\n');
   }
 
-  const baseRef = metadata.kind === 'pr' ? `origin/${quotedBranch}` : quotedBranch;
+  // Quote the SHA in command examples so the prompt remains safe for shell copy/paste.
+  const quotedBaseSha = baseSha.replace(/'/g, "'\\''");
+
+  if (useJj) {
+    return [
+      `Repository is jj-based. The calculated review base is commit SHA \`${baseSha}\`. Treat this SHA as authoritative.`,
+      `Do not recompute the base, use the base branch, or use a branch-based revset; those refs may have moved after this review was started.`,
+      `Primary command: \`jj diff --from '${quotedBaseSha}'\``,
+      `Use \`jj diff --from '${quotedBaseSha}' -s\` for file lists and \`jj diff --from '${quotedBaseSha}' <path>\` for file-specific analysis.`,
+    ].join('\n');
+  }
+
   return [
-    `Repository is git-based. Determine the merge-base diff yourself; do not ask for inline diffs.`,
-    `Use: \`git merge-base '${baseRef}' HEAD\` then \`git diff <merge-base>\``,
-    `Use \`git diff <merge-base> --name-only\` for file lists and file-specific diffs for deep analysis.`,
+    `Repository is git-based. The calculated review base is commit SHA \`${baseSha}\`. Treat this SHA as authoritative.`,
+    `Do not recompute the base, use the base branch, or use a remote branch ref; those refs may have moved after this review was started.`,
+    `Primary command: \`git diff '${quotedBaseSha}' HEAD\``,
+    `Use \`git diff '${quotedBaseSha}' HEAD --name-only\` for file lists and file-specific diffs for deep analysis.`,
     `When you generate diffs for the review guide, copy the relevant sections of \`git diff\` output verbatim. Do not paraphrase, normalize, or reconstruct the diff hunks.`,
   ].join('\n');
 }
@@ -128,6 +137,7 @@ function formatPrMetadata(metadata: PrReviewMetadata): string {
     `- Title: ${metadata.title ?? '(unknown)'}`,
     `- Author: ${metadata.author ?? '(unknown)'}`,
     `- Base Branch: ${metadata.baseBranch}`,
+    `- Base SHA: ${metadata.baseSha}`,
     `- Head Branch: ${metadata.headBranch}`,
   ].join('\n');
 }
@@ -155,6 +165,7 @@ function formatPlanMetadata(metadata: PlanReviewMetadata): string {
     `- Goal: ${metadata.goal?.trim() || '(none)'}`,
     `- Details: ${metadata.details?.trim() || '(none)'}`,
     `- Base Branch: ${metadata.baseBranch}`,
+    `- Base SHA: ${metadata.baseSha ?? '(unresolved)'}`,
     `- Head Ref: ${metadata.headRef}`,
     '- Tasks:',
     tasks,
@@ -326,7 +337,7 @@ export function buildReviewGuideCommentPrompt(options: ReviewGuideCommentPromptO
 
 \`\`\`bash
 jj diff --stat \\
-  -f 'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)' \\
+  -f '${metadata.baseSha}' \\
   '${JJ_NON_TEST_CHANGE_STATS_FILESET}'
 \`\`\`
 

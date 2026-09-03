@@ -74,7 +74,10 @@ function getRootOptions(command: RootCommandLike | undefined): { config?: string
   return current?.opts?.() ?? {};
 }
 
-function buildPrMetadata(context: Awaited<ReturnType<typeof gatherPrContext>>): PrReviewMetadata {
+function buildPrMetadata(
+  context: Awaited<ReturnType<typeof gatherPrContext>>,
+  baseSha: string = context.baseSha
+): PrReviewMetadata {
   return {
     kind: 'pr',
     prUrl: context.prUrl,
@@ -82,6 +85,7 @@ function buildPrMetadata(context: Awaited<ReturnType<typeof gatherPrContext>>): 
     title: context.prStatus.title,
     author: context.prStatus.author,
     baseBranch: context.baseBranch,
+    baseSha,
     headBranch: context.headBranch,
     owner: context.owner,
     repo: context.repo,
@@ -282,7 +286,6 @@ export async function handleReviewGuideCommand(
         });
         updateReviewGuideSessionInfo(db, prContext);
 
-        const metadata = buildPrMetadata(prContext);
         const { projectId, repoRoot } = await resolveProjectContextForRepo(db, baseDir);
         const repoIdentity = await getRepositoryIdentity({ cwd: repoRoot });
         const parsedRepositoryId = parseOwnerRepoFromRepositoryId(repoIdentity.repositoryId);
@@ -345,6 +348,7 @@ export async function handleReviewGuideCommand(
           prContext.baseBranch,
           prContext.baseSha
         );
+        const metadata = buildPrMetadata(prContext, baseSha);
         const diffCatalog = await loadReviewGuideDiffCatalog({
           baseDir,
           baseSha,

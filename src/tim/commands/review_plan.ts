@@ -52,7 +52,8 @@ export function buildPlanMetadata(
   planId: number,
   planUuid: string,
   context: PlanContext,
-  headRef: string
+  headRef: string,
+  baseSha: string | null
 ): PlanReviewMetadata {
   const planData = context.planData;
   const mapRelatedPlans = (
@@ -91,6 +92,7 @@ export function buildPlanMetadata(
     parentChain: mapRelatedPlans(context.parentChain, 'parent plan'),
     completedChildren: mapRelatedPlans(context.completedChildren, 'completed child plan'),
     baseBranch: context.diffResult.baseBranch,
+    baseSha,
     headRef,
   };
 }
@@ -201,7 +203,7 @@ export async function handlePlanReviewGuideCommand(
           status: 'in_progress',
         });
 
-        const metadata = buildPlanMetadata(planId, planRow.uuid, context, reviewedSha);
+        const metadata = buildPlanMetadata(planId, planRow.uuid, context, reviewedSha, baseSha);
         const planTag = `plan ${planId} (${planRow.uuid})`;
 
         await runReviewGuideWorkflow({

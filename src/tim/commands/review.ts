@@ -1212,13 +1212,20 @@ function formatPlanlessTargetMetadata(target: PlanlessReviewTarget, baseDir: str
   return lines;
 }
 
-function buildPlanlessDiffGuidance(baseBranch: string): string[] {
+function buildPlanlessDiffGuidance(baseSha: string | null): string[] {
+  if (baseSha) {
+    return [
+      `# Diff Guidance`,
+      ``,
+      `Review only changes reachable from the selected target relative to the authoritative base commit \`${baseSha}\`.`,
+      `Do not recompute the base or use the base branch or a remote ref; those refs may have moved after this review started.`,
+    ];
+  }
+
   return [
     `# Diff Guidance`,
     ``,
-    `Review only changes reachable from the selected target relative to the selected base.`,
-    `For git repositories, use \`origin/${baseBranch}\` as the base ref, for example: \`git merge-base origin/${baseBranch} HEAD\` then \`git diff <merge-base>\`.`,
-    `For jj repositories, use \`${baseBranch}@origin\` as the base bookmark, for example: \`jj diff --from 'heads(::@ & ::${baseBranch}@origin)'\`.`,
+    `The calculated base commit SHA is unavailable. Review only the supplied changed-file context and do not choose a moving branch or remote ref to define the review scope.`,
   ];
 }
 
@@ -1247,7 +1254,8 @@ export function buildPlanlessReviewPrompt(
   const changedFilesSection = [
     `# Code Changes to Review`,
     ``,
-    `**Diff Base:** ${diffResult.mergeBaseCommit ?? diffResult.baseBranch}`,
+    `**Diff Base SHA:** ${diffResult.mergeBaseCommit ?? '(unavailable)'}`,
+    `**Diff Base Branch (context only):** ${diffResult.baseBranch}`,
     `**Changed Files (${diffResult.changedFiles.length}):**`,
     ...diffResult.changedFiles.map((file) => `- ${file}`),
   ];
@@ -1259,7 +1267,7 @@ export function buildPlanlessReviewPrompt(
   const contextContent = [
     ...formatPlanlessTargetMetadata(target, baseDir),
     ``,
-    ...buildPlanlessDiffGuidance(target.baseBranch),
+    ...buildPlanlessDiffGuidance(diffResult.mergeBaseCommit ?? null),
     ``,
     `# Planless Review Semantics`,
     ``,
@@ -2910,6 +2918,7 @@ export async function handleReviewCommand(
                   parentChain,
                   completedChildren,
                   baseBranch: diffResult.baseBranch,
+                  baseSha: diffResult.mergeBaseCommit ?? null,
                   headRef: reviewHeadRef,
                 }),
                 useJj: reviewUsesJj,
@@ -3512,6 +3521,7 @@ function buildPlanReviewMetadata(options: {
   parentChain: PlanSchema[];
   completedChildren: PlanSchema[];
   baseBranch: string;
+  baseSha: string | null;
   headRef: string;
 }): PlanReviewMetadata {
   if (typeof options.planData.id !== 'number') {
@@ -3543,6 +3553,7 @@ function buildPlanReviewMetadata(options: {
         title: plan.title ?? 'Untitled Plan',
       })),
     baseBranch: options.baseBranch,
+    baseSha: options.baseSha,
     headRef: options.headRef,
   };
 }
@@ -4052,7 +4063,8 @@ export function buildReviewPrompt(
   const changedFilesSection = [
     `# Code Changes to Review`,
     ``,
-    `**Diff Base:** ${diffResult.mergeBaseCommit ?? diffResult.baseBranch}`,
+    `**Diff Base SHA:** ${diffResult.mergeBaseCommit ?? '(unavailable)'}`,
+    `**Diff Base Branch (context only):** ${diffResult.baseBranch}`,
     `**Changed Files (${diffResult.changedFiles.length}):**`,
   ];
 

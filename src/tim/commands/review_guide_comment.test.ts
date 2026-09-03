@@ -172,6 +172,7 @@ describe('review_guide_comment', () => {
       owner: 'acme',
       repo: 'repo',
       baseBranch: 'main',
+      baseSha: 'base-sha-42',
       headBranch: 'feature/review-guide',
       headSha: 'abc123',
     } as any);
@@ -239,7 +240,7 @@ describe('review_guide_comment', () => {
         'diff',
         '--stat',
         '-f',
-        'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)',
+        'base-sha-42',
         'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*" | prefix-glob:"**/*_test_*" | prefix-glob:"**/*_fixture*")',
       ],
       expect.objectContaining({ cwd: tempDir })
@@ -261,7 +262,8 @@ describe('review_guide_comment', () => {
     );
     expect(mockLog).toHaveBeenCalledWith('## Review Guide\n\nGenerated guide.');
     expect(capturedPrompt).toContain('Repository is git-based');
-    expect(capturedPrompt).toContain("git merge-base 'origin/main' HEAD");
+    expect(capturedPrompt).toContain("git diff 'base-sha-42' HEAD");
+    expect(capturedPrompt).not.toContain('git merge-base');
     expect(capturedPrompt).toContain('Precomputed non-test change stats');
     expect(capturedPrompt).toContain('2 files changed, 45 insertions(+)');
     expect(capturedPrompt).toContain('### Non-test change stats');

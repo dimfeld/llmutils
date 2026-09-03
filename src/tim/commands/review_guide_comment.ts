@@ -46,8 +46,6 @@ import { LATEST_GPT5_MODEL } from '../constants.js';
 /** Hidden marker used to detect an existing review-guide comment so we post at most one per PR. */
 export const REVIEW_GUIDE_COMMENT_MARKER = '<!-- tim:pr-review-guide -->';
 const UPDATED_AT_FOOTER_PREFIX = 'Updated at';
-const BRANCH_BASE_REVSET = 'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)';
-
 interface RootCommandLike {
   parent?: RootCommandLike;
   opts?: () => {
@@ -98,19 +96,20 @@ function buildPrMetadata(context: Awaited<ReturnType<typeof gatherPrContext>>): 
     title: context.prStatus.title,
     author: context.prStatus.author,
     baseBranch: context.baseBranch,
+    baseSha: context.baseSha,
     headBranch: context.headBranch,
     owner: context.owner,
     repo: context.repo,
   };
 }
 
-async function loadJjNonTestChangeStats(baseDir: string): Promise<string | null> {
+async function loadJjNonTestChangeStats(baseDir: string, baseSha: string): Promise<string | null> {
   if (!(await getUsingJj(baseDir))) {
     return null;
   }
 
   const proc = Bun.spawn(
-    ['jj', 'diff', '--stat', '-f', BRANCH_BASE_REVSET, JJ_NON_TEST_CHANGE_STATS_FILESET],
+    ['jj', 'diff', '--stat', '-f', baseSha, JJ_NON_TEST_CHANGE_STATS_FILESET],
     {
       cwd: baseDir,
       stdout: 'pipe',
@@ -339,7 +338,7 @@ export async function handlePrReviewGuideCommentCommand(
       // checkoutPrBranch uses Git fetch/checkout even for colocated jj repositories, so the
       // executor must diff against the detached Git HEAD instead of the jj working-copy revision.
       const useJjDiffInstructions = false;
-      const nonTestChangeStats = await loadJjNonTestChangeStats(baseDir);
+      const nonTestChangeStats = await loadJjNonTestChangeStats(baseDir, prContext.baseSha);
       const customInstructions = await loadCustomReviewInstructions(config, baseDir);
       const metadata = buildPrMetadata(prContext);
 

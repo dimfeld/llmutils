@@ -23,6 +23,7 @@ const METADATA: PrReviewMetadata = {
   title: 'Improve PR review flow',
   author: 'alice',
   baseBranch: 'main',
+  baseSha: 'base-sha-42',
   headBranch: 'feature/review-guide',
   owner: 'acme',
   repo: 'repo',
@@ -42,6 +43,7 @@ const PLAN_METADATA: PlanReviewMetadata = {
   parentChain: [{ planId: 347, title: 'Support plan review guides' }],
   completedChildren: [{ planId: 346, title: 'Review storage groundwork' }],
   baseBranch: 'main',
+  baseSha: 'base-sha-plan-348',
   headRef: 'HEAD',
 };
 
@@ -67,7 +69,9 @@ describe('review_pr_prompt', () => {
     expect(prompt.length).toBeGreaterThan(0);
     expect(prompt).toContain(METADATA.prUrl);
     expect(prompt).toContain(METADATA.title!);
-    expect(prompt).toContain("git merge-base 'origin/main' HEAD");
+    expect(prompt).toContain('The calculated review base is commit SHA `base-sha-42`');
+    expect(prompt).toContain("git diff 'base-sha-42' HEAD");
+    expect(prompt).not.toContain('git merge-base');
     expect(prompt).toContain('.tim/tmp/review-guide.md');
     expect(prompt).toContain('Group files into functional sections');
     expect(prompt).toContain('Treat the guide as an architectural map of the change');
@@ -101,7 +105,8 @@ describe('review_pr_prompt', () => {
 
     expect(prompt).toContain('posted as a comment on a GitHub pull request');
     expect(prompt).toContain(METADATA.prUrl);
-    expect(prompt).toContain("git merge-base 'origin/main' HEAD");
+    expect(prompt).toContain('The calculated review base is commit SHA `base-sha-42`');
+    expect(prompt).toContain("git diff 'base-sha-42' HEAD");
     expect(prompt).toContain('Pay special attention to');
     expect(prompt).toContain('Group the changes into a small number of logical sections');
     expect(prompt).toContain('architectural map of the PR at a glance');
@@ -142,9 +147,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Repository is jj-based');
     expect(prompt).toContain('Non-test change stats');
     expect(prompt).toContain('### Non-test change stats\n<summary line from jj diff --stat>');
-    expect(prompt).toContain(
-      "jj diff --stat \\\n  -f 'latest(heads(bookmarks() & ancestors(@--)) | fork_point(@ | main), 1)'"
-    );
+    expect(prompt).toContain("jj diff --stat \\\n  -f 'base-sha-42'");
     expect(prompt).toContain('glob:"**/*.spec.*"');
     expect(prompt).toContain('glob:"**/*.test.*"');
     expect(prompt).toContain('prefix-glob:"**/*_test_*"');
@@ -161,7 +164,7 @@ describe('review_pr_prompt', () => {
     });
 
     expect(prompt).toContain('Repository is git-based');
-    expect(prompt).toContain("git merge-base 'origin/main' HEAD");
+    expect(prompt).toContain("git diff 'base-sha-42' HEAD");
     expect(prompt).toContain('Precomputed non-test change stats');
     expect(prompt).toContain('2 files changed, 45 insertions(+)');
     expect(prompt).toContain('### Non-test change stats');
@@ -220,7 +223,8 @@ describe('review_pr_prompt', () => {
       useJj: true,
     });
 
-    expect(prompt).toContain("jj diff --from 'heads(::@ & ::main@origin)'");
+    expect(prompt).toContain("jj diff --from 'base-sha-42'");
+    expect(prompt).not.toContain('heads(::@ & ::main@origin)');
     expect(prompt).not.toContain('git merge-base');
   });
 
@@ -287,7 +291,7 @@ describe('review_pr_prompt', () => {
       useJj: true,
     });
 
-    expect(prompt).toContain("jj diff --from 'heads(::@ & ::main@origin)'");
+    expect(prompt).toContain("jj diff --from 'base-sha-42'");
     expect(prompt).toContain('Repository is jj-based');
   });
 
@@ -398,7 +402,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('#347: Support plan review guides');
     expect(prompt).toContain('#346: Review storage groundwork');
     expect(prompt).toContain('plan implementation diff');
-    expect(prompt).toContain("git merge-base 'main' HEAD");
+    expect(prompt).toContain("git diff 'base-sha-plan-348' HEAD");
     expect(prompt).not.toContain('origin/');
     expect(prompt).not.toContain('## PR Metadata');
     expect(prompt).not.toContain('PR URL:');
@@ -411,7 +415,7 @@ describe('review_pr_prompt', () => {
       useJj: true,
     });
 
-    expect(prompt).toContain("jj diff --from 'heads(::@ & ::main)'");
+    expect(prompt).toContain("jj diff --from 'base-sha-plan-348'");
     expect(prompt).not.toContain('@origin');
   });
 
@@ -452,7 +456,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('## Plan Metadata');
     expect(prompt).toContain('Use the plan/task context');
     expect(prompt).toContain('Plan-only review guides');
-    expect(prompt).toContain("git merge-base 'main' HEAD");
+    expect(prompt).toContain("git diff 'base-sha-plan-348' HEAD");
     expect(prompt).not.toContain('origin/');
     expect(prompt).not.toContain('@origin');
     expect(prompt).not.toContain('Do not include plan/task context; this is PR-only review.');
@@ -464,7 +468,7 @@ describe('review_pr_prompt', () => {
       useJj: true,
     });
 
-    expect(prompt).toContain("jj diff --from 'heads(::@ & ::main)'");
+    expect(prompt).toContain("jj diff --from 'base-sha-plan-348'");
     expect(prompt).not.toContain('origin/');
     expect(prompt).not.toContain('@origin');
   });

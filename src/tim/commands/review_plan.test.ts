@@ -355,7 +355,8 @@ describe('handlePlanReviewGuideCommand', () => {
         status: 'complete',
       })
     );
-    expect(capturedGuidePrompts[0]).toContain("git merge-base 'main' HEAD");
+    expect(capturedGuidePrompts[0]).toContain('The calculated review base is commit SHA');
+    expect(capturedGuidePrompts[0]).toContain("git diff '");
     expect(capturedGuidePrompts[0]).not.toContain('origin/');
     expect(capturedGuidePrompts[0]).not.toContain('@origin');
   });
@@ -547,7 +548,8 @@ describe('buildPlanMetadata', () => {
       100,
       '22222222-2222-4222-8222-222222222222',
       context,
-      'abc123'
+      'abc123',
+      'base-sha-plan'
     );
 
     expect(result.parentChain).toEqual([{ planId: 99, title: 'Valid Parent' }]);
