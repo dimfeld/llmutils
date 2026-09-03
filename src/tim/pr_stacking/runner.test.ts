@@ -302,8 +302,9 @@ describe('runPrStacking', () => {
       'Intermediate branches may contain new changes or a temporary version of a file'
     );
     expect(prompt).toContain(
-      'do not include that issue tag at the end of any new lower-slice branch name'
+      'If the branch being split starts with the plan number, every new lower-slice branch name should also start with that plan number'
     );
+    expect(prompt).toContain('Do not copy external issue-tracker IDs');
     expect(prompt).toContain('refer to related issues with language such as "Related to ISSUE"');
     expect(prompt).toContain('Do not use "Closes", "Fixes", or other issue-closing keywords');
     expect(prompt).toContain('leave all commits, branches, and pull requests unchanged');
