@@ -132,6 +132,12 @@ limit error without allocating a process, mailbox, or name reservation.
 
 `queued` is a successful acceptance. Do not resend a queued message.
 
+Every subagent must send its final response to `orchestrator` with
+`SendTimAgentMessage` before it calls `FinishTimAgent`. The normal assistant
+response and any assistant text included in a terminal notification are not the
+result-delivery contract. The orchestrator uses the terminal notification only
+to confirm lifecycle completion.
+
 Messages carry **trusted sender attribution** set by the runtime. No model
 argument supplies or replaces the source identity. Recipients see the sender's
 canonical name. Provider-visible messages from subagents also include the

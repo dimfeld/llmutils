@@ -325,6 +325,8 @@ describe('persistent-agent role prompt communication guidance', () => {
     'separate from any built-in subagent messaging tools',
     'file ownership',
     'questions, decisions, blockers',
+    'send your final response to `orchestrator`',
+    'Do not rely on your ordinary assistant response',
     'FinishTimAgent',
     'self-only',
   ];
@@ -428,6 +430,7 @@ describe('persistent-agent role prompt communication guidance', () => {
     expect(prompt).toContain(
       'A progress message or interim handoff does not finish your persistent assignment'
     );
+    expect(prompt).toContain('SendTimAgentMessage has accepted your final response');
   });
 
   it('keeps persistent mutating agents inside their assigned commit scope', () => {
