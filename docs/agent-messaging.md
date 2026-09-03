@@ -132,11 +132,12 @@ limit error without allocating a process, mailbox, or name reservation.
 
 `queued` is a successful acceptance. Do not resend a queued message.
 
-Every subagent must send its final response to `orchestrator` with
-`SendTimAgentMessage` before it calls `FinishTimAgent`. The normal assistant
-response and any assistant text included in a terminal notification are not the
-result-delivery contract. The orchestrator uses the terminal notification only
-to confirm lifecycle completion.
+Every subagent must make a result-bearing tim tool call before it ends its work.
+It can send its final response to `orchestrator` with `SendTimAgentMessage`, or
+it can put its final status in the `FinishTimAgent` message. A normal assistant
+response without either tool call is not the result-delivery contract. A
+terminal notification confirms lifecycle completion and can carry the explicit
+`FinishTimAgent` status.
 
 Messages carry **trusted sender attribution** set by the runtime. No model
 argument supplies or replaces the source identity. Recipients see the sender's

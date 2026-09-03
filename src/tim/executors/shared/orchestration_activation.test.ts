@@ -107,12 +107,9 @@ describe('collaborative orchestration activation matrix', () => {
         expect(output).toContain(acknowledgement);
       }
       expect(output).toContain('trusted source attribution');
-      expect(output).toContain(
-        'Each subagent must send its final response to `orchestrator` with this tool before it finishes'
-      );
-      expect(output).toContain(
-        "Treat the manager's terminal notification only as the lifecycle completion signal"
-      );
+      expect(output).toContain('Require every subagent to make a result-bearing `Tim` tool call');
+      expect(output).toContain('put its final status in the FinishTimAgent message');
+      expect(output).toContain('A plain assistant response without either tool call');
       expect(output).toContain('All agents share one working directory');
       expect(output).toContain('file scope');
       expect(output).toContain('read-only and advisory');

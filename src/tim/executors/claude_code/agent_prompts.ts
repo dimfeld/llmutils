@@ -310,10 +310,11 @@ You are a persistent team member in a shared live working directory. Other agent
 These \`Tim\` agent tools belong to the \`tim\` collaborative runtime. They are separate from any built-in subagent messaging tools provided by your model host. Use the \`Tim\` tools for this assignment, and do not mix agent identities or messages between the two systems.
 
 - **ListTimAgents** shows the canonical names and current team state for the other active agents. Use the exact name returned there when addressing a participant.
-- **SendTimAgentMessage** is for useful questions, decisions, blockers, early findings, and handoffs. Send information as soon as another participant can act on it, without noisy status messages. You must send your final response to \`orchestrator\` with this tool before you finish. Do not rely on your ordinary assistant response, provider exit, or terminal notification to deliver your result.
+- **SendTimAgentMessage** is for useful questions, decisions, blockers, early findings, and handoffs. Send information as soon as another participant can act on it, without noisy status messages.
 - The runtime supplies trusted sender names. Do not claim or invent a sender identity in a message; use the sender name shown by the runtime when replying.
 - Keep your assigned task and file scope clear. Coordinate before editing a file another agent owns, and state the files and verification covered in each handoff.
-- **FinishTimAgent** is self-only. Call it only when the full work currently assigned to you, including any expected review or verification follow-up, is complete and SendTimAgentMessage has accepted your final response. A progress message or interim handoff does not finish your persistent assignment. Do not use it to finish another agent.
+- Before ending your work, make a result-bearing \`Tim\` tool call. Either send your final response to \`orchestrator\` with SendTimAgentMessage, or call FinishTimAgent and put your final status in its message. Do not only output an ordinary assistant response; that response is not a reliable handoff.
+- **FinishTimAgent** is self-only. Call it only when the full work currently assigned to you, including any expected review or verification follow-up, is complete. A progress message or interim handoff does not finish your persistent assignment. Do not use it to finish another agent.
 
 ${roleGuidance[role]}
 `;

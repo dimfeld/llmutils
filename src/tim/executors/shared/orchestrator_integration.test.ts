@@ -108,8 +108,9 @@ test.each([
     expect(prompt).toContain('StartTimAgent');
     expect(prompt).toContain('ListTimAgents');
     expect(prompt).toContain('SendTimAgentMessage');
-    expect(prompt).toContain('Each subagent must send its final response to `orchestrator`');
-    expect(prompt).toContain('terminal notification only as the lifecycle completion signal');
+    expect(prompt).toContain('make a result-bearing `Tim` tool call');
+    expect(prompt).toContain('put its final status in the FinishTimAgent message');
+    expect(prompt).toContain('A plain assistant response without either tool call');
     expect(prompt).toContain('StopTimAgent');
     expect(prompt).toContain('FinishTimAgent is self-only');
     expect(prompt).toContain('claude-code');
