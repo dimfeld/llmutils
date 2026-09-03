@@ -52,6 +52,7 @@ export interface PrStackingPromptOptions {
   baseBranch: string;
   comparisonRef: string;
   changedLines: number;
+  targetMaxChangedLines?: number;
 }
 
 export function buildPrStackingPrompt(options: PrStackingPromptOptions): string {
@@ -62,6 +63,12 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     planGoal ? `Goal: ${planGoal}` : undefined,
     planDetails ? `Details:\n${planDetails}` : undefined,
   ].filter((part): part is string => part !== undefined);
+  const sliceSizeGuidance =
+    options.targetMaxChangedLines === undefined
+      ? []
+      : [
+          `- When practical, keep each slice below ${options.targetMaxChangedLines} changed lines (additions plus deletions). Treat this as a review-size target, not a reason to create incoherent slices.`,
+        ];
 
   return [
     'The implementation and its main pull request are complete. Reorganize this branch into a stack of smaller vertical-slice pull requests when that produces a materially easier review.',
@@ -84,7 +91,9 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     '- First record the final tree identifier. After all history edits, verify that the original branch has the same final tree. If it differs, repair the stack before you finish.',
     '- A single changed file may have its hunks distributed across several slices and branches. Do not require each slice to contain all changes to a file or to change a separate set of files.',
     '- Intermediate branches may contain new changes or a temporary version of a file. This is acceptable when the combined changes from all stack commits produce exactly the original final tree. Verify the combined result before you finish.',
-    '- Split the work only if you can make at least two coherent vertical slices. Each slice must deliver a reviewable behavior or capability, including its necessary tests and documentation. Do not make horizontal layers such as "types", "implementation", and "tests" into separate slices.',
+    ...sliceSizeGuidance,
+    '- Split the work only if you can make at least two coherent vertical slices. Give each slice a focused, reviewable scope with its necessary tests and documentation. Do not make horizontal layers such as "types", "implementation", and "tests" into separate slices.',
+    '- After identifying the vertical slices, inspect every large candidate slice for further coherent splits. An intermediate PR does not need to contain the full end-to-end functionality of the larger slice; it may be a partial or enabling increment because the stack will normally merge together in a merge queue. Every PR must still pass CI and remain buildable and testable on its own.',
     '- Use one commit per vertical slice. Order dependent slices from the stack base upward.',
     `- Keep ${options.mainBranch} and ${options.mainPrUrl} as the top and final slice of the stack. Never close or replace the original pull request.`,
     '- Create a unique, descriptive branch for every lower slice. Do not reuse or overwrite an unrelated local or remote branch. If the existing top branch ends with a Linear issue tag, do not include that issue tag at the end of any new lower-slice branch name. The existing top branch may keep its issue tag.',
@@ -276,6 +285,7 @@ export async function runPrStacking(options: RunPrStackingOptions): Promise<PrSt
     baseBranch,
     comparisonRef: diffResult.mergeBaseCommit,
     changedLines,
+    targetMaxChangedLines: minChangedLines,
   });
 
   log(boldMarkdownHeaders('\n## Splitting Pull Request into a Stack\n'));

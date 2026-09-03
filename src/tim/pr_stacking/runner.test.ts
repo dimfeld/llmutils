@@ -283,10 +283,15 @@ describe('runPrStacking', () => {
       baseBranch: 'main',
       comparisonRef: 'abc1234',
       changedLines: 500,
+      targetMaxChangedLines: 400,
     });
 
     expect(prompt).toContain('vertical slices');
     expect(prompt).toContain('one commit per vertical slice');
+    expect(prompt).toContain('keep each slice below 400 changed lines');
+    expect(prompt).toContain('inspect every large candidate slice for further coherent splits');
+    expect(prompt).toContain('does not need to contain the full end-to-end functionality');
+    expect(prompt).toContain('Every PR must still pass CI');
     expect(prompt).toContain('Create every new lower-slice pull request as a draft');
     expect(prompt).toContain('clearly marked "Stack" section');
     expect(prompt).toContain('same final tree');
