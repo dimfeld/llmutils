@@ -103,6 +103,7 @@
   let parentPlan = $state<PlanPickerOption | null>(untrack(() => initialValue.parent ?? null));
   let basePlan = $state<PlanPickerOption | null>(untrack(() => initialValue.basePlan ?? null));
   let dependencies = $state<PlanPickerOption[]>(untrack(() => initialValue.dependencies ?? []));
+  let formElement: HTMLFormElement;
 
   let initialComparable = untrack(() =>
     formComparable(
@@ -166,10 +167,21 @@
 
     onsubmit(value);
   }
+
+  function handleKeydown(event: KeyboardEvent) {
+    if (!formElement?.contains(event.target as Node)) return;
+    if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return;
+
+    event.preventDefault();
+    handleSubmit();
+  }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <form
   class="space-y-6"
+  bind:this={formElement}
   onsubmit={(e) => {
     e.preventDefault();
     handleSubmit();

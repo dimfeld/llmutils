@@ -1,5 +1,5 @@
 import { describe, expect, test, vi, type Mock } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { error as svelteKitError } from '@sveltejs/kit';
 
@@ -113,6 +113,29 @@ describe('edit plan page interaction', () => {
     await vi.waitFor(() => {
       expect(invalidateAll).toHaveBeenCalled();
       expect(goto).toHaveBeenCalledWith('/projects/7/plans/target-plan-uuid');
+    });
+  });
+
+  test('Cmd+Enter submits while focus is in a textarea', async () => {
+    (updatePlanMetadata as Mock).mockResolvedValueOnce({ planUuid: 'target-plan-uuid' });
+    (invalidateAll as Mock).mockResolvedValueOnce(undefined);
+    (goto as Mock).mockResolvedValueOnce(undefined);
+
+    renderPage();
+
+    const detailsInput = page.getByPlaceholder(
+      'Additional context, requirements, or notes (Markdown supported)'
+    );
+    await detailsInput.fill('Updated edit details');
+    await userEvent.keyboard('{Meta>}{Enter}{/Meta}');
+
+    await vi.waitFor(() => {
+      expect(updatePlanMetadata).toHaveBeenCalledWith(
+        expect.objectContaining({
+          planUuid: 'target-plan-uuid',
+          details: 'Updated edit details',
+        })
+      );
     });
   });
 
