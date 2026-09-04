@@ -1077,13 +1077,27 @@
   let siblingEntries = $derived.by(() => {
     const basePlanUuid = (plan.effectiveBasePlan ?? plan.basePlan)?.uuid;
     const dependentUuids = new Set(plan.dependents.map((dependent) => dependent.uuid));
+    const relationshipRank = (entry: {
+      isBase: boolean;
+      dependsOnCurrent: boolean;
+    }): number => {
+      if (entry.isBase) return 0;
+      if (entry.dependsOnCurrent) return 1;
+      return 2;
+    };
+
     return plan.siblings
       .map((sibling) => ({
         dep: sibling,
         isBase: sibling.uuid === basePlanUuid,
         dependsOnCurrent: dependentUuids.has(sibling.uuid),
       }))
-      .sort((a, b) => (a.dep.planId ?? 0) - (b.dep.planId ?? 0));
+      .sort((a, b) => {
+        const rankDifference = relationshipRank(a) - relationshipRank(b);
+        if (rankDifference !== 0) return rankDifference;
+
+        return (a.dep.planId ?? 0) - (b.dep.planId ?? 0);
+      });
   });
 
   function planUrl(uuid: string, depProjectId?: number | null): string {
@@ -1541,7 +1555,7 @@
                 {/if}
                 {#if dependsOnCurrent}
                   <span
-                    class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                    class="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300"
                   >
                     Depends on this
                   </span>

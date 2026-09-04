@@ -431,13 +431,22 @@ describe('PlanDetail', () => {
       displayStatus: 'pending' as const,
       isResolved: false,
     };
+    const unrelatedSibling = {
+      uuid: 'unrelated-sibling',
+      projectId: 123,
+      planId: 10,
+      title: 'Unrelated sibling',
+      status: 'blocked' as const,
+      displayStatus: 'blocked' as const,
+      isResolved: false,
+    };
 
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
           dependencies: [baseSibling],
           dependents: [dependentSibling],
-          siblings: [baseSibling, dependentSibling],
+          siblings: [unrelatedSibling, dependentSibling, baseSibling],
           effectiveBasePlan: baseSibling,
         }),
         projectId: '123',
@@ -449,6 +458,10 @@ describe('PlanDetail', () => {
     expect(body).toContain('Dependent sibling');
     expect(body).toContain('Base Plan');
     expect(body).toContain('Depends on this');
+    expect(body).toContain('bg-indigo-100');
+    expect(body).toContain('text-indigo-700');
+    expect(body.indexOf('Base sibling')).toBeLessThan(body.indexOf('Dependent sibling'));
+    expect(body.indexOf('Dependent sibling')).toBeLessThan(body.indexOf('Unrelated sibling'));
     expect(body).not.toContain('Depends On');
     expect(body).not.toContain('Depended on by');
   });
