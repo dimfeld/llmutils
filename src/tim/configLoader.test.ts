@@ -1135,6 +1135,138 @@ autoexamples:
       expect(config.subagents?.tester?.model?.claude).toBe('local-haiku'); // from local
     });
 
+    test('loadEffectiveConfig deep merges generate settings and model overrides', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          generate: {
+            executor: 'claude-code',
+            linearChildIssueLabel: 'global-subplan',
+            model: { claude: 'global-opus' },
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          generate: {
+            model: { codex: 'local-codex' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.generate).toEqual({
+        executor: 'claude-code',
+        linearChildIssueLabel: 'global-subplan',
+        model: {
+          claude: 'global-opus',
+          codex: 'local-codex',
+        },
+      });
+    });
+
+    test('loadEffectiveConfig deep merges selected nested configuration settings', async () => {
+      const mainConfigPath = path.join(configDir, 'tim.yml');
+      const localConfigPath = path.join(configDir, 'tim.local.yml');
+
+      await fs.writeFile(
+        mainConfigPath,
+        yaml.stringify({
+          autoreview: {
+            executor: 'claude-code',
+            model: 'global-review',
+            effort: 'high',
+          },
+          smallTasks: {
+            executor: 'codex-cli',
+            model: 'global-small-task',
+          },
+          agents: {
+            implementer: { instructions: 'global-implementer.md' },
+            tester: { instructions: 'global-tester.md' },
+          },
+          review: {
+            defaultExecutor: 'both',
+            structuralModel: { codex: 'global-structural' },
+            focusAreas: ['security'],
+          },
+          reviewGuide: {
+            executor: 'codex-cli',
+            model: { claude: 'global-model-claude' },
+            guideModel: { claude: 'global-guide-claude' },
+            issuesModel: { codex: 'global-issues-codex' },
+            structuralModel: { codex: 'global-structural-codex' },
+          },
+        }),
+        'utf-8'
+      );
+
+      await fs.writeFile(
+        localConfigPath,
+        yaml.stringify({
+          autoreview: { model: 'local-review' },
+          smallTasks: { model: 'local-small-task' },
+          agents: {
+            implementer: { instructions: 'local-implementer.md' },
+          },
+          review: {
+            focusAreas: ['performance'],
+          },
+          reviewGuide: {
+            model: { codex: 'local-model-codex' },
+            guideModel: { codex: 'local-guide-codex' },
+            issuesModel: { claude: 'local-issues-claude' },
+          },
+        }),
+        'utf-8'
+      );
+
+      const config = await loadEffectiveConfig();
+
+      expect(config.autoreview).toEqual({
+        executor: 'claude-code',
+        model: 'local-review',
+        effort: 'high',
+      });
+      expect(config.smallTasks).toEqual({
+        executor: 'codex-cli',
+        model: 'local-small-task',
+      });
+      expect(config.agents).toEqual({
+        implementer: { instructions: 'local-implementer.md' },
+        tester: { instructions: 'global-tester.md' },
+      });
+      expect(config.review).toEqual({
+        defaultExecutor: 'both',
+        structuralModel: { codex: 'global-structural' },
+        focusAreas: ['performance'],
+      });
+      expect(config.reviewGuide).toEqual({
+        executor: 'codex-cli',
+        model: {
+          claude: 'global-model-claude',
+          codex: 'local-model-codex',
+        },
+        guideModel: {
+          claude: 'global-guide-claude',
+          codex: 'local-guide-codex',
+        },
+        issuesModel: {
+          codex: 'global-issues-codex',
+          claude: 'local-issues-claude',
+        },
+        structuralModel: { codex: 'global-structural-codex' },
+      });
+    });
+
     test('loadEffectiveConfig applies local experimental agentMessaging override', async () => {
       const mainConfigPath = path.join(configDir, 'tim.yml');
       const localConfigPath = path.join(configDir, 'tim.local.yml');

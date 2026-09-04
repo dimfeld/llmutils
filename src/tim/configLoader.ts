@@ -81,6 +81,10 @@ function dedupeGitHubUsernames(usernames: string[]): string[] {
   return deduped;
 }
 
+function isConfigObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Merges repository-settable pull request inbox configuration across config layers.
  * Username lists are concatenated and deduplicated case-insensitively.
@@ -151,6 +155,42 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
     }
   }
 
+  function mergeConfigKeyDeep<KEY extends keyof TimConfig>(key: KEY): void {
+    const mainValue = mainConfig[key];
+    const localValue = localConfig[key];
+
+    if (localValue === undefined) {
+      return;
+    }
+
+    if (isConfigObject(mainValue) && isConfigObject(localValue)) {
+      const mergedValue: Record<string, unknown> = { ...mainValue, ...localValue };
+      for (const [nestedKey, nestedLocalValue] of Object.entries(localValue)) {
+        const nestedMainValue = (mainValue as Record<string, unknown>)[nestedKey];
+        if (isConfigObject(nestedMainValue) && isConfigObject(nestedLocalValue)) {
+          mergedValue[nestedKey] = mergeConfigValues(nestedMainValue, nestedLocalValue);
+        }
+      }
+      merged[key] = mergedValue as TimConfig[KEY];
+    } else {
+      merged[key] = localValue;
+    }
+  }
+
+  function mergeConfigValues(
+    mainValue: Record<string, unknown>,
+    localValue: Record<string, unknown>
+  ): Record<string, unknown> {
+    const mergedValue: Record<string, unknown> = { ...mainValue, ...localValue };
+    for (const [nestedKey, nestedLocalValue] of Object.entries(localValue)) {
+      const nestedMainValue = mainValue[nestedKey];
+      if (isConfigObject(nestedMainValue) && isConfigObject(nestedLocalValue)) {
+        mergedValue[nestedKey] = mergeConfigValues(nestedMainValue, nestedLocalValue);
+      }
+    }
+    return mergedValue;
+  }
+
   function dedupeLifecycleCommands(
     commands: NonNullable<TimConfig['lifecycle']>['commands'] = []
   ): NonNullable<TimConfig['lifecycle']>['commands'] {
@@ -206,7 +246,12 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('proofGeneration');
   mergeConfigKey('prStacking');
   mergeConfigKey('githubWebhooks');
-  mergeConfigKey('reviewGuide');
+  mergeConfigKeyDeep('autoreview');
+  mergeConfigKeyDeep('agents');
+  mergeConfigKeyDeep('generate');
+  mergeConfigKeyDeep('review');
+  mergeConfigKeyDeep('reviewGuide');
+  mergeConfigKeyDeep('smallTasks');
   mergeConfigKey('reviewGuideComments');
   mergeConfigKey('simplify');
   mergeConfigKey('subagents');
