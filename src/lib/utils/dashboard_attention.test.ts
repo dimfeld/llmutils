@@ -73,6 +73,18 @@ function planIndex(sessions: SessionData[]): Map<string, SessionData[]> {
 }
 
 describe('deriveAttentionItems', () => {
+  test('shows needs_attention without a session', () => {
+    const plan = makePlan({
+      uuid: 'failed-plan',
+      status: 'needs_attention',
+      displayStatus: 'needs_attention',
+    });
+    const result = deriveAttentionItems([plan], planIndex([]), []);
+    expect(result.planItems).toMatchObject([
+      { planUuid: 'failed-plan', reasons: [{ type: 'needs_attention' }] },
+    ]);
+  });
+
   test('returns empty when no plans or sessions', () => {
     const result = deriveAttentionItems([], planIndex([]), []);
     expect(result.planItems).toEqual([]);

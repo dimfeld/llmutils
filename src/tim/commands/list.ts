@@ -257,8 +257,14 @@ export async function handleListCommand(
       // Use explicitly specified statuses
       statusesToShow = new Set(options.status);
     } else {
-      // Default: show pending, in_progress, needs_review, and reviewed
-      statusesToShow = new Set(['pending', 'in_progress', 'needs_review', 'reviewed']);
+      // Show incomplete plans and plans awaiting review by default.
+      statusesToShow = new Set([
+        'pending',
+        'in_progress',
+        'needs_attention',
+        'needs_review',
+        'reviewed',
+      ]);
     }
 
     // Filter plans

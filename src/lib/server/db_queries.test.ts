@@ -74,6 +74,33 @@ describe('lib/server/db_queries', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
+  test('needs_attention remains visible, counts as active, and blocks dependents', () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'attention-plan',
+      planId: 9001,
+      title: 'Examine failure',
+      status: 'needs_attention',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'attention-dependent',
+      planId: 9002,
+      title: 'Wait for fix',
+      status: 'pending',
+      dependencyUuids: ['attention-plan'],
+    });
+    const plans = getPlansForProject(db, projectId);
+    expect(plans.find((plan) => plan.uuid === 'attention-plan')?.displayStatus).toBe(
+      'needs_attention'
+    );
+    expect(plans.find((plan) => plan.uuid === 'attention-dependent')?.displayStatus).toBe(
+      'blocked'
+    );
+    expect(getProjectsWithMetadata(db).find((project) => project.id === projectId)).toMatchObject({
+      activePlanCount: 13,
+      statusCounts: { needs_attention: 1 },
+    });
+  });
+
   test('getProjectsWithMetadata returns correct plan counts by raw status', () => {
     const projects = getProjectsWithMetadata(db);
     const primaryProject = projects.find((project) => project.id === projectId);

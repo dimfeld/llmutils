@@ -648,6 +648,8 @@ tim set 123 --status reviewed
 tim set 123 --status done
 ```
 
+`needs_attention` means execution failed before the plan was complete. Examine the failure, clarify instructions or fix the problem, then run the plan again. It remains incomplete and blocks dependent plans. The web UI shows it in the attention list and includes it in status filters and edit forms.
+
 `needs_review` means implementation work is complete enough to unblock dependent plans, but the workspace assignment and lock remain until final completion. `reviewed` sits between `needs_review` and `done`: it means the author has finished their own review and the linked PR has been marked ready for review, so the work is awaiting external review/merge. Like `needs_review`, `reviewed` counts as work-complete for dependency and stacked calculations (it stops blocking dependents), but it is not terminal. `done`, `cancelled`, and `deferred` are terminal lifecycle states.
 
 When a plan is linked to a GitHub PR, these transitions happen automatically: marking the PR ready for review moves the plan `needs_review → reviewed`, converting the PR back to draft moves it `reviewed → needs_review`, and merging the PR auto-completes the plan to `done` (from either `needs_review` or `reviewed`).

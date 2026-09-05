@@ -1149,6 +1149,22 @@ describe('main-node sync apply engine', () => {
     );
   });
 
+  test('needs_attention syncs through canonical state, snapshots, and projection', async () => {
+    seedPlan();
+    const operation = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'needs_attention' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    expect(applyOperation(db, operation).status).toBe('applied');
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('needs_attention');
+    const snapshot = loadCanonicalSnapshot(db, `plan:${PLAN_UUID}`);
+    expect(snapshot).toMatchObject({ type: 'plan', plan: { status: 'needs_attention' } });
+    if (!snapshot) throw new Error('Expected a snapshot');
+    mergeCanonicalRefresh(db, snapshot);
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('needs_attention');
+  });
+
   test('canonical adapter applies stale scalar revisions with last-writer-wins ordering', async () => {
     seedPlan();
     const op = await setPlanScalarOperation(

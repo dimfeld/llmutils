@@ -1430,6 +1430,19 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 54,
+    requiresFkOff: true,
+    up: `SELECT 1;`,
+    afterUp: (db: Database): void => {
+      for (const table of ['plan', 'plan_canonical'] as const) {
+        if (tableExists(db, table)) {
+          rebuildPlanTableWithReviewedStatus(db, table, true);
+        }
+      }
+      addReviewPlanLinkage(db);
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {
@@ -1446,7 +1459,8 @@ function rebuildPlanStatusConstraintsForReviewed(db: Database): void {
 
 function rebuildPlanTableWithReviewedStatus(
   db: Database,
-  tableName: 'plan' | 'plan_canonical'
+  tableName: 'plan' | 'plan_canonical',
+  includeNeedsAttention: boolean = false
 ): void {
   const existingColumns = tableColumns(db, tableName);
   const newTableName = `${tableName}_new`;
@@ -1483,6 +1497,7 @@ function rebuildPlanTableWithReviewedStatus(
     'base_change_id',
     'revision',
     'base_plan_uuid',
+    ...(includeNeedsAttention ? (['structural_review_at'] as const) : []),
   ] as const;
   const defaultExpressionByColumn: Partial<Record<(typeof finalColumns)[number], string>> = {
     status: "'pending'",
@@ -1511,7 +1526,7 @@ function rebuildPlanTableWithReviewedStatus(
         goal TEXT,
         details TEXT,
         status TEXT NOT NULL DEFAULT 'pending'
-          CHECK(status IN ('pending', 'in_progress', 'needs_review', 'reviewed', 'done', 'cancelled', 'deferred')),
+          CHECK(status IN ('pending', 'in_progress', 'needs_review', 'reviewed', 'done', 'cancelled', 'deferred'${includeNeedsAttention ? ", 'needs_attention'" : ''})),
         priority TEXT
           CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'maybe') OR priority IS NULL),
         branch TEXT,
@@ -1537,7 +1552,7 @@ function rebuildPlanTableWithReviewedStatus(
         base_commit TEXT,
         base_change_id TEXT,
         revision INTEGER NOT NULL DEFAULT 1,
-        base_plan_uuid TEXT
+        base_plan_uuid TEXT${includeNeedsAttention ? ', structural_review_at TEXT' : ''}
       );
 
       INSERT INTO ${newTableName} (${finalColumns.join(', ')})

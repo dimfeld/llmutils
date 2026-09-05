@@ -228,6 +228,7 @@ export interface DashboardData {
 const DASHBOARD_DISPLAY_STATUSES = new Set<EnrichedPlan['displayStatus']>([
   'ready',
   'in_progress',
+  'needs_attention',
   'needs_review',
   'reviewed',
 ]);

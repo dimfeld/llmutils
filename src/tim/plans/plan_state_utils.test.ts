@@ -237,7 +237,13 @@ describe('plan state utilities', () => {
     });
 
     test('returns false for non-complete statuses', () => {
-      const statuses = ['pending', 'in_progress', 'needs_review', 'reviewed'] as const;
+      const statuses = [
+        'pending',
+        'in_progress',
+        'needs_attention',
+        'needs_review',
+        'reviewed',
+      ] as const;
       for (const status of statuses) {
         const plan: PlanSchema = {
           id: 1,
@@ -274,7 +280,7 @@ describe('plan state utilities', () => {
     });
 
     test('returns false for active statuses', () => {
-      const statuses = ['pending', 'in_progress', 'deferred'] as const;
+      const statuses = ['pending', 'in_progress', 'needs_attention', 'deferred'] as const;
       for (const status of statuses) {
         const plan: PlanSchema = {
           id: 1,
@@ -299,6 +305,7 @@ describe('plan state utilities', () => {
       const statuses = [
         'pending',
         'in_progress',
+        'needs_attention',
         'deferred',
         '',
         'claimed',
@@ -356,6 +363,7 @@ describe('plan state utilities', () => {
       const validStatuses = [
         'pending',
         'in_progress',
+        'needs_attention',
         'done',
         'cancelled',
         'deferred',

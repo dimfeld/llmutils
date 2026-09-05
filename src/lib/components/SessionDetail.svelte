@@ -200,7 +200,9 @@
   let attentionReasons = $derived.by((): PlanAttentionReason[] => {
     if (!planAttentionState) return [];
     const reasons: PlanAttentionReason[] = [];
-    if (planAttentionState.displayStatus === 'needs_review') {
+    if (planAttentionState.displayStatus === 'needs_attention') {
+      reasons.push({ type: 'needs_attention' });
+    } else if (planAttentionState.displayStatus === 'needs_review') {
       reasons.push({ type: 'needs_review' });
     } else if (
       planAttentionState.displayStatus === 'in_progress' ||

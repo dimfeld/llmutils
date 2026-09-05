@@ -2192,22 +2192,27 @@ describe('timAgent - Batch Tasks Mode', () => {
 
     const plan = await readPlanFile(batchPlanFile);
     expect(plan.tasks.every((task) => !task.done)).toBe(true);
+    expect(plan.status).toBe('needs_attention');
   });
 
-  test('batch mode correctly updates plan status from pending to in_progress to needs_review', async () => {
-    const options = { batchTasks: true, log: false, nonInteractive: true } as any;
-    const globalCliOptions = { config: {} };
+  test.each(['pending', 'needs_attention'] as const)(
+    'batch mode resumes %s plans and completes them',
+    async (initialStatus) => {
+      const options = { batchTasks: true, log: false, nonInteractive: true } as any;
+      const globalCliOptions = { config: {} };
 
-    let plan = await readPlanFile(batchPlanFile);
-    expect(plan.status).toBe('pending');
+      let plan = await readPlanFile(batchPlanFile);
+      plan.status = initialStatus;
+      await writePlanFile(batchPlanFile, plan);
 
-    const { timAgent } = await import('./agent.js');
-    await timAgent(200, options, globalCliOptions);
+      const { timAgent } = await import('./agent.js');
+      await timAgent(200, options, globalCliOptions);
 
-    plan = await readPlanFile(batchPlanFile);
-    expect(plan.status).toBe('needs_review');
-    expect(plan.updatedAt).toBeDefined();
-  });
+      plan = await readPlanFile(batchPlanFile);
+      expect(plan.status).toBe('needs_review');
+      expect(plan.updatedAt).toBeDefined();
+    }
+  );
 
   test('batch mode does not update plan branch metadata when running on non-trunk branch', async () => {
     const options = { batchTasks: true, log: false, nonInteractive: true } as any;

@@ -138,6 +138,8 @@ export function getStatusDisplayName(status: PlanStatus | undefined): string {
       return 'Cancelled';
     case 'deferred':
       return 'Deferred';
+    case 'needs_attention':
+      return 'Needs Attention';
     case 'needs_review':
       return 'Needs Review';
     case 'reviewed':

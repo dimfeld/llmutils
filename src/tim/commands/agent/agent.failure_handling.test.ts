@@ -182,5 +182,10 @@ describe('timAgent - serial mode failure handling', () => {
 
     // Ensure we did not mark the step as done
     expect(markStepDoneSpy).not.toHaveBeenCalled();
+    const { writePlanToDb } = await import('../../plans.js');
+    expect(writePlanToDb).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'needs_attention' }),
+      expect.anything()
+    );
   });
 });

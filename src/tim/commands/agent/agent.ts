@@ -41,6 +41,7 @@ import {
   writePlanToDb,
   writePlanFile,
 } from '../../plans.js';
+import { isWorkComplete, isPlanComplete } from '../../plans/plan_state_utils.js';
 import { findNextActionableItem } from '../../plans/find_next.js';
 import { markStepDone, markTaskDone } from '../../plans/mark_done.js';
 import { prepareNextStep } from '../../plans/prepare_step.js';
@@ -901,8 +902,11 @@ export async function timAgent(
       lastKnownPlan = planData;
       let planFileNeedsUpdate = false;
 
-      // Check if status needs to be updated from 'pending' to 'in progress'
-      if (planData.status === 'pending' && !isShuttingDown()) {
+      // Start or resume execution after the user requests a run.
+      if (
+        (planData.status === 'pending' || planData.status === 'needs_attention') &&
+        !isShuttingDown()
+      ) {
         planData.status = 'in_progress';
         planData.updatedAt = new Date().toISOString();
         planFileNeedsUpdate = true;
@@ -1611,6 +1615,11 @@ export async function timAgent(
         // if the branch was recorded after materialization on the first agent run.
         if (!updatedPlan.branch && recordedBranch) {
           updatedPlan.branch = recordedBranch;
+        }
+        if (hadExecutionFailure && !isWorkComplete(updatedPlan) && !isPlanComplete(updatedPlan)) {
+          updatedPlan.status = 'needs_attention';
+          updatedPlan.updatedAt = new Date().toISOString();
+          await writePlanFile(currentPlanFile, updatedPlan, { skipDb: true });
         }
         lastKnownPlan = updatedPlan;
         await writePlanToDb(updatedPlan, {

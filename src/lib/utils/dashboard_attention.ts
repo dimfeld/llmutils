@@ -55,6 +55,7 @@ export interface ActionablePr {
 
 export type PlanAttentionReason =
   | { type: 'waiting_for_input'; sessionId: string; promptType: string }
+  | { type: 'needs_attention' }
   | { type: 'needs_review' }
   | { type: 'reviewed' }
   | { type: 'agent_finished' };
@@ -219,7 +220,9 @@ export function deriveAttentionItems(
     }
 
     // Check for review states that still need a direct action.
-    if (plan.displayStatus === 'needs_review') {
+    if (plan.displayStatus === 'needs_attention') {
+      reasons.push({ type: 'needs_attention' });
+    } else if (plan.displayStatus === 'needs_review') {
       reasons.push({ type: 'needs_review' });
     } else if (plan.displayStatus === 'reviewed') {
       reasons.push({ type: 'reviewed' });

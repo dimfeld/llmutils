@@ -15,6 +15,11 @@
 
   const statuses: { status: PlanDisplayStatus; label: string; color: string }[] = [
     {
+      status: 'needs_attention',
+      label: 'Needs Attention',
+      color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+    },
+    {
       status: 'in_progress',
       label: 'In Progress',
       color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',

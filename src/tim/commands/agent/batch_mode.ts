@@ -179,8 +179,11 @@ export async function executeBatchMode(
       // Read the (potentially rematerialized) plan file to get updated state
       const planData = await readPlanFile(currentPlanFile);
 
-      // Check if status needs to be updated from 'pending' to 'in progress'
-      if (planData.status === 'pending' && !isShuttingDown()) {
+      // Start or resume execution after the user requests a run.
+      if (
+        (planData.status === 'pending' || planData.status === 'needs_attention') &&
+        !isShuttingDown()
+      ) {
         planData.status = 'in_progress';
         planData.updatedAt = new Date().toISOString();
         if (isShuttingDown()) {

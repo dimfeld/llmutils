@@ -351,7 +351,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(53);
+    expect(version?.version).toBe(54);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
 
@@ -508,6 +508,39 @@ describe('tim db/database', () => {
     expect(indices).toContain('idx_sync_tombstone_plan_artifact_plan');
 
     db.close(false);
+  });
+
+  test('v54 preserves plan data and accepts needs_attention in both tables', () => {
+    const db = openDatabase(':memory:');
+    try {
+      const project = getOrCreateProject(db, 'needs-attention-migration');
+      const input = {
+        uuid: '22222222-2222-4222-8222-222222222222',
+        planId: 1,
+        title: 'Keep this plan',
+        status: 'in_progress' as const,
+        sourceStructuralReviewAt: '2026-01-01T00:00:00.000Z',
+        tasks: [{ title: 'Keep this task', description: 'Unfinished', done: false, revision: 1 }],
+        revision: 7,
+      };
+      upsertProjectionPlanInTransaction(db, project.id, input);
+      upsertCanonicalPlanInTransaction(db, project.id, input);
+      const tables = ['plan', 'plan_canonical', 'plan_task', 'task_canonical'] as const;
+      const before = tables.map((table) => db.query(`SELECT * FROM ${table}`).all());
+      db.run('UPDATE schema_version SET version = 53');
+      runMigrations(db);
+      expect(tables.map((table) => db.query(`SELECT * FROM ${table}`).all())).toEqual(before);
+      for (const table of ['plan', 'plan_canonical']) {
+        db.run(`UPDATE ${table} SET status = 'needs_attention'`);
+        expect(db.query(`SELECT status FROM ${table}`).get()).toEqual({
+          status: 'needs_attention',
+        });
+        expect(() => db.run(`UPDATE ${table} SET status = 'invalid'`)).toThrow();
+      }
+      expect(db.query('PRAGMA foreign_key_check').all()).toEqual([]);
+    } finally {
+      db.close(false);
+    }
   });
 
   test('runMigrations allows reviewed status in projection and canonical plan tables', () => {
@@ -679,7 +712,7 @@ describe('tim db/database', () => {
         revision: 9,
       });
       expect(db.query<{ version: number }, []>('SELECT version FROM schema_version').get()).toEqual(
-        { version: 53 }
+        { version: 54 }
       );
       expect(
         db
@@ -710,7 +743,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(53);
+    expect(version?.version).toBe(54);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
     const versionRowCount = db2
@@ -842,7 +875,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(53);
+      expect(schemaVersion?.version).toBe(54);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -993,7 +1026,7 @@ describe('tim db/database', () => {
           'SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1'
         )
         .get();
-      expect(schemaVersion?.version).toBe(53);
+      expect(schemaVersion?.version).toBe(54);
 
       const checkRows = db
         .query<{ count: number }, []>(
@@ -1314,7 +1347,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(53);
+      ).toBe(54);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1822,7 +1855,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(53);
+      ).toBe(54);
 
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")

@@ -39,6 +39,10 @@
   } = $props();
 
   const reasonStyles = $derived({
+    needs_attention: {
+      label: 'Needs attention',
+      classes: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+    },
     needs_review: depsFullyResolved
       ? {
           label: 'Needs review',

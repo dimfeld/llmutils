@@ -19,6 +19,11 @@ function renderChips(
 }
 
 describe('FilterChips', () => {
+  test('renders the Needs Attention filter and count', () => {
+    const { body } = renderChips(['needs_attention'], { needs_attention: 3 });
+    expect(body).toMatch(/aria-pressed="true"[^>]*>.*?Needs Attention.*?3/s);
+  });
+
   test('renders aria-pressed="false" for inactive filters', () => {
     const { body } = renderChips([], { in_progress: 2 });
     // All buttons should have aria-pressed="false" when no filters active
