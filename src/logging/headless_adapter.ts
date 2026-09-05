@@ -100,6 +100,7 @@ export class HeadlessAdapter implements LoggerAdapter {
   private userInputHandler?: (content: string) => void;
   private ptyInputHandler?: (bytes: Uint8Array) => void;
   private ptyResizeHandler?: (cols: number, rows: number) => void;
+  private sessionEndRequested = false;
   private endSessionHandler?: () => void;
   private forceEndSessionHandler?: () => void;
   private hasBrowserNotificationSubscribers = false;
@@ -407,6 +408,7 @@ export class HeadlessAdapter implements LoggerAdapter {
         }
         break;
       case 'end_session':
+        this.sessionEndRequested = true;
         this.rejectAllPending('Session ended');
         try {
           this.endSessionHandler?.();
@@ -415,6 +417,7 @@ export class HeadlessAdapter implements LoggerAdapter {
         }
         break;
       case 'force_end_session':
+        this.sessionEndRequested = true;
         this.rejectAllPending('Session force ended');
         this.terminateAllRegisteredExecutors();
         try {
@@ -456,6 +459,10 @@ export class HeadlessAdapter implements LoggerAdapter {
 
   setPtyResizeHandler(callback: ((cols: number, rows: number) => void) | undefined): void {
     this.ptyResizeHandler = callback;
+  }
+
+  get hasSessionEndRequest(): boolean {
+    return this.sessionEndRequested;
   }
 
   setEndSessionHandler(callback: (() => void) | undefined): void {

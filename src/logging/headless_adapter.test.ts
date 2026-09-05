@@ -953,6 +953,27 @@ describe('HeadlessAdapter', () => {
     await adapter.destroy();
   });
 
+  it.each(['end_session', 'force_end_session'] as const)(
+    'keeps %s when no executor handler is installed',
+    async (type: 'end_session' | 'force_end_session'): Promise<void> => {
+      const { adapter: wrapped } = createRecordingAdapter();
+      const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);
+      const port = (adapter as any).sessionServer.port as number;
+      const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+      try {
+        expect(adapter.hasSessionEndRequest).toBe(false);
+        ws.send(JSON.stringify({ type } satisfies HeadlessServerMessage));
+        await waitFor(() => adapter.hasSessionEndRequest);
+        adapter.setEndSessionHandler(undefined);
+        adapter.setForceEndSessionHandler(undefined);
+        expect(adapter.hasSessionEndRequest).toBe(true);
+      } finally {
+        ws.close();
+        await adapter.destroy();
+      }
+    }
+  );
+
   it('handles prompt, user input, and end-session messages from embedded-server clients', async () => {
     const { adapter: wrapped, calls } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);

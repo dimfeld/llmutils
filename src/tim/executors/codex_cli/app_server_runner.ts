@@ -400,6 +400,18 @@ async function executeCodexStepViaAppServerInternal(
   };
 
   try {
+    if (headlessForwardingEnabled && loggerAdapter instanceof HeadlessAdapter) {
+      if (loggerAdapter.hasSessionEndRequest) {
+        endActiveSession();
+      }
+      loggerAdapter.setEndSessionHandler(endActiveSession);
+      loggerAdapter.setForceEndSessionHandler(endActiveSession);
+      clearHeadlessEndSessionHandlers = () => {
+        loggerAdapter.setEndSessionHandler(undefined);
+        loggerAdapter.setForceEndSessionHandler(undefined);
+      };
+    }
+    throwIfSessionEndRequested();
     const connectionPromise = CodexAppServerConnection.create({
       cwd,
       ...(dynamicToolProvider ? { experimentalApi: true } : {}),
@@ -462,17 +474,9 @@ async function executeCodexStepViaAppServerInternal(
     });
 
     connection = await connectionPromise;
+    throwIfSessionEndRequested();
 
     connection.setGracefulEndHandler(endActiveSession);
-
-    if (headlessForwardingEnabled && loggerAdapter instanceof HeadlessAdapter) {
-      loggerAdapter.setEndSessionHandler(endActiveSession);
-      loggerAdapter.setForceEndSessionHandler(endActiveSession);
-      clearHeadlessEndSessionHandlers = () => {
-        loggerAdapter.setEndSessionHandler(undefined);
-        loggerAdapter.setForceEndSessionHandler(undefined);
-      };
-    }
 
     if (subprocessMonitorRules?.length && connection.pid !== undefined) {
       monitorHandle = startSubprocessMonitor({
@@ -938,7 +942,7 @@ async function executeCodexStepViaAppServerInternal(
     throwIfConnectionExited();
     return final;
   } catch (err) {
-    if (err instanceof SessionEndedError) {
+    if (err instanceof SessionEndedError && keepSessionOpen) {
       return formatter.getFinalAgentMessage() || formatter.getFailedAgentMessage() || '';
     }
     throw err;

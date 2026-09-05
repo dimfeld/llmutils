@@ -95,6 +95,7 @@ interface Harness {
   warnMock: ReturnType<typeof vi.fn>;
   loggerAdapter:
     | {
+        hasSessionEndRequest?: boolean;
         setUserInputHandler: ReturnType<typeof vi.fn>;
         setEndSessionHandler?: ReturnType<typeof vi.fn>;
         setForceEndSessionHandler?: ReturnType<typeof vi.fn>;
@@ -135,6 +136,7 @@ async function createHarness(options?: {
   const warnMock = vi.fn();
   let loggerAdapter:
     | {
+        hasSessionEndRequest?: boolean;
         setUserInputHandler: ReturnType<typeof vi.fn>;
       }
     | undefined;
@@ -1325,36 +1327,89 @@ describe('executeCodexStepViaAppServer', () => {
     );
   });
 
-  test('headless end session interrupts an active default single-turn', async () => {
+  test('does not start Codex after an earlier session stop request', async (): Promise<void> => {
     const harness = await createHarness({ loggerAdapterKind: 'headless' });
+    harness.loggerAdapter!.hasSessionEndRequest = true;
 
-    harness.connection.turnStart.mockImplementationOnce(async () => ({
-      turnId: 'turn-single',
-    }));
-
-    const result = harness.executeCodexStepViaAppServer('generate the plan', '/repo', {});
-
-    await waitFor(
-      () => (harness.loggerAdapter?.setEndSessionHandler?.mock.calls.length ?? 0) === 1
-    );
-    await waitFor(() => harness.connection.turnStart.mock.calls.length === 1);
-
-    const handler = harness.loggerAdapter?.setEndSessionHandler?.mock.calls[0]?.[0] as
-      | (() => void)
-      | undefined;
-    expect(handler).toBeDefined();
-    handler?.();
-
-    await expect(result).resolves.toBe('final agent message');
-    expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
-      threadId: 'thread-1',
-      turnId: 'turn-single',
-    });
-    expect(harness.loggerAdapter?.setForceEndSessionHandler?.mock.calls[0]?.[0]).toEqual(
-      expect.any(Function)
-    );
-    expect(harness.loggerAdapter?.setForceEndSessionHandler).toHaveBeenLastCalledWith(undefined);
+    await expect(
+      harness.executeCodexStepViaAppServer(
+        'run the plan',
+        '/repo',
+        {},
+        {
+          appServerMode: 'single-turn-with-steering',
+        }
+      )
+    ).rejects.toThrow('Session ended');
+    expect(harness.connectionCreateMock).not.toHaveBeenCalled();
+    expect(harness.connection.turnStart).not.toHaveBeenCalled();
   });
+
+  test('stops during app-server startup before starting a thread', async (): Promise<void> => {
+    const harness = await createHarness({ loggerAdapterKind: 'headless' });
+    harness.connectionCreateMock.mockImplementationOnce(
+      async (): Promise<Harness['connection']> => {
+        const handler = harness.loggerAdapter?.setEndSessionHandler?.mock
+          .calls[0]?.[0] as () => void;
+        handler();
+        return harness.connection;
+      }
+    );
+
+    await expect(
+      harness.executeCodexStepViaAppServer(
+        'run the plan',
+        '/repo',
+        {},
+        {
+          appServerMode: 'single-turn-with-steering',
+        }
+      )
+    ).rejects.toThrow('Session ended');
+    expect(harness.connection.threadStart).not.toHaveBeenCalled();
+    expect(harness.connection.close).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['single-turn', 'single-turn-with-steering'] as const)(
+    'headless end session stops %s without returning success or retrying',
+    async (appServerMode: 'single-turn' | 'single-turn-with-steering'): Promise<void> => {
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+
+      harness.connection.turnStart.mockImplementationOnce(async () => ({
+        turnId: 'turn-single',
+      }));
+
+      const result = harness.executeCodexStepViaAppServer(
+        'generate the plan',
+        '/repo',
+        {},
+        { appServerMode }
+      );
+
+      await waitFor(
+        () => (harness.loggerAdapter?.setEndSessionHandler?.mock.calls.length ?? 0) === 1
+      );
+      await waitFor(() => harness.connection.turnStart.mock.calls.length === 1);
+
+      const handler = harness.loggerAdapter?.setEndSessionHandler?.mock.calls[0]?.[0] as
+        | (() => void)
+        | undefined;
+      expect(handler).toBeDefined();
+      handler?.();
+
+      await expect(result).rejects.toThrow('Session ended');
+      expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
+      expect(harness.connection.close).toHaveBeenCalledTimes(1);
+      expect(harness.connection.turnInterrupt).toHaveBeenCalledWith({
+        threadId: 'thread-1',
+        turnId: 'turn-single',
+      });
+      expect(harness.loggerAdapter?.setForceEndSessionHandler?.mock.calls[0]?.[0]).toEqual(
+        expect.any(Function)
+      );
+      expect(harness.loggerAdapter?.setForceEndSessionHandler).toHaveBeenLastCalledWith(undefined);
+    }
+  );
 
   test('acknowledges root steering only while the provider accepts the turn', async () => {
     const harness = await createHarness();
@@ -1589,7 +1644,7 @@ describe('executeCodexStepViaAppServer', () => {
         .find((node) => node.label === 'Codex thread' && node.state === 'running');
       expect(liveLogicalNode).toBeDefined();
       expect(owner.endExecutor(liveLogicalNode!.processId)).toBe('ended');
-      await expect(result).resolves.toBe('final agent message');
+      await expect(result).rejects.toThrow('Session ended');
 
       const logicalNode = registry.getSnapshot().find((node) => node.label === 'Codex thread');
       expect(logicalNode).toMatchObject({

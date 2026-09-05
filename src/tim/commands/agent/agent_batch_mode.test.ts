@@ -567,6 +567,32 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(executorExecuteSpy).toHaveBeenCalledTimes(2);
     });
 
+    test('batch mode does not restart an executor after a session stop error', async (): Promise<void> => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+      executorExecuteSpy.mockRejectedValueOnce(new Error('Session ended'));
+
+      await expect(timAgent(1, { log: false, nonInteractive: true } as any, {})).rejects.toThrow(
+        'Batch mode stopped due to error.'
+      );
+
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(1);
+      expect(sendStructuredSpy).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'workflow_progress',
+          phase: 'batch',
+          message: expect.stringContaining('retrying'),
+        })
+      );
+    });
+
     test('batch mode immediately retries when a run makes no changes and finishes quickly', async () => {
       await createPlanFile({
         tasks: [
