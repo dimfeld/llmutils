@@ -31,6 +31,7 @@ import { getCompletionStatus } from '../../plans/plan_state_utils.js';
 import { removePlanAssignment } from '../../assignments/remove_plan_assignment.js';
 
 const FAST_NOOP_BATCH_RETRY_MS = 5 * 60 * 1000;
+const MAX_CONSECUTIVE_FAST_NOOP_BATCH_ITERATIONS = 3;
 const SESSION_LIMIT_MESSAGE = "You've hit your session limit";
 
 async function updatePlanTimestampWithAutoSync(
@@ -152,6 +153,7 @@ export async function executeBatchMode(
   try {
     let hasError = false;
     let iteration = 0;
+    let consecutiveFastNoopBatchIterations = 0;
     let proofGenerated = false;
 
     // Track initial state to determine whether to skip final review
@@ -386,6 +388,23 @@ Available tasks:\n\n${taskDescriptions}`,
       );
 
       if (shouldRetryImmediately) {
+        consecutiveFastNoopBatchIterations += 1;
+        if (consecutiveFastNoopBatchIterations >= MAX_CONSECUTIVE_FAST_NOOP_BATCH_ITERATIONS) {
+          const failureMessage =
+            'Batch mode stopped after three consecutive iterations made no working copy changes and finished in under 5 minutes.';
+          error(failureMessage);
+          sendFailureReport(failureMessage, {
+            problems: failureMessage,
+            sourceAgent: 'orchestrator',
+          });
+          hasError = true;
+          if (summaryCollector) {
+            await summaryCollector.trackFileChanges(baseDir);
+            summaryCollector.addError(failureMessage);
+            summaryCollector.setBatchIterations(iteration);
+          }
+          break;
+        }
         log(
           'Batch iteration made no working copy changes and finished in under 5 minutes; retrying.'
         );
@@ -398,6 +417,8 @@ Available tasks:\n\n${taskDescriptions}`,
         });
         continue;
       }
+
+      consecutiveFastNoopBatchIterations = 0;
 
       // Update docs if configured for after-iteration mode
       // Calculate which tasks were just completed by comparing before/after state

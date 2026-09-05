@@ -610,6 +610,43 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       );
     });
 
+    test('batch mode stops with an error after three consecutive fast no-op iterations', async () => {
+      await createPlanFile({
+        tasks: [
+          {
+            title: 'Task 1',
+            description: 'First task',
+            steps: [{ prompt: 'Do task 1', done: false }],
+          },
+        ],
+      });
+
+      executorExecuteSpy.mockResolvedValue(undefined);
+
+      const options = { log: false, nonInteractive: true, steps: '10' } as any;
+      const globalCliOptions = {};
+
+      await expect(timAgent(1, options, globalCliOptions)).rejects.toThrow(
+        'Batch mode stopped due to error.'
+      );
+
+      expect(executorExecuteSpy).toHaveBeenCalledTimes(3);
+      expect(sendStructuredSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'failure_report',
+          sourceAgent: 'orchestrator',
+          problems: expect.stringContaining('three consecutive iterations'),
+        })
+      );
+      const retryMessages = sendStructuredSpy.mock.calls.filter(
+        ([message]) =>
+          message.type === 'workflow_progress' &&
+          message.phase === 'batch' &&
+          message.message.includes('retrying')
+      );
+      expect(retryMessages).toHaveLength(2);
+    });
+
     test('batch mode stops with an error instead of retrying after session limit output', async () => {
       await createPlanFile({
         tasks: [

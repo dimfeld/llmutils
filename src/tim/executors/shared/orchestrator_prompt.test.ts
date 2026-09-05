@@ -43,6 +43,22 @@ describe('orchestrator_prompt failure protocol', () => {
     expect(out).toContain('### Current State');
   });
 
+  it('requires owner-decision blockers to update risks and print FAILED', () => {
+    const outputs = [
+      wrapWithOrchestration('Context', '123'),
+      wrapWithOrchestrationSimple('Context', '123'),
+      wrapWithOrchestrationTdd('Context', '123'),
+    ];
+
+    for (const out of outputs) {
+      expect(out).toContain(
+        'If a new finding blocks the task and requires an owner decision, update the `### Risks / Blockers` section'
+      );
+      expect(out).toContain('Print the finding with a first line starting `FAILED:`');
+      expect(out).toContain('without it, the run looks like a normal successful exit');
+    }
+  });
+
   it('instructs review via reviewer subagent', () => {
     const out = wrapWithOrchestration('Context', '123', { batchMode: false });
     expect(out).toContain('tim subagent reviewer 123 --print');

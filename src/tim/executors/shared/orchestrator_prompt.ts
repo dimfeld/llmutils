@@ -36,6 +36,9 @@ const SUBAGENT_SPECIFICITY_GUIDANCE =
 
 const SUBAGENT_RUNTIME_GUIDANCE = `Subagents may take a very long time to complete. This is especially true for the reviewer, and for any subagent that runs integration tests, end-to-end tests, large test suites, builds, or multiple iterations of checks. A subagent may also produce no output while it is working. Elapsed time or a lack of output is not a timeout: never assume that a long-running subagent has timed out, and never stop, retry, or report it as failed for that reason. Wait for the shell command tool to finish or to explicitly report a process timeout or failure. Always use the longest practical timeout when invoking subagents.`;
 
+const OWNER_DECISION_BLOCKER_GUIDANCE = `- If a new finding blocks the task and requires an owner decision, update the \`### Risks / Blockers\` section with a clear description of the finding and the decision needed.
+- Print the finding with a first line starting \`FAILED:\`. This is required to notify the owner; without it, the run looks like a normal successful exit.`;
+
 const BRANCH_SETUP_GUIDANCE =
   '- **The git branch for this task has already been set up.** Do not create, switch, or check out any branches. Do not use git worktrees. Work in the current directory as-is.';
 
@@ -90,6 +93,8 @@ After each successful iteration (and again at the end of the run), update the pl
 - In \`### Lessons Learned\`, capture surprises, gotchas, non-obvious fixes, and what was learned from review feedback or review-fix iterations. Only include lessons that will actually be useful in the future, not things that are just specific only to the work just performed in this plan.
 
 Use this structured template (fill every heading; use "None" when empty):
+
+${OWNER_DECISION_BLOCKER_GUIDANCE}
 
 ## Current Progress
 ### Current State
