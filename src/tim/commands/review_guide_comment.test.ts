@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { $ } from 'bun';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -140,13 +141,31 @@ function makeCommand(config?: string) {
 
 describe('review_guide_comment', () => {
   let tempDir: string;
+  let mergeBaseSha: string;
+  let mainTipSha: string;
   let capturedPrompt = '';
   let spawnSpy: ReturnType<typeof vi.spyOn>;
 
-  beforeEach(async () => {
+  beforeEach(async (): Promise<void> => {
     vi.clearAllMocks();
     capturedPrompt = '';
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-review-guide-comment-'));
+    await $`git init -q --initial-branch=main`.cwd(tempDir);
+    await $`git config user.email test@example.com`.cwd(tempDir);
+    await $`git config user.name Test`.cwd(tempDir);
+    await $`git -c commit.gpgsign=false commit -qm base --allow-empty`.cwd(tempDir);
+    mergeBaseSha = (await $`git rev-parse HEAD`.cwd(tempDir).text()).trim();
+    await $`git checkout -qb feature/review-guide`.cwd(tempDir);
+    await fs.writeFile(path.join(tempDir, 'feature.ts'), 'export const feature = true;\n');
+    await $`git add feature.ts`.cwd(tempDir);
+    await $`git -c commit.gpgsign=false commit -qm feature`.cwd(tempDir);
+    const headSha = (await $`git rev-parse HEAD`.cwd(tempDir).text()).trim();
+    await $`git checkout -q main`.cwd(tempDir);
+    await fs.writeFile(path.join(tempDir, 'main-only.ts'), 'export const mainOnly = true;\n');
+    await $`git add main-only.ts`.cwd(tempDir);
+    await $`git -c commit.gpgsign=false commit -qm "Advance main"`.cwd(tempDir);
+    mainTipSha = (await $`git rev-parse HEAD`.cwd(tempDir).text()).trim();
+    await $`git update-ref refs/remotes/origin/main ${mainTipSha}`.cwd(tempDir);
 
     mockGetDatabase.mockReturnValue({} as any);
     mockGetGitRoot.mockResolvedValue(tempDir);
@@ -172,9 +191,9 @@ describe('review_guide_comment', () => {
       owner: 'acme',
       repo: 'repo',
       baseBranch: 'main',
-      baseSha: 'base-sha-42',
+      baseSha: mainTipSha,
       headBranch: 'feature/review-guide',
-      headSha: 'abc123',
+      headSha,
     } as any);
     mockGetLinkedPlansByPrUrl.mockReturnValue(new Map());
     mockResolveProjectContextForRepo.mockResolvedValue({ repoRoot: tempDir } as any);
@@ -183,7 +202,9 @@ describe('review_guide_comment', () => {
     } as any);
     mockParseOwnerRepoFromRepositoryId.mockReturnValue({ owner: 'acme', repo: 'repo' });
     mockFindPullRequestCommentByMarker.mockResolvedValue(null);
-    mockCheckoutPrBranch.mockResolvedValue(undefined);
+    mockCheckoutPrBranch.mockImplementation(async (): Promise<void> => {
+      await $`git checkout -q --detach feature/review-guide`.cwd(tempDir);
+    });
     mockLoadCustomReviewInstructions.mockResolvedValue('');
     mockPostPullRequestComment.mockResolvedValue({ id: 123, htmlUrl: 'https://comment/123' });
     mockUpdatePullRequestComment.mockResolvedValue({ id: 123, htmlUrl: 'https://comment/123' });
@@ -214,11 +235,12 @@ describe('review_guide_comment', () => {
     } as any);
   });
 
-  afterEach(() => {
+  afterEach(async (): Promise<void> => {
     spawnSpy.mockRestore();
+    await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  test('uses Git diff instructions and injects precomputed jj stats in jj workspaces', async () => {
+  test('uses the merge base for the prompt and jj stats when the PR is behind main', async (): Promise<void> => {
     await handlePrReviewGuideCommentCommand(
       '42',
       { executor: 'codex-cli', force: true },
@@ -240,7 +262,7 @@ describe('review_guide_comment', () => {
         'diff',
         '--stat',
         '-f',
-        'base-sha-42',
+        mergeBaseSha,
         'all() ~ (glob:"**/*.spec.*" | glob:"**/*.test.*" | prefix-glob:"**/*_test_*" | prefix-glob:"**/*_fixture*")',
       ],
       expect.objectContaining({ cwd: tempDir })
@@ -262,13 +284,41 @@ describe('review_guide_comment', () => {
     );
     expect(mockLog).toHaveBeenCalledWith('## Review Guide\n\nGenerated guide.');
     expect(capturedPrompt).toContain('Repository is git-based');
-    expect(capturedPrompt).toContain("git diff 'base-sha-42' HEAD");
+    expect(capturedPrompt).toContain(`git diff '${mergeBaseSha}' HEAD`);
+    expect(capturedPrompt).toContain(`- Base SHA: ${mergeBaseSha}`);
+    expect(capturedPrompt).not.toContain(mainTipSha);
     expect(capturedPrompt).not.toContain('git merge-base');
     expect(capturedPrompt).toContain('Precomputed non-test change stats');
     expect(capturedPrompt).toContain('2 files changed, 45 insertions(+)');
     expect(capturedPrompt).toContain('### Non-test change stats');
     expect(capturedPrompt).not.toContain('Repository is jj-based');
     expect(capturedPrompt).not.toContain('jj diff');
+  });
+
+  test('uses the merge base in Git workspaces when the PR is behind main', async (): Promise<void> => {
+    mockGetUsingJj.mockResolvedValue(false);
+
+    await handlePrReviewGuideCommentCommand('42', { dryRun: true }, makeCommand());
+
+    expect(capturedPrompt).toContain(`git diff '${mergeBaseSha}' HEAD`);
+    expect(capturedPrompt).not.toContain(mainTipSha);
+    expect(spawnSpy).not.toHaveBeenCalled();
+    const changedFiles = (
+      await $`git diff ${mergeBaseSha} HEAD --name-only`.cwd(tempDir).text()
+    ).trim();
+    expect(changedFiles).toBe('feature.ts');
+  });
+
+  test('stops before generation when the merge base cannot be resolved', async (): Promise<void> => {
+    await $`git update-ref -d refs/remotes/origin/main`.cwd(tempDir);
+
+    await expect(handlePrReviewGuideCommentCommand('42', {}, makeCommand())).rejects.toThrow(
+      'Failed to resolve PR review guide comment merge base from origin/main'
+    );
+
+    expect(mockBuildExecutorAndLog).not.toHaveBeenCalled();
+    expect(mockPostPullRequestComment).not.toHaveBeenCalled();
+    expect(mockUpdatePullRequestComment).not.toHaveBeenCalled();
   });
 
   test('wraps comment generation in a headless review-guide session with PR metadata', async () => {

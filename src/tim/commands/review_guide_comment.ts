@@ -1,5 +1,6 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { $ } from 'bun';
 import type { Database } from 'bun:sqlite';
 import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
@@ -88,7 +89,10 @@ function resolveCommentExecutor(executor: string | undefined, configuredExecutor
   return CodexCliExecutorName;
 }
 
-function buildPrMetadata(context: Awaited<ReturnType<typeof gatherPrContext>>): PrReviewMetadata {
+function buildPrMetadata(
+  context: Awaited<ReturnType<typeof gatherPrContext>>,
+  baseSha: string
+): PrReviewMetadata {
   return {
     kind: 'pr',
     prUrl: context.prUrl,
@@ -96,7 +100,7 @@ function buildPrMetadata(context: Awaited<ReturnType<typeof gatherPrContext>>): 
     title: context.prStatus.title,
     author: context.prStatus.author,
     baseBranch: context.baseBranch,
-    baseSha: context.baseSha,
+    baseSha,
     headBranch: context.headBranch,
     owner: context.owner,
     repo: context.repo,
@@ -338,9 +342,21 @@ export async function handlePrReviewGuideCommentCommand(
       // checkoutPrBranch uses Git fetch/checkout even for colocated jj repositories, so the
       // executor must diff against the detached Git HEAD instead of the jj working-copy revision.
       const useJjDiffInstructions = false;
-      const nonTestChangeStats = await loadJjNonTestChangeStats(baseDir, prContext.baseSha);
+      const remoteBaseRef = `origin/${prContext.baseBranch}`;
+      const mergeBaseResult = await $`git merge-base HEAD ${remoteBaseRef}`
+        .cwd(baseDir)
+        .quiet()
+        .nothrow();
+      const baseSha = mergeBaseResult.stdout.toString().trim();
+      if (mergeBaseResult.exitCode !== 0 || !baseSha) {
+        throw new Error(
+          `Failed to resolve PR review guide comment merge base from ${remoteBaseRef}: ${mergeBaseResult.stderr.toString().trim() || 'git merge-base failed.'}`
+        );
+      }
+
+      const nonTestChangeStats = await loadJjNonTestChangeStats(baseDir, baseSha);
       const customInstructions = await loadCustomReviewInstructions(config, baseDir);
-      const metadata = buildPrMetadata(prContext);
+      const metadata = buildPrMetadata(prContext, baseSha);
 
       const outputDir = path.join(baseDir, TMP_DIR);
       const outputPath = path.join(outputDir, `pr-review-guide-comment-${prContext.prNumber}.md`);
