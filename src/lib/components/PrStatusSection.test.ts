@@ -554,6 +554,72 @@ describe('PrStatusSection', () => {
     expect(body).toContain(uncachedUrl);
   });
 
+  test('renders linked PRs from the base of the stack to the top', async () => {
+    const base = makePrDetail({
+      status: {
+        pr_url: 'https://github.com/owner/repo/pull/101',
+        pr_number: 101,
+        title: 'Base slice',
+        base_branch: 'main',
+        head_branch: 'feature/base',
+      },
+    });
+    const middle = makePrDetail({
+      status: {
+        pr_url: 'https://github.com/owner/repo/pull/102',
+        pr_number: 102,
+        title: 'Middle slice',
+        base_branch: 'feature/base',
+        head_branch: 'feature/middle',
+      },
+    });
+    const top = makePrDetail({
+      status: {
+        pr_url: 'https://github.com/owner/repo/pull/103',
+        pr_number: 103,
+        title: 'Top slice',
+        base_branch: 'feature/middle',
+        head_branch: 'feature/top',
+      },
+    });
+
+    const { body } = await renderSection({
+      prUrls: [top.status.pr_url, middle.status.pr_url, base.status.pr_url],
+      prStatuses: [top, middle, base],
+    });
+
+    expect(body.indexOf('#101')).toBeLessThan(body.indexOf('#102'));
+    expect(body.indexOf('#102')).toBeLessThan(body.indexOf('#103'));
+  });
+
+  test('puts a stack whose base is outside the linked PRs at the top', async () => {
+    const base = makePrDetail({
+      status: {
+        pr_url: 'https://github.com/owner/repo/pull/201',
+        pr_number: 201,
+        title: 'Release slice',
+        base_branch: 'release/1.0',
+        head_branch: 'feature/base',
+      },
+    });
+    const top = makePrDetail({
+      status: {
+        pr_url: 'https://github.com/owner/repo/pull/202',
+        pr_number: 202,
+        title: 'Feature slice',
+        base_branch: 'feature/base',
+        head_branch: 'feature/top',
+      },
+    });
+
+    const { body } = await renderSection({
+      prUrls: [top.status.pr_url, base.status.pr_url],
+      prStatuses: [top, base],
+    });
+
+    expect(body.indexOf('#201')).toBeLessThan(body.indexOf('#202'));
+  });
+
   test('renders webhook-only PR statuses even when the plan has no explicit pull_request URLs', async () => {
     const detail = makePrDetail({
       status: {

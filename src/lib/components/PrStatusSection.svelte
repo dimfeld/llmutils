@@ -44,6 +44,74 @@
     return status.state !== 'closed' || status.merged_at !== null;
   }
 
+  type PullRequestWithBranches = {
+    status: Pick<PrStatusRow, 'owner' | 'repo' | 'head_branch' | 'base_branch'>;
+  };
+
+  function branchKey(
+    status: Pick<PrStatusRow, 'owner' | 'repo' | 'head_branch' | 'base_branch'>,
+    branch: string
+  ): string {
+    return `${status.owner.toLowerCase()}/${status.repo.toLowerCase()}:${branch}`;
+  }
+
+  function sortPullRequestsInStackOrder<T extends PullRequestWithBranches>(pullRequests: T[]): T[] {
+    const headBranchIndexes = new Map<string, number[]>();
+    for (const [index, pullRequest] of pullRequests.entries()) {
+      const headBranch = pullRequest.status.head_branch;
+      if (!headBranch) continue;
+
+      const key = branchKey(pullRequest.status, headBranch);
+      const indexes = headBranchIndexes.get(key) ?? [];
+      indexes.push(index);
+      headBranchIndexes.set(key, indexes);
+    }
+
+    const childIndexes = new Map<number, number[]>();
+    const remainingDependencies = new Array(pullRequests.length).fill(0);
+    for (const [index, pullRequest] of pullRequests.entries()) {
+      const baseBranch = pullRequest.status.base_branch;
+      if (!baseBranch) continue;
+
+      const parentIndexes = headBranchIndexes.get(branchKey(pullRequest.status, baseBranch)) ?? [];
+      for (const parentIndex of parentIndexes) {
+        if (parentIndex === index) continue;
+
+        const children = childIndexes.get(parentIndex) ?? [];
+        children.push(index);
+        childIndexes.set(parentIndex, children);
+        remainingDependencies[index] += 1;
+      }
+    }
+
+    const readyIndexes = pullRequests.reduce<number[]>((indexes, _pullRequest, index) => {
+      if (remainingDependencies[index] === 0) indexes.push(index);
+      return indexes;
+    }, []);
+    const sortedIndexes: number[] = [];
+
+    while (readyIndexes.length > 0) {
+      readyIndexes.sort((left, right) => left - right);
+      const index = readyIndexes.shift();
+      if (index === undefined) break;
+
+      sortedIndexes.push(index);
+      for (const childIndex of childIndexes.get(index) ?? []) {
+        remainingDependencies[childIndex] -= 1;
+        if (remainingDependencies[childIndex] === 0) readyIndexes.push(childIndex);
+      }
+    }
+
+    if (sortedIndexes.length < pullRequests.length) {
+      const sortedIndexSet = new Set(sortedIndexes);
+      for (const [index] of pullRequests.entries()) {
+        if (!sortedIndexSet.has(index)) sortedIndexes.push(index);
+      }
+    }
+
+    return sortedIndexes.map((index) => pullRequests[index]);
+  }
+
   function getExternalPrUrl(pr: { status: PrStatusRow }): string {
     return (
       buildLinearReviewDeepLink({
@@ -53,7 +121,9 @@
     );
   }
 
-  let effectivePrs = $derived(prData.prStatuses.filter((pr) => isVisiblePrStatus(pr.status)));
+  let effectivePrs = $derived(
+    sortPullRequestsInStackOrder(prData.prStatuses.filter((pr) => isVisiblePrStatus(pr.status)))
+  );
   let uncachedUrls = $derived(prUrls.filter((url) => !statusByUrl.has(url)));
 
   let hasUnresolvedThreads = $derived(
