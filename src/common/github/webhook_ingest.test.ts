@@ -601,6 +601,58 @@ describe('common/github/webhook_ingest', () => {
     }
   });
 
+  test('ingestWebhookEvents keeps a plan in needs_review until all linked PRs are ready', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const firstPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/77',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 77,
+      title: 'First draft PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const secondPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/78',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 78,
+      title: 'Second draft PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const planUuid = '00000000-0000-4000-8000-000000000077';
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 77,
+      title: 'Multiple PR plan',
+      branch: 'feature/multiple-prs',
+      filename: '77.plan.md',
+      status: 'needs_review',
+      pullRequest: [firstPr.status.pr_url, secondPr.status.pr_url],
+    });
+    linkPlanToPr(planUuid, firstPr.status.id);
+    linkPlanToPr(planUuid, secondPr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 77,
+      deliveryId: 'delivery-ready-with-draft-sibling',
+      action: 'ready_for_review',
+      prNumber: 77,
+      title: 'First draft PR',
+      draft: false,
+      headRef: 'feature/multiple-prs',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(getPlanByUuid(db, planUuid)?.status).toBe('needs_review');
+  });
+
   test('ingestWebhookEvents leaves draft/ready linked plan statuses unchanged when plan status updates are disabled', async () => {
     const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
     const pr = upsertPrStatus(db, {

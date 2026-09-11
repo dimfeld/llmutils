@@ -41,7 +41,7 @@ import {
 import { checkAndMarkParentDone } from '../../tim/plans/parent_cascade.js';
 import { invertPlanIdToUuidMap, planRowToSchemaInput } from '../../tim/plans_db.js';
 import { loadEffectiveConfig } from '../../tim/configLoader.js';
-import { getPrStatusByRepoAndNumber } from '../../tim/db/pr_status.js';
+import { getPrStatusByRepoAndNumber, getPrStatusForPlan } from '../../tim/db/pr_status.js';
 import { getProjectUuidForId, routeSyncOperation } from '../../tim/sync/write_router.js';
 import { setPlanScalarOperation } from '../../tim/sync/operations.js';
 import type { TimConfig } from '../../tim/configSchema.js';
@@ -134,6 +134,17 @@ function parseCanonicalPlanPrUrls(value: string | null): string[] {
   }
 
   return [...urls];
+}
+
+function areAllPlanPrsReady(db: Database, planUuid: string, explicitPrUrls: string[]): boolean {
+  const linkedPrs = getPrStatusForPlan(db, planUuid, explicitPrUrls);
+  const linkedPrUrls = new Set(linkedPrs.map((detail) => detail.status.pr_url));
+
+  return (
+    linkedPrs.length > 0 &&
+    explicitPrUrls.every((prUrl) => linkedPrUrls.has(prUrl)) &&
+    linkedPrs.every((detail) => detail.status.state === 'open' && detail.status.draft === 0)
+  );
 }
 
 function getPlanUuidsLinkedToPr(
@@ -284,6 +295,13 @@ async function applyDraftReadyStatusToLinkedPlans(
   for (const planUuid of linkedPlanUuids) {
     const planRow = getPlanByUuid(db, planUuid);
     if (!planRow || planRow.status !== sourceStatus) {
+      continue;
+    }
+
+    if (
+      transition === 'became_ready' &&
+      !areAllPlanPrsReady(db, planUuid, parseCanonicalPlanPrUrls(planRow.pull_request))
+    ) {
       continue;
     }
 
