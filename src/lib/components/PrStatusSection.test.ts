@@ -590,6 +590,9 @@ describe('PrStatusSection', () => {
 
     expect(body.indexOf('#101')).toBeLessThan(body.indexOf('#102'));
     expect(body.indexOf('#102')).toBeLessThan(body.indexOf('#103'));
+    expect(body).toContain('Stacked on');
+    expect(body).toContain('href="/projects/1/prs/101"');
+    expect(body).toContain('href="/projects/1/prs/102"');
   });
 
   test('puts a stack whose base is outside the linked PRs at the top', async () => {

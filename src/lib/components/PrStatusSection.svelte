@@ -112,6 +112,22 @@
     return sortedIndexes.map((index) => pullRequests[index]);
   }
 
+  function getStackedOnPullRequest<T extends PullRequestWithBranches>(
+    pullRequest: T,
+    pullRequests: T[]
+  ): T | undefined {
+    const baseBranch = pullRequest.status.base_branch;
+    if (!baseBranch) return undefined;
+
+    const baseKey = branchKey(pullRequest.status, baseBranch);
+    return pullRequests.find(
+      (candidate) =>
+        candidate !== pullRequest &&
+        candidate.status.head_branch !== null &&
+        branchKey(candidate.status, candidate.status.head_branch) === baseKey
+    );
+  }
+
   function getExternalPrUrl(pr: { status: PrStatusRow }): string {
     return (
       buildLinearReviewDeepLink({
@@ -387,6 +403,7 @@
     {/if}
 
     {#each effectivePrs as pr (pr.status.pr_url)}
+      {@const stackedOnPr = getStackedOnPullRequest(pr, effectivePrs)}
       <div class="rounded-md border border-gray-200 p-3 dark:border-gray-700">
         <!-- PR Header -->
         <div class="flex items-start gap-2">
@@ -428,6 +445,19 @@
             View in Graphite
           </a> -->
         </div>
+
+        {#if stackedOnPr}
+          <div class="mt-1 text-xs text-muted-foreground">
+            Stacked on
+            <a
+              href="/projects/{projectId}/prs/{stackedOnPr.status.pr_number}"
+              class="text-blue-600 hover:underline dark:text-blue-400"
+            >
+              #{stackedOnPr.status.pr_number}
+              {stackedOnPr.status.title ?? 'Untitled'}
+            </a>
+          </div>
+        {/if}
 
         <!-- Badges -->
         <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
