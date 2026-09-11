@@ -49,6 +49,7 @@ export async function executeOrchestratorMode(
       agentMessagingEnabled: sharedOptions.agentMessagingEnabled,
       subagentExecutor: sharedOptions.subagentExecutor,
       dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
+      orchestratorInstructionMode: sharedOptions.orchestratorInstructionMode,
       useJj,
       useAtPrefix,
     };

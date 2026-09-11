@@ -54,6 +54,7 @@ Read the relevant doc before working in these areas:
 - **OS process interaction** → `docs/os-process-interaction.md`
 - **Executor stdin conventions** → `docs/executor-stdin-conventions.md`
 - **Codex CLI integration** (execution modes, shared orchestration prompt) → `docs/codex-cli-integration.md`
+- **Orchestrator instruction modes** (`orchestratorInstructionMode`, detailed vs delegated subagent instructions) → `docs/orchestrator-instruction-modes.md`
 - **Implementer / reviewer instructions** → `docs/implementer-instructions.md`, `docs/reviewer-instructions.md`
 - **Review iteration policy** (severity rubric, blocking gate, review scope tiers) → `docs/review-iteration-policy.md`
 - **Sync between nodes** → `docs/sync-between-nodes.md`

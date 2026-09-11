@@ -5,6 +5,8 @@
  * depend on it without depending on each other. They previously formed a source-level cycle
  * that was harmless only because the back-edge happened to be type-only.
  */
+import type { OrchestratorInstructionMode } from './orchestrator_instruction_mode.js';
+
 export interface OrchestrationOptions {
   batchMode?: boolean;
   /**
@@ -44,4 +46,11 @@ export interface OrchestrationOptions {
    * do not use this semantic and should receive the raw path. Defaults to true.
    */
   useAtPrefix?: boolean;
+  /**
+   * How prescriptive the orchestrator should be when instructing subagents.
+   * `detailed` (the default) keeps the historical prompts that spell out files, behavior,
+   * and verification. `delegated` tells the orchestrator to point capable subagents at the
+   * plan tasks and let them work out the specifics.
+   */
+  orchestratorInstructionMode?: OrchestratorInstructionMode;
 }

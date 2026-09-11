@@ -618,6 +618,7 @@ export class ClaudeCodeExecutor implements Executor {
         agentMessagingEnabled: this.sharedOptions.agentMessagingEnabled,
         subagentExecutor: this.sharedOptions.subagentExecutor,
         dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
+        orchestratorInstructionMode: this.sharedOptions.orchestratorInstructionMode,
         useJj,
       };
 

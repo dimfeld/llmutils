@@ -1835,6 +1835,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
         baseDir: tempDir,
         subagentExecutor: 'codex-cli',
         dynamicSubagentInstructions: 'Use codex for Rust.',
+        orchestratorInstructionMode: 'delegated',
         agentMessagingEnabled: true,
       },
       {} as any
@@ -1851,6 +1852,7 @@ describe('ClaudeCodeExecutor - subagent command model (useSubagentCommand)', () 
     const [, , options] = wrapNormalSpy.mock.calls[0];
     expect(options.subagentExecutor).toBe('codex-cli');
     expect(options.dynamicSubagentInstructions).toBe('Use codex for Rust.');
+    expect(options.orchestratorInstructionMode).toBe('delegated');
     expect(options.agentMessagingEnabled).toBe(true);
   });
 

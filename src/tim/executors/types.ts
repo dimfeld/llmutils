@@ -8,6 +8,7 @@ import type {
 import type { CodexDynamicToolProvider } from './codex_cli/app_server_dynamic_tools.js';
 import type { DeferredAgentInputAdapter } from '../agent_messaging/agent_input_adapter.js';
 import type { AgentEnvironmentIdentity } from '../agent_messaging/environment.js';
+import type { OrchestratorInstructionMode } from './shared/orchestrator_instruction_mode.js';
 
 /**
  * Shared options/state from the agent command, passed to the executor.
@@ -53,6 +54,12 @@ export interface ExecutorCommonOptions {
    * for subagent execution in dynamic mode.
    */
   dynamicSubagentInstructions?: string;
+  /**
+   * How prescriptive the orchestrator should be when instructing subagents.
+   * `detailed` keeps the historical prompts; `delegated` points capable subagents at the
+   * plan tasks and lets them work out the specifics.
+   */
+  orchestratorInstructionMode?: OrchestratorInstructionMode;
   /**
    * When true, disable all inactivity timers on the subprocess. Used for interactive
    * chat sessions where the user controls the pace of interaction.

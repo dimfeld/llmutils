@@ -299,6 +299,9 @@ after the last task still runs through `tim review`.
 
 `--executor` / `defaultSubagentExecutor` and dynamic subagent instructions are
 reflected in the orchestration prompt the same way as for Claude.
+`orchestratorInstructionMode` is threaded identically, so both providers get the
+same detailed or delegated wording; see
+[docs/orchestrator-instruction-modes.md](orchestrator-instruction-modes.md).
 `--review-executor` is reflected in prompts that invoke `tim subagent reviewer`,
 which delegates to the `tim review` handler. It applies to ordinary reviewer-
 subagent passes. The final full-plan review intentionally omits `--executor` so

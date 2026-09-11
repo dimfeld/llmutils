@@ -907,6 +907,16 @@ export const timConfigSchema = z
       .describe(
         'Instructions for the orchestrator when choosing between claude-code and codex-cli for subagent execution in dynamic mode'
       ),
+    /**
+     * How prescriptive the orchestrator should be when instructing subagents. This only changes
+     * the orchestration prompt wording; it is independent of the model and executor settings.
+     */
+    orchestratorInstructionMode: z
+      .enum(['detailed', 'delegated'])
+      .optional()
+      .describe(
+        'How the orchestrator instructs subagents: "detailed" (default) spells out files, behavior, constraints, and verification for less capable subagents; "delegated" points capable subagents at the plan tasks and lets them work out the specifics'
+      ),
     /** Model overrides for specific subagent types and executors. */
     subagents: z
       .object({

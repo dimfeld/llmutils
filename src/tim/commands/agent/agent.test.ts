@@ -1329,6 +1329,28 @@ describe('timAgent - simple mode flag plumbing', () => {
     delete (defaultConfig as any).defaultSubagentExecutor;
   });
 
+  test('orchestratorInstructionMode defaults to detailed when config does not set it', async () => {
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.orchestratorInstructionMode).toBe('detailed');
+  });
+
+  test('orchestratorInstructionMode comes from config when set', async () => {
+    (defaultConfig as any).orchestratorInstructionMode = 'delegated';
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(123, { log: false } as any, {});
+
+    expect(buildExecutorAndLogSpy).toHaveBeenCalledTimes(1);
+    const [, sharedOptions] = buildExecutorAndLogSpy.mock.calls[0];
+    expect(sharedOptions.orchestratorInstructionMode).toBe('delegated');
+
+    delete (defaultConfig as any).orchestratorInstructionMode;
+  });
+
   test('dynamicSubagentInstructions falls back to config when CLI not set', async () => {
     (defaultConfig as any).dynamicSubagentInstructions = 'Config-level instructions.';
 

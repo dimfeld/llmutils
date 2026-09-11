@@ -1,4 +1,5 @@
 import type { OrchestrationOptions } from './orchestration_options.js';
+import { buildStartAgentMessageContents } from './orchestrator_instruction_mode.js';
 
 export type OrchestratedAgentType = 'implementer' | 'tester' | 'tdd-tests' | 'reviewer';
 
@@ -24,6 +25,9 @@ export function createOrchestrationDelegationRenderer(
     subagentCommand: (agentType: OrchestratedAgentType): string =>
       `tim subagent ${agentType} ${planId}${buildSubagentExecutorFlag(options)} --input "<instructions>"`,
     startAgentInstruction: (agentType: OrchestratedAgentType): string =>
-      `Call StartTimAgent with type \`${agentType}\`, the selected executor, and an initial message containing plan \`${planId}\`, the exact task and file scope, constraints, and expected handoff.`,
+      `Call StartTimAgent with type \`${agentType}\`, the selected executor, and ${buildStartAgentMessageContents(
+        planId,
+        options
+      )}`,
   };
 }

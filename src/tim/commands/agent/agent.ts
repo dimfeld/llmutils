@@ -33,6 +33,7 @@ import {
 } from '../../executors/index.js';
 import type { ClaudeCodeReasoningEffort, CodexReasoningLevel } from '../../executors/schemas.js';
 import type { ExecutorCommonOptions } from '../../executors/types.js';
+import { DEFAULT_ORCHESTRATOR_INSTRUCTION_MODE } from '../../executors/shared/orchestrator_instruction_mode.js';
 import type { PlanSchema } from '../../planSchema.js';
 import {
   readPlanFile,
@@ -595,6 +596,10 @@ export async function timAgent(
       config.dynamicSubagentInstructions ||
       'Prefer claude-code for UI tasks, codex-cli for everything else. When you use one for the implementer, prefer to use the other for the tester.';
 
+    // Determine how prescriptive the orchestrator should be with subagents.
+    const orchestratorInstructionMode =
+      config.orchestratorInstructionMode ?? DEFAULT_ORCHESTRATOR_INSTRUCTION_MODE;
+
     // Check if the plan needs preparation
     const planData = await readPlanFile(currentPlanFile);
     lastKnownPlan = planData;
@@ -744,6 +749,7 @@ export async function timAgent(
       reviewExecutor: options.reviewExecutor,
       subagentExecutor,
       dynamicSubagentInstructions,
+      orchestratorInstructionMode,
       timEnvironment,
       agentEnvironmentIdentity: collaborativeAgentSession?.orchestratorEnvironmentIdentity,
     };

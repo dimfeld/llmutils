@@ -154,6 +154,37 @@ describe('executeOrchestratorMode structuralReviewCompleted threading', () => {
     expect(mocks.wrapWithOrchestrationTdd).not.toHaveBeenCalled();
   });
 
+  test('threads orchestratorInstructionMode through to every wrapper', async () => {
+    const sharedOptions: ExecutorCommonOptions = {
+      ...mockSharedOptions,
+      orchestratorInstructionMode: 'delegated',
+    };
+
+    for (const [executionMode, spy] of [
+      ['normal', mocks.wrapWithOrchestration],
+      ['simple', mocks.wrapWithOrchestrationSimple],
+      ['tdd', mocks.wrapWithOrchestrationTdd],
+    ] as const) {
+      vi.clearAllMocks();
+      mocks.executeCodexStep.mockResolvedValue('mock codex output');
+
+      await executeOrchestratorMode(
+        'context',
+        basePlanInfo({ executionMode }),
+        '/test/base',
+        undefined,
+        mockConfig,
+        sharedOptions
+      );
+
+      expect(spy).toHaveBeenCalledWith(
+        'context',
+        '123',
+        expect.objectContaining({ orchestratorInstructionMode: 'delegated' })
+      );
+    }
+  });
+
   test('default (normal) mode: unset structuralReviewCompleted is passed through as undefined', async () => {
     await executeOrchestratorMode(
       'context',

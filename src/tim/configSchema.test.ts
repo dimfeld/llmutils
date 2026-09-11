@@ -2271,6 +2271,22 @@ describe('configSchema', () => {
       expect(result.dynamicSubagentInstructions).toBeUndefined();
     });
 
+    test('accepts orchestratorInstructionMode with valid enum values', () => {
+      for (const value of ['detailed', 'delegated'] as const) {
+        const result = timConfigSchema.parse({ orchestratorInstructionMode: value });
+        expect(result.orchestratorInstructionMode).toBe(value);
+      }
+    });
+
+    test('rejects invalid orchestratorInstructionMode values', () => {
+      expect(() => timConfigSchema.parse({ orchestratorInstructionMode: 'smart' })).toThrow();
+    });
+
+    test('orchestratorInstructionMode is undefined when not specified', () => {
+      const result = timConfigSchema.parse({});
+      expect(result.orchestratorInstructionMode).toBeUndefined();
+    });
+
     test('all three fields work together with other config fields', () => {
       const config = {
         defaultOrchestrator: 'claude-code',

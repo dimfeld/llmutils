@@ -14,6 +14,17 @@ import {
   buildCollaborativeAvailableAgents,
   buildCollaborativeToolGuidance,
 } from './collaboration_prompt.js';
+import {
+  buildCollaborativeAssignmentGuidance,
+  buildCollaborativeInitialMessageLine,
+  buildCollaborativeSimpleImplementerLine,
+  buildCollaborativeTddImplementerLine,
+  buildCollaborativeTddTestsLine,
+  buildSimpleSubagentInvocationGuidance,
+  buildSubagentCapabilityGuidance,
+  buildSubagentInstructionStyleSection,
+  buildSubagentInvocationGuidance,
+} from './orchestrator_instruction_mode.js';
 
 const INPUT_COMBINATION_GUIDANCE =
   '- You can use both `--input-file` and `--input` together. `--input-file` is read first and `--input` is appended afterward.';
@@ -30,9 +41,6 @@ function buildReviewIssueCleanupGuidance(planId: string): string {
  */
 const REVIEW_FIX_TASK_INDEX_GUIDANCE =
   'The implementation subagents above also accept a `--task-index <indexes...>` option. See the Review Iteration Policy below for when to use it and what the indexes mean; do not infer its behavior from the reviewer option of the same name.';
-
-const SUBAGENT_SPECIFICITY_GUIDANCE =
-  'Subagents may use a less capable model than you. Be specific when asking them to make changes: name the files, required behavior, constraints, and verification steps.';
 
 const SUBAGENT_RUNTIME_GUIDANCE = `Subagents may take a very long time to complete. This is especially true for the reviewer, and for any subagent that runs integration tests, end-to-end tests, large test suites, builds, or multiple iterations of checks. A subagent may also produce no output while it is working. Elapsed time or a lack of output is not a timeout: never assume that a long-running subagent has timed out, and never stop, retry, or report it as failed for that reason. Wait for the shell command tool to finish or to explicitly report a process timeout or failure. Always use the longest practical timeout when invoking subagents.`;
 
@@ -258,7 +266,7 @@ You MUST follow this collaborative development process:
 
 ${batchSelection}${implementationPhaseNumber}. **Implementation Phase**
    - Start one or more implementer agents only when each has a clear task and disjoint or explicitly coordinated file scope.
-   - Put the task, exact files, constraints, verification, and expected handoff in each initial message.
+   - ${buildCollaborativeInitialMessageLine(options)}
    - Safe independent work may run concurrently, including multiple implementers of the same type. Coordinate before any shared-file edit.
    - Keep subagent assignments active across implementation, review, and follow-up turns when useful. A progress message is not completion; preserve the canonical name and send later work directly through SendTimAgentMessage.
    - Use SendTimAgentMessage acknowledgements as described above and do not duplicate queued messages.
@@ -303,7 +311,7 @@ function buildCollaborativeSimpleWorkflowInstructions(
 Use a small collaborative team while preserving all implementation, review, and completion gates:
 
 ${batchSelection}${options.batchMode ? '2' : '1'}. **Implementation Phase**
-   - Start an implementer with a clear task, exact file scope, constraints, verification steps, and expected handoff.
+   - ${buildCollaborativeSimpleImplementerLine(options)}
    - Keep the implementer alive for follow-up work when useful, and keep an advisory reviewer alive when it may verify the fix. Do not overlap mutating file ownership without coordination.
    - Use SendTimAgentMessage for changed facts and handoffs; a queued acknowledgement is already successful.
    - Before formal review, require the implementer to run the required tests and checks and report their results. Start a tester for independent validation when the scope needs one.
@@ -339,12 +347,12 @@ function buildCollaborativeImportantGuidelines(
 - Use StartTimAgent for delegated implementation, testing, TDD test writing, and advisory review work. Do not implement or write tests directly when an assigned agent owns that scope.
 - StartTimAgent-created reviewers are read-only and advisory. Always run the separate one-shot \`${reviewCommand}\` formal gate; it has fresh context and no messaging tools.
 - Preserve implementation, testing, plan update, completion, severity, structural, and bounded review policy. Parallel scheduling does not remove any gate.
-- Keep every initial assignment specific: task, files, constraints, verification, and expected handoff. Use SendTimAgentMessage for useful decisions, blockers, questions, and handoffs, not noisy status traffic.
+- ${buildCollaborativeAssignmentGuidance(options)}
 - Coordinate shared-workspace file ownership before concurrent mutating edits. The orchestrator owns task selection, final integration, plan updates, and completion.
 - Treat \`steered\`, \`queued\`, and \`started-idle-turn\` as successful delivery results. Never duplicate a message because it was queued.
 - Do not ask agents to stop or finish merely because their expected work appears complete. The root cannot call FinishTimAgent; accept natural completion and terminal notifications for final status.
 ${buildReviewIssueCleanupGuidance(planId)}
-- ${SUBAGENT_SPECIFICITY_GUIDANCE}
+- ${buildSubagentCapabilityGuidance(options)}
 - ${BRANCH_SETUP_GUIDANCE}${buildJjGuidance(options)}
 ${buildCollaborativeFailureProtocol('collaborative agent')}
 ${markTasksDoneGuidance(planId)}
@@ -378,10 +386,10 @@ ${contextContent}`;
   return `${header}
 
 ${buildBatchModeInstructions(options)}
-${buildCollaborativeToolGuidance()}
+${buildCollaborativeToolGuidance(options)}
 ${buildCollaborativeAvailableAgents(planId, ['implementer', 'reviewer'], options)}
 ${buildDynamicExecutorGuidance(options)}
-${buildCollaborativeSimpleWorkflowInstructions(planId, options)}
+${buildSubagentInstructionStyleSection(options)}${buildCollaborativeSimpleWorkflowInstructions(planId, options)}
 ${buildCollaborativeImportantGuidelines(planId, options)}
 ${footer}`;
 }
@@ -454,7 +462,7 @@ ${contextContent}`;
   return `${header}
 
 ${buildBatchModeInstructions(options)}
-${buildCollaborativeToolGuidance()}
+${buildCollaborativeToolGuidance(options)}
 ${buildCollaborativeAvailableAgents(
   planId,
   isSimpleTdd
@@ -463,17 +471,17 @@ ${buildCollaborativeAvailableAgents(
   options
 )}
 ${buildDynamicExecutorGuidance(options)}
-## Workflow Instructions
+${buildSubagentInstructionStyleSection(options)}## Workflow Instructions
 
 You MUST keep TDD ordering per implementation scope while allowing independent scopes to run in parallel:
 
 ${batchSelection}${options.batchMode ? '2' : '1'}. **TDD Test Phase**
-   - Start one tdd-tests agent per independent scope with the exact task, files, expected behavior, and expected failure reason.
+   - ${buildCollaborativeTddTestsLine(options)}
    - Require each agent to write tests first, run them, and report evidence that the failure is behavioral rather than a syntax, import, setup, or environment failure.
    - Independent scopes may run their red phases concurrently. Do not start the implementer for a scope until that scope's red evidence is verified.
 
 ${implementationPhaseNumber}. **Implementation Phase**
-   - After each scope's expected failure is verified, start its implementer with the TDD output, exact file ownership, constraints, and expected handoff. Keep that implementer active for later review fixes when useful.
+   - ${buildCollaborativeTddImplementerLine(options)}
    - Implementers for independent scopes may run concurrently. Coordinate before shared-file edits and do not let an implementer change a scope whose red phase is incomplete.
    - Send follow-up facts through SendTimAgentMessage and treat queued delivery as accepted.
 ${testingPhase}
@@ -498,7 +506,7 @@ ${footer}`;
  */
 function buildAvailableAgents(planId: string, options: OrchestrationOptions): string {
   if (options.agentMessagingEnabled === true) {
-    return `${buildCollaborativeToolGuidance()}\n${buildCollaborativeAvailableAgents(
+    return `${buildCollaborativeToolGuidance(options)}\n${buildCollaborativeAvailableAgents(
       planId,
       ['implementer', 'tester', 'reviewer'],
       options
@@ -648,8 +656,8 @@ ${reviewGuidelines}
 - Exception: if an accepted blocking review finding requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
 - You are responsible only for coordination and ensuring the workflow is followed correctly.
 - The subagents have access to the same task instructions below that you do, so you don't need to repeat them. You should reference which specific task titles are being worked on so the subagents can focus on the right tasks.
-- ${SUBAGENT_SPECIFICITY_GUIDANCE}
-- When invoking subagents, provide clear, specific instructions in \`--input\` (or \`--input-file\`) about what needs to be done in addition to referencing the task titles.
+- ${buildSubagentCapabilityGuidance(options)}
+- ${buildSubagentInvocationGuidance(options)}
 - ${INPUT_COMBINATION_GUIDANCE}
 - Include relevant context from previous subagent responses when invoking the next subagent.
 - ${buildInputFileRandomizationGuidance(planId)}
@@ -732,6 +740,7 @@ export function wrapWithOrchestration(
   const batchModeInstructions = buildBatchModeInstructions(options);
   const availableAgents = buildAvailableAgents(planId, options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
+  const instructionStyleSection = buildSubagentInstructionStyleSection(options);
   const workflowInstructions = buildWorkflowInstructions(planId, options);
   const importantGuidelines = buildImportantGuidelines(planId, options);
 
@@ -751,7 +760,7 @@ ${contextContent}`;
 
   return `${header}${availableAgents}
 
-${dynamicGuidance}${workflowInstructions}
+${dynamicGuidance}${instructionStyleSection}${workflowInstructions}
 
 ${importantGuidelines}
 
@@ -776,6 +785,7 @@ export function wrapWithOrchestrationSimple(
   });
   const renderer = createOrchestrationDelegationRenderer(planId, options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
+  const instructionStyleSection = buildSubagentInstructionStyleSection(options);
   const reviewCommand = options.batchMode
     ? buildFullPlanReviewCommand(planId, options)
     : buildReviewCommand(planId, options);
@@ -874,8 +884,8 @@ ${buildReviewIterationGuidance(reviewCommand, options)}`;
 - Delegate implementation to \`tim subagent implementer\`.
 ${buildReviewIssueCleanupGuidance(planId)}
 ${reviewGuidance}
-- ${SUBAGENT_SPECIFICITY_GUIDANCE}
-- When invoking subagents, give clear instructions in \`--input\` (or \`--input-file\`) referencing the specific task titles.
+- ${buildSubagentCapabilityGuidance(options)}
+- ${buildSimpleSubagentInvocationGuidance(options)}
 - ${INPUT_COMBINATION_GUIDANCE}
 - Provide prior subagent outputs to the next subagent so they have full context.
 - ${buildInputFileRandomizationGuidance(planId)}
@@ -912,7 +922,7 @@ ${contextContent}`;
 
 ${batchModeInstructions}${availableAgents}
 
-${dynamicGuidance}${workflowInstructions}
+${dynamicGuidance}${instructionStyleSection}${workflowInstructions}
 
 ${failureProtocol}
 
@@ -941,6 +951,7 @@ export function wrapWithOrchestrationTdd(
   });
   const renderer = createOrchestrationDelegationRenderer(planId, options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
+  const instructionStyleSection = buildSubagentInstructionStyleSection(options);
   const isSimpleTdd = options.simpleMode === true;
 
   const header = `# TDD Orchestration Instructions
@@ -1121,7 +1132,7 @@ ${testingGuidance}
 ${buildReviewIssueCleanupGuidance(planId)}
 ${reviewCommandGuidance}
 ${reviewFollowupGuidance}
-- ${SUBAGENT_SPECIFICITY_GUIDANCE}
+- ${buildSubagentCapabilityGuidance(options)}
 - ${INPUT_COMBINATION_GUIDANCE}
 - We are using Test-Driven Development. The \`tdd-tests\` subagent must run before implementation.
 - Always pass the TDD tests output into the implementer invocation.
@@ -1160,7 +1171,7 @@ ${contextContent}`;
 
 ${batchModeInstructions}${availableAgents}
 
-${dynamicGuidance}${workflowInstructions}
+${dynamicGuidance}${instructionStyleSection}${workflowInstructions}
 
 ${failureProtocol}
 

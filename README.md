@@ -775,6 +775,7 @@ Important config areas:
 - `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`
 - `inbox.prs` - PR inbox behavior; `enabled` plus an `ignoreUsers` list that concatenates across config layers (see [PR inbox](#pr-inbox))
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
+- `orchestratorInstructionMode` - how prescriptive the `tim agent` orchestrator is with its subagents; `detailed` (default) or `delegated`
 - `experimental` - opt-in flags for features not yet on by default; currently only `agentMessaging`, which is disabled unless set to `true`
 
 PR creation and dual-review issue merging share the `smallTasks` defaults. Override both
@@ -809,6 +810,23 @@ simplify:
   exclude:
     - Generated files
 ```
+
+`orchestratorInstructionMode` picks how the `tim agent` orchestrator instructs its subagents. It changes the
+orchestration prompt only; it is independent of the model and executor settings elsewhere in the config.
+
+```yaml
+orchestratorInstructionMode: delegated
+```
+
+- `detailed` (the default) assumes the orchestrator is the stronger model. It tells the orchestrator to name the
+  files, required behavior, constraints, and verification steps for each subagent.
+- `delegated` assumes the subagents are capable. The orchestrator points them at the plan tasks and the expected
+  outcome, passes along what they cannot discover themselves (decisions already made, constraints from earlier
+  phases, accepted review findings), and leaves the files, approach, and verification to them.
+
+Both modes keep the same workflow: task selection, sequencing, review gates, plan updates, and the integrated
+result stay with the orchestrator. The setting applies to the normal, simple, and TDD orchestration prompts, and
+to the collaborative prompts used when `experimental.agentMessaging` is enabled.
 
 The `experimental` block holds opt-in flags for features that are not yet on by default. Every flag is optional and disabled when absent:
 
