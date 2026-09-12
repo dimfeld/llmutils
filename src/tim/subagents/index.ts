@@ -1,3 +1,5 @@
+export { resolveAdvisorConfiguration } from './advisor.js';
+export type { AdvisorConfiguration } from './advisor.js';
 export {
   buildSubagentTaskContext,
   launchPreparedSubagent,

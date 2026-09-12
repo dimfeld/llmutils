@@ -50,6 +50,7 @@ import { CallbackAgentInputAdapter } from '../agent_messaging/agent_input_adapte
 import { withAgentEnvironmentIdentity } from '../agent_messaging/environment.js';
 import { formatAgentInputForProvider } from '../agent_messaging/provider_input.js';
 import { isRecognizedClaudeModel, parseClaudeModel } from './claude_code/model.js';
+import { resolveAdvisorConfiguration } from '../subagents/advisor.js';
 
 export type ClaudeCodeExecutorOptions = z.infer<typeof claudeCodeOptionsSchema>;
 
@@ -619,6 +620,7 @@ export class ClaudeCodeExecutor implements Executor {
         subagentExecutor: this.sharedOptions.subagentExecutor,
         dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         orchestratorInstructionMode: this.sharedOptions.orchestratorInstructionMode,
+        advisor: resolveAdvisorConfiguration(this.timConfig),
         useJj,
       };
 

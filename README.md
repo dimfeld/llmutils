@@ -364,6 +364,7 @@ tim pr upload-artifacts 123 --pr 456                                  # Target o
 tim subagent reviewer 123 --print --output-file review.json          # Orchestrator-compatible review entry point
 tim subagent implementer 123 --input "fix finding X" --task-index 2  # Scope a fix round to one task
 tim subagent tester 123 --task-index 2,4 --input-file notes.md       # Comma-separated or repeated --task-index
+tim subagent advisor 123 --input "Should the queue be split?"        # Optional read-only consultation (see below)
 tim review 123                                      # Review a plan's work
 tim review 123 --since abc1234                      # Review changes since an exact commit
 tim review 123 --base feature/parent                # Review a branch stacked on another branch
@@ -403,7 +404,7 @@ tim rebase 123 --auto-workspace
 
 Ordinary plan-backed reviews are intentionally stateless, so the caller chooses the scope of each pass. The orchestrator prompts use a three-tier rule: the first review of a batch covers the complete declared scope, intermediate fix-verification reviews narrow to the diff with `--since <commit>` over the same task scope, and the review that ends the loop covers the complete declared scope again. The loop stops when a complete review produces no new blocking findings, where `critical` and `major` are blocking and `minor` and `info` are not. See `docs/review-iteration-policy.md` for the full policy, the severity rubric, and the four-review bound.
 
-`tim subagent implementer|tester|tdd-tests <planId>` accepts `--task-index <indexes...>` to narrow the subagent's task context to the named tasks. Indexes are numbered like `tim review --task-index`: plan-absolute and 1-based, counted over every task including completed ones, supplied either comma-separated (`--task-index 2,4`) or by repeating the flag. Unlike the reviewer's flag, this one selects only incomplete tasks: an index that is out of range **or points at a completed task** fails immediately with an error listing the valid incomplete indexes, and nothing executes. Without the flag, the subagent receives all incomplete tasks as before. Use this for review-fix rounds so a fix subagent cannot creep into settled work; the findings themselves still arrive through `--input`/`--input-file`.
+`tim subagent implementer|tester|tdd-tests|advisor <planId>` accepts `--task-index <indexes...>` to narrow the subagent's task context to the named tasks. Indexes are numbered like `tim review --task-index`: plan-absolute and 1-based, counted over every task including completed ones, supplied either comma-separated (`--task-index 2,4`) or by repeating the flag. Unlike the reviewer's flag, this one selects only incomplete tasks: an index that is out of range **or points at a completed task** fails immediately with an error listing the valid incomplete indexes, and nothing executes. Without the flag, the subagent receives all incomplete tasks as before. Use this for review-fix rounds so a fix subagent cannot creep into settled work; the findings themselves still arrive through `--input`/`--input-file`.
 
 Recurrence judgment belongs to the orchestrator rather than `tim review`: it compares successive findings by underlying cause, distinguishes incomplete fixes from newly exposed issues and regressions, and writes a consolidation proposal when one review reports the same defect class at several locations. After the ordinary full-plan review loop is clear, run `--structural-only` exactly once to execute only the Codex structural prompt and address high-confidence code-layout, ownership, duplication, and structural smells. `--include-structural` remains available for callers that explicitly want both reviewers in one invocation.
 
@@ -776,6 +777,7 @@ Important config areas:
 - `inbox.prs` - PR inbox behavior; `enabled` plus an `ignoreUsers` list that concatenates across config layers (see [PR inbox](#pr-inbox))
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
 - `orchestratorInstructionMode` - how prescriptive the `tim agent` orchestrator is with its subagents; `detailed` (default) or `delegated`
+- `subagents.advisor` - executor and model for the optional advisor consultation subagent; the orchestrator is only told about the advisor when both are set
 - `experimental` - opt-in flags for features not yet on by default; currently only `agentMessaging`, which is disabled unless set to `true`
 
 PR creation and dual-review issue merging share the `smallTasks` defaults. Override both
@@ -827,6 +829,32 @@ orchestratorInstructionMode: delegated
 Both modes keep the same workflow: task selection, sequencing, review gates, plan updates, and the integrated
 result stay with the orchestrator. The setting applies to the normal, simple, and TDD orchestration prompts, and
 to the collaborative prompts used when `experimental.agentMessaging` is enabled.
+
+### Advisor subagent
+
+The advisor is an optional, read-only consultation role. The orchestrator is told to consult it whenever it
+hits a question or a problem that would benefit from a smarter model reasoning with a more comprehensive
+understanding of the system: architecture and design decisions, tradeoffs it cannot cleanly settle, confusing
+or repeated failures, subtle bugs whose root cause is unclear, and review findings whose correct resolution is
+not obvious. The advisor investigates and answers; it never edits files, writes tests, or commits, and it does
+not replace the formal reviewer gate.
+
+The advisor is off by default. It is enabled only when both an executor and a model for that executor are
+configured, and only then does the orchestration prompt mention it at all:
+
+```yaml
+subagents:
+  advisor:
+    executor: claude-code
+    model:
+      claude: opus
+```
+
+Only the model matching the configured executor counts, so setting `executor: claude-code` alongside a
+`codex` model leaves the advisor disabled rather than running it on a default model. Custom advisor
+instructions can be supplied with `agents.advisor.instructions`, like the other roles. You can also run it
+directly with `tim subagent advisor <planId> --input "<question>"`; run by hand without configuration, it falls
+back to the ordinary subagent executor and model precedence.
 
 The `experimental` block holds opt-in flags for features that are not yet on by default. Every flag is optional and disabled when absent:
 

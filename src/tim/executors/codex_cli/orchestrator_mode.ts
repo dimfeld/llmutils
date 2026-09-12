@@ -13,6 +13,7 @@ import {
 } from '../shared/orchestration_wrapper.ts';
 import type { OrchestrationOptions } from '../shared/orchestration_options.ts';
 import { executeCodexStep } from './codex_runner.js';
+import { resolveAdvisorConfiguration } from '../../subagents/advisor.js';
 
 export async function executeOrchestratorMode(
   contextContent: string,
@@ -50,6 +51,7 @@ export async function executeOrchestratorMode(
       subagentExecutor: sharedOptions.subagentExecutor,
       dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
       orchestratorInstructionMode: sharedOptions.orchestratorInstructionMode,
+      advisor: resolveAdvisorConfiguration(timConfig),
       useJj,
       useAtPrefix,
     };

@@ -2,7 +2,7 @@ import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js'
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
 
-export type SubagentType = 'implementer' | 'tester' | 'tdd-tests';
+export type SubagentType = 'implementer' | 'tester' | 'tdd-tests' | 'advisor';
 export type PreparedSubagentType = SubagentType | 'reviewer';
 export type SubagentExecutor = 'codex-cli' | 'claude-code';
 

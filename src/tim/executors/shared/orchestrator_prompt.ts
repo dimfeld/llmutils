@@ -219,6 +219,34 @@ Decision guidance: ${instructions}
 `;
 }
 
+/**
+ * Renders the optional advisor consultation section.
+ *
+ * Returns an empty string unless the project configured both an executor and a model for the
+ * advisor, so an orchestrator in a project that has not opted in is never told about a role it
+ * cannot run. The leading newline keeps the wrappers' spacing identical when the section is
+ * absent.
+ */
+export function buildAdvisorGuidance(planId: string, options: OrchestrationOptions): string {
+  const advisor = options.advisor;
+  if (!advisor) {
+    return '';
+  }
+
+  return `
+## Advisor
+
+A more capable advisor subagent is configured for this project. It runs \`${advisor.executor}\` with the \`${advisor.model}\` model and reads the codebase for itself, so it can answer questions that need a stronger model and a more comprehensive understanding of the system than the immediate task context gives you.
+
+- Run \`tim subagent advisor ${planId} --input "<question>"\` via the shell command tool (or \`--input-file <paths...>\`). Do not pass \`-x\` or \`-m\`; the advisor always runs with its own configured executor and model.
+- Consult it whenever you hit a question or a problem that a smarter model with a broader view of the system would answer better: architecture and design decisions, tradeoffs you cannot cleanly settle, confusing or repeated subagent or test failures, subtle bugs whose root cause is unclear, surprising behavior in unfamiliar parts of the codebase, and review findings whose correct resolution is not obvious.
+- Consult it before committing to a large or hard-to-reverse change, when subagents disagree, and when a subagent reports a \`FAILED:\` blocker that may still be solvable.
+- Ask a specific question and include what you already know: the decision to make, what you already tried, the exact errors or findings, and the constraints that apply. A vague question wastes the consultation.
+- The advisor is read-only. It does not edit files, write tests, or commit, and it never replaces the formal reviewer quality gate. You still own the decision and delegate the resulting work to the usual subagents.
+- Consulting the advisor is optional and never required to finish a phase. Skip it for routine work you can already handle correctly.
+`;
+}
+
 function buildCollaborativeReviewCommand(planId: string, options: OrchestrationOptions): string {
   return options.batchMode
     ? buildFullPlanReviewCommand(planId, options)
@@ -387,7 +415,7 @@ ${contextContent}`;
 
 ${buildBatchModeInstructions(options)}
 ${buildCollaborativeToolGuidance(options)}
-${buildCollaborativeAvailableAgents(planId, ['implementer', 'reviewer'], options)}
+${buildCollaborativeAvailableAgents(planId, ['implementer', 'reviewer'], options)}${buildAdvisorGuidance(planId, options)}
 ${buildDynamicExecutorGuidance(options)}
 ${buildSubagentInstructionStyleSection(options)}${buildCollaborativeSimpleWorkflowInstructions(planId, options)}
 ${buildCollaborativeImportantGuidelines(planId, options)}
@@ -469,7 +497,7 @@ ${buildCollaborativeAvailableAgents(
     ? ['tdd-tests', 'implementer', 'reviewer']
     : ['tdd-tests', 'implementer', 'tester', 'reviewer'],
   options
-)}
+)}${buildAdvisorGuidance(planId, options)}
 ${buildDynamicExecutorGuidance(options)}
 ${buildSubagentInstructionStyleSection(options)}## Workflow Instructions
 
@@ -739,6 +767,7 @@ export function wrapWithOrchestration(
 ): string {
   const batchModeInstructions = buildBatchModeInstructions(options);
   const availableAgents = buildAvailableAgents(planId, options);
+  const advisorGuidance = buildAdvisorGuidance(planId, options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
   const instructionStyleSection = buildSubagentInstructionStyleSection(options);
   const workflowInstructions = buildWorkflowInstructions(planId, options);
@@ -758,7 +787,7 @@ Below is the original task that needs to be completed through this multi-agent w
 
 ${contextContent}`;
 
-  return `${header}${availableAgents}
+  return `${header}${availableAgents}${advisorGuidance}
 
 ${dynamicGuidance}${instructionStyleSection}${workflowInstructions}
 
@@ -920,7 +949,7 @@ ${contextContent}`;
 
   return `${header}
 
-${batchModeInstructions}${availableAgents}
+${batchModeInstructions}${availableAgents}${buildAdvisorGuidance(planId, options)}
 
 ${dynamicGuidance}${instructionStyleSection}${workflowInstructions}
 
@@ -1169,7 +1198,7 @@ ${contextContent}`;
 
   return `${header}
 
-${batchModeInstructions}${availableAgents}
+${batchModeInstructions}${availableAgents}${buildAdvisorGuidance(planId, options)}
 
 ${dynamicGuidance}${instructionStyleSection}${workflowInstructions}
 

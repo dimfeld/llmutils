@@ -5,6 +5,7 @@ import { getAllIncompleteTasks } from '../plans/find_next.js';
 import { resolveSubagentTaskScope } from '../plans/task_scope.js';
 import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
 import {
+  getAdvisorPrompt,
   getImplementerPrompt,
   getReviewerPrompt,
   getTddTestsPrompt,
@@ -18,6 +19,7 @@ import { runClaudeSubprocess } from '../executors/claude_code/run_claude_subproc
 import type { TimConfig } from '../configSchema.js';
 import type { Executor } from '../executors/types.js';
 import { resolveOrchestratorInput } from '../utils/orchestrator_input.js';
+import { resolveAdvisorConfiguration } from './advisor.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { materializePlan } from '../plan_materialize.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
@@ -35,8 +37,8 @@ import type { PlanSchema } from '../planSchema.js';
 import type { ClaudeCodeSubprocessOptions } from '../executors/claude_code/run_claude_subprocess.js';
 
 type SubagentExecutorModelKey = 'claude' | 'codex';
-type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer';
-type SubagentInstructionKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer';
+type SubagentConfigKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer' | 'advisor';
+type SubagentInstructionKey = 'implementer' | 'tester' | 'tddTests' | 'reviewer' | 'advisor';
 
 type SubagentPromptBuilder = (
   contextContent: string,
@@ -72,6 +74,12 @@ export const ROLE_DEFINITIONS = {
     configKey: 'tddTests',
     legacyClaudeModelKey: 'tddTests',
     promptBuilder: getTddTestsPrompt,
+  },
+  advisor: {
+    instructionKey: 'advisor',
+    configKey: 'advisor',
+    legacyClaudeModelKey: 'advisor',
+    promptBuilder: getAdvisorPrompt,
   },
   reviewer: {
     instructionKey: 'reviewer',
@@ -170,7 +178,7 @@ export async function prepareSubagentExecution(
   const planFilePath = planPath ?? (await materializePlan(planData.id, repoRoot));
   const gitRoot = await getGitRoot(path.dirname(planFilePath));
   const useJj = await getUsingJj(gitRoot);
-  const executor = resolveSubagentExecutor(request.executor, config);
+  const executor = resolveSubagentExecutor(request.agentType, request.executor, config);
   const selectedModel = resolveSubagentModel(request.agentType, executor, request.model, config);
 
   const referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
@@ -370,10 +378,14 @@ function resolveDefaultSubagentExecutor(config: TimConfig): SubagentExecutor {
 }
 
 function resolveSubagentExecutor(
+  agentType: PreparedSubagentType,
   requestedExecutor: string | undefined,
   config: TimConfig
 ): SubagentExecutor {
-  const executor = requestedExecutor?.trim() || resolveDefaultSubagentExecutor(config);
+  const executor =
+    requestedExecutor?.trim() ||
+    (agentType === 'advisor' ? resolveAdvisorConfiguration(config)?.executor : undefined) ||
+    resolveDefaultSubagentExecutor(config);
   if (executor !== 'codex-cli' && executor !== 'claude-code') {
     throw new Error(`Unsupported subagent executor: ${executor}`);
   }

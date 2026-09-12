@@ -5,6 +5,7 @@
  * depend on it without depending on each other. They previously formed a source-level cycle
  * that was harmless only because the back-edge happened to be type-only.
  */
+import type { AdvisorConfiguration } from '../../subagents/advisor.js';
 import type { OrchestratorInstructionMode } from './orchestrator_instruction_mode.js';
 
 export interface OrchestrationOptions {
@@ -53,4 +54,10 @@ export interface OrchestrationOptions {
    * plan tasks and let them work out the specifics.
    */
   orchestratorInstructionMode?: OrchestratorInstructionMode;
+  /**
+   * The optional advisor subagent, resolved from config. Present only when the project
+   * configured both an executor and a model for it; the orchestration prompts mention the
+   * advisor only when this is set.
+   */
+  advisor?: AdvisorConfiguration;
 }

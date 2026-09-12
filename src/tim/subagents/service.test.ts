@@ -49,12 +49,32 @@ describe('reusable subagent service', () => {
       `  tasks: ${JSON.stringify(tasksDirectory)}`,
       `defaultExecutor: ${String(config.defaultExecutor ?? 'codex-cli')}`,
     ];
-    if (config.subagents !== undefined) {
+    const advisor = config.advisor as
+      | { executor?: string; claude?: string; codex?: string }
+      | undefined;
+    if (config.subagents !== undefined || advisor) {
       lines.push('subagents:');
+    }
+    if (config.subagents !== undefined) {
       lines.push('  implementer:');
       lines.push('    model:');
       lines.push('      claude: configured-claude-model');
       lines.push('      codex: configured-codex-model');
+    }
+    if (advisor) {
+      lines.push('  advisor:');
+      if (advisor.executor) {
+        lines.push(`    executor: ${advisor.executor}`);
+      }
+      if (advisor.claude || advisor.codex) {
+        lines.push('    model:');
+        if (advisor.claude) {
+          lines.push(`      claude: ${advisor.claude}`);
+        }
+        if (advisor.codex) {
+          lines.push(`      codex: ${advisor.codex}`);
+        }
+      }
     }
     if (config.executors !== undefined) {
       lines.push('executors:');
@@ -186,6 +206,55 @@ describe('reusable subagent service', () => {
 
     const explicit = await prepare({ executor: 'claude-code', model: 'explicit-model' });
     expect(explicit.model).toBe('explicit-model');
+  });
+
+  test('builds the read-only advisor prompt without a failure protocol', async () => {
+    const prepared = await prepare({
+      agentType: 'advisor',
+      inputPolicy: resolvedInput('Should we split the queue into two tables?'),
+    });
+
+    expect(prepared.prompt).toContain('You are a tim advisor agent');
+    expect(prepared.prompt).toContain('Should we split the queue into two tables?');
+    expect(prepared.prompt).toContain('**You are read-only.**');
+    expect(prepared.prompt).toContain('Alternatives considered');
+    expect(prepared.prompt).not.toContain('Failure Protocol');
+  });
+
+  test('runs the advisor with its own configured executor and model', async () => {
+    await writeConfig({
+      subagents: true,
+      advisor: { executor: 'claude-code', claude: 'advisor-claude-model' },
+    });
+
+    const advisor = await prepare({ agentType: 'advisor', executor: undefined });
+    expect(advisor.executor).toBe('claude-code');
+    expect(advisor.model).toBe('advisor-claude-model');
+
+    // The advisor executor is its own; other roles still use the default executor.
+    const implementer = await prepare({ agentType: 'implementer', executor: undefined });
+    expect(implementer.executor).toBe('codex-cli');
+    expect(implementer.model).toBe('configured-codex-model');
+  });
+
+  test('lets explicit advisor flags override the configured executor and model', async () => {
+    await writeConfig({
+      advisor: { executor: 'claude-code', claude: 'advisor-claude-model' },
+    });
+
+    const overridden = await prepare({
+      agentType: 'advisor',
+      executor: 'codex-cli',
+      model: 'explicit-advisor-model',
+    });
+    expect(overridden.executor).toBe('codex-cli');
+    expect(overridden.model).toBe('explicit-advisor-model');
+  });
+
+  test('falls back to the default executor when the advisor is not configured', async () => {
+    const prepared = await prepare({ agentType: 'advisor', executor: undefined });
+    expect(prepared.executor).toBe('codex-cli');
+    expect(prepared.model).toBeUndefined();
   });
 
   test('preserves input-file order before inline input', async () => {
