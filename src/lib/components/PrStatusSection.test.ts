@@ -298,6 +298,43 @@ describe('PrStatusSection', () => {
     expect(body).toContain('href="linear://review/owner/repo/pull/42"');
   });
 
+  test('does not render the branch for a single PR', async () => {
+    const detail = makePrDetail({ status: { head_branch: 'feature-x' } });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    expect(body).not.toContain('Branch:');
+    expect(body).not.toContain('feature-x');
+  });
+
+  test('renders the branch for each PR when there are multiple PRs', async () => {
+    const first = makePrDetail({
+      status: {
+        pr_url: 'https://github.com/owner/repo/pull/42',
+        pr_number: 42,
+        head_branch: 'feature-one',
+      },
+    });
+    const second = makePrDetail({
+      status: {
+        pr_url: 'https://github.com/owner/repo/pull/43',
+        pr_number: 43,
+        head_branch: 'feature-two',
+      },
+    });
+    const { body } = await renderSection({
+      prUrls: [first.status.pr_url, second.status.pr_url],
+      prStatuses: [first, second],
+    });
+
+    expect(body).toContain('Branch:');
+    expect(body).toContain('aria-label="Copy branch name"');
+    expect(body).toContain('feature-one');
+    expect(body).toContain('feature-two');
+  });
+
   test('renders a View in GitHub link to the PR url', async () => {
     const detail = makePrDetail({ status: { pr_number: 42 } });
     const { body } = await renderSection({

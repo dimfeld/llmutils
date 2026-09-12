@@ -27,6 +27,7 @@
     reviewDecisionLabel,
   } from '$lib/utils/pr_display.js';
 
+  import CopyButton from './CopyButton.svelte';
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
   import PrReviewThreadList from './PrReviewThreadList.svelte';
@@ -445,6 +446,21 @@
             View in Graphite
           </a> -->
         </div>
+
+        {#if effectivePrs.length > 1 && pr.status.head_branch}
+          <div class="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <span>Branch:</span>
+            <CopyButton
+              text={pr.status.head_branch}
+              mode="text"
+              label={pr.status.head_branch}
+              className="rounded px-1 font-mono text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+              title="Copy branch name"
+              ariaLabel="Copy branch name"
+              onCopied={() => toast.success('Branch name copied')}
+            />
+          </div>
+        {/if}
 
         {#if stackedOnPr}
           <div class="mt-1 text-xs text-muted-foreground">
