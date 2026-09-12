@@ -39,7 +39,11 @@ export function createAgentPreparation(options: AgentPreparationOptions): AgentP
         },
         promptContext: request.promptContext,
       };
-      return prepareSubagentExecution(preparationRequest);
+      const prepared = await prepareSubagentExecution(preparationRequest);
+      // The preparation service also serves roles AgentManager does not run as
+      // persistent agents (the one-shot advisor), so its agentType is wider than
+      // AgentType. The prepared role is exactly the requested identity's type.
+      return { ...prepared, agentType: request.identity.type };
     },
   };
 }

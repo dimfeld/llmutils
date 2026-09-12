@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  buildAdvisorGuidance,
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
   wrapWithOrchestrationTdd,
@@ -1724,5 +1725,79 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('3. **Review Phase**');
       expect(out).not.toContain('Task Selection Phase');
     });
+  });
+});
+
+describe('optional advisor subagent', () => {
+  const advisor = { executor: 'claude-code', model: 'opus' } as const;
+
+  const wrappers = [
+    ['normal', wrapWithOrchestration],
+    ['simple', wrapWithOrchestrationSimple],
+    ['tdd', wrapWithOrchestrationTdd],
+  ] as const;
+
+  for (const [label, wrap] of wrappers) {
+    it(`omits the advisor from the ${label} prompt when it is not configured`, () => {
+      const out = wrap('Context', '77', { batchMode: false });
+      expect(out).not.toContain('## Advisor');
+      expect(out).not.toContain('tim subagent advisor');
+    });
+
+    it(`omits the advisor from the collaborative ${label} prompt when it is not configured`, () => {
+      const out = wrap('Context', '77', { batchMode: false, agentMessagingEnabled: true });
+      expect(out).not.toContain('## Advisor');
+      expect(out).not.toContain('tim subagent advisor');
+    });
+
+    it(`describes the advisor in the ${label} prompt when it is configured`, () => {
+      const out = wrap('Context', '77', { batchMode: false, advisor });
+      expect(out).toContain('## Advisor');
+      expect(out).toContain('tim subagent advisor 77 --input "<question>"');
+      expect(out).toContain('`claude-code`');
+      expect(out).toContain('`opus`');
+      expect(out).toContain(
+        'Consult it whenever you hit a question or a problem that a smarter model with a broader view of the system would answer better'
+      );
+      expect(out).toContain('The advisor is read-only.');
+      expect(out).toContain('Do not pass `-x` or `-m`');
+    });
+
+    it(`describes the advisor in the collaborative ${label} prompt when it is configured`, () => {
+      const out = wrap('Context', '77', {
+        batchMode: false,
+        agentMessagingEnabled: true,
+        advisor,
+      });
+      expect(out).toContain('## Advisor');
+      expect(out).toContain('tim subagent advisor 77 --input "<question>"');
+    });
+  }
+
+  it('names the configured codex executor and model', () => {
+    const out = wrapWithOrchestration('Context', '12', {
+      advisor: { executor: 'codex-cli', model: 'gpt-5.6:high' },
+    });
+    expect(out).toContain('`codex-cli`');
+    expect(out).toContain('`gpt-5.6:high`');
+  });
+
+  it('keeps the advisor out of the required workflow phases', () => {
+    const out = wrapWithOrchestration('Context', '12', { batchMode: false, advisor });
+    expect(out).toContain(
+      'Consulting the advisor is optional and never required to finish a phase.'
+    );
+    expect(out).toContain('1. **Implementation Phase**');
+    expect(out).toContain('2. **Testing Phase**');
+    expect(out).toContain('3. **Review Phase**');
+  });
+
+  it('does not change the rest of the prompt when the advisor is configured', () => {
+    const withoutAdvisor = wrapWithOrchestration('Context', '12', { batchMode: true });
+    const withAdvisor = wrapWithOrchestration('Context', '12', { batchMode: true, advisor });
+    const advisorSection = buildAdvisorGuidance('12', { advisor });
+
+    expect(advisorSection).not.toBe('');
+    expect(withAdvisor.replace(advisorSection, '')).toBe(withoutAdvisor);
   });
 });

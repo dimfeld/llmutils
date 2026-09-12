@@ -1112,6 +1112,34 @@
             }
           },
           "additionalProperties": false
+        },
+        "advisor": {
+          "type": "object",
+          "properties": {
+            "executor": {
+              "description": "Executor used for advisor consultations",
+              "type": "string",
+              "enum": [
+                "claude-code",
+                "codex-cli"
+              ]
+            },
+            "model": {
+              "type": "object",
+              "properties": {
+                "claude": {
+                  "description": "Model override for claude-code execution",
+                  "type": "string"
+                },
+                "codex": {
+                  "description": "Model override for codex-cli execution",
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -1277,7 +1305,7 @@
       }
     },
     "agents": {
-      "description": "Custom instructions for implementer, tester, tdd-tests, and reviewer agents",
+      "description": "Custom instructions for implementer, tester, tdd-tests, reviewer, and advisor agents",
       "type": "object",
       "properties": {
         "implementer": {
@@ -1312,6 +1340,15 @@
           "properties": {
             "instructions": {
               "description": "Path to custom instructions file for the reviewer agent",
+              "type": "string"
+            }
+          }
+        },
+        "advisor": {
+          "type": "object",
+          "properties": {
+            "instructions": {
+              "description": "Path to custom instructions file for the advisor agent",
               "type": "string"
             }
           }

@@ -968,6 +968,26 @@ export const timConfigSchema = z
           })
           .strict()
           .optional(),
+        /**
+         * The advisor is optional. The orchestrator only learns that it exists when both an
+         * executor and a model for that executor are configured here.
+         */
+        advisor: z
+          .object({
+            executor: z
+              .enum(['claude-code', 'codex-cli'])
+              .optional()
+              .describe('Executor used for advisor consultations'),
+            model: z
+              .object({
+                claude: z.string().optional().describe('Model override for claude-code execution'),
+                codex: z.string().optional().describe('Model override for codex-cli execution'),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional()
@@ -1057,10 +1077,20 @@ export const timConfigSchema = z
               .describe('Path to custom instructions file for the reviewer agent'),
           })
           .optional(),
+        advisor: z
+          .object({
+            instructions: z
+              .string()
+              .optional()
+              .describe('Path to custom instructions file for the advisor agent'),
+          })
+          .optional(),
       })
       .strict()
       .optional()
-      .describe('Custom instructions for implementer, tester, tdd-tests, and reviewer agents'),
+      .describe(
+        'Custom instructions for implementer, tester, tdd-tests, reviewer, and advisor agents'
+      ),
     /** Review-specific configuration options */
     review: z
       .object({

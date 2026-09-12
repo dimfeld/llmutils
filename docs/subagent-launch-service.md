@@ -1,8 +1,8 @@
 # Subagent Launch Service
 
 `src/tim/subagents/` holds the provider-neutral service that prepares and starts
-one-shot implementer, tester, and TDD-test runs. In-process callers use it
-directly. The `tim subagent` command is a thin adapter on top of it.
+one-shot implementer, tester, TDD-test, and advisor runs. In-process callers use
+it directly. The `tim subagent` command is a thin adapter on top of it.
 
 ## Module layout
 
@@ -10,6 +10,7 @@ directly. The `tim subagent` command is a thin adapter on top of it.
 | ------------------------------ | --------------------------------------------------------------------------------- |
 | `src/tim/subagents/types.ts`   | Request, prepared-execution, result, and launch-handle contracts                  |
 | `src/tim/subagents/service.ts` | Role table, preparation, and the Codex and Claude one-shot launch adapters        |
+| `src/tim/subagents/advisor.ts` | Resolution of the optional advisor executor and model                             |
 | `src/tim/subagents/index.ts`   | Public exports for in-process callers                                             |
 | `src/tim/commands/subagent.ts` | CLI adapter: option translation, output file, final stdout, tunnel byte-count log |
 
@@ -75,10 +76,31 @@ instruction key, config key, legacy Claude model key, and prompt builder. The
 `tdd-tests` CLI role maps to the `tddTests` instruction and config keys. Add new
 roles there rather than in scattered switch statements.
 
+## The optional advisor role
+
+`advisor` is a read-only consultation role. It answers design, architecture, and
+debugging questions that benefit from a stronger model and a broader view of the
+system; its prompt forbids edits, tests, and commits, and it has no failure
+protocol because "no confident answer" is itself a useful answer.
+
+`resolveAdvisorConfiguration()` in `src/tim/subagents/advisor.ts` is the single
+gate on whether the advisor exists. It returns a value only when
+`subagents.advisor.executor` is set **and** `subagents.advisor.model` has an
+entry for that executor; a model configured for the other executor does not
+count, because the point of the role is the explicitly chosen model. The
+orchestration prompts mention the advisor only when that resolution succeeds
+(see `buildAdvisorGuidance()` in `orchestrator_prompt.ts`), so a project that has
+not opted in never sees a role it cannot run.
+
+The CLI role is not gated. `tim subagent advisor <planId>` runs by hand with the
+ordinary executor and model precedence below.
+
 ## Executor and model precedence
 
-- Executor: the requested value, else `config.defaultExecutor` when it is
-  `codex-cli` or `claude-code`, else `claude-code`. Any other value throws.
+- Executor: the requested value, else the advisor's own
+  `config.subagents.advisor.executor` for the `advisor` role, else
+  `config.defaultExecutor` when it is `codex-cli` or `claude-code`, else
+  `claude-code`. Any other value throws.
 - Model: nonblank requested model, then
   `config.subagents.<roleConfigKey>.model.<claude|codex>`, then for Claude the
   legacy `executors['claude-code'].agents.<role>.model`, then the provider
