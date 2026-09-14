@@ -309,6 +309,17 @@ describe('runPrStacking', () => {
     expect(prompt).toContain('inspect every large candidate slice for further coherent splits');
     expect(prompt).toContain('does not need to contain the full end-to-end functionality');
     expect(prompt).toContain('Every PR must still pass CI');
+    expect(prompt).toContain(
+      "After creating or updating each slice branch, run the repository's relevant validation commands on that branch"
+    );
+    expect(prompt).toContain('including linting, type checking, tests, builds');
+    expect(prompt).toContain('Do not validate only the combined stack');
+    expect(prompt).toContain(
+      'If a lower slice fails because it depends on changes that remain in a higher slice'
+    );
+    expect(prompt).toContain(
+      'move the required changes into the lower slice or revise the split until the lower PR passes on its own'
+    );
     expect(prompt).toContain('Create every new lower-slice pull request as a draft');
     expect(prompt).toContain('clearly marked "Stack" section');
     expect(prompt).toContain('same final tree');
