@@ -2402,6 +2402,14 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'advisor'] as con
         'claude-code',
       ])
     )
+    .addOption(
+      new Option(
+        '--difficulty <level>',
+        'Expected task difficulty; selects an optional model override'
+      )
+        .choices(['low', 'high'])
+        .default('high')
+    )
     .option('-m, --model <model>', 'Model to use')
     .option('--input <text>', 'Additional instructions from orchestrator')
     .option(

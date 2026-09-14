@@ -42,6 +42,7 @@ export interface SubagentPreparationRequest {
   planId: number;
   executor?: string;
   model?: string;
+  difficulty?: 'low' | 'high';
   taskIndex?: string | string[];
   configPath?: string;
   inputPolicy: SubagentInputPolicy;

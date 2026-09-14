@@ -404,6 +404,25 @@ tim rebase 123 --auto-workspace
 
 Ordinary plan-backed reviews are intentionally stateless, so the caller chooses the scope of each pass. The orchestrator prompts use a three-tier rule: the first review of a batch covers the complete declared scope, intermediate fix-verification reviews narrow to the diff with `--since <commit>` over the same task scope, and the review that ends the loop covers the complete declared scope again. The loop stops when a complete review produces no new blocking findings, where `critical` and `major` are blocking and `minor` and `info` are not. See `docs/review-iteration-policy.md` for the full policy, the severity rubric, and the four-review bound.
 
+`tim subagent implementer|tester|tdd-tests|advisor <planId>` accepts `--difficulty low|high`. The default is `high`. Use `low` for easy, routine, or tightly scoped work that needs little reasoning. The orchestrator receives the same guidance. The reviewer command uses the separate review workflow and does not accept this option.
+
+Set optional models for each difficulty under each role (`implementer`, `tester`, `tddTests`, or `advisor`):
+
+```yaml
+subagents:
+  implementer:
+    model:
+      codex: your-usual-model
+    modelByDifficulty:
+      low:
+        codex: your-fast-model
+        claude: your-fast-claude-model
+      high:
+        codex: your-strong-model
+```
+
+Model selection uses `--model` first, then the selected difficulty and executor, then the role's existing `model` setting, then the legacy Claude setting or provider default. A missing difficulty override keeps the existing fallback behavior. Difficulty does not change the executor.
+
 `tim subagent implementer|tester|tdd-tests|advisor <planId>` accepts `--task-index <indexes...>` to narrow the subagent's task context to the named tasks. Indexes are numbered like `tim review --task-index`: plan-absolute and 1-based, counted over every task including completed ones, supplied either comma-separated (`--task-index 2,4`) or by repeating the flag. Unlike the reviewer's flag, this one selects only incomplete tasks: an index that is out of range **or points at a completed task** fails immediately with an error listing the valid incomplete indexes, and nothing executes. Without the flag, the subagent receives all incomplete tasks as before. Use this for review-fix rounds so a fix subagent cannot creep into settled work; the findings themselves still arrive through `--input`/`--input-file`.
 
 Recurrence judgment belongs to the orchestrator rather than `tim review`: it compares successive findings by underlying cause, distinguishes incomplete fixes from newly exposed issues and regressions, and writes a consolidation proposal when one review reports the same defect class at several locations. After the ordinary full-plan review loop is clear, run `--structural-only` exactly once to execute only the Codex structural prompt and address high-confidence code-layout, ownership, duplication, and structural smells. `--include-structural` remains available for callers that explicitly want both reviewers in one invocation.

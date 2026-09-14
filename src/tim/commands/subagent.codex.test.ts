@@ -606,6 +606,27 @@ describe('subagent command - prompt construction and executor delegation', () =>
     );
   });
 
+  test('passes low difficulty through the CLI adapter to model selection', async () => {
+    effectiveConfigOverride = {
+      paths: { tasks: tasksDir },
+      subagents: {
+        implementer: {
+          model: { codex: 'base-model' },
+          modelByDifficulty: { low: { codex: 'easy-model:low' } },
+        },
+      },
+    };
+    await handleSubagentCommand(
+      'implementer',
+      42,
+      { executor: 'codex-cli', difficulty: 'low' },
+      {}
+    );
+    expect(capturedCodexOptions).toEqual(
+      expect.objectContaining({ model: 'easy-model', reasoningLevel: 'low' })
+    );
+  });
+
   test('separates reasoning effort from the Codex subagent model', async () => {
     effectiveConfigOverride = {
       paths: { tasks: tasksDir },

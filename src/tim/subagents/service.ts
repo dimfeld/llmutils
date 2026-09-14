@@ -166,6 +166,10 @@ export function buildSubagentTaskContext(
 export async function prepareSubagentExecution(
   request: SubagentPreparationRequest
 ): Promise<PreparedSubagentExecution> {
+  const difficulty = request.difficulty ?? 'high';
+  if (difficulty !== 'low' && difficulty !== 'high') {
+    throw new Error(`Invalid subagent difficulty: ${difficulty}. Expected low or high.`);
+  }
   const config = await loadEffectiveConfig(request.configPath);
   const repoRoot =
     request.repositoryRoot ??
@@ -179,7 +183,13 @@ export async function prepareSubagentExecution(
   const gitRoot = await getGitRoot(path.dirname(planFilePath));
   const useJj = await getUsingJj(gitRoot);
   const executor = resolveSubagentExecutor(request.agentType, request.executor, config);
-  const selectedModel = resolveSubagentModel(request.agentType, executor, request.model, config);
+  const selectedModel = resolveSubagentModel(
+    request.agentType,
+    executor,
+    request.model,
+    config,
+    difficulty
+  );
 
   const referenceArtifactPaths = await tryMaterializeReferenceArtifactPathsForExecution(
     gitRoot,
@@ -339,7 +349,8 @@ function resolveSubagentModel(
   agentType: PreparedSubagentType,
   executorType: SubagentExecutor,
   cliModel: string | undefined,
-  config: TimConfig
+  config: TimConfig,
+  difficulty: 'low' | 'high'
 ): string | undefined {
   if (cliModel?.trim()) {
     return cliModel;
@@ -347,6 +358,14 @@ function resolveSubagentModel(
 
   const normalizedExecutor = normalizeSubagentExecutor(executorType);
   const roleDefinition = ROLE_DEFINITIONS[agentType];
+  const roleConfig = config.subagents?.[roleDefinition.configKey];
+  const difficultyModel =
+    roleConfig && 'modelByDifficulty' in roleConfig
+      ? roleConfig.modelByDifficulty?.[difficulty]?.[normalizedExecutor]
+      : undefined;
+  if (difficultyModel?.trim()) {
+    return difficultyModel;
+  }
   const configuredModel =
     config.subagents?.[roleDefinition.configKey]?.model?.[normalizedExecutor] ||
     config.subagents?.[roleDefinition.configKey]?.model?.[executorType as SubagentExecutorModelKey];

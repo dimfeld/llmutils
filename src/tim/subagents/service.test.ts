@@ -190,6 +190,44 @@ describe('reusable subagent service', () => {
     }
   });
 
+  test.each(['claude-code', 'codex-cli'] as const)(
+    'selects difficulty models and keeps model precedence for %s',
+    async (executor: 'claude-code' | 'codex-cli'): Promise<void> => {
+      await fs.writeFile(
+        configPath,
+        JSON.stringify({
+          paths: { tasks: tasksDirectory },
+          subagents: {
+            implementer: {
+              model: { claude: 'base', codex: 'base' },
+              modelByDifficulty: {
+                low: { claude: 'easy', codex: 'easy' },
+                high: { claude: 'hard', codex: 'hard' },
+              },
+            },
+          },
+        })
+      );
+      clearConfigCache();
+      expect((await prepare({ executor })).model).toBe('hard');
+      expect((await prepare({ executor, difficulty: 'high' })).model).toBe('hard');
+      expect((await prepare({ executor, difficulty: 'low' })).model).toBe('easy');
+      expect((await prepare({ executor, difficulty: 'low', model: 'explicit' })).model).toBe(
+        'explicit'
+      );
+      await writeConfig({ subagents: true });
+      expect((await prepare({ executor, difficulty: 'low' })).model).toBe(
+        executor === 'claude-code' ? 'configured-claude-model' : 'configured-codex-model'
+      );
+    }
+  );
+
+  test('rejects invalid difficulty before plan preparation', async () => {
+    await expect(prepare({ difficulty: 'medium' as 'low' })).rejects.toThrow(
+      'Invalid subagent difficulty'
+    );
+  });
+
   test('uses configured executor and model precedence', async () => {
     await writeConfig({
       defaultExecutor: 'claude-code',

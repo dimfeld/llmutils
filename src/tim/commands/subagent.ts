@@ -19,6 +19,7 @@ export { buildSubagentTaskContext } from '../subagents/index.js';
 interface SubagentOptions {
   executor?: string;
   model?: string;
+  difficulty?: 'low' | 'high';
   input?: string;
   inputFile?: string | string[];
   taskIndex?: string | string[];
@@ -47,6 +48,7 @@ export async function handleSubagentCommand(
     planId,
     executor: options.executor,
     model: options.model,
+    difficulty: options.difficulty,
     inputPolicy: {
       type: 'orchestrator',
       input: options.input,

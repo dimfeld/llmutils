@@ -7,6 +7,19 @@ import {
 } from './orchestrator_prompt.ts';
 import { structuralPassApplies } from './review_guidance.ts';
 
+it('teaches each shell orchestrator when to select low difficulty', () => {
+  const outputs = [
+    wrapWithOrchestration('Context', '123'),
+    wrapWithOrchestrationSimple('Context', '123'),
+    wrapWithOrchestrationTdd('Context', '123'),
+    wrapWithOrchestrationTdd('Context', '123', { simpleMode: true }),
+  ];
+  for (const output of outputs) {
+    expect(output).toContain('--difficulty low');
+    expect(output).toContain('easy, routine, or tightly scoped');
+  }
+});
+
 describe('orchestrator_prompt failure protocol', () => {
   it('includes failure protocol with FAILED detection and evaluation guidance', () => {
     const out = wrapWithOrchestration('Some task context', '123', { batchMode: false });

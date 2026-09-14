@@ -16,6 +16,21 @@ import {
 } from '../common/slack/slack_daily_digest_config.js';
 import { RESERVED_TIM_ENVIRONMENT_VARIABLE_SET } from './environment_templates.js';
 
+const subagentDifficultyModelsSchema = z
+  .object({
+    low: z
+      .object({ claude: z.string().optional(), codex: z.string().optional() })
+      .strict()
+      .optional(),
+    high: z
+      .object({ claude: z.string().optional(), codex: z.string().optional() })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .optional()
+  .describe('Model overrides by difficulty and executor; omitted difficulty uses high');
+
 /**
  * Schema for a single command to be executed after applying changes.
  */
@@ -922,6 +937,7 @@ export const timConfigSchema = z
       .object({
         implementer: z
           .object({
+            modelByDifficulty: subagentDifficultyModelsSchema,
             model: z
               .object({
                 claude: z.string().optional().describe('Model override for claude-code execution'),
@@ -934,6 +950,7 @@ export const timConfigSchema = z
           .optional(),
         tester: z
           .object({
+            modelByDifficulty: subagentDifficultyModelsSchema,
             model: z
               .object({
                 claude: z.string().optional().describe('Model override for claude-code execution'),
@@ -946,6 +963,7 @@ export const timConfigSchema = z
           .optional(),
         tddTests: z
           .object({
+            modelByDifficulty: subagentDifficultyModelsSchema,
             model: z
               .object({
                 claude: z.string().optional().describe('Model override for claude-code execution'),
@@ -974,6 +992,7 @@ export const timConfigSchema = z
          */
         advisor: z
           .object({
+            modelByDifficulty: subagentDifficultyModelsSchema,
             executor: z
               .enum(['claude-code', 'codex-cli'])
               .optional()

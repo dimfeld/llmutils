@@ -186,9 +186,15 @@ You don't need to mark the entire plan file as complete. We will handle that for
 const DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS =
   'Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.';
 
-/**
- * Builds the subagent executor selection guidance for dynamic mode.
- */
+function buildSubagentDifficultyGuidance(): string {
+  return `## Subagent Difficulty
+
+For the implementer and tester subagent commands, use \`--difficulty low\` when you know the work is easy, routine, or tightly scoped and needs little reasoning. The reviewer command does not accept this option.
+
+`;
+}
+
+/** Builds the subagent executor selection guidance for dynamic mode. */
 function buildDynamicExecutorGuidance(options: OrchestrationOptions): string {
   if (options.agentMessagingEnabled === true) {
     const instructions =
@@ -789,7 +795,7 @@ ${contextContent}`;
 
   return `${header}${availableAgents}${advisorGuidance}
 
-${dynamicGuidance}${instructionStyleSection}${workflowInstructions}
+${dynamicGuidance}${instructionStyleSection}${buildSubagentDifficultyGuidance()}${workflowInstructions}
 
 ${importantGuidelines}
 
@@ -951,7 +957,7 @@ ${contextContent}`;
 
 ${batchModeInstructions}${availableAgents}${buildAdvisorGuidance(planId, options)}
 
-${dynamicGuidance}${instructionStyleSection}${workflowInstructions}
+${dynamicGuidance}${instructionStyleSection}${buildSubagentDifficultyGuidance()}${workflowInstructions}
 
 ${failureProtocol}
 
@@ -1200,7 +1206,7 @@ ${contextContent}`;
 
 ${batchModeInstructions}${availableAgents}${buildAdvisorGuidance(planId, options)}
 
-${dynamicGuidance}${instructionStyleSection}${workflowInstructions}
+${dynamicGuidance}${instructionStyleSection}${buildSubagentDifficultyGuidance()}${workflowInstructions}
 
 ${failureProtocol}
 

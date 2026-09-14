@@ -19,7 +19,7 @@ domain service, not on a Commander handler.
 
 ## Contracts
 
-- `SubagentPreparationRequest` — plan ID, role, optional executor and model,
+- `SubagentPreparationRequest` — plan ID, role, optional executor, model, and difficulty (`low` or `high`, default `high`),
   optional task indexes, config path, optional repository root, and an input
   policy.
 - `PreparedSubagentExecution` — everything needed to start exactly one provider
@@ -101,7 +101,9 @@ ordinary executor and model precedence below.
   `config.subagents.advisor.executor` for the `advisor` role, else
   `config.defaultExecutor` when it is `codex-cli` or `claude-code`, else
   `claude-code`. Any other value throws.
-- Model: nonblank requested model, then
+- Model: nonblank requested model, then the selected difficulty and executor in
+  `config.subagents.<roleConfigKey>.modelByDifficulty` for implementer, tester,
+  TDD-test, and advisor runs, then
   `config.subagents.<roleConfigKey>.model.<claude|codex>`, then for Claude the
   legacy `executors['claude-code'].agents.<role>.model`, then the provider
   default.

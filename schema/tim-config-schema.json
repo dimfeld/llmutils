@@ -1036,6 +1036,37 @@
         "implementer": {
           "type": "object",
           "properties": {
+            "modelByDifficulty": {
+              "description": "Model overrides by difficulty and executor; omitted difficulty uses high",
+              "type": "object",
+              "properties": {
+                "low": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "type": "string"
+                    },
+                    "codex": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "high": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "type": "string"
+                    },
+                    "codex": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
             "model": {
               "type": "object",
               "properties": {
@@ -1056,6 +1087,37 @@
         "tester": {
           "type": "object",
           "properties": {
+            "modelByDifficulty": {
+              "description": "Model overrides by difficulty and executor; omitted difficulty uses high",
+              "type": "object",
+              "properties": {
+                "low": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "type": "string"
+                    },
+                    "codex": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "high": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "type": "string"
+                    },
+                    "codex": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
             "model": {
               "type": "object",
               "properties": {
@@ -1076,6 +1138,37 @@
         "tddTests": {
           "type": "object",
           "properties": {
+            "modelByDifficulty": {
+              "description": "Model overrides by difficulty and executor; omitted difficulty uses high",
+              "type": "object",
+              "properties": {
+                "low": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "type": "string"
+                    },
+                    "codex": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "high": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "type": "string"
+                    },
+                    "codex": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
             "model": {
               "type": "object",
               "properties": {
@@ -1116,6 +1209,37 @@
         "advisor": {
           "type": "object",
           "properties": {
+            "modelByDifficulty": {
+              "description": "Model overrides by difficulty and executor; omitted difficulty uses high",
+              "type": "object",
+              "properties": {
+                "low": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "type": "string"
+                    },
+                    "codex": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "high": {
+                  "type": "object",
+                  "properties": {
+                    "claude": {
+                      "type": "string"
+                    },
+                    "codex": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
             "executor": {
               "description": "Executor used for advisor consultations",
               "type": "string",
