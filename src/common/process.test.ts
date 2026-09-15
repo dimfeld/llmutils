@@ -90,8 +90,11 @@ describe('process utilities', () => {
   describe('spawnAndLogOutput', () => {
     it('captures raw stdout and does not send structured output when quiet is true', async () => {
       const captured: StructuredMessage[] = [];
+      const logs: unknown[][] = [];
       const adapter: LoggerAdapter = {
-        log: () => {},
+        log: (...args: unknown[]) => {
+          logs.push(args);
+        },
         error: () => {},
         warn: () => {},
         writeStdout: () => {},
@@ -117,6 +120,7 @@ describe('process utilities', () => {
       });
 
       expect(captured).toEqual([]);
+      expect(logs).toEqual([]);
     });
 
     it('captures raw stdout and skips structured arrays when quiet is true', async () => {

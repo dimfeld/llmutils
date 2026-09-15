@@ -511,7 +511,9 @@ export async function spawnAndLogOutput(
   }
 
   debugLog('Running', cmd, options);
-  log(`> ${cmd.join(' ')}`);
+  if (!options?.quiet) {
+    log(`> ${cmd.join(' ')}`);
+  }
   return spawnTrackedProcess(cmd, options, ['ignore', 'pipe', 'pipe'], ({ proc, trackResult }) =>
     trackResult(setupOutputProcessing(proc, options).result)
   );
