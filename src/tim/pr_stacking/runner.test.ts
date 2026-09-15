@@ -300,6 +300,7 @@ describe('runPrStacking', () => {
       baseBranch: 'main',
       comparisonRef: 'abc1234',
       changedLines: 500,
+      branchPrefix: 'feature/',
       targetMaxChangedLines: 400,
     });
 
@@ -332,9 +333,45 @@ describe('runPrStacking', () => {
     expect(prompt).toContain(
       'If the branch being split starts with the plan number, every new lower-slice branch name should also start with that plan number'
     );
+    expect(prompt).toContain(
+      'If the branch being split starts with the configured branch prefix `feature/`, every new lower-slice branch name must also start with that branch prefix followed by the plan number'
+    );
     expect(prompt).toContain('Do not copy external issue-tracker IDs');
     expect(prompt).toContain('refer to related issues with language such as "Related to ISSUE"');
     expect(prompt).toContain('Do not use "Closes", "Fixes", or other issue-closing keywords');
     expect(prompt).toContain('leave all commits, branches, and pull requests unchanged');
+  });
+
+  test('passes the normalized configured branch prefix to the stacking prompt', async () => {
+    const result = await runPrStacking({
+      plan,
+      planFilePath: '/repo/.tim/plans/12.yml',
+      mainPrUrl: 'https://github.com/acme/repo/pull/20',
+      baseDir: '/repo',
+      config: { ...config(), branchPrefix: 'feature' },
+    });
+
+    expect(result).toEqual({ ran: true, changedLines: 500 });
+    expect(executeSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'If the branch being split starts with the configured branch prefix `feature/`, every new lower-slice branch name must also start with that branch prefix followed by the plan number'
+      ),
+      expect.anything()
+    );
+  });
+
+  test('does not add branch prefix guidance when the original branch does not use it', () => {
+    const prompt = buildPrStackingPrompt({
+      plan,
+      vcsType: 'git',
+      mainBranch: 'feature/stack-review',
+      mainPrUrl: 'https://github.com/acme/repo/pull/20',
+      baseBranch: 'main',
+      comparisonRef: 'abc1234',
+      changedLines: 500,
+      branchPrefix: 'other/',
+    });
+
+    expect(prompt).not.toContain('configured branch prefix');
   });
 });

@@ -3,6 +3,7 @@ import { fetchOpenPullRequests, type OpenPullRequest } from '../../common/github
 import { refreshPrStatus } from '../../common/github/pr_status_service.js';
 import { boldMarkdownHeaders, log } from '../../logging.js';
 import { resolveEffectivePrBase } from '../commands/create_pr.js';
+import { normalizeBranchPrefix } from '../commands/branch.js';
 import type { TimConfig } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
 import { getPrStatusByUrl, linkPlanToPrs } from '../db/pr_status.js';
@@ -63,6 +64,7 @@ export interface PrStackingPromptOptions {
   baseBranch: string;
   comparisonRef: string;
   changedLines: number;
+  branchPrefix?: string;
   targetMaxChangedLines?: number;
 }
 
@@ -80,6 +82,12 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
       : [
           `- When practical, keep each slice below ${options.targetMaxChangedLines} changed lines (additions plus deletions). Treat this as a review-size target, not a reason to create incoherent slices.`,
         ];
+  const branchPrefixGuidance =
+    options.branchPrefix !== undefined &&
+    options.branchPrefix.length > 0 &&
+    options.mainBranch.startsWith(options.branchPrefix)
+      ? ` If the branch being split starts with the configured branch prefix \`${options.branchPrefix}\`, every new lower-slice branch name must also start with that branch prefix followed by the plan number.`
+      : '';
 
   return [
     'The implementation and its main pull request are complete. Reorganize this branch into a stack of smaller vertical-slice pull requests when that produces a materially easier review.',
@@ -108,7 +116,7 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     "- After creating or updating each slice branch, run the repository's relevant validation commands on that branch, including linting, type checking, tests, builds, and other required checks as applicable. Do not validate only the combined stack. If a lower slice fails because it depends on changes that remain in a higher slice, move the required changes into the lower slice or revise the split until the lower PR passes on its own.",
     '- Use one commit per vertical slice. Order dependent slices from the stack base upward.',
     `- Keep ${options.mainBranch} and ${options.mainPrUrl} as the top and final slice of the stack. Never close or replace the original pull request.`,
-    '- Create a unique, descriptive branch for every lower slice. Do not reuse or overwrite an unrelated local or remote branch. If the branch being split starts with the plan number, every new lower-slice branch name should also start with that plan number. Do not copy external issue-tracker IDs, such as a trailing Linear issue tag, into new lower-slice branch names. The existing top branch may retain those external IDs.',
+    `- Create a unique, descriptive branch for every lower slice. Do not reuse or overwrite an unrelated local or remote branch.${branchPrefixGuidance} If the branch being split starts with the plan number, every new lower-slice branch name should also start with that plan number. Do not copy external issue-tracker IDs, such as a trailing Linear issue tag, into new lower-slice branch names. The existing top branch may retain those external IDs.`,
     `- The bottom slice must target ${options.baseBranch}. Each later slice must target the branch immediately below it. Change the base of ${options.mainPrUrl} to the branch immediately below ${options.mainBranch}.`,
     '- Push every slice branch. A history rewrite of the original branch can use a force-with-lease equivalent, but do not use an unguarded force push when a guarded form is available.',
     '- Create every new lower-slice pull request as a draft. Preserve the current draft/ready state of the original pull request.',
@@ -307,6 +315,7 @@ export async function runPrStacking(options: RunPrStackingOptions): Promise<PrSt
     baseBranch,
     comparisonRef: diffResult.mergeBaseCommit,
     changedLines,
+    branchPrefix: normalizeBranchPrefix(options.config.branchPrefix),
     targetMaxChangedLines: minChangedLines,
   });
 
