@@ -138,7 +138,13 @@ export type CanonicalSnapshot =
   | CanonicalProjectSettingSnapshot;
 
 // Keep in sync with isWorkCompleteStatus in src/tim/plans/plan_state_utils.ts.
-const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'needs_review', 'reviewed', 'cancelled']);
+const ASSIGNMENT_CLEANUP_STATUSES = new Set([
+  'done',
+  'needs_review',
+  'review_deferred',
+  'reviewed',
+  'cancelled',
+]);
 
 const CanonicalProjectSnapshotSchema = z.object({
   type: z.literal('project'),

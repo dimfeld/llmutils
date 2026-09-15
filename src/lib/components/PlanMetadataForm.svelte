@@ -45,6 +45,7 @@
     { value: 'in_progress', label: 'In Progress' },
     { value: 'needs_attention', label: 'Needs Attention' },
     { value: 'needs_review', label: 'Needs Review' },
+    { value: 'review_deferred', label: 'Review deferred' },
     { value: 'reviewed', label: 'Reviewed' },
     { value: 'done', label: 'Done' },
     { value: 'cancelled', label: 'Cancelled' },

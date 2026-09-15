@@ -50,7 +50,13 @@ import {
 import { deleteProjectStateInTransaction } from './project_delete.js';
 
 // Keep in sync with isWorkCompleteStatus in src/tim/plans/plan_state_utils.ts.
-const ASSIGNMENT_CLEANUP_STATUSES = new Set(['done', 'needs_review', 'reviewed', 'cancelled']);
+const ASSIGNMENT_CLEANUP_STATUSES = new Set([
+  'done',
+  'needs_review',
+  'review_deferred',
+  'reviewed',
+  'cancelled',
+]);
 
 export function applyOperation(
   db: Database,

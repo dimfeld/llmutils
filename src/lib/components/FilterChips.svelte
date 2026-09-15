@@ -65,6 +65,11 @@
       color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
     },
     {
+      status: 'review_deferred',
+      label: 'Review deferred',
+      color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
+    },
+    {
       status: 'deferred',
       label: 'Deferred',
       color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',

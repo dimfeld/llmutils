@@ -242,6 +242,7 @@ describe('plan state utilities', () => {
         'in_progress',
         'needs_attention',
         'needs_review',
+        'review_deferred',
         'reviewed',
       ] as const;
       for (const status of statuses) {
@@ -267,7 +268,13 @@ describe('plan state utilities', () => {
 
   describe('isWorkComplete', () => {
     test('returns true for work-complete statuses', () => {
-      const statuses = ['done', 'cancelled', 'needs_review', 'reviewed'] as const;
+      const statuses = [
+        'done',
+        'cancelled',
+        'needs_review',
+        'review_deferred',
+        'reviewed',
+      ] as const;
       for (const status of statuses) {
         const plan: PlanSchema = {
           id: 1,
@@ -295,7 +302,13 @@ describe('plan state utilities', () => {
 
   describe('isWorkCompleteStatus', () => {
     test('returns true for work-complete status strings', () => {
-      const statuses = ['done', 'cancelled', 'needs_review', 'reviewed'] as const;
+      const statuses = [
+        'done',
+        'cancelled',
+        'needs_review',
+        'review_deferred',
+        'reviewed',
+      ] as const;
       for (const status of statuses) {
         expect(isWorkCompleteStatus(status)).toBe(true);
       }
@@ -319,9 +332,12 @@ describe('plan state utilities', () => {
   });
 
   describe('isReopenableCompletedStatus', () => {
-    test.each(['done', 'needs_review', 'reviewed'] as const)('returns true for %s', (status) => {
-      expect(isReopenableCompletedStatus(status)).toBe(true);
-    });
+    test.each(['done', 'needs_review', 'review_deferred', 'reviewed'] as const)(
+      'returns true for %s',
+      (status) => {
+        expect(isReopenableCompletedStatus(status)).toBe(true);
+      }
+    );
 
     test.each(['cancelled', 'deferred', 'pending', 'in_progress', null, undefined] as const)(
       'returns false for %s',
@@ -350,6 +366,7 @@ describe('plan state utilities', () => {
       expect(getStatusDisplayName('cancelled')).toBe('Cancelled');
       expect(getStatusDisplayName('deferred')).toBe('Deferred');
       expect(getStatusDisplayName('needs_review')).toBe('Needs Review');
+      expect(getStatusDisplayName('review_deferred')).toBe('Review deferred');
       expect(getStatusDisplayName('reviewed')).toBe('Reviewed');
     });
 
@@ -368,6 +385,7 @@ describe('plan state utilities', () => {
         'cancelled',
         'deferred',
         'needs_review',
+        'review_deferred',
         'reviewed',
       ];
       for (const status of validStatuses) {

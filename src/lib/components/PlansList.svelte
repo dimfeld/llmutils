@@ -53,6 +53,7 @@
     pending: 'Pending',
     needs_attention: 'Needs Attention',
     needs_review: 'Needs Review',
+    review_deferred: 'Review deferred',
     reviewed: 'Reviewed',
     recently_done: 'Recently Done',
     done: 'Done',
@@ -60,7 +61,12 @@
     deferred: 'Deferred',
   };
 
-  const defaultCollapsed: PlanDisplayStatus[] = ['done', 'cancelled', 'deferred'];
+  const defaultCollapsed: PlanDisplayStatus[] = [
+    'done',
+    'cancelled',
+    'review_deferred',
+    'deferred',
+  ];
 
   let collapsedGroups = $state<PlanDisplayStatus[]>([...defaultCollapsed]);
 
@@ -130,6 +136,7 @@
       activeFilters = activeFilters.filter((item) => item !== status);
     } else {
       activeFilters = [...activeFilters, status];
+      collapsedGroups = collapsedGroups.filter((item) => item !== status);
     }
   }
 

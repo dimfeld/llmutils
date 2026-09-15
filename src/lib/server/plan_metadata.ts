@@ -405,6 +405,7 @@ function isAssignmentCleanupStatus(status: RawPlanStatus): boolean {
   return (
     status === 'done' ||
     status === 'needs_review' ||
+    status === 'review_deferred' ||
     status === 'reviewed' ||
     status === 'cancelled'
   );

@@ -121,6 +121,15 @@ Gating follows the affordance-equals-eligibility rule: the action is shown **onl
 
 After a successful launch the handler shows a success toast and calls `invalidateAll()`; structured remote errors surface as an error toast.
 
+## Deferred Review
+
+The `review_deferred` status means implementation is complete and review is set aside.
+The plan detail page has **Defer review** and **Resume review** buttons. They use the
+existing synced metadata write path. Deferred reviews are excluded from Active Work
+and active plan counts. The Plans tab has a **Review deferred** filter and a collapsed
+group for these plans. Selecting the filter opens the group. Dependency checks treat
+implementation as complete; review and merge checks still treat review as unfinished.
+
 ## Active Work Tab
 
 The Active Work tab (`/projects/[projectId]/active`) is a single-page scrollable dashboard with three sections: Needs Attention, Running Now, and Ready to Start. Each section is collapsible with a count badge and hidden when empty. An "All clear" message appears when all sections are empty.

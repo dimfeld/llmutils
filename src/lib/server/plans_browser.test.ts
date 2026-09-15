@@ -53,6 +53,7 @@ describe('lib/server/plans_browser', () => {
   });
 
   beforeEach(() => {
+    vi.mocked(loadEffectiveConfig).mockClear();
     const dbPath = path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`);
     db = openDatabase(dbPath);
 
@@ -87,6 +88,22 @@ describe('lib/server/plans_browser', () => {
 
   afterAll(async () => {
     await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('deferred reviews stay in the plan browser and leave active work', async (): Promise<void> => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'review-deferred-plan',
+      planId: 400,
+      title: 'Review this later',
+      status: 'review_deferred',
+    });
+    const browser = await getPlansPageData(db, String(projectId));
+    expect(browser.plans.find((plan) => plan.uuid === 'review-deferred-plan')).toMatchObject({
+      status: 'review_deferred',
+      displayStatus: 'review_deferred',
+    });
+    const dashboard = await getDashboardData(db, String(projectId));
+    expect(dashboard.plans.some((plan) => plan.uuid === 'review-deferred-plan')).toBe(false);
   });
 
   test('getPlansPageData returns plans for a specific project id', async () => {

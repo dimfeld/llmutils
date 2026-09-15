@@ -59,6 +59,7 @@ function makeProject(overrides: Partial<ProjectWithMetadata> = {}): ProjectWithM
       pending: 1,
       in_progress: 1,
       needs_review: 0,
+      review_deferred: 0,
       done: 2,
       cancelled: 1,
       deferred: 0,

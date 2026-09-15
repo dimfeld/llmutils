@@ -551,3 +551,24 @@ describe('PlanDetail action navigation race', () => {
       .not.toBeDisabled();
   });
 });
+
+describe('PlanDetail review deferral', () => {
+  test.each([
+    { status: 'needs_review', action: 'Defer review', next: 'review_deferred' },
+    { status: 'review_deferred', action: 'Resume review', next: 'needs_review' },
+  ] as const)('$action saves the new status', async ({ status, action, next }): Promise<void> => {
+    vi.mocked(updatePlanMetadata).mockClear();
+    vi.mocked(updatePlanMetadata).mockResolvedValueOnce({
+      planUuid: 'plan-1',
+      planId: 1,
+      projectId: 123,
+    });
+    renderPlan(makePlanDetail({ status, displayStatus: status }));
+    await page.getByRole('button', { name: action, exact: true }).click();
+    expect(updatePlanMetadata).toHaveBeenCalledWith({
+      projectId: 123,
+      planUuid: 'plan-1',
+      status: next,
+    });
+  });
+});

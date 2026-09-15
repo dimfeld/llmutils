@@ -71,6 +71,7 @@ async function checkAndMarkParentDoneInDb(
     parentPlan.status === 'done' ||
     parentPlan.status === 'cancelled' ||
     parentPlan.status === 'needs_review' ||
+    parentPlan.status === 'review_deferred' ||
     parentPlan.status === 'reviewed' ||
     parentPlan.status === 'deferred'
   ) {
@@ -165,6 +166,7 @@ export async function checkAndMarkParentDone(
       parentPlan.status === 'done' ||
       parentPlan.status === 'cancelled' ||
       parentPlan.status === 'needs_review' ||
+      parentPlan.status === 'review_deferred' ||
       parentPlan.status === 'reviewed' ||
       parentPlan.status === 'deferred'
     ) {

@@ -49,6 +49,7 @@ export type PlanDisplayStatus =
   | 'blocked'
   | 'needs_attention'
   | 'needs_review'
+  | 'review_deferred'
   | 'reviewed'
   | 'recently_done'
   | 'done'
@@ -60,6 +61,7 @@ export interface ProjectPlanStatusCounts {
   in_progress: number;
   needs_attention: number;
   needs_review: number;
+  review_deferred: number;
   reviewed: number;
   done: number;
   cancelled: number;
@@ -255,6 +257,7 @@ const EMPTY_STATUS_COUNTS: ProjectPlanStatusCounts = {
   in_progress: 0,
   needs_attention: 0,
   needs_review: 0,
+  review_deferred: 0,
   reviewed: 0,
   done: 0,
   cancelled: 0,
@@ -884,6 +887,7 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
           in_progress: counts.in_progress,
           needs_attention: counts.needs_attention,
           needs_review: counts.needs_review,
+          review_deferred: counts.review_deferred,
           reviewed: counts.reviewed,
           done: counts.done,
           cancelled: counts.cancelled,

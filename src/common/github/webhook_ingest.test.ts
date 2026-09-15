@@ -1090,42 +1090,45 @@ describe('common/github/webhook_ingest', () => {
     expect(plan?.lessons_applied_at).toBeNull();
   });
 
-  test('ingestWebhookEvents marks a linked reviewed plan done when the PR is merged and the plan is fully finished', async () => {
-    nonSyncedUpsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
-      uuid: REVIEWED_PLAN_UUID,
-      planId: 3,
-      title: 'Plan 3',
-      branch: 'feature/webhook-reviewed',
-      filename: '3.plan.md',
-      status: 'reviewed',
-      tasks: [
-        { title: 'Task 1', description: 'Done', done: true },
-        { title: 'Task 2', description: 'Done', done: true },
-      ],
-    });
+  test.each(['reviewed', 'review_deferred'] as const)(
+    'ingestWebhookEvents completes a finished %s plan when its PR merges',
+    async (status): Promise<void> => {
+      nonSyncedUpsertPlan(db, getOrCreateProject(db, 'github.com__example__repo').id, {
+        uuid: REVIEWED_PLAN_UUID,
+        planId: 3,
+        title: 'Plan 3',
+        branch: 'feature/webhook-reviewed',
+        filename: '3.plan.md',
+        status,
+        tasks: [
+          { title: 'Task 1', description: 'Done', done: true },
+          { title: 'Task 2', description: 'Done', done: true },
+        ],
+      });
 
-    enqueuePullRequestEvent({
-      id: 17,
-      deliveryId: 'delivery-reviewed-merged',
-      action: 'closed',
-      prNumber: 53,
-      title: 'Webhook PR Reviewed',
-      state: 'closed',
-      draft: false,
-      mergedAt: '2026-03-30T12:00:00.000Z',
-      headSha: 'sha-53',
-      headRef: 'feature/webhook-reviewed',
-      receivedAt: '2026-03-30T12:00:00.000Z',
-    });
-    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+      enqueuePullRequestEvent({
+        id: 17,
+        deliveryId: 'delivery-reviewed-merged',
+        action: 'closed',
+        prNumber: 53,
+        title: 'Webhook PR Reviewed',
+        state: 'closed',
+        draft: false,
+        mergedAt: '2026-03-30T12:00:00.000Z',
+        headSha: 'sha-53',
+        headRef: 'feature/webhook-reviewed',
+        receivedAt: '2026-03-30T12:00:00.000Z',
+      });
+      mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
 
-    const result = await ingestWebhookEvents(db);
-    const plan = getPlanByUuid(db, REVIEWED_PLAN_UUID);
+      const result = await ingestWebhookEvents(db);
+      const plan = getPlanByUuid(db, REVIEWED_PLAN_UUID);
 
-    expect(result.errors).toEqual([]);
-    expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/53']);
-    expect(plan?.status).toBe('done');
-  });
+      expect(result.errors).toEqual([]);
+      expect(result.prsUpdated).toEqual(['https://github.com/example/repo/pull/53']);
+      expect(plan?.status).toBe('done');
+    }
+  );
 
   test('ingestWebhookEvents queues the merged-plan completion when running on a persistent node', async () => {
     const project = getOrCreateProject(db, 'github.com__example__repo');

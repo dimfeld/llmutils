@@ -2300,6 +2300,27 @@ describe('persistent-node sync queue', () => {
     expect(getPlanDependenciesByUuid(db, PLAN_UUID)).toEqual([]);
   });
 
+  test('deferred review survives optimistic projection and canonical refresh', async (): Promise<void> => {
+    seedPlan();
+    const operation = await setPlanScalarOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, field: 'status', value: 'review_deferred' },
+      { originNodeId: NODE_A, localSequence: 1 }
+    );
+    enqueue(operation);
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('review_deferred');
+    markOperationSending(db, operation.operationUuid);
+    markOperationAcked(db, operation.operationUuid, {});
+    mergeCanonicalRefresh(
+      db,
+      canonicalPlanSnapshot({ uuid: PLAN_UUID, planId: 1, status: 'review_deferred' })
+    );
+    expect(getPlanByUuid(db, PLAN_UUID)?.status).toBe('review_deferred');
+    expect(db.query('SELECT status FROM plan_canonical WHERE uuid = ?').get(PLAN_UUID)).toEqual({
+      status: 'review_deferred',
+    });
+  });
+
   test('plan.set_scalar optimistic apply updates status and priority', async () => {
     seedPlan();
     enqueue(

@@ -216,7 +216,12 @@ async function autoCompleteMergedLinkedPlans(
 
   for (const planUuid of linkedPlanUuids) {
     const planRow = getPlanByUuid(db, planUuid);
-    if (!planRow || (planRow.status !== 'needs_review' && planRow.status !== 'reviewed')) {
+    if (
+      !planRow ||
+      (planRow.status !== 'needs_review' &&
+        planRow.status !== 'review_deferred' &&
+        planRow.status !== 'reviewed')
+    ) {
       continue;
     }
 

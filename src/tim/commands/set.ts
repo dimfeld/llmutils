@@ -105,6 +105,7 @@ export async function handleSetCommand(
         plan.uuid &&
         (plan.status === 'done' ||
           plan.status === 'needs_review' ||
+          plan.status === 'review_deferred' ||
           plan.status === 'reviewed' ||
           plan.status === 'cancelled')
       ) {
@@ -417,6 +418,7 @@ export async function handleSetCommand(
       if (
         newParentPlan.status === 'done' ||
         newParentPlan.status === 'needs_review' ||
+        newParentPlan.status === 'review_deferred' ||
         newParentPlan.status === 'reviewed'
       ) {
         newParentPlan.status = 'in_progress';
@@ -506,6 +508,7 @@ export async function handleSetCommand(
       Boolean(refreshedPlanWithReferences.parent) &&
       (refreshedPlanWithReferences.status === 'done' ||
         refreshedPlanWithReferences.status === 'needs_review' ||
+        refreshedPlanWithReferences.status === 'review_deferred' ||
         refreshedPlanWithReferences.status === 'reviewed' ||
         refreshedPlanWithReferences.status === 'cancelled');
     if (shouldCheckParentCompletion && refreshedPlanWithReferences.parent) {

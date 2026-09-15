@@ -84,6 +84,7 @@ function getLatestSubmittedReviewAt(pr: PrStatusDetail, normalizedUsername: stri
         thread.comments.some(
           (comment) =>
             comment.reply_to_comment_id !== null &&
+            comment.author !== null &&
             normalizeGitHubUsername(comment.author) === normalizedUsername &&
             comment.created_at === review.submitted_at
         )

@@ -62,6 +62,7 @@ function isPlanEligibleForGenerate(plan: PlanDetail): plan is PlanDetailResult {
     plan.tasks.length === 0 &&
     plan.status !== 'done' &&
     plan.status !== 'needs_review' &&
+    plan.status !== 'review_deferred' &&
     plan.status !== 'reviewed' &&
     plan.status !== 'cancelled' &&
     plan.status !== 'deferred'
@@ -73,6 +74,7 @@ function isPlanEligibleForAgent(plan: PlanDetail): plan is PlanDetailResult {
     plan == null ||
     plan.status === 'done' ||
     plan.status === 'needs_review' ||
+    plan.status === 'review_deferred' ||
     plan.status === 'reviewed' ||
     plan.status === 'cancelled' ||
     plan.status === 'deferred'

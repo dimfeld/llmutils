@@ -10,6 +10,7 @@ import { importAssignment } from '$tim/db/assignment.js';
 import { openDatabase } from '$tim/db/database.js';
 import {
   getPlanByUuid,
+  getPlanTasksByUuid,
   getPlanDependenciesByUuid,
   getPlanTagsByUuid,
   upsertPlanDependencies,
@@ -57,6 +58,48 @@ describe('plan metadata remote commands', () => {
     clearConfigCache();
     currentDb.close(false);
     await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('defers and resumes review through synced metadata writes without losing work', async (): Promise<void> => {
+    const { updatePlanMetadata } = await import('./plan_metadata.remote.js');
+    const issues = [
+      {
+        severity: 'minor',
+        category: 'bug',
+        content: 'Check this later',
+        file: 'src/app.ts',
+        line: '1',
+      },
+    ];
+    nonSyncedUpsertPlan(currentDb, projectId, {
+      uuid: parentUuid,
+      planId: 10,
+      title: 'Review later',
+      status: 'needs_review',
+      pullRequest: ['https://github.com/example/repo/pull/1'],
+      reviewIssues: issues,
+      tasks: [{ title: 'Completed task', description: 'Keep this result', done: true }],
+    });
+    const before = getPlanByUuid(currentDb, parentUuid)!;
+    for (const status of ['review_deferred', 'needs_review'] as const) {
+      await invokeCommand(updatePlanMetadata, { projectId, planUuid: parentUuid, status });
+      expect(getPlanByUuid(currentDb, parentUuid)).toMatchObject({
+        status,
+        title: before.title,
+        review_issues: before.review_issues,
+        pull_request: before.pull_request,
+      });
+      expect(getPlanTasksByUuid(currentDb, parentUuid)).toEqual([
+        expect.objectContaining({ title: 'Completed task', done: 1 }),
+      ]);
+      expect(
+        currentDb.query('SELECT status FROM plan_canonical WHERE uuid = ?').get(parentUuid)
+      ).toEqual({ status });
+    }
+    expect(syncOperationRows()).toEqual([
+      { operation_type: 'plan.set_scalar', status: 'applied' },
+      { operation_type: 'plan.set_scalar', status: 'applied' },
+    ]);
   });
 
   test('creates a plan through the remote command', async () => {

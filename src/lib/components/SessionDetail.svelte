@@ -190,6 +190,7 @@
       taskCounts.total > 0 &&
       taskCounts.done < taskCounts.total &&
       planAttentionState.displayStatus !== 'needs_review' &&
+      planAttentionState.displayStatus !== 'review_deferred' &&
       planAttentionState.displayStatus !== 'done' &&
       planAttentionState.displayStatus !== 'cancelled' &&
       planAttentionState.displayStatus !== 'deferred' &&

@@ -320,41 +320,48 @@ describe('task management integration workflows', () => {
     }
   });
 
-  test('CLI add with MCP removal works across interfaces', async () => {
-    const plan: PlanSchema = {
-      id: 505,
-      title: 'Mixed Interfaces Plan',
-      goal: 'Combine CLI and MCP operations',
-      status: 'pending',
-      tasks: [],
-    };
-    await writePlanFile(planFile, plan);
+  test.each(['pending', 'review_deferred'] as const)(
+    'CLI add with MCP removal works from %s',
+    async (status): Promise<void> => {
+      const plan: PlanSchema = {
+        id: 505,
+        title: 'Mixed Interfaces Plan',
+        goal: 'Combine CLI and MCP operations',
+        status,
+        tasks: [],
+      };
+      await writePlanFile(planFile, plan);
 
-    await handleAddTaskCommand(
-      505,
-      {
-        title: 'Mixed Task',
-        description: 'Added via CLI command',
-      },
-      command
-    );
+      await handleAddTaskCommand(
+        505,
+        {
+          title: 'Mixed Task',
+          description: 'Added via CLI command',
+        },
+        command
+      );
 
-    const removeArgs = removePlanTaskParameters.parse({
-      plan: 505,
-      taskTitle: 'Mixed Task',
-    });
-    const logger = {
-      debug() {},
-      error() {},
-      info() {},
-      warn() {},
-    };
-    const removeResult = await mcpRemovePlanTask(removeArgs, mcpContext, { log: logger });
-    expect(removeResult).toContain('Removed task "Mixed Task"');
+      const { plan: afterAdd } = await resolvePlanByNumericId(505, tempDir);
+      expect(afterAdd.status).toBe(status);
+      expect(afterAdd.tasks).toHaveLength(1);
 
-    const { plan: finalPlan } = await resolvePlan(505, { gitRoot: tempDir });
-    expect(finalPlan.tasks).toHaveLength(0);
-  });
+      const removeArgs = removePlanTaskParameters.parse({
+        plan: 505,
+        taskTitle: 'Mixed Task',
+      });
+      const logger = {
+        debug() {},
+        error() {},
+        info() {},
+        warn() {},
+      };
+      const removeResult = await mcpRemovePlanTask(removeArgs, mcpContext, { log: logger });
+      expect(removeResult).toContain('Removed task "Mixed Task"');
+
+      const { plan: finalPlan } = await resolvePlan(505, { gitRoot: tempDir });
+      expect(finalPlan.tasks).toHaveLength(0);
+    }
+  );
 });
 
 describe('structuralReviewAt reset on task add', () => {

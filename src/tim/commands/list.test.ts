@@ -471,6 +471,38 @@ describe('handleListCommand', () => {
     expect(planIds).toContain(3);
   });
 
+  test('deferred reviews require an explicit status filter', async (): Promise<void> => {
+    await createPlanFixture({
+      id: 1,
+      title: 'Review later',
+      goal: 'Completed work',
+      status: 'review_deferred',
+      tasks: [],
+    });
+    await createPlanFixture({
+      id: 2,
+      title: 'Review now',
+      goal: 'Completed work',
+      status: 'needs_review',
+      tasks: [],
+    });
+    const command = { parent: { opts: () => ({}) } };
+    await handleListCommand({}, command);
+    expect(
+      mockTable.mock.calls
+        .at(-1)![0]
+        .slice(1)
+        .map((row: unknown[]) => row[0])
+    ).toEqual([2]);
+    await handleListCommand({ status: ['review_deferred'] }, command);
+    expect(
+      mockTable.mock.calls
+        .at(-1)![0]
+        .slice(1)
+        .map((row: unknown[]) => row[0])
+    ).toEqual([1]);
+  });
+
   test('filters plans by status when --status flag is used', async () => {
     // Create test plans
     const plans = [

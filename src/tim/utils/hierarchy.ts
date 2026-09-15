@@ -128,7 +128,11 @@ export function getCompletedChildren(
 ): PlanSchema[] {
   const allChildren = getAllChildren(planId, allPlans);
   return allChildren.filter(
-    (plan) => plan.status === 'done' || plan.status === 'needs_review' || plan.status === 'reviewed'
+    (plan) =>
+      plan.status === 'done' ||
+      plan.status === 'needs_review' ||
+      plan.status === 'review_deferred' ||
+      plan.status === 'reviewed'
   );
 }
 

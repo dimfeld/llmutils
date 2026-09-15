@@ -52,6 +52,7 @@ describe('PlanMetadataForm', () => {
       'pending',
       'in_progress',
       'needs_review',
+      'review_deferred',
       'reviewed',
       'done',
       'cancelled',

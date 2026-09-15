@@ -126,6 +126,7 @@ describe('lib/server/db_queries', () => {
         pending: 1,
         in_progress: 0,
         needs_review: 0,
+        review_deferred: 0,
         done: 1,
         cancelled: 1,
         deferred: 0,
@@ -456,6 +457,25 @@ describe('lib/server/db_queries', () => {
         displayStatus: 'needs_review',
         isResolved: true,
       }),
+    ]);
+  });
+
+  test('deferred review completes implementation but does not complete review', async (): Promise<void> => {
+    const activeBefore = getProjectsWithMetadata(db).find(
+      (project) => project.id === projectId
+    )!.activePlanCount;
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-review',
+      planId: 106,
+      status: 'review_deferred',
+    });
+    const project = getProjectsWithMetadata(db).find((project) => project.id === projectId)!;
+    expect(project.activePlanCount).toBe(activeBefore - 1);
+    expect(project.statusCounts.review_deferred).toBe(1);
+    const detail = await getPlanDetail(db, 'plan-depends-on-review');
+    expect(detail?.depsFullyResolved).toBe(false);
+    expect(detail?.dependencies).toEqual([
+      expect.objectContaining({ status: 'review_deferred', isResolved: true }),
     ]);
   });
 

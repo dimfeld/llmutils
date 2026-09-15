@@ -120,6 +120,7 @@
   const INELIGIBLE_STATUSES = new Set([
     'done',
     'needs_review',
+    'review_deferred',
     'reviewed',
     'cancelled',
     'deferred',
@@ -502,6 +503,23 @@
   let hideDispositionedReviewIssues = $state(false);
   let editingNote = $state(false);
   let noteDraft = $state(untrack(() => plan.note ?? ''));
+  let changingReviewStatus = $state(false);
+
+  async function handleReviewDeferral(): Promise<void> {
+    if (changingReviewStatus) return;
+    const status = plan.status === 'needs_review' ? 'review_deferred' : 'needs_review';
+    changingReviewStatus = true;
+    try {
+      await updatePlanMetadata({ projectId: plan.projectId, planUuid: plan.uuid, status });
+      await invalidateAll();
+      toast.success(status === 'review_deferred' ? 'Review deferred' : 'Review resumed');
+    } catch (err) {
+      toast.error(extractPlanMetadataErrorMessage(err));
+    } finally {
+      changingReviewStatus = false;
+    }
+  }
+
   let savingNote = $state(false);
   let noteErrorMessage: string | null = $state(null);
   let noteDirty = $derived(noteDraft.trim() !== (plan.note ?? '').trim());
@@ -1077,10 +1095,7 @@
   let siblingEntries = $derived.by(() => {
     const basePlanUuid = (plan.effectiveBasePlan ?? plan.basePlan)?.uuid;
     const dependentUuids = new Set(plan.dependents.map((dependent) => dependent.uuid));
-    const relationshipRank = (entry: {
-      isBase: boolean;
-      dependsOnCurrent: boolean;
-    }): number => {
+    const relationshipRank = (entry: { isBase: boolean; dependsOnCurrent: boolean }): number => {
       if (entry.isBase) return 0;
       if (entry.dependsOnCurrent) return 1;
       return 2;
@@ -1174,6 +1189,20 @@
             <Pencil class="h-3 w-3" />
             Edit
           </Button>
+          {#if plan.status === 'needs_review' || plan.status === 'review_deferred'}
+            <Button
+              onclick={handleReviewDeferral}
+              disabled={changingReviewStatus}
+              size="xs"
+              variant="outline"
+            >
+              {changingReviewStatus
+                ? 'Saving…'
+                : plan.status === 'review_deferred'
+                  ? 'Resume review'
+                  : 'Defer review'}
+            </Button>
+          {/if}
           {#if openInEditorEnabled}
             <Button
               onclick={handleOpenInEditor}

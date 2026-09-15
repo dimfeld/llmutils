@@ -214,6 +214,24 @@ describe('tim set command', () => {
     expect(callArgs[2]).toBe(updatedPlan.uuid);
   });
 
+  test('removes assignments when status set to review_deferred', async () => {
+    const planPath = await createTestPlan(117);
+
+    await handleSetCommand(
+      117,
+      {
+        status: 'review_deferred',
+      },
+      globalOpts
+    );
+
+    const updatedPlan = (await resolvePlanByNumericId(117, tempDir)).plan;
+    expect(updatedPlan.status).toBe('review_deferred');
+    expect(removeAssignmentSpy).toHaveBeenCalledTimes(1);
+    const [callArgs] = removeAssignmentSpy.mock.calls;
+    expect(callArgs[2]).toBe(updatedPlan.uuid);
+  });
+
   test('removes assignments when status set to reviewed', async () => {
     const planPath = await createTestPlan(118);
 

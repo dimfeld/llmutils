@@ -17,6 +17,7 @@ export const statusSchema = z.enum([
   'in_progress',
   'needs_attention',
   'needs_review',
+  'review_deferred',
   'reviewed',
   'done',
   'cancelled',

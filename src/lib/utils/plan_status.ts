@@ -11,6 +11,7 @@ export const STATUS_ORDER: PlanDisplayStatus[] = [
   'blocked',
   'done',
   'cancelled',
+  'review_deferred',
   'deferred',
 ];
 
