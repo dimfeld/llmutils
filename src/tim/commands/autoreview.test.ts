@@ -177,6 +177,7 @@ describe('buildAutoreviewPrompt', () => {
     owner: 'org',
     repo: 'repo',
     baseBranch: 'main',
+    baseSha: 'base1234',
     headBranch: 'feature/my-branch',
     headSha: 'abc1234',
     prStatus: {} as any,
@@ -210,9 +211,9 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).not.toContain('tim subagent implementer');
   });
 
-  test('branch target includes --branch review command with branch name', () => {
+  test('branch target reviews the already checked out workspace', () => {
     const prompt = buildAutoreviewPrompt({ target: branchTarget });
-    expect(prompt).toContain('tim review --branch feature/some-branch --print');
+    expect(prompt).toContain('tim review --current --base main --print');
   });
 
   test('branch target does not mention tim subagent implementer', () => {
@@ -220,9 +221,10 @@ describe('buildAutoreviewPrompt', () => {
     expect(prompt).not.toContain('tim subagent implementer');
   });
 
-  test('PR target includes --pr review command with PR number', () => {
+  test('PR target reviews the already checked out workspace from the exact PR base', () => {
     const prompt = buildAutoreviewPrompt({ target: prTarget });
-    expect(prompt).toContain('tim review --pr 42 --print');
+    expect(prompt).toContain('tim review --current --base main --since base1234 --print');
+    expect(prompt).not.toContain('tim review --pr 42');
   });
 
   test('PR target does not mention tim subagent implementer', () => {
@@ -331,12 +333,19 @@ describe('buildAutoreviewPrompt', () => {
 
   test('branch target with base appends --base to review command', () => {
     const prompt = buildAutoreviewPrompt({ target: branchTarget, base: 'develop' });
-    expect(prompt).toContain('tim review --branch feature/some-branch --base develop --print');
+    expect(prompt).toContain('tim review --current --base develop --print');
   });
 
   test('pr target with base appends --base to review command', () => {
     const prompt = buildAutoreviewPrompt({ target: prTarget, base: 'develop' });
-    expect(prompt).toContain('tim review --pr 42 --base develop --print');
+    expect(prompt).toContain('tim review --current --base develop --print');
+    expect(prompt).not.toContain('--since base1234');
+  });
+
+  test('review instructions prevent nested workspace allocation', () => {
+    const prompt = buildAutoreviewPrompt({ target: prTarget });
+    expect(prompt).toContain('Autoreview already checked out the target in this workspace');
+    expect(prompt).toContain('Do not replace `--current` with `--pr` or `--branch`');
   });
 
   test('plan target with base does not append --base to review command', () => {
@@ -1462,7 +1471,7 @@ describe('handleAutoreviewCommand - target resolution with real git', () => {
     await handleAutoreviewCommand(undefined, options, {});
 
     const prompt = mockExecutorExecute.mock.calls[0][0] as string;
-    expect(prompt).toContain('tim review --branch feature/local-branch --print');
+    expect(prompt).toContain('tim review --current --base main --print');
   });
 
   test('planId resolves to plan target and executor sees the resolved repo root', async () => {

@@ -146,9 +146,12 @@ function buildReviewCommandForTarget(target: ReviewTarget, base: string | undefi
     case 'current':
       return `${appendBase('tim review --current', base)} --print`;
     case 'branch':
-      return `${appendBase(`tim review --branch ${target.requestedBranch}`, base)} --print`;
-    case 'pr':
-      return `${appendBase(`tim review --pr ${target.prNumber}`, base)} --print`;
+      return `${appendBase('tim review --current', base ?? target.baseBranch)} --print`;
+    case 'pr': {
+      const currentReviewCommand = appendBase('tim review --current', base ?? target.baseBranch);
+      const exactBaseCommit = target.baseSha && !base ? ` --since ${target.baseSha}` : '';
+      return `${currentReviewCommand}${exactBaseCommit} --print`;
+    }
   }
 }
 
@@ -298,6 +301,7 @@ You are the orchestrator for a tim review-and-fix loop targeting ${targetDescrip
 ## Available Commands
 
 - Run \`${reviewCommand}\` to review the current target. The command prints JSON; parse that JSON and use it as the source of truth for issues. This command will likely take a long time to run, so do not expect any output for a while after starting it.
+- Autoreview already checked out the target in this workspace. Run the exact review command shown above. Do not replace \`--current\` with \`--pr\` or \`--branch\`, because those forms prepare another workspace.
 ${structuralCommandGuidance}
 ${buildSubagentGuidance(options.target)}
 ${buildCommitGuidance(options.useJj === true)}
