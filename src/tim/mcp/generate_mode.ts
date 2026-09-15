@@ -1,3 +1,4 @@
+import { appendQualityGuidance } from '../quality.js';
 import { FastMCP, UserError } from 'fastmcp';
 import type { SerializableValue } from 'fastmcp';
 import * as fs from 'node:fs';
@@ -389,7 +390,7 @@ After adding the structured tasks, re-read the entire plan file and look for any
         role: 'user' as const,
         content: {
           type: 'text' as const,
-          text,
+          text: appendQualityGuidance(text, context.config.quality),
         },
       },
     ],
@@ -416,7 +417,7 @@ ${contextBlock}You are collaborating with a human partner to refine this plan. $
         role: 'user' as const,
         content: {
           type: 'text' as const,
-          text,
+          text: appendQualityGuidance(text, context.config.quality),
         },
       },
     ],
@@ -442,7 +443,7 @@ Wait for your human collaborator to review the plan and provide further instruct
         role: 'user' as const,
         content: {
           type: 'text' as const,
-          text,
+          text: appendQualityGuidance(text, context.config.quality),
         },
       },
     ],
@@ -481,7 +482,7 @@ Load the plan, implement it, and keep the plan file up to date as you work. ${ex
         role: 'user' as const,
         content: {
           type: 'text' as const,
-          text,
+          text: appendQualityGuidance(text, context.config.quality),
         },
       },
     ],
@@ -579,7 +580,7 @@ After adding the structured tasks, re-read the entire plan file and look for any
         role: 'user' as const,
         content: {
           type: 'text' as const,
-          text,
+          text: appendQualityGuidance(text, context.config.quality),
         },
       },
     ],

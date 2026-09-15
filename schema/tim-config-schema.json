@@ -1021,6 +1021,14 @@
       "description": "Instructions for the orchestrator when choosing between claude-code and codex-cli for subagent execution in dynamic mode",
       "type": "string"
     },
+    "quality": {
+      "description": "Code quality requirements: production (default) or hobby. Hobby keeps correctness, code style, and visual fidelity, but reduces defensive hardening requirements.",
+      "type": "string",
+      "enum": [
+        "hobby",
+        "production"
+      ]
+    },
     "orchestratorInstructionMode": {
       "description": "How the orchestrator instructs subagents: \"detailed\" (default) spells out files, behavior, constraints, and verification for less capable subagents; \"delegated\" points capable subagents at the plan tasks and lets them work out the specifics",
       "type": "string",
@@ -1537,6 +1545,10 @@
           "items": {
             "type": "string"
           }
+        },
+        "remediationPlan": {
+          "description": "Consult the configured advisor after a full-scope review with findings to produce a remediation plan",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

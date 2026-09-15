@@ -2398,3 +2398,11 @@ describe('configSchema', () => {
     });
   });
 });
+
+test('quality accepts only hobby or production without a schema default', () => {
+  expect(timConfigSchema.parse({ quality: 'hobby' }).quality).toBe('hobby');
+  expect(timConfigSchema.parse({ quality: 'production' }).quality).toBe('production');
+  expect(timConfigSchema.parse({}).quality).toBeUndefined();
+  expect(getDefaultConfig().quality).toBe('production');
+  expect(() => timConfigSchema.parse({ quality: 'relaxed' })).toThrow();
+});

@@ -49,6 +49,9 @@ describe('reusable subagent service', () => {
       `  tasks: ${JSON.stringify(tasksDirectory)}`,
       `defaultExecutor: ${String(config.defaultExecutor ?? 'codex-cli')}`,
     ];
+    if (config.quality !== undefined) {
+      lines.push(`quality: ${String(config.quality)}`);
+    }
     const advisor = config.advisor as
       | { executor?: string; claude?: string; codex?: string }
       | undefined;
@@ -100,6 +103,21 @@ describe('reusable subagent service', () => {
       ...overrides,
     });
   }
+
+  test('hobby quality reaches every subagent role', async () => {
+    await writeConfig({ quality: 'hobby' });
+    for (const agentType of [
+      'implementer',
+      'tester',
+      'tdd-tests',
+      'advisor',
+      'reviewer',
+    ] as const) {
+      const prepared = await prepare({ agentType });
+      expect(prepared.prompt).toContain('## Quality: hobby');
+      expect(prepared.prompt).toContain('Do not report missing production hardening alone');
+    }
+  });
 
   beforeEach(async () => {
     originalXdgConfigHome = process.env.XDG_CONFIG_HOME;

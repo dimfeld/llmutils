@@ -922,6 +922,12 @@ export const timConfigSchema = z
       .describe(
         'Instructions for the orchestrator when choosing between claude-code and codex-cli for subagent execution in dynamic mode'
       ),
+    quality: z
+      .enum(['hobby', 'production'])
+      .optional()
+      .describe(
+        'Code quality requirements: production (default) or hobby. Hobby keeps correctness, code style, and visual fidelity, but reduces defensive hardening requirements.'
+      ),
     /**
      * How prescriptive the orchestrator should be when instructing subagents. This only changes
      * the orchestration prompt wording; it is independent of the model and executor settings.
@@ -1374,6 +1380,7 @@ export type SubprocessMonitorRule = z.output<typeof subprocessMonitorRuleSchema>
  */
 export function getDefaultConfig(): TimConfig {
   return {
+    quality: 'production',
     issueTracker: 'github',
     postApplyCommands: [],
     defaultExecutor: DEFAULT_EXECUTOR,

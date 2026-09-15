@@ -3836,55 +3836,65 @@ describe('integration with executor system', () => {
     // which will throw if the values don't match expected
   });
 
-  test('respects dry-run option', async () => {
-    const mockExecutor = {
-      execute: vi.fn(async () => 'Should not be called'),
-    };
+  test.each(['hobby', 'production'] as const)(
+    'respects dry-run option with %s quality',
+    async (quality: 'hobby' | 'production'): Promise<void> => {
+      const mockExecutor = {
+        execute: vi.fn(async () => 'Should not be called'),
+      };
 
-    vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
-      createMockPlanContext({
-        resolvedPlanFile: join(testDir, 'dry-run.yml'),
-        planData: {
-          id: 1,
-          title: 'Dry Run Test',
-          goal: 'Test dry run functionality',
-          tasks: [
-            {
-              title: 'Test task',
-              description: 'Dry run test task',
-            },
-          ],
+      vi.mocked(contextGatheringModule.gatherPlanContext).mockResolvedValue(
+        createMockPlanContext({
+          resolvedPlanFile: join(testDir, 'dry-run.yml'),
+          planData: {
+            id: 1,
+            title: 'Dry Run Test',
+            goal: 'Test dry run functionality',
+            tasks: [
+              {
+                title: 'Test task',
+                description: 'Dry run test task',
+              },
+            ],
+          },
+          parentChain: [],
+          completedChildren: [],
+          diffResult: {
+            hasChanges: true,
+            changedFiles: ['test.ts'],
+            baseBranch: 'main',
+            diffContent: 'test diff',
+          },
+        }) as any
+      );
+
+      vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({ quality });
+
+      vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+
+      vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
+        prompt: 'Generated prompt for dry run',
+      } as any);
+
+      const mockCommand = {
+        parent: {
+          opts: () => ({}),
         },
-        parentChain: [],
-        completedChildren: [],
-        diffResult: {
-          hasChanges: true,
-          changedFiles: ['test.ts'],
-          baseBranch: 'main',
-          diffContent: 'test diff',
-        },
-      }) as any
-    );
+      };
 
-    vi.mocked(configLoaderModule.loadEffectiveConfig).mockResolvedValue({} as any);
+      await handleReviewCommand(1, { dryRun: true }, mockCommand);
 
-    vi.mocked(executorsModule.buildExecutorAndLog).mockReturnValue(mockExecutor as any);
+      const reviewerOptions = vi
+        .mocked(agentPromptsModule.getReviewerPrompt)
+        .mock.calls.at(-1)?.[1];
+      expect(reviewerOptions?.customInstructions?.includes('## Quality: hobby') ?? false).toBe(
+        quality === 'hobby'
+      );
 
-    vi.mocked(agentPromptsModule.getReviewerPrompt).mockReturnValue({
-      prompt: 'Generated prompt for dry run',
-    } as any);
-
-    const mockCommand = {
-      parent: {
-        opts: () => ({}),
-      },
-    };
-
-    await handleReviewCommand(1, { dryRun: true }, mockCommand);
-
-    // Executor should not be called in dry-run mode
-    expect(mockExecutor.execute).not.toHaveBeenCalled();
-  });
+      // Executor should not be called in dry-run mode
+      expect(mockExecutor.execute).not.toHaveBeenCalled();
+    }
+  );
 
   test('print mode forces json output without prompting', async () => {
     const planFile = join(testDir, 'print-mode.yml');

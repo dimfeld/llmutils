@@ -175,6 +175,24 @@ describe('tim MCP generate mode helpers', () => {
     expect(resourceTemplates.length).toBeGreaterThan(0);
   });
 
+  test('planning loaders apply hobby quality and preserve production prompts', async () => {
+    for (const loader of [
+      loadResearchPrompt,
+      loadGeneratePrompt,
+      loadQuestionsPrompt,
+      loadPlanPrompt,
+      loadImplementPrompt,
+    ]) {
+      delete context.config.quality;
+      const original = await loader({ plan: basePlan.id }, context);
+      context.config.quality = 'production';
+      expect(await loader({ plan: basePlan.id }, context)).toEqual(original);
+      context.config.quality = 'hobby';
+      const hobby = await loader({ plan: basePlan.id }, context);
+      expect(hobby.messages[0]?.content.text).toContain('## Quality: hobby');
+    }
+  });
+
   test('loadResearchPrompt returns plan context with research template', async () => {
     const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;

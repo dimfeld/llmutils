@@ -257,6 +257,30 @@ describe('prompt_builder', () => {
       await fs.rm(tempDir, { recursive: true, force: true });
     });
 
+    test('quality changes only hobby execution prompts', async () => {
+      const options = {
+        executor: mockExecutor,
+        planData: { title: 'Quality test', tasks: [] },
+        planFilePath: path.join(tempDir, 'plan.md'),
+        baseDir: tempDir,
+        config: mockConfig,
+      };
+      const original = await buildExecutionPromptWithoutSteps(options);
+      const production = await buildExecutionPromptWithoutSteps({
+        ...options,
+        config: { ...mockConfig, quality: 'production' },
+      });
+      const hobby = await buildExecutionPromptWithoutSteps({
+        ...options,
+        config: { ...mockConfig, quality: 'hobby' },
+      });
+      expect(production).toBe(original);
+      expect(original).not.toContain('## Quality: hobby');
+      expect(hobby).toContain('## Quality: hobby');
+      expect(hobby).toContain('visual fidelity');
+      expect(hobby).toContain('rare race conditions');
+    });
+
     test('builds prompt for stub plan (no tasks)', async () => {
       const planData: PlanSchema = {
         title: 'Stub Plan',

@@ -1,3 +1,4 @@
+import { appendQualityGuidance } from './quality.js';
 import * as path from 'path';
 import type { PlanSchema, PlanWithLegacyMetadata } from './planSchema.js';
 import type { TimConfig } from './configSchema.js';
@@ -286,7 +287,7 @@ export async function buildExecutionPromptWithoutSteps(
   const executionGuidelines = buildExecutionGuidelines(executor);
   promptParts.push(executionGuidelines);
 
-  return promptParts.join('\n');
+  return appendQualityGuidance(promptParts.join('\n'), config.quality);
 }
 
 /**

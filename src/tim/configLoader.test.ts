@@ -347,6 +347,26 @@ reviewGuide:
     expect(messageText).not.toMatch(/x-oauth-basic/);
   });
 
+  test.each([
+    ['hobby', undefined, 'hobby'],
+    ['hobby', 'production', 'production'],
+    ['production', 'hobby', 'hobby'],
+  ])(
+    'merges quality %s with local quality %s',
+    async (
+      main: string | undefined,
+      local: string | undefined,
+      expected: string | undefined
+    ): Promise<void> => {
+      await fs.writeFile(path.join(configDir, 'tim.yml'), yaml.stringify({ quality: main }));
+      await fs.writeFile(
+        path.join(configDir, 'tim.local.yml'),
+        yaml.stringify({ quality: local, terminalInput: false })
+      );
+      expect((await loadEffectiveConfig()).quality).toBe(expected);
+    }
+  );
+
   test('loadEffectiveConfig applies tags allowlist overrides from local config', async () => {
     const mainConfigPath = path.join(configDir, 'tim.yml');
     const mainConfig = yaml.stringify({
@@ -441,6 +461,7 @@ reviewGuide:
     test('should return default config when configPath is null', async () => {
       const config = await loadConfig(null);
       expect(config).toEqual({
+        quality: 'production',
         issueTracker: 'github',
         defaultExecutor: DEFAULT_EXECUTOR,
         assignments: { staleTimeout: 7 },

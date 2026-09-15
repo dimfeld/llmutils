@@ -1,3 +1,4 @@
+import { appendQualityGuidance } from '../quality.js';
 // Command handler for 'tim review'
 // Analyzes code changes against plan requirements using the reviewer agent
 
@@ -1511,6 +1512,7 @@ async function resolveReviewPromptContext(params: {
       : focusInstruction;
   }
 
+  customInstructions = appendQualityGuidance(customInstructions, config.quality);
   return { customInstructions, previousReviewResponse };
 }
 
@@ -3960,6 +3962,8 @@ export async function buildReviewPromptFromOptions(
       ? `${customInstructions}\n\n${focusInstruction}`
       : focusInstruction;
   }
+
+  customInstructions = appendQualityGuidance(customInstructions, config.quality);
 
   // Resolve task scope
   const {
