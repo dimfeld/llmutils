@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { toast } from 'svelte-sonner';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import {
@@ -8,7 +9,11 @@
     refreshPrStatus,
   } from '$lib/remote/pr_status.remote.js';
   import type { PrStatusRow } from '$tim/db/pr_status.js';
-  import { startFixThreads, startCiFix } from '$lib/remote/review_thread_actions.remote.js';
+  import {
+    startFixThreads,
+    startCiFix,
+    startPrAutoreview,
+  } from '$lib/remote/review_thread_actions.remote.js';
   import {
     getFixButtonState,
     getFixStartResultState,
@@ -181,6 +186,37 @@
   });
 
   let refreshError = $state<string | null>(null);
+  const autoreviewStarting = new SvelteSet<string>();
+
+  async function handleStartAutoreview(pr: PrStatusRow): Promise<void> {
+    if (
+      autoreviewStarting.has(pr.pr_url) ||
+      sessionManager.hasActiveSessionForPr(pr.pr_url).active
+    ) {
+      return;
+    }
+
+    const requestPlanUuid = planUuid;
+    autoreviewStarting.add(pr.pr_url);
+    refreshError = null;
+    try {
+      const result = await startPrAutoreview({
+        projectId: Number(projectId),
+        prNumber: pr.pr_number,
+      });
+      if (planUuid !== requestPlanUuid) return;
+      if (result.status === 'already_running') {
+        refreshError = `A session is already running for PR #${pr.pr_number}`;
+      } else {
+        toast.success(`Autoreview started for PR #${pr.pr_number}`);
+      }
+    } catch (err) {
+      if (planUuid !== requestPlanUuid) return;
+      refreshError = `Failed to start autoreview for PR #${pr.pr_number}: ${err}`;
+    } finally {
+      autoreviewStarting.delete(pr.pr_url);
+    }
+  }
   let refreshing = $state(false);
   let fixStarting = $state(false);
   let fixLaunched = $state(false);
@@ -417,6 +453,16 @@
               {pr.status.title}
             {/if}
           </a>
+          <button
+            onclick={() => handleStartAutoreview(pr.status)}
+            disabled={autoreviewStarting.has(pr.status.pr_url) ||
+              sessionManager.hasActiveSessionForPr(pr.status.pr_url).active}
+            class="shrink-0 rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+            aria-label="Run autoreview for PR #{pr.status.pr_number}"
+            title="Review this PR branch against its base"
+          >
+            {autoreviewStarting.has(pr.status.pr_url) ? 'Starting...' : 'Autoreview'}
+          </button>
           <a
             href={getExternalPrUrl(pr)}
             target="_blank"

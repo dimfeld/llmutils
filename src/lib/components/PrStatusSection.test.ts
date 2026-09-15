@@ -18,7 +18,9 @@ const mockRefreshPrStatus = vi.fn();
 const mockFullRefreshPrStatus = vi.fn();
 const mockStartFixThreads = vi.fn();
 const mockStartCiFix = vi.fn();
+const mockStartPrAutoreview = vi.fn();
 const sessionManager = {
+  hasActiveSessionForPr: vi.fn((_url: string): { active: boolean } => ({ active: false })),
   sessions: new Map<
     string,
     { status: string; sessionInfo: { planUuid?: string; command?: string } }
@@ -33,6 +35,7 @@ vi.mock('$lib/remote/pr_status.remote.js', () => ({
 vi.mock('$lib/remote/review_thread_actions.remote.js', () => ({
   startFixThreads: (...args: unknown[]) => mockStartFixThreads(...args),
   startCiFix: (...args: unknown[]) => mockStartCiFix(...args),
+  startPrAutoreview: (...args: unknown[]) => mockStartPrAutoreview(...args),
 }));
 
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
@@ -214,6 +217,8 @@ describe('PrStatusSection', () => {
     sessionManager.sessions.clear();
     mockStartFixThreads.mockReset();
     mockStartCiFix.mockReset();
+    mockStartPrAutoreview.mockReset();
+    sessionManager.hasActiveSessionForPr.mockReset().mockReturnValue({ active: false });
   });
 
   test('renders with the session manager available for client-side PR subscriptions', async () => {
@@ -333,6 +338,30 @@ describe('PrStatusSection', () => {
     expect(body).toContain('aria-label="Copy branch name"');
     expect(body).toContain('feature-one');
     expect(body).toContain('feature-two');
+    expect(body).toContain('aria-label="Run autoreview for PR #42"');
+    expect(body).toContain('aria-label="Run autoreview for PR #43"');
+  });
+
+  test('disables autoreview only for the PR with an active session', async () => {
+    const first = makePrDetail();
+    const second = makePrDetail({
+      status: { pr_url: 'https://github.com/owner/repo/pull/43', pr_number: 43 },
+    });
+    sessionManager.hasActiveSessionForPr.mockImplementation((url: string): { active: boolean } => ({
+      active: url === first.status.pr_url,
+    }));
+    const { body } = await renderSection({
+      prUrls: [first.status.pr_url, second.status.pr_url],
+      prStatuses: [first, second],
+    });
+
+    const buttons = body.match(/<button\b[^>]*>/g) ?? [];
+    expect(buttons.find((button) => button.includes('Run autoreview for PR #42'))).toContain(
+      'disabled'
+    );
+    expect(buttons.find((button) => button.includes('Run autoreview for PR #43'))).not.toContain(
+      ' disabled='
+    );
   });
 
   test('renders a View in GitHub link to the PR url', async () => {
