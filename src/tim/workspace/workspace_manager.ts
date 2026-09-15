@@ -89,7 +89,9 @@ async function removeFilesAddedByJjSwitch(
 async function switchJjRevision(
   workspacePath: string,
   revision: string,
-  quiet = false
+  // Keep jj's working-copy summary out of parent command output. Callers already log
+  // the workspace operation, and agents can mistake this summary for review output.
+  quiet = true
 ): Promise<JjSwitchResult> {
   const newResult = await spawnAndLogOutput(['jj', 'new', revision], {
     cwd: workspacePath,

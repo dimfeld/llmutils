@@ -2479,6 +2479,10 @@ describe('createWorkspace', () => {
 
     expect(result).toEqual({ success: true, actualBranchName: 'jj-described' });
     expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
+      ['jj', 'new', 'main'],
+      { cwd: workspacePath, quiet: true },
+    ]);
+    expect(mockSpawnAndLogOutput.mock.calls).toContainEqual([
       ['jj', 'bookmark', 'set', 'jj-described'],
       { cwd: workspacePath },
     ]);

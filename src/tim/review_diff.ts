@@ -95,6 +95,7 @@ async function generateJjDiffFromCommit(
   try {
     const filesResult = await $`jj diff --from ${sinceCommit} --to @ --summary`
       .cwd(gitRoot)
+      .quiet()
       .nothrow();
     if (filesResult.exitCode !== 0) {
       throw new Error(`jj diff --summary failed: ${filesResult.stderr.toString()}`);
