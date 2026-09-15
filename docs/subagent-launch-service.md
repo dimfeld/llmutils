@@ -6,13 +6,14 @@ it directly. The `tim subagent` command is a thin adapter on top of it.
 
 ## Module layout
 
-| File                           | Contents                                                                          |
-| ------------------------------ | --------------------------------------------------------------------------------- |
-| `src/tim/subagents/types.ts`   | Request, prepared-execution, result, and launch-handle contracts                  |
-| `src/tim/subagents/service.ts` | Role table, preparation, and the Codex and Claude one-shot launch adapters        |
-| `src/tim/subagents/advisor.ts` | Resolution of the optional advisor executor and model                             |
-| `src/tim/subagents/index.ts`   | Public exports for in-process callers                                             |
-| `src/tim/commands/subagent.ts` | CLI adapter: option translation, output file, final stdout, tunnel byte-count log |
+| File                                    | Contents                                                                          |
+| --------------------------------------- | --------------------------------------------------------------------------------- |
+| `src/tim/subagents/types.ts`            | Request, prepared-execution, result, and launch-handle contracts                  |
+| `src/tim/subagents/service.ts`          | Role table, preparation, and the Codex and Claude one-shot launch adapters        |
+| `src/tim/subagents/advisor.ts`          | Resolution of the optional advisor executor and model                             |
+| `src/tim/subagents/remediation_plan.ts` | Advisor-backed remediation planning over review findings                          |
+| `src/tim/subagents/index.ts`            | Public exports for in-process callers                                             |
+| `src/tim/commands/subagent.ts`          | CLI adapter: option translation, output file, final stdout, tunnel byte-count log |
 
 Reusable code must stay outside `src/tim/commands/`. Callers depend on the
 domain service, not on a Commander handler.
@@ -94,6 +95,27 @@ not opted in never sees a role it cannot run.
 
 The CLI role is not gated. `tim subagent advisor <planId>` runs by hand with the
 ordinary executor and model precedence below.
+
+### Remediation planning
+
+`remediation_plan.ts` is the one in-process caller of the advisor. It turns a set
+of review findings into an ordered, root-cause-based remediation plan so fixes do
+not get applied literally at the reported line, where they tend to relocate the
+defect instead of removing it.
+
+- `shouldGenerateRemediationPlan()` is the gate: an advisor must resolve, the
+  review must cover the full plan scope, and — unless `--remediation-plan` asked
+  explicitly — at least one finding must be blocking. `--no-remediation-plan`
+  beats everything; an explicit `--remediation-plan` beats
+  `review.remediationPlan: false` in config.
+- `buildRemediationPlanInput()` restates every finding in full, because the
+  advisor runs as a separate process with no access to the reviewer's output file.
+- `generateRemediationPlan()` prepares and launches the advisor through the
+  service above and returns its final message. It throws on provider failure;
+  `tim review` treats that as a warning rather than a failed review.
+
+See [review-iteration-policy.md](review-iteration-policy.md#advisor-remediation-planning)
+for how the plan reaches the orchestrator.
 
 ## Executor and model precedence
 

@@ -136,8 +136,30 @@ function indentBlock(text: string, indent: string): string {
     .join('\n');
 }
 
+/**
+ * Renders the advisor-backed remediation-planning bullets of the Review Iteration Policy.
+ *
+ * Returns an empty string unless an advisor is configured, so a project that has not opted in
+ * is never told to run a command it does not have. Exported so the orchestration prompts and
+ * their tests share one definition of the advisor-conditional part of the policy.
+ */
+export function buildAdvisorRemediationGuidance(
+  planId: string,
+  options: OrchestrationOptions
+): string {
+  if (!options.advisor) {
+    return '';
+  }
+
+  return `
+- Before delegating fixes for a round with blocking findings, work from a remediation plan rather than from the finding list. When the review output carries an \`Advisor Remediation Plan\` section (\`remediationPlan\` in JSON output), that is the advisor's root-cause analysis of exactly these findings: treat it as the consolidation proposal, delegate in its order, and do not run a second remediation consultation over the same findings.
+- When that section is absent—a review you performed yourself, or a task-scoped review—run \`tim subagent advisor ${planId} --input-file <output.json>\` yourself and ask for the same thing: shared root causes, the correct fix for each cause, ordered remediation steps with file scope, findings to reject, and verification. A literal fix at the reported line often relocates the defect instead of removing it, which is what turns one finding into another review round.
+- The remediation plan is advice, not a verdict. Reject the parts you can show are wrong with concrete evidence, and record every finding's disposition exactly as described above.`;
+}
+
 export function buildReviewIterationGuidance(
   reviewCommand: string,
+  planId: string,
   options: OrchestrationOptions
 ): string {
   const orchestratorReviewsBatch: boolean = options.batchMode === true;
@@ -174,6 +196,7 @@ export function buildReviewIterationGuidance(
   const structuralValidationReviewHandoff = structuralPassWillRun
     ? ' and any post-structural validation review'
     : '';
+  const advisorRemediationGuidance = buildAdvisorRemediationGuidance(planId, options);
   const reviewLimitGuidance = `- Allow at most 4 ordinary review runs per task batch during this iteration loop. The limit bounds iterative review execution; it does not mean that remaining feedback should be discarded.${structuralValidationReviewAllowance}`;
   const finalHandoffGuidance = `- Once targeted checks pass and every finding from the fourth review${structuralValidationReviewHandoff} has been rejected or captured in a follow-up task, mark the original in-scope tasks done and complete the batch.`;
   const reviewFixScopeGuidance =
@@ -197,7 +220,7 @@ ${indentBlock(REVIEW_SEVERITY_RUBRIC, '  ')}
 - Watch for cascading findings: the same underlying defect recurring, a fix exposing another defect in the same responsibility boundary, or repeated fixes moving the problem between duplicated implementations.
 - On the FIRST review that reports the same defect class at multiple locations—the reviewer now surfaces this up front as one multi-location finding—treat it as the cascade signal. Do not wait for a second occurrence across rounds. Pause instance-by-instance patching; as the orchestrator, inspect the implementation and prior findings yourself, identify the failed invariant, duplicated responsibility, or ownership problem, and write a concrete consolidation proposal before delegating more implementation.
 - This root-cause checkpoint is orchestrator analysis, not a separate review mode and not a request for the reviewer to solve a difficult bug. Prefer correcting the shared structure or consolidating responsibility when that addresses the cause. Pass the consolidation proposal and the relevant findings to the implementer as ONE consolidated instruction instead of per-instance fixes.
-${reviewFixScopeGuidance}
+${reviewFixScopeGuidance}${advisorRemediationGuidance}
 ${repeatReviewGuidance}
 - Stop the ordinary review loop when either:
   1. targeted checks pass and a complete ordinary review produces no new blocking findings; a review whose only unhandled findings are non-blocking is terminal; or

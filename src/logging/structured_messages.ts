@@ -175,6 +175,8 @@ export interface ReviewResultMessage extends StructuredMessageBase {
   issues: ReviewOutput['issues'];
   recommendations: string[];
   actionItems: string[];
+  /** Advisor-authored remediation plan, when the review generated one. */
+  remediationPlan?: string;
 }
 
 export type ReviewVerdict = 'ACCEPTABLE' | 'NEEDS_FIXES' | 'UNKNOWN';

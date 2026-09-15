@@ -1160,6 +1160,17 @@ export const timConfigSchema = z
           .array(z.string())
           .optional()
           .describe('Glob patterns for files/directories to exclude from review'),
+        /**
+         * Whether a full-scope review with findings consults the advisor for a remediation
+         * plan. Only meaningful when `subagents.advisor` is configured; defaults to enabled
+         * there, so this exists to turn the extra consultation off.
+         */
+        remediationPlan: z
+          .boolean()
+          .optional()
+          .describe(
+            'Consult the configured advisor after a full-scope review with findings to produce a remediation plan'
+          ),
       })
       .strict()
       .optional()

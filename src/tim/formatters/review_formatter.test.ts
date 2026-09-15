@@ -256,6 +256,24 @@ describe('JsonFormatter', () => {
     const formatter = new JsonFormatter();
     expect(formatter.getFileExtension()).toBe('.json');
   });
+
+  test('carries an advisor remediation plan through normal and detailed output', () => {
+    const formatter = new JsonFormatter();
+    const withPlan: ReviewResult = {
+      ...sampleResult,
+      remediationPlan: '## Root causes\nOne shared invariant.',
+    };
+
+    expect(JSON.parse(formatter.format(withPlan, { verbosity: 'normal' })).remediationPlan).toBe(
+      '## Root causes\nOne shared invariant.'
+    );
+    expect(JSON.parse(formatter.format(withPlan, { verbosity: 'detailed' })).remediationPlan).toBe(
+      '## Root causes\nOne shared invariant.'
+    );
+    expect(
+      JSON.parse(formatter.format(sampleResult, { verbosity: 'normal' })).remediationPlan
+    ).toBeUndefined();
+  });
 });
 
 describe('MarkdownFormatter', () => {
@@ -342,6 +360,25 @@ describe('MarkdownFormatter', () => {
   test('returns correct file extension', () => {
     const formatter = new MarkdownFormatter();
     expect(formatter.getFileExtension()).toBe('.md');
+  });
+
+  test('renders the advisor remediation plan as its own section', () => {
+    const formatter = new MarkdownFormatter();
+    const withPlan: ReviewResult = {
+      ...sampleResult,
+      remediationPlan: '1. Fix the shared invariant in src/queue.ts',
+    };
+
+    const output = formatter.format(withPlan, { verbosity: 'detailed' });
+    expect(output).toContain('## Advisor Remediation Plan');
+    expect(output).toContain('1. Fix the shared invariant in src/queue.ts');
+
+    expect(formatter.format(sampleResult, { verbosity: 'detailed' })).not.toContain(
+      '## Advisor Remediation Plan'
+    );
+    expect(formatter.format(withPlan, { verbosity: 'minimal' })).not.toContain(
+      '## Advisor Remediation Plan'
+    );
   });
 });
 
@@ -431,6 +468,22 @@ describe('TerminalFormatter', () => {
 
     expect(output).toContain('✅ Action Items');
     expect(output).toContain('• Fix SQL injection');
+  });
+
+  test('includes the advisor remediation plan when the review produced one', () => {
+    const formatter = new TerminalFormatter();
+    const withPlan: ReviewResult = {
+      ...sampleResult,
+      remediationPlan: '1. Fix the shared invariant in src/queue.ts',
+    };
+
+    const output = formatter.format(withPlan, { verbosity: 'normal', colorEnabled: false });
+    expect(output).toContain('🧭 Advisor Remediation Plan');
+    expect(output).toContain('1. Fix the shared invariant in src/queue.ts');
+
+    expect(
+      formatter.format(sampleResult, { verbosity: 'normal', colorEnabled: false })
+    ).not.toContain('🧭 Advisor Remediation Plan');
   });
 
   test('minimal verbosity excludes issue details', () => {

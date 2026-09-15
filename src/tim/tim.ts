@@ -890,6 +890,14 @@ function addReviewCommandOptions(command: Command): Command {
       'Run the Codex structural simplification review alongside the ordinary full-plan review.'
     )
     .option(
+      '--remediation-plan',
+      'Consult the configured advisor after the review to turn the findings into a remediation plan.'
+    )
+    .option(
+      '--no-remediation-plan',
+      'Skip the advisor remediation plan even when an advisor is configured.'
+    )
+    .option(
       '--issues',
       'Act on previously saved unresolved review issues instead of running a new review.'
     )

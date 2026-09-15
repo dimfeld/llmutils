@@ -387,7 +387,7 @@ describe('formal review rendering for collaborative activation', () => {
     (enabled: boolean) => {
       const options: OrchestrationOptions = { agentMessagingEnabled: enabled, batchMode: false };
       const command = buildReviewCommand('421', options);
-      const guidance = buildReviewIterationGuidance(command, options);
+      const guidance = buildReviewIterationGuidance(command, '421', options);
 
       expect(guidance).toContain(`run \`${command}\` with the same \`--task-index\` scope`);
       expect(guidance).toContain(

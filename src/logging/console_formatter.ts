@@ -220,11 +220,20 @@ export function formatStructuredMessage(message: StructuredMessage): string {
       }
       case 'review_start':
         return `${chalk.bold.cyan('### Executing Review')}\n${message.executor ?? 'unknown executor'}`;
-      case 'review_result':
-        return formatSeverityGroupedIssuesForTerminal(message.issues, {
+      case 'review_result': {
+        const issueOutput = formatSeverityGroupedIssuesForTerminal(message.issues, {
           verbosity: 'detailed',
           showSuggestions: true,
         });
+        if (!message.remediationPlan?.trim()) {
+          return issueOutput;
+        }
+        return [
+          issueOutput,
+          chalk.bold.magenta('🧭 Advisor Remediation Plan'),
+          message.remediationPlan.trim(),
+        ].join('\n');
+      }
       case 'workflow_progress':
         return chalk.blue(
           message.phase ? `[${message.phase}] ${message.message}` : message.message

@@ -369,6 +369,7 @@ tim review 123                                      # Review a plan's work
 tim review 123 --since abc1234                      # Review changes since an exact commit
 tim review 123 --base feature/parent                # Review a branch stacked on another branch
 tim review 123 --structural-only                     # Run the post-convergence structural pass
+tim review 123 --no-remediation-plan                 # Skip the advisor remediation plan for this review
 tim review 123 --include-structural                  # Combine ordinary and structural review
 tim review --current                                # Review the current worktree, no plan required
 tim review --branch feature/my-branch --base main   # Review an explicit branch in a prepared workspace
@@ -426,6 +427,8 @@ Model selection uses `--model` first, then the selected difficulty and executor,
 `tim subagent implementer|tester|tdd-tests|advisor <planId>` accepts `--task-index <indexes...>` to narrow the subagent's task context to the named tasks. Indexes are numbered like `tim review --task-index`: plan-absolute and 1-based, counted over every task including completed ones, supplied either comma-separated (`--task-index 2,4`) or by repeating the flag. Unlike the reviewer's flag, this one selects only incomplete tasks: an index that is out of range **or points at a completed task** fails immediately with an error listing the valid incomplete indexes, and nothing executes. Without the flag, the subagent receives all incomplete tasks as before. Use this for review-fix rounds so a fix subagent cannot creep into settled work; the findings themselves still arrive through `--input`/`--input-file`.
 
 Recurrence judgment belongs to the orchestrator rather than `tim review`: it compares successive findings by underlying cause, distinguishes incomplete fixes from newly exposed issues and regressions, and writes a consolidation proposal when one review reports the same defect class at several locations. After the ordinary full-plan review loop is clear, run `--structural-only` exactly once to execute only the Codex structural prompt and address high-confidence code-layout, ownership, duplication, and structural smells. `--include-structural` remains available for callers that explicitly want both reviewers in one invocation.
+
+When an [advisor subagent](#advisor-subagent) is configured, a full-plan `tim review` that reports at least one blocking finding consults it to turn the findings into a remediation plan before anything is fixed, so a fix lands at the root cause instead of literally at the reported line. The plan is attached to the review result: an `Advisor Remediation Plan` section in markdown and terminal output, and a `remediationPlan` field in JSON output, so it reaches `--output-file` and the saved review history along with the findings. A failed consultation is a warning, not a failed review. Use `--remediation-plan` to force the consultation even when nothing blocking was found, and `--no-remediation-plan` (or `review.remediationPlan: false` in config) to turn it off. Task-scoped reviews and planless reviews never generate one; the orchestrator is told to consult the advisor itself for those rounds.
 
 A successful plan-backed `--structural-only` review records the time on the plan as `structuralReviewAt`, so the "run it once" rule survives across separate orchestrator processes and workspaces. When the marker is set, batch mode omits the structural pass and post-structural validation review from the orchestrator prompt and skips the simplify pass. The completion review still runs in either marker state, but only blocking (`critical`/`major`) findings become tasks; non-blocking (`minor`/`info`) findings are saved as review issues for human triage instead of re-entering the batch loop. That split applies to the interactive "append as plan tasks" action; a non-interactive completion review appends nothing and saves every finding. Adding a substantive task clears the marker; see `tim add-task --review-follow-up` below and `docs/review-iteration-policy.md` for the full lifecycle.
 
@@ -810,6 +813,7 @@ Important config areas:
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
 - `orchestratorInstructionMode` - how prescriptive the `tim agent` orchestrator is with its subagents; `detailed` (default) or `delegated`
 - `subagents.advisor` - executor and model for the optional advisor consultation subagent; the orchestrator is only told about the advisor when both are set
+- `review.remediationPlan` - set to `false` to stop a full-plan `tim review` from consulting the advisor for a remediation plan; only meaningful when `subagents.advisor` is configured
 - `experimental` - opt-in flags for features not yet on by default; currently only `agentMessaging`, which is disabled unless set to `true`
 
 PR creation and dual-review issue merging share the `smallTasks` defaults. Override both
@@ -881,6 +885,16 @@ subagents:
     model:
       claude: opus
 ```
+
+Once it is configured, the advisor also does remediation planning. A full-plan `tim review` that reports a
+blocking finding hands those findings to the advisor and asks for the root causes they share, the correct fix
+for each cause, ordered remediation steps with file scope, findings to reject, and verification. The answer
+comes back in the review output as `Advisor Remediation Plan` (`remediationPlan` in JSON), and the
+orchestration prompt tells the orchestrator to drive its fixes from that plan rather than patching each
+finding where it was reported — a literal fix at the reported line tends to move the defect a level up or down
+and surface again in the next review round. The orchestrator is told to run the same consultation itself for
+the rounds `tim review` does not cover, namely reviews it performed itself and task-scoped reviews. See
+[docs/review-iteration-policy.md](docs/review-iteration-policy.md#advisor-remediation-planning).
 
 Only the model matching the configured executor counts, so setting `executor: claude-code` alongside a
 `codex` model leaves the advisor disabled rather than running it on a default model. Custom advisor

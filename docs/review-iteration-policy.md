@@ -16,6 +16,8 @@ Sources:
 - `src/tim/commands/review.ts` (`buildReviewPrompt`) and
   `src/tim/executors/claude_code/agent_prompts.ts` (`getReviewerPrompt`) — the
   reviewer-side rubric and duplication guidance.
+- `src/tim/subagents/remediation_plan.ts` — the advisor remediation-planning gate,
+  consultation input, and runner used by the review command.
 
 ## Severity rubric
 
@@ -345,6 +347,39 @@ invariant or duplicated responsibility itself, and writes a concrete
 Naming: "consolidation proposal" is the cascade root-cause output; "structural
 pass" refers only to the standalone `--structural-only` reviewer invocation. The
 two are unrelated, and the batch guidance says so explicitly.
+
+## Advisor remediation planning
+
+Applying each finding literally, at the line it was reported on, is what makes a
+review loop spend its whole budget: the fix often relocates the defect a level up
+or down and the next round reports it again. When
+[the optional advisor](subagent-launch-service.md#the-optional-advisor-role) is
+configured, the findings are turned into one root-cause-based remediation plan
+before any fix is delegated.
+
+Two halves, so the work is never done twice:
+
+- **`tim review` does it automatically.** A plan-backed review whose scope is the
+  whole plan (no `--task-index`/`--task-title`) and which reported at least one
+  blocking finding consults the advisor with those findings and attaches the
+  answer to the review result as `remediationPlan`. It reaches every output sink:
+  the `Advisor Remediation Plan` section in markdown and terminal output, the
+  `remediationPlan` field in JSON output and in the `review_result` structured
+  message, `--output-file`, and the saved review history. A failed consultation
+  is a warning, never a failed review. `--remediation-plan` forces the
+  consultation (including for a review with only non-blocking findings);
+  `--no-remediation-plan`, or `review.remediationPlan: false` in config, turns it
+  off. It is skipped entirely when no advisor is configured, and
+  `--remediation-plan` is rejected for planless (`--current`/`--branch`/`--pr`)
+  reviews.
+- **The orchestrator does the rest.** `buildAdvisorGuidance()` and
+  `buildAdvisorRemediationGuidance()` render only when an advisor is configured.
+  They tell the orchestrator to drive fixes from the `Advisor Remediation Plan`
+  section when the review output carries one, and to run
+  `tim subagent advisor <planId> --input-file <output.json>` itself for the rounds
+  that section does not cover — reviews it performed itself, and task-scoped
+  reviews. The plan is advice: the orchestrator still rejects what it can show is
+  wrong and records every disposition through the rejected-findings ledger.
 
 ## Review command and delegation modes
 

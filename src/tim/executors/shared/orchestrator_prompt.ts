@@ -250,6 +250,16 @@ A more capable advisor subagent is configured for this project. It runs \`${advi
 - Ask a specific question and include what you already know: the decision to make, what you already tried, the exact errors or findings, and the constraints that apply. A vague question wastes the consultation.
 - The advisor is read-only. It does not edit files, write tests, or commit, and it never replaces the formal reviewer quality gate. You still own the decision and delegate the resulting work to the usual subagents.
 - Consulting the advisor is optional and never required to finish a phase. Skip it for routine work you can already handle correctly.
+
+### Remediation Planning After Review
+
+Fixing findings one at a time, literally as written, is what makes a review loop spend its entire budget: a patch applied at the reported line often moves the defect one level up or down instead of removing it, and the next round reports it again from its new location. The advisor reads the whole codebase, so it can say where the real fix belongs.
+
+- After a review round reports blocking findings, get a remediation plan from the advisor before delegating any fixes. Run \`tim subagent advisor ${planId} --input-file <output.json>\` with the reviewer's output file, or restate the findings with \`--input\`. Ask for: the root causes the findings share, the correct fix for each cause, ordered remediation steps with file scope, findings to reject, and verification.
+- Delegate from that remediation plan, in its order, rather than from the finding list. Send the root-cause analysis and the step scope to the implementer as ONE consolidated instruction, and keep multi-site work that shares a root cause in a single assignment.
+- The formal review command already does this for you. A full-plan review that reports blocking findings consults this same advisor and returns its plan in the \`Advisor Remediation Plan\` (\`remediationPlan\` in JSON output) section of the review output. When that section is present, drive the fixes from it and do not run a second remediation consultation over the same findings.
+- Consult the advisor yourself for the rounds that section does not cover: reviews you performed yourself, task-scoped reviews, and any round where the findings changed after the plan was written.
+- The remediation plan is advice, not a verdict. Reject the parts you can show are wrong, and keep recording findings you reject or accept as non-blocking exactly as the Review Iteration Policy requires.
 `;
 }
 
@@ -322,7 +332,7 @@ ${options.batchMode ? '6' : '5'}. **Iteration**
    - Keep formal review iterations within the existing four ordinary-review bound and preserve the structural-pass and bounded-handoff rules.
    - Do not start a mutating agent for a scope that another mutating agent currently owns without an explicit handoff or edit order.
 
-${buildReviewIterationGuidance(reviewCommand, options)}`;
+${buildReviewIterationGuidance(reviewCommand, planId, options)}`;
 }
 
 function buildCollaborativeSimpleWorkflowInstructions(
@@ -357,7 +367,7 @@ ${options.batchMode ? '4' : '3'}. **Notes and Iteration**
    - Send accepted blocking findings to the active implementer when possible, within its owning task and file scope. Keep an advisory reviewer active when it can verify the fix, then repeat the same formal review mechanism.
    - Allow the implementer to make its final handoff and finish when ready. FinishTimAgent is self-only and is not a root-callable tool.
 
-${buildReviewIterationGuidance(reviewCommand, options)}`;
+${buildReviewIterationGuidance(reviewCommand, planId, options)}`;
 }
 
 function buildCollaborativeFailureProtocol(agentTypes: string): string {
@@ -529,7 +539,7 @@ ${iterationPhaseNumber}. **Iteration**
    - Keep red-before-green intact for every new implementation scope and every substantial review-fix scope.
    - Send accepted blocking findings with their owning task and file scope to the active implementer when possible, then send the changed scope to an active advisory reviewer when it is ready to verify. Repeat targeted checks and the same formal review policy.
 
-${buildReviewIterationGuidance(reviewCommand, options)}
+${buildReviewIterationGuidance(reviewCommand, planId, options)}
 
 ${buildCollaborativeImportantGuidelines(planId, options)}
 ${footer}`;
@@ -631,7 +641,7 @@ ${options.batchMode ? '6' : '5'}. **Iteration**
 - If the review repeats a blocking issue that was supposedly fixed, re-examine the implementation and the evidence. Fix the underlying problem or reject the finding with a concrete explanation.
 - Continue this loop until all tests pass and a complete ordinary review produces no new findings that you decide are blocking, or the bounded handoff procedure in the Review Iteration Policy has been completed. A review with only findings you decide are non-blocking is terminal.
 
-${buildReviewIterationGuidance(reviewCommand, options)}`;
+${buildReviewIterationGuidance(reviewCommand, planId, options)}`;
 
   return `## Workflow Instructions
 
@@ -892,7 +902,7 @@ ${options.batchMode ? '5' : '4'}. **Iteration**
 - If the review repeats a blocking issue that was supposedly fixed, re-examine the implementation and the evidence. Fix the underlying problem or reject the finding with a concrete explanation.
 - Repeat the implement → review loop until all tests pass and a complete ordinary review produces no new findings that you decide are blocking, or the bounded handoff procedure in the Review Iteration Policy has been completed. A review with only findings you decide are non-blocking is terminal.
 
-${buildReviewIterationGuidance(reviewCommand, options)}`;
+${buildReviewIterationGuidance(reviewCommand, planId, options)}`;
 
   const failureProtocol = `
 ## Failure Protocol (Conflicting/Impossible Requirements)
@@ -1131,7 +1141,7 @@ ${iterationPhaseNumber}. **Iteration**
 - If the review repeats a blocking issue that was supposedly fixed, re-examine the implementation and the evidence. Fix the underlying problem or reject the finding with a concrete explanation.
 - Keep TDD order intact for each iteration, including the final full-plan review loop${structuralPassApplies(options) ? ' and the standalone `--structural-only` structural pass' : ''} before stopping.
 
-${buildReviewIterationGuidance(reviewCommand, options)}`;
+${buildReviewIterationGuidance(reviewCommand, planId, options)}`;
 
   const failureProtocol = `
 ## Failure Protocol (Conflicting/Impossible Requirements)

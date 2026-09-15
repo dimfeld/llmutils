@@ -5,7 +5,7 @@ import {
   wrapWithOrchestrationSimple,
   wrapWithOrchestrationTdd,
 } from './orchestrator_prompt.ts';
-import { structuralPassApplies } from './review_guidance.ts';
+import { buildAdvisorRemediationGuidance, structuralPassApplies } from './review_guidance.ts';
 
 it('teaches each shell orchestrator when to select low difficulty', () => {
   const outputs = [
@@ -1809,8 +1809,47 @@ describe('optional advisor subagent', () => {
     const withoutAdvisor = wrapWithOrchestration('Context', '12', { batchMode: true });
     const withAdvisor = wrapWithOrchestration('Context', '12', { batchMode: true, advisor });
     const advisorSection = buildAdvisorGuidance('12', { advisor });
+    const remediationSection = buildAdvisorRemediationGuidance('12', { advisor });
 
     expect(advisorSection).not.toBe('');
-    expect(withAdvisor.replace(advisorSection, '')).toBe(withoutAdvisor);
+    expect(remediationSection).not.toBe('');
+    expect(withAdvisor.replace(advisorSection, '').replace(remediationSection, '')).toBe(
+      withoutAdvisor
+    );
+  });
+
+  for (const [label, wrap] of wrappers) {
+    it(`recommends advisor remediation planning after review in the ${label} prompt`, () => {
+      const out = wrap('Context', '77', { batchMode: false, advisor });
+
+      expect(out).toContain('### Remediation Planning After Review');
+      expect(out).toContain('tim subagent advisor 77 --input-file <output.json>');
+      expect(out).toContain('get a remediation plan from the advisor before delegating any fixes');
+      // The review command generates the plan itself, so the orchestrator must not duplicate it.
+      expect(out).toContain('do not run a second remediation consultation over the same findings');
+      expect(out).toContain('`Advisor Remediation Plan`');
+    });
+
+    it(`omits remediation planning from the ${label} prompt when no advisor is configured`, () => {
+      const out = wrap('Context', '77', { batchMode: false });
+
+      expect(out).not.toContain('Remediation Planning After Review');
+      expect(out).not.toContain('remediation plan');
+      expect(out).not.toContain('Advisor Remediation Plan');
+    });
+  }
+
+  it('adds the remediation bullets to the Review Iteration Policy in every mode', () => {
+    for (const batchMode of [true, false]) {
+      for (const agentMessagingEnabled of [true, false]) {
+        const out = wrapWithOrchestration('Context', '55', {
+          batchMode,
+          agentMessagingEnabled,
+          advisor,
+        });
+        expect(out).toContain('## Review Iteration Policy');
+        expect(out).toContain(buildAdvisorRemediationGuidance('55', { advisor }).trim());
+      }
+    }
   });
 });

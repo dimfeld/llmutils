@@ -51,6 +51,11 @@ export interface ReviewResult {
   rawOutput: string;
   recommendations: string[];
   actionItems: string[];
+  /**
+   * Advisor-authored plan for addressing the findings, present only when the advisor is
+   * configured and this review covered the full plan scope.
+   */
+  remediationPlan?: string;
 }
 
 export type VerbosityLevel = 'minimal' | 'normal' | 'detailed';
@@ -437,6 +442,7 @@ export class JsonFormatter implements ReviewFormatter {
         issues: result.issues,
         recommendations: result.recommendations,
         actionItems: result.actionItems,
+        ...(result.remediationPlan ? { remediationPlan: result.remediationPlan } : {}),
       };
     }
 
@@ -551,6 +557,14 @@ export class MarkdownFormatter implements ReviewFormatter {
       sections.push('');
     }
 
+    // Advisor remediation plan
+    if (result.remediationPlan?.trim() && options.verbosity !== 'minimal') {
+      sections.push('## Advisor Remediation Plan');
+      sections.push('');
+      sections.push(result.remediationPlan.trim());
+      sections.push('');
+    }
+
     return sections.join('\n');
   }
 
@@ -650,6 +664,13 @@ export class TerminalFormatter implements ReviewFormatter {
       result.actionItems.forEach((item) => {
         sections.push(`• ${item}`);
       });
+      sections.push('');
+    }
+
+    // Advisor remediation plan
+    if (result.remediationPlan?.trim() && options.verbosity !== 'minimal') {
+      sections.push(color('🧭 Advisor Remediation Plan', chalk.bold.magenta));
+      sections.push(result.remediationPlan.trim());
       sections.push('');
     }
 
