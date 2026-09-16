@@ -1,6 +1,7 @@
 <script lang="ts">
   import { useSessionWindows } from '$lib/stores/session_windows.svelte.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
+  import { formatSessionWindowTitle } from '$lib/utils/session_window_title.js';
   import FloatingWindow from './FloatingWindow.svelte';
   import SessionDetail from './SessionDetail.svelte';
 
@@ -11,11 +12,7 @@
 <div class="pointer-events-none fixed inset-0 z-30">
   {#each [...windows.windows.values()] as entry (entry.connectionId)}
     {@const session = sessions.sessions.get(entry.connectionId)}
-    {@const title =
-      session?.sessionInfo.planTitle ??
-      session?.sessionInfo.linkedPrTitle ??
-      session?.sessionInfo.command ??
-      'Session'}
+    {@const title = session ? formatSessionWindowTitle(session.sessionInfo) : 'Session'}
     <FloatingWindow
       {title}
       minimized={entry.minimized}
@@ -57,11 +54,9 @@
           class="shrink-0 rounded border border-border px-3 py-2 text-sm"
           onclick={() => windows.open(entry.connectionId)}
         >
-          {session && sessions.hasSessionAttention(session) ? '● ' : ''}{session?.sessionInfo
-            .planTitle ??
-            session?.sessionInfo.linkedPrTitle ??
-            session?.sessionInfo.command ??
-            'Session'}
+          {session && sessions.hasSessionAttention(session) ? '● ' : ''}{session
+            ? formatSessionWindowTitle(session.sessionInfo)
+            : 'Session'}
         </button>
       {/each}
     </nav>
