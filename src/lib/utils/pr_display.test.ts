@@ -133,6 +133,18 @@ describe('formatReviewCommentForClipboard', () => {
     );
   });
 
+  test('strips the trailing review feedback prompt when copying a comment', () => {
+    expect(
+      formatReviewCommentForClipboard(
+        'src/example.ts',
+        42,
+        'reviewer',
+        false,
+        'Please rename this.\n\nUseful? React with 👍 / 👎.\n'
+      )
+    ).toBe('src/example.ts:42\n\n@reviewer (unresolved):\nPlease rename this.');
+  });
+
   test('falls back cleanly when line, author, and diff hunk are missing', () => {
     expect(formatReviewCommentForClipboard('src/example.ts', null, null, true, null)).toBe(
       'src/example.ts\n\nUnknown (resolved):\n'

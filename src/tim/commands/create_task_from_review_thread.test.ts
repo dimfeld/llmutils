@@ -114,6 +114,35 @@ describe('createTaskFromReviewThread', () => {
     expect(task.description).toContain('Please add error handling here.');
   });
 
+  test('strips the trailing review feedback prompt from comment bodies', () => {
+    const detail: PrReviewThreadDetail = {
+      thread: makeThread({ line: 42 }),
+      comments: [
+        makeComment({
+          body: 'Please add error handling here.\n\nUseful? React with 👍 / 👎.\n',
+        }),
+      ],
+    };
+
+    const task = createTaskFromReviewThread(detail, PR_URL);
+    expect(task.description).toContain('Please add error handling here.');
+    expect(task.description).not.toContain('Useful? React with 👍 / 👎.');
+  });
+
+  test('keeps the review feedback prompt when it is not at the end', () => {
+    const detail: PrReviewThreadDetail = {
+      thread: makeThread({ line: 42 }),
+      comments: [
+        makeComment({
+          body: 'Useful? React with 👍 / 👎. Please add error handling here.',
+        }),
+      ],
+    };
+
+    const task = createTaskFromReviewThread(detail, PR_URL);
+    expect(task.description).toContain('Useful? React with 👍 / 👎.');
+  });
+
   test('concatenates multiple comment bodies', () => {
     const detail: PrReviewThreadDetail = {
       thread: makeThread({ line: 42 }),

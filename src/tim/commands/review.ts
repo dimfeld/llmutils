@@ -11,6 +11,7 @@ import {
   getCurrentCommitHash,
   getUsingJj,
 } from '../../common/git.js';
+import { stripReviewFeedbackPrompt } from '../../common/github/review_feedback.js';
 import { promptCheckbox, promptSelect } from '../../common/input.js';
 import { readPlanFile, resolvePlanByNumericId, writePlanFile, writePlanToDb } from '../plans.js';
 import { log, warn, runWithLogger, sendStructured } from '../../logging.js';
@@ -3700,6 +3701,7 @@ export function createTaskFromReviewThread(thread: PrReviewThreadDetail, prUrl: 
   const descriptionSegments: string[] = [];
   const commentBodies = thread.comments
     .map((comment) => comment.body?.trim() ?? '')
+    .map(stripReviewFeedbackPrompt)
     .filter((body) => body.length > 0);
 
   if (commentBodies.length > 0) {

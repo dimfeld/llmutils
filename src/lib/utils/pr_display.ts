@@ -1,4 +1,5 @@
 import type { PrSummaryStatus } from '$lib/server/db_queries.js';
+import { stripReviewFeedbackPrompt } from '$common/github/review_feedback.js';
 
 export function stateBadgeColor(state: string, draft: number): string {
   if (draft) return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
@@ -108,7 +109,7 @@ export function formatReviewCommentForClipboard(
   const status = isResolved ? 'resolved' : 'unresolved';
   const authorStr = author ? `@${author}` : 'Unknown';
 
-  let text = `${location}\n\n${authorStr} (${status}):\n${body ?? ''}`;
+  let text = `${location}\n\n${authorStr} (${status}):\n${stripReviewFeedbackPrompt(body ?? '')}`;
   if (includeDiff && diffHunk) {
     text += `\n\nDiff context:\n${diffHunk}`;
   }
