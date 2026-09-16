@@ -89,11 +89,12 @@ describe('orchestrator_prompt failure protocol', () => {
     ];
 
     for (const out of outputs) {
-      expect(out).toContain('especially true for the reviewer');
-      expect(out).toContain('integration tests, end-to-end tests');
+      expect(out).toContain('Subagents may take a very long time to complete');
+      expect(out).toContain('A subagent may also produce no output while it is working');
       expect(out).toContain('Elapsed time or a lack of output is not a timeout');
       expect(out).toContain('never assume that a long-running subagent has timed out');
-      expect(out).toContain('never stop, retry, or report it as failed for that reason');
+      expect(out).toContain('Never stop, retry, or report it as failed for that reason');
+      expect(out).toContain('Always wait for the subagent to report back');
       expect(out).not.toContain('15 minutes');
     }
   });
