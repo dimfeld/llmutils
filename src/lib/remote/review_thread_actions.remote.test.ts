@@ -52,6 +52,7 @@ const { createPullRequestReviewCommentReplyMock, resolveReviewThreadMock } = vi.
 }));
 
 const {
+  spawnChatForPrProcessMock,
   spawnAutoreviewForPrProcessMock,
   spawnCiFixForPrProcessMock,
   spawnCiFixProcessMock,
@@ -60,6 +61,7 @@ const {
   spawnPrReviewGuideProcessMock,
   spawnShellForPrProcessMock,
 } = vi.hoisted(() => ({
+  spawnChatForPrProcessMock: vi.fn(),
   spawnAutoreviewForPrProcessMock: vi.fn<
     (
       prUrlOrNumber: string,
@@ -144,6 +146,7 @@ vi.mock('$common/github/pull_requests.js', async (importOriginal) => {
 });
 
 vi.mock('$lib/server/plan_actions.js', () => ({
+  spawnChatForPrProcess: spawnChatForPrProcessMock,
   spawnAutoreviewForPrProcess: (...args: Parameters<typeof spawnAutoreviewForPrProcessMock>) =>
     spawnAutoreviewForPrProcessMock(...args),
   spawnCiFixForPrProcess: (...args: Parameters<typeof spawnCiFixForPrProcessMock>) =>
@@ -167,6 +170,7 @@ import {
   startCiFix,
   startFixPrThreads,
   startFixThreads,
+  startPrChat,
   startPrAutoreview,
   startPrCiFix,
   startPrReviewGuide,
@@ -241,6 +245,7 @@ describe('convertThreadToTask', () => {
     projectId = getOrCreateProject(currentDb, 'repo-review-thread-actions').id;
     createPullRequestReviewCommentReplyMock.mockReset();
     resolveReviewThreadMock.mockReset();
+    spawnChatForPrProcessMock.mockReset();
     spawnAutoreviewForPrProcessMock.mockReset();
     spawnPrFixForPrProcessMock.mockReset();
     spawnPrFixProcessMock.mockReset();
@@ -1533,6 +1538,7 @@ describe('startFixPrThreads', () => {
     currentConfig = defaultConfig();
     // Use repository_id with owner/repo format
     getOrCreateProject(currentDb, REPO_ID);
+    spawnChatForPrProcessMock.mockReset();
     spawnAutoreviewForPrProcessMock.mockReset();
     spawnPrFixForPrProcessMock.mockReset();
     spawnPrFixProcessMock.mockReset();
@@ -1571,6 +1577,41 @@ describe('startFixPrThreads', () => {
       '/tmp/pr-primary-workspace'
     );
     expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+  });
+
+  test('PR chat uses the PR launch lock and releases it after failure', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnChatForPrProcessMock.mockResolvedValueOnce({ success: false, error: 'Launch failed' });
+    await expect(
+      invokeCommand(startPrChat, { projectId, prNumber: 42, executor: 'codex' })
+    ).rejects.toThrow();
+    expect(isPrLaunching(CANONICAL_PR_URL)).toBe(false);
+    spawnChatForPrProcessMock.mockResolvedValueOnce({ success: true });
+    expect(
+      await invokeCommand(startPrChat, { projectId, prNumber: 42, executor: 'codex' })
+    ).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
+    expect(spawnChatForPrProcessMock).toHaveBeenLastCalledWith(
+      CANONICAL_PR_URL,
+      '/tmp/pr-primary-workspace',
+      'codex'
+    );
+    expect(
+      await invokeCommand(startPrChat, { projectId, prNumber: 42, executor: 'codex' })
+    ).toEqual({ status: 'already_running' });
+    expect(spawnChatForPrProcessMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('PR chat rejects a PR outside the project', async () => {
+    await expect(
+      invokeCommand(startPrChat, { projectId: getProjectId(), prNumber: 42, executor: 'claude' })
+    ).rejects.toThrow();
+    expect(spawnChatForPrProcessMock).not.toHaveBeenCalled();
   });
 
   test('spawns tim autoreview for a PR with the canonical PR URL', async () => {

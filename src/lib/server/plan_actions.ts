@@ -246,6 +246,21 @@ export async function spawnChatProcess(
   return spawnPlanTimProcess(describeTarget('plan', planId), planId, args, cwd);
 }
 
+export async function spawnChatForPrProcess(
+  prUrl: string,
+  cwd: string,
+  executor: string
+): Promise<SpawnTargetProcessResult> {
+  const prompt = `Help me understand pull request ${prUrl}. Read its diff and description with gh and read any stored tim review guide for this PR. Explain the changes and answer my questions. Do not change files unless I ask you to.`;
+  return spawnTimProcess(
+    describeTarget('pr', prUrl),
+    null,
+    ['chat', prompt, '--executor', executor, '--auto-workspace', '--no-terminal-input'],
+    cwd,
+    { TIM_HIDE_PLAN_DETAILS: '1', [TIM_LINKED_PR_URL_ENV]: prUrl }
+  );
+}
+
 export async function spawnRebaseProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
   return spawnPlanTimProcess(
     describeTarget('plan', planId),

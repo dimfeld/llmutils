@@ -44,7 +44,9 @@
   import * as Tooltip from '$lib/components/ui/tooltip/index.js';
   import { Popover, PopoverContent, PopoverTrigger } from '$lib/components/ui/popover/index.js';
 
-  let { session }: { session: SessionData } = $props();
+  import { useSessionWindows } from '$lib/stores/session_windows.svelte.js';
+  const windows = useSessionWindows();
+  let { session, floating = false }: { session: SessionData; floating?: boolean } = $props();
   const sessionManager = useSessionManager();
   const uiState = useUIState();
 
@@ -61,7 +63,7 @@
   const FULLY_RENDERED_MESSAGE_COUNT = 20;
 
   afterNavigate(({ from, to }) => {
-    if (from && to && from.url.pathname !== to.url.pathname) {
+    if (!floating && from && to && from.url.pathname !== to.url.pathname) {
       confirmingEndSession = false;
       isFirstScroll = true;
       isProgrammaticallyScrolled = false;
@@ -148,7 +150,7 @@
 
   let planLink = $derived.by(() => {
     const uuid = session.sessionInfo.planUuid ?? session.sessionInfo.linkedPlanUuid;
-    const projectId = page.params.projectId;
+    const projectId = session.projectId != null ? String(session.projectId) : page.params.projectId;
     if (uuid && projectId) {
       return resolve(`/projects/[projectId]/plans/[planId]`, { projectId, planId: uuid });
     }
@@ -162,7 +164,7 @@
 
   let prLink = $derived.by(() => {
     const prNumber = session.sessionInfo.linkedPrNumber;
-    const projectId = page.params.projectId;
+    const projectId = session.projectId != null ? String(session.projectId) : page.params.projectId;
     if (prNumber != null && projectId) {
       return resolve(`/projects/[projectId]/prs/[prNumber]`, {
         projectId,
@@ -390,7 +392,7 @@
 <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
   <!-- Session header -->
   <div class="shrink-0 border-b border-border px-4 py-3">
-    <div class="flex items-start justify-between gap-3">
+    <div class={['flex items-start justify-between gap-3', floating && 'flex-wrap']}>
       <div class="flex min-w-0 items-center gap-3">
         <span
           class="h-2.5 w-2.5 shrink-0 rounded-full {statusDotClass}"
@@ -450,7 +452,14 @@
         <span class="text-xs text-muted-foreground">{statusText}</span>
       </div>
 
-      <div class="flex shrink-0 items-center gap-2">
+      <div class={['flex shrink-0 items-center gap-2', floating && 'flex-wrap']}>
+        {#if windows && !floating}
+          <button
+            type="button"
+            class="rounded px-2 py-1 text-sm hover:bg-muted"
+            onclick={() => windows.open(session.connectionId)}>Open in window</button
+          >
+        {/if}
         {#if showEndSession}
           {#if confirmingEndSession}
             <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -643,7 +652,7 @@
             </Tooltip.Content>
           </Tooltip.Root>
         {/if}
-        {#if showPlanPane}
+        {#if showPlanPane && !floating}
           <Tooltip.Root>
             <Tooltip.Trigger>
               {#snippet child({ props })}
@@ -802,7 +811,7 @@
     {/if}
   {/snippet}
 
-  {#if showPlanPane && !planPaneCollapsed}
+  {#if showPlanPane && !planPaneCollapsed && !floating}
     <div class="flex min-h-0 flex-1 flex-col lg:flex-row">
       <div class="flex min-h-0 min-w-0 flex-col lg:w-1/2" style="flex: 1 1 0%;">
         {@render messagesPane()}

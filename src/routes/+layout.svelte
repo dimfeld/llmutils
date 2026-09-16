@@ -1,4 +1,6 @@
 <script lang="ts">
+  import SessionWindows from '$lib/components/SessionWindows.svelte';
+  import { setSessionWindows } from '$lib/stores/session_windows.svelte.js';
   import { onMount } from 'svelte';
   import './layout.css';
   import TabNav from '$lib/components/TabNav.svelte';
@@ -33,6 +35,7 @@
   let { data, children }: { data: LayoutData; children: Snippet } = $props();
   const sessionManager = setSessionManager();
   const uiState = setUIState();
+  setSessionWindows();
 
   // Clean up UI state when a session is dismissed
   const removeEventListener = registerDismissedSessionCleanup(sessionManager, uiState);
@@ -243,6 +246,7 @@
     </main>
 
     <CommandBar bind:open={commandBarOpen} {projectId} allProjects={commandBarAllProjects} />
+    <SessionWindows />
     <Toaster />
   </div>
 </Tooltip.Provider>

@@ -1196,3 +1196,11 @@ When installed as a PWA, the app icon displays a badge dot whenever any session 
 - "Recently Active" toggle defaults to filtered; toggle state is `$state` that persists across project switches (not wrapped in `{#key}`)
 - Plan detail sub-route reuses `PlanDetail` component; `getPlanDetailRouteData()` accepts a `tab` parameter for cross-project redirect URLs
 - Dependency/parent links in PlanDetail point to the Plans tab (not Active Work) since dependencies can be any status
+
+## Floating session windows
+
+The root layout owns `SessionWindows` through Svelte context. It uses the shared session store and renders `SessionDetail` in `FloatingWindow`, which handles pointer and keyboard movement, resizing, and bounds. Each connection ID has one window. Window order controls which window is in front. Minimized windows stay mounted to preserve local content state. Closing a window removes only its view.
+
+The window host stays mounted across routes and has its own stacking context below modal dialogs. Floating session links use the session's project ID. Floating views hide the plan pane so that the message area has more space.
+
+Plan chat opens its session in this host after discovery. `SessionChatButton` is shared by PR detail and both plan and PR review guide pages. Plan review guides launch chat with the plan UUID and open the session after discovery. `startPrChat` uses the PR launch helper for project validation, active-session checks, and launch locks. `spawnChatForPrProcess` passes the PR URL in the initial prompt and `TIM_LINKED_PR_URL` so discovery can identify the session immediately. PR chat uses an automatic workspace; it reads the PR through `gh` and does not assume that the workspace has the PR branch checked out.

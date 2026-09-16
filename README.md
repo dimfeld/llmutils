@@ -299,6 +299,14 @@ For production-style local serving:
 bun run web-prod
 ```
 
+## Session windows
+
+Select **Chat** on a plan, **Chat with plan** on a plan review guide, or **Chat with PR** on a PR or its review guide, to open a chat in a floating window. Select **Open in window** in any session to display it above the current page.
+
+Drag the title bar to move the window. Drag the lower-right corner to resize it. You can also focus either control and use the arrow keys. Minimize a window to the bar at the bottom of the screen, then select it to restore it. Windows stay open when you navigate to another page, and drafts stay in place when you minimize them. Closing a window leaves its session running. Window positions are kept until you reload the page.
+
+PR chat offers Claude Code and Codex CLI. It starts with the PR URL and instructions to read the PR and its stored review guide. If a session is already running for that PR, the button opens that session.
+
 ## Core Web UI Workflow
 
 The main workflow is:

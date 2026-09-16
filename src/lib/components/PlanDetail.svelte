@@ -13,7 +13,7 @@
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { onDestroy, untrack } from 'svelte';
-  import { afterNavigate, goto, invalidateAll } from '$app/navigation';
+  import { afterNavigate, invalidateAll } from '$app/navigation';
   import { updatePlanMetadata } from '$lib/remote/plan_metadata.remote.js';
   import { extractPlanMetadataErrorMessage } from './plan_metadata_form_utils.js';
   import {
@@ -44,6 +44,7 @@
   } from '$lib/remote/review_issue_actions.remote.js';
   import { getPlanSyncStatus } from '$lib/remote/sync_status.remote.js';
   import { getEntityBadgeState } from './sync_indicator_state.js';
+  import { useSessionWindows } from '$lib/stores/session_windows.svelte.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
@@ -85,6 +86,7 @@
   } = $props();
 
   const sessionManager = useSessionManager();
+  const sessionWindows = useSessionWindows();
 
   let planSyncQuery = $derived(plan.uuid ? getPlanSyncStatus({ planUuid: plan.uuid }) : null);
   let planSyncStatus = $derived(planSyncQuery?.current ?? null);
@@ -763,7 +765,7 @@
         : await waitForActiveChatSession(actionPlanUuid);
     if (!connectionId || actionPlanUuid !== plan.uuid) return;
 
-    await goto(`/projects/${projectId}/sessions/${encodeURIComponent(connectionId)}`);
+    sessionWindows?.open(connectionId);
   }
 
   async function handleGenerate() {

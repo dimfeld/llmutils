@@ -23,6 +23,7 @@ import {
 } from '$lib/server/launch_lock.js';
 import {
   spawnAutoreviewForPrProcess,
+  spawnChatForPrProcess,
   spawnCiFixForPrProcess,
   spawnCiFixProcess,
   spawnPrFixForPrProcess,
@@ -611,5 +612,13 @@ export const startPrReviewGuide = command(
   async ({ projectId, prNumber }) =>
     launchPrTimCommand('review-guide', projectId, prNumber, (prUrlOrNumber, cwd) =>
       spawnPrReviewGuideProcess(prNumber, cwd, { [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber })
+    )
+);
+
+export const startPrChat = command(
+  startPrReviewGuideSchema.extend({ executor: z.enum(['claude', 'codex']) }),
+  async ({ projectId, prNumber, executor }) =>
+    launchPrTimCommand('chat', projectId, prNumber, (prUrl, cwd) =>
+      spawnChatForPrProcess(prUrl, cwd, executor)
     )
 );

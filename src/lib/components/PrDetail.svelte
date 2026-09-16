@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SessionChatButton from './SessionChatButton.svelte';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import {
     stateBadgeColor,
@@ -542,6 +543,7 @@
         >
           {autoreviewStarting ? 'Starting...' : 'Autoreview'}
         </button>
+        <SessionChatButton target={{ projectId, prNumber: pr.status.pr_number }} />
         <button
           onclick={handleStartShell}
           disabled={shellStarting || sessionActive}

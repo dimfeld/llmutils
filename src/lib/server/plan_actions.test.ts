@@ -45,6 +45,7 @@ import {
   spawnCiFixForPrProcess,
   spawnCiFixProcess,
   spawnChatProcess,
+  spawnChatForPrProcess,
   spawnGenerateProcess,
   spawnPlanReviewGuideProcess,
   spawnPrFixForPrProcess,
@@ -388,6 +389,29 @@ describe('lib/server/plan_actions', () => {
       success: false,
       error: 'Failed to start tim agent: Error: spawn failed',
     });
+  });
+
+  test('PR chat includes PR context and publishes its identity at startup', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+    const prUrl = 'https://github.com/owner/repo/pull/42';
+    const resultPromise = spawnChatForPrProcess(prUrl, '/tmp/primary-workspace', 'codex');
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await resultPromise).toEqual({ success: true });
+    const options = spawnSpy.mock.calls[0][1];
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'chat',
+      expect.stringContaining(prUrl),
+      '--executor',
+      'codex',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+    expect(buildWorkspaceCommandEnv).toHaveBeenCalledWith(
+      '/tmp/primary-workspace',
+      expect.objectContaining({ TIM_LINKED_PR_URL: prUrl })
+    );
   });
 
   test('spawnChatProcess starts tim chat in detached mode and unrefs it after the early-exit window', async () => {
