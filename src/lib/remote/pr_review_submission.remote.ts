@@ -260,15 +260,21 @@ export const getSubmissionPartition = command(
       };
     }
     const { prUrl, owner, repo, baseBranch } = requireReviewForDiff(db, review);
-    const { diff, usedCommitSha, fellBack } = await fetchDiffWithFallback(
-      db,
-      prUrl,
-      owner,
-      repo,
-      baseBranch,
-      commitSha,
-      fallbackCommitSha
-    );
+    let diffResult: Awaited<ReturnType<typeof fetchDiffWithFallback>>;
+    try {
+      diffResult = await fetchDiffWithFallback(
+        db,
+        prUrl,
+        owner,
+        repo,
+        baseBranch,
+        commitSha,
+        fallbackCommitSha
+      );
+    } catch (diffError) {
+      throwGitHubRemoteError(diffError);
+    }
+    const { diff, usedCommitSha, fellBack } = diffResult;
     const diffIndex = buildDiffIndex(diff);
     const { inlineable, appendToBody } = partitionIssuesForSubmission(selected, diffIndex);
 
@@ -573,7 +579,33 @@ function getErrorMessage(errorValue: unknown): string {
     return errorValue.message;
   }
 
+  if (errorValue && typeof errorValue === 'object' && 'message' in errorValue) {
+    const message = (errorValue as { message?: unknown }).message;
+    if (typeof message === 'string' && message.length > 0) {
+      return message;
+    }
+  }
+
   return String(errorValue);
+}
+
+function getErrorStatus(errorValue: unknown): number | undefined {
+  if (errorValue && typeof errorValue === 'object' && 'status' in errorValue) {
+    const status = (errorValue as { status?: unknown }).status;
+    if (typeof status === 'number' && Number.isInteger(status) && status >= 400 && status <= 599) {
+      return status;
+    }
+  }
+
+  return undefined;
+}
+
+function throwGitHubRemoteError(errorValue: unknown): never {
+  const status = getErrorStatus(errorValue) ?? 500;
+  error(status, {
+    kind: 'github_submission_failed',
+    message: `GitHub API error while submitting the review (HTTP ${status}): ${getErrorMessage(errorValue)}`,
+  } as never);
 }
 
 async function resolveSubmissionEvent(
@@ -627,15 +659,20 @@ export const submitReviewToGitHub = command(
       }
     } else {
       const { prUrl: diffPrUrl, owner, repo, baseBranch } = requireReviewForDiff(db, review);
-      const fetched = await fetchDiffWithFallback(
-        db,
-        diffPrUrl,
-        owner,
-        repo,
-        baseBranch,
-        commitSha,
-        fallbackCommitSha
-      );
+      let fetched: Awaited<ReturnType<typeof fetchDiffWithFallback>>;
+      try {
+        fetched = await fetchDiffWithFallback(
+          db,
+          diffPrUrl,
+          owner,
+          repo,
+          baseBranch,
+          commitSha,
+          fallbackCommitSha
+        );
+      } catch (diffError) {
+        throwGitHubRemoteError(diffError);
+      }
       usedCommitSha = fetched.usedCommitSha;
       fellBackToHead = fetched.fellBack;
       const partitioned = partitionIssuesForSubmission(
@@ -676,7 +713,7 @@ export const submitReviewToGitHub = command(
         console.warn('[pr_review_submission] Failed to record failed submission', recordError);
       }
 
-      throw submitError;
+      throwGitHubRemoteError(submitError);
     }
 
     // GitHub submission succeeded; persist locally. If persistence fails, the review still

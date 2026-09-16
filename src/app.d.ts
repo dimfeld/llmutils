@@ -11,6 +11,7 @@ declare global {
         | 'invalid_reference'
         | 'cycle_detected'
         | 'sync_conflict'
+        | 'github_submission_failed'
         | 'persistence_failed'
         | 'persistence-failed';
       field?: string;

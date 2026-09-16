@@ -629,7 +629,11 @@ describe('pr_review_submission remote functions', () => {
         '+new failing line',
       ].join('\n'),
     });
-    submitPrReviewMock.mockRejectedValue(new Error('GitHub createReview failed'));
+    submitPrReviewMock.mockRejectedValue(
+      Object.assign(new Error('Unprocessable Entity: "Line could not be resolved"'), {
+        status: 422,
+      })
+    );
 
     await expect(
       invokeCommand(submitReviewToGitHub, {
@@ -639,7 +643,14 @@ describe('pr_review_submission remote functions', () => {
         issueIds: [issue.id],
         commitSha: 'commit-106',
       })
-    ).rejects.toThrow('GitHub createReview failed');
+    ).rejects.toMatchObject({
+      status: 422,
+      body: {
+        kind: 'github_submission_failed',
+        message:
+          'GitHub API error while submitting the review (HTTP 422): Unprocessable Entity: "Line could not be resolved"',
+      },
+    });
 
     const submissions = getPrReviewSubmissionsForReview(currentDb, review.id);
     expect(submissions).toHaveLength(1);
@@ -647,7 +658,7 @@ describe('pr_review_submission remote functions', () => {
       githubReviewId: null,
       githubReviewUrl: null,
       event: 'REQUEST_CHANGES',
-      errorMessage: 'GitHub createReview failed',
+      errorMessage: 'Unprocessable Entity: "Line could not be resolved"',
       commitSha: 'commit-106',
     });
 
@@ -972,7 +983,7 @@ describe('pr_review_submission remote functions', () => {
         '+new failing line',
       ].join('\n'),
     });
-    const submitError = new Error('GitHub createReview failed');
+    const submitError = Object.assign(new Error('GitHub createReview failed'), { status: 422 });
     submitPrReviewMock.mockRejectedValue(submitError);
     const createSubmissionSpy = vi
       .spyOn(reviewDbModule, 'createPrReviewSubmission')
@@ -989,7 +1000,14 @@ describe('pr_review_submission remote functions', () => {
         issueIds: [issue.id],
         commitSha: 'commit-110',
       })
-    ).rejects.toThrow('GitHub createReview failed');
+    ).rejects.toMatchObject({
+      status: 422,
+      body: {
+        kind: 'github_submission_failed',
+        message:
+          'GitHub API error while submitting the review (HTTP 422): GitHub createReview failed',
+      },
+    });
 
     expect(createSubmissionSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy).toHaveBeenCalledWith(
@@ -1479,6 +1497,40 @@ describe('pr_review_submission remote functions', () => {
       2,
       expect.objectContaining({ basehead: 'main...head-sha' })
     );
+  });
+
+  test('getSubmissionPartition exposes GitHub diff API errors', async () => {
+    const review = seedReview('https://github.com/example/repo/pull/3120', {
+      baseBranch: 'main',
+    });
+    const issue = seedIssue(review.id, {
+      severity: 'minor',
+      category: 'style',
+      content: 'Needs check',
+      file: 'src/app.ts',
+      line: '11',
+      startLine: null,
+      suggestion: null,
+      side: 'RIGHT',
+    });
+    compareCommitsMock.mockRejectedValue(
+      Object.assign(new Error('Forbidden: rate limit exceeded'), { status: 403 })
+    );
+
+    await expect(
+      invokeCommand(getSubmissionPartition, {
+        reviewId: review.id,
+        issueIds: [issue.id],
+        commitSha: 'commit-3120',
+      })
+    ).rejects.toMatchObject({
+      status: 403,
+      body: {
+        kind: 'github_submission_failed',
+        message:
+          'GitHub API error while submitting the review (HTTP 403): Forbidden: rate limit exceeded',
+      },
+    });
   });
 
   test('getSubmissionPartition refreshes a retargeted PR and retries with its new base', async () => {
