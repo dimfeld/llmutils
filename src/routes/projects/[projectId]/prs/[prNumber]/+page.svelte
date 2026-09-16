@@ -2,7 +2,7 @@
   import PrDetail from '$lib/components/PrDetail.svelte';
   import { getProjectPrs } from '$lib/remote/project_prs.remote.js';
 
-  const { params } = $props();
+  const { params, data } = $props();
 
   let projectId = $derived(params.projectId);
   let prNumber = $derived(Number(params.prNumber));
@@ -20,6 +20,7 @@
     {allPrs}
     username={prData.username}
     tokenConfigured={prData.tokenConfigured}
+    chatExecutorOptions={data.chatExecutorOptions}
   />
 {:else}
   <div class="flex items-center justify-center p-8 text-sm text-muted-foreground">

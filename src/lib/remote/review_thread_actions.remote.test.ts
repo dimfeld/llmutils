@@ -1614,6 +1614,32 @@ describe('startFixPrThreads', () => {
     expect(spawnChatForPrProcessMock).not.toHaveBeenCalled();
   });
 
+  test('PR chat passes the selected model to the launcher', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnChatForPrProcessMock.mockResolvedValueOnce({ success: true });
+
+    await expect(
+      invokeCommand(startPrChat, {
+        projectId,
+        prNumber: 42,
+        executor: 'codex-cli',
+        model: 'gpt-test',
+      })
+    ).resolves.toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
+    expect(spawnChatForPrProcessMock).toHaveBeenCalledWith(
+      CANONICAL_PR_URL,
+      '/tmp/pr-primary-workspace',
+      'codex-cli',
+      'gpt-test'
+    );
+  });
+
   test('spawns tim autoreview for a PR with the canonical PR URL', async () => {
     const projectId = getProjectId();
     seedPrStatusWithUnresolvedThread(currentDb, 42);

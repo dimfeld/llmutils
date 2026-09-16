@@ -1,17 +1,37 @@
 <script lang="ts">
+  import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { startChat } from '$lib/remote/plan_actions.remote.js';
   import { startPrChat } from '$lib/remote/review_thread_actions.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { useSessionWindows } from '$lib/stores/session_windows.svelte.js';
   import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
+  import {
+    DEFAULT_CHAT_EXECUTOR_OPTIONS,
+    chatExecutorLabel,
+    chatOptionKey,
+  } from '$lib/utils/chat_executor_options.js';
+  import { Button, type ButtonVariant } from '$lib/components/ui/button/index.js';
+  import * as Dialog from '$lib/components/ui/dialog/index.js';
 
-  type ChatTarget = { planUuid: string } | { projectId: string; prNumber: number };
-  let { target }: { target: ChatTarget } = $props();
+  export type ChatTarget = { planUuid: string } | { projectId: string; prNumber: number };
+
+  let {
+    target,
+    chatExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
+    variant = 'ghost',
+    buttonClass = '',
+  }: {
+    target: ChatTarget;
+    chatExecutorOptions?: ChatExecutorOption[];
+    variant?: ButtonVariant;
+    buttonClass?: string;
+  } = $props();
+
   let subject = $derived('planUuid' in target ? 'plan' : 'PR');
   const sessions = useSessionManager();
   const windows = useSessionWindows();
-  let executor = $state<'claude' | 'codex'>('claude');
-  let starting = $state(false);
+  let chatDialogOpen = $state(false);
+  let startingChat = $state<string | false>(false);
   let pending = $state<{ planUuid: string } | { prUrl: string } | null>(null);
   let error = $state<string | null>(null);
 
@@ -28,18 +48,24 @@
     }
   });
 
-  async function start(): Promise<void> {
-    starting = true;
+  async function start(option: ChatExecutorOption): Promise<void> {
+    const optionKey = chatOptionKey(option);
+    startingChat = optionKey;
     error = null;
     try {
       const launchTarget = target;
       const result =
         'planUuid' in launchTarget
-          ? await startChat({ planUuid: launchTarget.planUuid, executor })
+          ? await startChat({
+              planUuid: launchTarget.planUuid,
+              executor: option.executor,
+              model: option.model,
+            })
           : await startPrChat({
               projectId: Number(launchTarget.projectId),
               prNumber: launchTarget.prNumber,
-              executor,
+              executor: option.executor,
+              model: option.model,
             });
       if (result.status === 'already_running') {
         if (result.connectionId) windows?.open(result.connectionId);
@@ -51,34 +77,64 @@
             : 'prUrl' in result
               ? { prUrl: result.prUrl }
               : null;
+        chatDialogOpen = false;
       }
     } catch (err) {
       error = extractRemoteErrorMessage(err);
     } finally {
-      starting = false;
+      startingChat = false;
+      chatDialogOpen = false;
     }
   }
 </script>
 
 {#if windows}
   <div class="flex flex-wrap items-center gap-2">
-    <select
-      aria-label="{subject} chat executor"
-      bind:value={executor}
-      class="rounded border border-border bg-background px-2 py-1 text-sm"
+    <Button
+      {variant}
+      size="sm"
+      class={buttonClass}
+      onclick={() => {
+        error = null;
+        chatDialogOpen = true;
+      }}
+      disabled={!!startingChat}
+      aria-label={`Chat with ${subject}`}>Chat</Button
     >
-      <option value="claude">Claude Code</option>
-      <option value="codex">Codex CLI</option>
-    </select>
-    <button
-      type="button"
-      class="rounded border border-border px-3 py-1 text-sm hover:bg-muted disabled:opacity-50"
-      onclick={start}
-      disabled={starting}>{starting ? 'Starting…' : `Chat with ${subject}`}</button
-    >
-    {#if pending}<span role="status" class="text-sm text-muted-foreground"
-        >Waiting for session…</span
-      >{/if}
+    {#if pending}
+      <span role="status" class="text-sm text-muted-foreground">Waiting for session…</span>
+    {/if}
     {#if error}<span role="alert" class="text-sm text-red-600 dark:text-red-400">{error}</span>{/if}
   </div>
+
+  <Dialog.Root
+    open={chatDialogOpen}
+    onOpenChange={(open) => {
+      if (!open && startingChat) return;
+      chatDialogOpen = open;
+    }}
+  >
+    <Dialog.Content class="sm:max-w-md">
+      <Dialog.Header>
+        <Dialog.Title>Start Chat Session</Dialog.Title>
+        <Dialog.Description>Choose an executor and model</Dialog.Description>
+      </Dialog.Header>
+      <div class="grid gap-3 py-4">
+        {#each chatExecutorOptions as option (chatOptionKey(option))}
+          {@const optionKey = chatOptionKey(option)}
+          <Button onclick={() => start(option)} class="justify-between" disabled={!!startingChat}>
+            {#if startingChat === optionKey}
+              <span
+                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
+              ></span>
+              Starting…
+            {:else}
+              <span>{chatExecutorLabel(option.executor)}</span>
+              <span class="text-xs opacity-80">{option.model ?? 'Default model'}</span>
+            {/if}
+          </Button>
+        {/each}
+      </div>
+    </Dialog.Content>
+  </Dialog.Root>
 {/if}

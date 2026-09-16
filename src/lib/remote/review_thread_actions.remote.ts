@@ -616,9 +616,14 @@ export const startPrReviewGuide = command(
 );
 
 export const startPrChat = command(
-  startPrReviewGuideSchema.extend({ executor: z.enum(['claude', 'codex']) }),
-  async ({ projectId, prNumber, executor }) =>
+  startPrReviewGuideSchema.extend({
+    executor: z.enum(['claude', 'codex', 'claude-code', 'codex-cli']),
+    model: z.string().min(1).optional(),
+  }),
+  async ({ projectId, prNumber, executor, model }) =>
     launchPrTimCommand('chat', projectId, prNumber, (prUrl, cwd) =>
-      spawnChatForPrProcess(prUrl, cwd, executor)
+      model === undefined
+        ? spawnChatForPrProcess(prUrl, cwd, executor)
+        : spawnChatForPrProcess(prUrl, cwd, executor, model)
     )
 );

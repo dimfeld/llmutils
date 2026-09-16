@@ -1,5 +1,4 @@
 <script lang="ts">
-  import SessionChatButton from '$lib/components/SessionChatButton.svelte';
   import ReviewGuideView from '$lib/components/ReviewGuideView.svelte';
   import type { PageData } from './$types';
 
@@ -10,7 +9,6 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
-  <div class="shrink-0 px-6 pt-3"><SessionChatButton target={{ planUuid: data.plan.uuid }} /></div>
   <ReviewGuideView
     review={data.review}
     issues={data.issues}
@@ -35,5 +33,7 @@
     submissionPrUrl={data.submissionPrUrl}
     submitAsCommentOnly={data.submitAsCommentOnly}
     reviewThreads={data.reviewThreads}
+    chatTarget={{ planUuid: data.plan.uuid }}
+    chatExecutorOptions={data.chatExecutorOptions}
   />
 </div>

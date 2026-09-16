@@ -36,6 +36,8 @@
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import CopyButton from './CopyButton.svelte';
   import { toLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
+  import type { ChatExecutorOption } from '$tim/configSchema.js';
+  import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
 
   const sessionManager = useSessionManager();
 
@@ -45,12 +47,14 @@
     username = null,
     tokenConfigured = false,
     allPrs = [],
+    chatExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
   }: {
     pr: EnrichedProjectPr;
     projectId: string;
     username?: string | null;
     tokenConfigured?: boolean;
     allPrs?: EnrichedProjectPr[];
+    chatExecutorOptions?: ChatExecutorOption[];
   } = $props();
 
   interface ChainEntry {
@@ -543,7 +547,11 @@
         >
           {autoreviewStarting ? 'Starting...' : 'Autoreview'}
         </button>
-        <SessionChatButton target={{ projectId, prNumber: pr.status.pr_number }} />
+        <SessionChatButton
+          target={{ projectId, prNumber: pr.status.pr_number }}
+          {chatExecutorOptions}
+          buttonClass="rounded-md text-xs font-medium text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+        />
         <button
           onclick={handleStartShell}
           disabled={shellStarting || sessionActive}

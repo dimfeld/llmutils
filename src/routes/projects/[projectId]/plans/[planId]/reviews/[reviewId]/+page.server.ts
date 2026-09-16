@@ -4,6 +4,7 @@ import { getReviewById } from '$tim/db/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import { getReviewDetailDataForReview } from '../../../../prs/[prNumber]/reviews/[reviewId]/review_data.server.js';
 import type { PageServerLoad } from './$types';
+import { loadChatExecutorOptionsForProject } from '$lib/server/plans_browser.js';
 
 export const load: PageServerLoad = async ({ params }) => {
   const { db, config } = await getServerContext();
@@ -37,5 +38,6 @@ export const load: PageServerLoad = async ({ params }) => {
     ...reviewDetail,
     plan: { uuid: plan.uuid, planId: plan.plan_id, title: plan.title, branch: plan.branch },
     projectId: routeProjectId,
+    chatExecutorOptions: await loadChatExecutorOptionsForProject(db, plan.project_id),
   };
 };

@@ -44,6 +44,8 @@
   import SubmitReviewDialog from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/SubmitReviewDialog.svelte';
   import { normalizeGutterRange } from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/new_issue_modal_utils.js';
   import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
+  import SessionChatButton, { type ChatTarget } from '$lib/components/SessionChatButton.svelte';
+  import type { ChatExecutorOption } from '$tim/configSchema.js';
   import {
     highlightAnnotationNode,
     type AnnotationHighlightHandle,
@@ -75,6 +77,8 @@
     submissionPrUrl?: string | null;
     submitAsCommentOnly?: boolean;
     reviewThreads?: PrReviewThreadDetail[];
+    chatTarget?: ChatTarget;
+    chatExecutorOptions?: ChatExecutorOption[];
   }
 
   let {
@@ -92,6 +96,8 @@
     submissionPrUrl = null,
     submitAsCommentOnly = false,
     reviewThreads = [],
+    chatTarget = undefined,
+    chatExecutorOptions = undefined,
   }: Props = $props();
 
   // Local state for optimistic issue updates. $derived is writable in Svelte 5,
@@ -1092,6 +1098,14 @@
           <Send class="size-3" />
           Submit Review
         </button>
+      {/if}
+      {#if chatTarget}
+        <SessionChatButton
+          target={chatTarget}
+          {chatExecutorOptions}
+          variant="outline"
+          buttonClass="rounded-md text-xs font-medium text-foreground"
+        />
       {/if}
       {#if effectivePrUrl}
         <a

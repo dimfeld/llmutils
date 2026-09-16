@@ -1,5 +1,4 @@
 <script lang="ts">
-  import SessionChatButton from '$lib/components/SessionChatButton.svelte';
   import { page } from '$app/state';
   import ReviewGuideView from '$lib/components/ReviewGuideView.svelte';
   import type { PageData } from './$types';
@@ -11,9 +10,6 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
-  <div class="shrink-0 px-6 pt-3">
-    <SessionChatButton target={{ projectId, prNumber: Number(prNumber) }} />
-  </div>
   <ReviewGuideView
     review={data.review}
     issues={data.issues}
@@ -29,5 +25,7 @@
     backHref="/projects/{projectId}/prs/{prNumber}"
     backLabel="Back to PR #{prNumber}"
     allowGithubSubmission={true}
+    chatTarget={{ projectId, prNumber: Number(prNumber) }}
+    chatExecutorOptions={data.chatExecutorOptions}
   />
 </div>

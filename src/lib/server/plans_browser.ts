@@ -19,13 +19,10 @@ import { isProofConfigured } from '$lib/utils/proof_eligibility.js';
 import { isMediaHostConfigured } from '$tim/configSchema.js';
 import type { DashboardPlan } from '$lib/utils/dashboard_attention.js';
 import { hasPlanPrData } from '$lib/utils/plan_pr_presence.js';
-import { ClaudeCodeExecutorName, CodexCliExecutorName } from '$tim/executors/schemas.js';
 import type { ChatExecutorOption } from '$tim/configSchema.js';
+import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
 
-export const DEFAULT_CHAT_EXECUTOR_OPTIONS: ChatExecutorOption[] = [
-  { executor: ClaudeCodeExecutorName },
-  { executor: CodexCliExecutorName },
-];
+export { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
 
 export async function loadFinishConfigForProject(
   db: Database,

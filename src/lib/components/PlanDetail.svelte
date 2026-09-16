@@ -7,7 +7,11 @@
 
   import type { PlanDetailView } from '$lib/server/db_queries.js';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
-  import { ClaudeCodeExecutorName, CodexCliExecutorName } from '$tim/executors/schemas.js';
+  import {
+    DEFAULT_CHAT_EXECUTOR_OPTIONS,
+    chatExecutorLabel,
+    chatOptionKey,
+  } from '$lib/utils/chat_executor_options.js';
   import type { PlanReviewListItem } from '$lib/server/plans_browser.js';
   import type { PrStatusRow } from '$tim/db/pr_status.js';
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
@@ -69,10 +73,7 @@
     openInEditorEnabled = false,
     proofConfigured = false,
     mediaHostConfigured = false,
-    chatExecutorOptions = [
-      { executor: ClaudeCodeExecutorName },
-      { executor: CodexCliExecutorName },
-    ],
+    chatExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
   }: {
     plan: PlanDetailView;
     reviews?: PlanReviewListItem[];
@@ -904,14 +905,6 @@
     } finally {
       startingPrStack = false;
     }
-  }
-
-  function chatExecutorLabel(executor: ChatExecutorOption['executor']): string {
-    return executor === ClaudeCodeExecutorName ? 'Claude Code' : 'Codex CLI';
-  }
-
-  function chatOptionKey(option: ChatExecutorOption): string {
-    return `${option.executor}:${option.model ?? ''}`;
   }
 
   async function handleChat(option: ChatExecutorOption) {
