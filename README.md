@@ -305,7 +305,7 @@ Select **Chat** on a plan, **Chat with plan** on a plan review guide, or **Chat 
 
 Drag the title bar to move the window. Drag the lower-right corner to resize it. You can also focus either control and use the arrow keys. Minimize a window to the bar at the bottom of the screen, then select it to restore it. Windows stay open when you navigate to another page, and drafts stay in place when you minimize them. Closing a window leaves its session running. Window positions are kept until you reload the page.
 
-PR chat offers Claude Code and Codex CLI. It starts with the PR URL and tells the agent to wait for your first question before reading the PR, its stored review guide, or anything else. Plan chat uses the same wait-before-inspection behavior. If a session is already running for that target, the button opens that session.
+PR chat offers Claude Code and Codex CLI. It starts with the PR URL and tells the agent to wait for your first question before reading the PR, its stored review guide, or anything else. After that, the agent may consult the PR or review guide when the question needs that context, but it does not need to read them for every question. Plan chat uses the same wait-before-inspection behavior. If a session is already running for that target, the button opens that session.
 
 ## Core Web UI Workflow
 

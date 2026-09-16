@@ -411,7 +411,7 @@ describe('lib/server/plan_actions', () => {
     ]);
     expect(workerCommand[2]).toContain("Wait for the user's first question before doing anything");
     expect(workerCommand[2]).toContain('do not read files');
-    expect(workerCommand[2]).toContain('stored tim review guide');
+    expect(workerCommand[2]).toContain('if that additional context would help');
     expect(buildWorkspaceCommandEnv).toHaveBeenCalledWith(
       '/tmp/primary-workspace',
       expect.objectContaining({ TIM_LINKED_PR_URL: prUrl })

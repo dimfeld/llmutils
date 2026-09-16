@@ -75,7 +75,7 @@ function buildPlanChatPrompt(planId: number): string {
 }
 
 function buildPrChatPrompt(prUrl: string): string {
-  return `${CHAT_WAIT_INSTRUCTION} This chat is about pull request ${prUrl}. After the user's first question, use gh to read the pull request's diff and description and read any stored tim review guide for this PR as needed to answer it. Do not change files unless the user explicitly asks you to.`;
+  return `${CHAT_WAIT_INSTRUCTION} This chat is about pull request ${prUrl}. After the user's first question, answer it using the repository context as needed. You may use gh to read the pull request's diff and description or read any stored tim review guide for this PR if that additional context would help, but do not assume that either is needed. Do not change files unless the user explicitly asks you to.`;
 }
 
 async function spawnTimProcess(
