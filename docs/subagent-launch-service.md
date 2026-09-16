@@ -23,10 +23,15 @@ domain service, not on a Commander handler.
 - `SubagentPreparationRequest` — plan ID, role, optional executor, model, and difficulty (`low` or `high`, default `high`),
   optional task indexes, config path, optional repository root, and an input
   policy.
-- `PreparedSubagentExecution` — everything needed to start exactly one provider
-  run: resolved executor, model, plan and plan path, git root, `useJj`, final
-  prompt, effective config, and the tim environment options. Treat it as
-  immutable after preparation.
+- `PlanlessAdvisorPreparationRequest` — the same shape without the plan ID, the
+  role, or the task indexes, used only by the plan-less advisor consultation.
+- `PreparedSubagentExecutionBase` — everything a launch needs that does not come
+  from a plan: resolved executor, model, git root, `useJj`, final prompt,
+  effective config, and the tim environment options.
+- `PreparedSubagentExecution` — the base plus the plan, plan ID, and plan path.
+  Treat it as immutable after preparation.
+- `PreparedPlanlessSubagentExecution` — the base with the plan fields typed as
+  `undefined`, so it never passes where a plan-bound execution is required.
 - `SubagentExecutionResult` — final message plus executor identity.
 - `SubagentLaunchHandle` — executor identity and one `completion` promise.
 
@@ -95,6 +100,26 @@ not opted in never sees a role it cannot run.
 
 The CLI role is not gated. `tim subagent advisor <planId>` runs by hand with the
 ordinary executor and model precedence below.
+
+`buildPlanningAdvisorGuidance()`, in the same module, is the planning-side
+counterpart of `buildAdvisorGuidance()`. `loadResearchPrompt()` and
+`loadGeneratePrompt()` in `mcp/generate_mode.ts` render it, so the planning agent
+behind `tim generate` is told about the advisor under the same gate.
+
+### Plan-less consultation
+
+`preparePlanlessAdvisorExecution()` prepares an advisor run with no plan behind
+it, for questions that arise before a plan exists. It skips plan resolution,
+materialization, task scope, and reference artifacts, and replaces the plan
+context with a short section naming the repository and stating that no plan
+exists, so the advisor does not go looking for one. Executor, model, custom
+instructions, and quality guidance resolve exactly as they do for a plan-bound
+run, and the result launches through the same `launchPreparedSubagent()`.
+
+The advisor is the only role that can run this way, because it is read-only and
+investigates the repository itself. `tim subagent advisor` accepts an optional
+plan ID for that reason; the command rejects `--task-index` without a plan ID
+because the option selects tasks from a plan.
 
 ### Remediation planning
 

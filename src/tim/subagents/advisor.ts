@@ -43,3 +43,40 @@ export function resolveAdvisorConfiguration(
 
   return { executor, model: model.trim() };
 }
+
+/**
+ * Renders the advisor section for the planning prompts.
+ *
+ * Returns an empty string unless the project configured an advisor, so a
+ * repository that has not opted in is never told about a role it cannot run.
+ * The planning agent usually has a plan ID, but the advisor also runs without
+ * one, so the guidance names both forms.
+ */
+export function buildPlanningAdvisorGuidance(
+  config: TimConfig | undefined,
+  planId?: number | string
+): string {
+  const advisor = resolveAdvisorConfiguration(config);
+  if (!advisor) {
+    return '';
+  }
+
+  const planArgument = planId !== undefined ? `${planId} ` : '';
+  const planlessNote =
+    planId !== undefined
+      ? '- The plan ID is optional. `tim subagent advisor --input "<question>"` consults the advisor about the local repository alone, which is what you want for a question that is not tied to this plan.'
+      : '- The consultation is not tied to a plan. The advisor reads the local repository and answers the question you send it.';
+
+  return `
+# Advisor
+
+A more capable advisor subagent is configured for this project. It runs \`${advisor.executor}\` with the \`${advisor.model}\` model and reads the codebase for itself, so it can answer questions that need a stronger model and a broader view of the system than your own exploration gives you.
+
+- Run \`tim subagent advisor ${planArgument}--input "<question>"\` via the shell command tool (or \`--input-file <paths...>\`). Do not pass \`-x\` or \`-m\`; the advisor always runs with its own configured executor and model.
+${planlessNote}
+- Consult it while planning whenever a decision would be expensive to get wrong: which architecture or existing abstraction to build on, how the change interacts with subsystems and invariants elsewhere in the codebase, whether an approach fits the patterns already here, where the plan should be split, and which risks or migration concerns the plan must cover.
+- Ask a specific question and include what you already found: the decision to make, the options you are weighing, the files and patterns you already read, and the constraints that apply. A vague question wastes the consultation.
+- The advisor is read-only. It does not edit files and it does not write the plan. You own the plan and every decision in it: fold the parts of its answer you accept into the Research and Implementation Guide sections, and say what you rejected and why.
+- Consulting the advisor is optional. Skip it for small or routine work whose approach is already clear.
+`;
+}

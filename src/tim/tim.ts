@@ -2401,9 +2401,16 @@ const subagentCommand = program
   .description('Run a subagent for the orchestrator');
 
 for (const agentType of ['implementer', 'tester', 'tdd-tests', 'advisor'] as const) {
+  // The advisor is read-only and investigates the repository for itself, so it
+  // can also answer questions that come up before a plan exists.
+  const isAdvisor = agentType === 'advisor';
   subagentCommand
-    .command(`${agentType} <planId>`)
-    .description(`Run the ${agentType} subagent`)
+    .command(`${agentType} ${isAdvisor ? '[planId]' : '<planId>'}`)
+    .description(
+      isAdvisor
+        ? 'Run the advisor subagent, with or without a plan ID (without one it consults on the local repository)'
+        : `Run the ${agentType} subagent`
+    )
     .addOption(
       new Option('-x, --executor <name>', 'Executor to use: codex-cli or claude-code').choices([
         'codex-cli',
@@ -2429,9 +2436,9 @@ for (const agentType of ['implementer', 'tester', 'tdd-tests', 'advisor'] as con
       '--task-index <indexes...>',
       'Limit the task context to these plan-absolute 1-based task indexes (repeatable or comma-separated)'
     )
-    .action(async (planIdArg: string, options: any, command: any) => {
+    .action(async (planIdArg: string | undefined, options: any, command: any) => {
       const { handleSubagentCommand } = await import('./commands/subagent.js');
-      const planId = parsePlanIdFromCliArg(planIdArg);
+      const planId = parseOptionalPlanIdFromCliArg(planIdArg);
       await runWithCommandTunnelAdapter(async () => {
         await handleSubagentCommand(agentType, planId, options, command.parent.parent.opts());
       }).catch(handleCommandError);

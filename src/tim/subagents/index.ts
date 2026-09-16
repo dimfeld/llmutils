@@ -13,10 +13,14 @@ export type {
 export {
   buildSubagentTaskContext,
   launchPreparedSubagent,
+  preparePlanlessAdvisorExecution,
   prepareSubagentExecution,
 } from './service.js';
 export type {
+  PlanlessAdvisorPreparationRequest,
+  PreparedPlanlessSubagentExecution,
   PreparedSubagentExecution,
+  PreparedSubagentExecutionBase,
   PreparedSubagentType,
   SubagentExecutionResult,
   SubagentExecutor,

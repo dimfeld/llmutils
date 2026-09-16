@@ -13,7 +13,11 @@ import {
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
 import type { SubagentInputPolicy } from './types.js';
-import { launchPreparedSubagent, prepareSubagentExecution } from './service.js';
+import {
+  launchPreparedSubagent,
+  preparePlanlessAdvisorExecution,
+  prepareSubagentExecution,
+} from './service.js';
 
 const providerMocks = vi.hoisted(() => ({
   executeCodexStep: vi.fn(),
@@ -311,6 +315,79 @@ describe('reusable subagent service', () => {
     const prepared = await prepare({ agentType: 'advisor', executor: undefined });
     expect(prepared.executor).toBe('codex-cli');
     expect(prepared.model).toBeUndefined();
+  });
+
+  test('prepares a plan-less advisor consultation from the repository alone', async () => {
+    const prepared = await preparePlanlessAdvisorExecution({
+      executor: 'codex-cli',
+      repositoryRoot,
+      configPath,
+      inputPolicy: resolvedInput('Where should retry handling live?'),
+    });
+
+    expect(prepared.agentType).toBe('advisor');
+    expect(prepared.planId).toBeUndefined();
+    expect(prepared.plan).toBeUndefined();
+    expect(prepared.planPath).toBeUndefined();
+    expect(prepared.gitRoot).toBe(repositoryRoot);
+    expect(prepared.prompt).toContain('You are a tim advisor agent');
+    expect(prepared.prompt).toContain('This consultation is not attached to a tim plan');
+    expect(prepared.prompt).toContain(repositoryRoot);
+    expect(prepared.prompt).toContain('Where should retry handling live?');
+    expect(prepared.prompt).toContain('**You are read-only.**');
+    // No plan means no plan, task, or plan-file sections in the prompt.
+    expect(prepared.prompt).not.toContain('Task 1: Implement the widget');
+    expect(prepared.prompt).not.toContain('## Plan File');
+    expect(providerMocks.executeCodexStep).not.toHaveBeenCalled();
+  });
+
+  test('applies the configured advisor executor, model, and quality to a plan-less run', async () => {
+    await writeConfig({
+      quality: 'hobby',
+      advisor: { executor: 'claude-code', claude: 'advisor-claude-model' },
+    });
+
+    const prepared = await preparePlanlessAdvisorExecution({
+      repositoryRoot,
+      configPath,
+      inputPolicy: resolvedInput('Is this abstraction worth adding?'),
+    });
+
+    expect(prepared.executor).toBe('claude-code');
+    expect(prepared.model).toBe('advisor-claude-model');
+    expect(prepared.prompt).toContain('## Quality: hobby');
+  });
+
+  test('rejects an invalid difficulty for a plan-less advisor run', async () => {
+    await expect(
+      preparePlanlessAdvisorExecution({
+        repositoryRoot,
+        configPath,
+        difficulty: 'medium' as 'low',
+        inputPolicy: resolvedInput('Question'),
+      })
+    ).rejects.toThrow('Invalid subagent difficulty');
+  });
+
+  test('launches a plan-less advisor through the same provider path', async () => {
+    providerMocks.executeCodexStep.mockResolvedValue('Advisor answered');
+
+    const prepared = await preparePlanlessAdvisorExecution({
+      executor: 'codex-cli',
+      repositoryRoot,
+      configPath,
+      inputPolicy: resolvedInput('What breaks if we cache this?'),
+    });
+    const { finalMessage, executor } = await launchPreparedSubagent(prepared).completion;
+
+    expect(executor).toBe('codex-cli');
+    expect(finalMessage).toBe('Advisor answered');
+    expect(providerMocks.executeCodexStep).toHaveBeenCalledWith(
+      prepared.prompt,
+      repositoryRoot,
+      expect.anything(),
+      expect.objectContaining({ appServerMode: 'single-turn-with-steering' })
+    );
   });
 
   test('preserves input-file order before inline input', async () => {

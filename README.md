@@ -374,6 +374,7 @@ tim subagent reviewer 123 --print --output-file review.json          # Orchestra
 tim subagent implementer 123 --input "fix finding X" --task-index 2  # Scope a fix round to one task
 tim subagent tester 123 --task-index 2,4 --input-file notes.md       # Comma-separated or repeated --task-index
 tim subagent advisor 123 --input "Should the queue be split?"        # Optional read-only consultation (see below)
+tim subagent advisor --input "Where should retries live?"           # Same consultation with no plan, over the local repository
 tim review 123                                      # Review a plan's work
 tim review 123 --since abc1234                      # Review changes since an exact commit
 tim review 123 --base feature/parent                # Review a branch stacked on another branch
@@ -907,6 +908,19 @@ finding where it was reported — a literal fix at the reported line tends to mo
 and surface again in the next review round. The orchestrator is told to run the same consultation itself for
 the rounds `tim review` does not cover, namely reviews it performed itself and task-scoped reviews. See
 [docs/review-iteration-policy.md](docs/review-iteration-policy.md#advisor-remediation-planning).
+
+The plan ID is optional for the advisor, unlike every other subagent. `tim subagent advisor --input
+"<question>"` consults it about the local repository with no plan behind it, which is what makes it reachable
+during planning, before a plan has any tasks. The prompt says plainly that there is no plan, so the advisor
+grounds its answer in the repository and the question alone; everything else — executor, model, custom
+instructions, quality — resolves exactly as it does for a plan-bound run. `--task-index` selects tasks from a
+plan, so it is rejected when no plan ID is given.
+
+Planning knows about the advisor too. When one is configured, the prompts behind `tim generate` tell the
+planning agent to consult it for decisions that would be expensive to get wrong: which architecture or
+existing abstraction to build on, how the change interacts with subsystems elsewhere in the codebase, where
+the plan should be split, and which risks the plan must cover. The planning agent still owns the plan and folds
+the advice it accepts into the Research and Implementation Guide sections.
 
 Only the model matching the configured executor counts, so setting `executor: claude-code` alongside a
 `codex` model leaves the advisor disabled rather than running it on a default model. Custom advisor

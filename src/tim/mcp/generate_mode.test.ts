@@ -215,6 +215,35 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain('it should not merely return plan details or task content');
   });
 
+  test('planning prompts describe the advisor only when one is configured', async () => {
+    for (const loader of [loadResearchPrompt, loadGeneratePrompt]) {
+      const withoutAdvisor = await loader({ plan: basePlan.id }, context);
+      expect(withoutAdvisor.messages[0]?.content?.text ?? '').not.toContain('tim subagent advisor');
+
+      context.config.subagents = {
+        advisor: { executor: 'codex-cli', model: { codex: 'gpt-5-codex' } },
+      };
+      const withAdvisor = await loader({ plan: basePlan.id }, context);
+      const messageText = withAdvisor.messages[0]?.content?.text ?? '';
+
+      expect(messageText).toContain('# Advisor');
+      expect(messageText).toContain('`codex-cli`');
+      expect(messageText).toContain('`gpt-5-codex`');
+      expect(messageText).toContain(`tim subagent advisor ${basePlan.id} --input "<question>"`);
+      expect(messageText).toContain('tim subagent advisor --input "<question>"');
+      expect(messageText).toContain('The advisor is read-only.');
+
+      delete context.config.subagents;
+    }
+  });
+
+  test('planning prompts omit the advisor when only half of it is configured', async () => {
+    context.config.subagents = { advisor: { executor: 'codex-cli' } };
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+
+    expect(prompt.messages[0]?.content?.text ?? '').not.toContain('tim subagent advisor');
+  });
+
   test('loadResearchPrompt includes planning instructions from config', async () => {
     const instructionFile = path.join(tmpDir, 'planning.md');
     await writeFile(instructionFile, 'Use phased rollouts and keep scope small.');

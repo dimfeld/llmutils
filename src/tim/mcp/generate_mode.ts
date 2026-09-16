@@ -47,6 +47,7 @@ import type {
   ToolResult,
 } from '../tools/index.js';
 import { normalizeContainerToEpic } from '../planSchema.js';
+import { buildPlanningAdvisorGuidance } from '../subagents/advisor.js';
 
 export {
   addPlanTaskParameters,
@@ -352,6 +353,7 @@ If the user approves the split, the main agent should create each child plan usi
 Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.`
     : '';
   const planningInstructions = await loadPlanningInstructions(context);
+  const advisorGuidance = buildPlanningAdvisorGuidance(context.config, parentPlanId);
 
   const text = `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
@@ -368,7 +370,7 @@ ${generateClaudeCodePlanningPrompt(contextBlock, {
   includeNextInstructionSentence: false,
   withBlockingSubissues: false,
   parentPlanId,
-})}${multiplePlansGuidance}${planningInstructions}
+})}${multiplePlansGuidance}${advisorGuidance}${planningInstructions}
 
 # Output
 
@@ -549,6 +551,7 @@ IMPORTANT: Do NOT split plans purely by architectural layers (frontend/backend, 
 Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.`
     : '';
   const planningInstructions = await loadPlanningInstructions(context);
+  const advisorGuidance = buildPlanningAdvisorGuidance(context.config, parentPlanId);
 
   const text = `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
@@ -566,7 +569,7 @@ Plan files are temporary materialized files under .tim/plans and are not tracked
 ${generateClaudeCodeGenerationPrompt(contextBlock, {
   includeMarkdownFormat: false,
   withBlockingSubissues: false,
-})}${multiplePlansGuidance}${planningInstructions}
+})}${multiplePlansGuidance}${advisorGuidance}${planningInstructions}
 
 BEFORE adding the structured tasks, work through the "Plan Split Recommendation" section above: propose a possible split into sibling child plans (using \`--base-plan\` to stack them as PRs where appropriate) and confirm with the user whether to apply that split or keep the work in a single plan. Only skip this check for exceptionally small, self-contained changes.
 

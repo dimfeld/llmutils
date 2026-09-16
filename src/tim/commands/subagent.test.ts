@@ -8,7 +8,7 @@ import {
   getTesterPrompt,
 } from '../executors/claude_code/agent_prompts.js';
 import { buildExecutionPromptWithoutSteps } from '../prompt_builder.js';
-import { buildSubagentTaskContext } from './subagent.js';
+import { buildSubagentTaskContext, handleSubagentCommand } from './subagent.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
 import type { Executor } from '../executors/types.js';
@@ -242,5 +242,22 @@ describe('subagent task-context prompt shape', () => {
     expect(result).toContain('Work only on the findings supplied in the instructions below.');
     expect(result).not.toContain('Available tasks:');
     expect(result).not.toContain('Implement the widget');
+  });
+});
+
+describe('subagent command plan ID requirements', () => {
+  test.each(['implementer', 'tester', 'tdd-tests'] as const)(
+    'the %s subagent refuses to run without a plan ID',
+    async (agentType) => {
+      await expect(handleSubagentCommand(agentType, undefined, {}, {})).rejects.toThrow(
+        `The ${agentType} subagent requires a plan ID. Only 'tim subagent advisor' can run without one.`
+      );
+    }
+  );
+
+  test('a plan-less advisor run rejects --task-index instead of ignoring it', async () => {
+    await expect(
+      handleSubagentCommand('advisor', undefined, { taskIndex: '2' }, {})
+    ).rejects.toThrow('--task-index requires a plan ID');
   });
 });

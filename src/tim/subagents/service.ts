@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { loadEffectiveConfig } from '../configLoader.js';
+import { appendQualityGuidance } from '../quality.js';
 import { resolvePlanByNumericId } from '../plans.js';
 import { getAllIncompleteTasks } from '../plans/find_next.js';
 import { resolveSubagentTaskScope } from '../plans/task_scope.js';
@@ -25,7 +26,10 @@ import { materializePlan } from '../plan_materialize.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { tryMaterializeReferenceArtifactPathsForExecution } from '../reference_artifacts.js';
 import type {
+  PlanlessAdvisorPreparationRequest,
+  PreparedPlanlessSubagentExecution,
   PreparedSubagentExecution,
+  PreparedSubagentExecutionBase,
   PreparedSubagentType,
   SubagentExecutor,
   SubagentInputPolicy,
@@ -166,10 +170,7 @@ export function buildSubagentTaskContext(
 export async function prepareSubagentExecution(
   request: SubagentPreparationRequest
 ): Promise<PreparedSubagentExecution> {
-  const difficulty = request.difficulty ?? 'high';
-  if (difficulty !== 'low' && difficulty !== 'high') {
-    throw new Error(`Invalid subagent difficulty: ${difficulty}. Expected low or high.`);
-  }
+  const difficulty = normalizeSubagentDifficulty(request.difficulty);
   const config = await loadEffectiveConfig(request.configPath);
   const repoRoot =
     request.repositoryRoot ??
@@ -258,10 +259,100 @@ export async function prepareSubagentExecution(
 }
 
 /**
+ * Resolves and builds everything needed for an advisor consultation that has no
+ * plan behind it.
+ *
+ * The advisor is read-only and reads the codebase for itself, so a question
+ * that arises before any plan exists — during planning, most often — can still
+ * reach it. Executor, model, and custom instructions resolve exactly as they do
+ * for a plan-bound advisor run; only the plan context is replaced by the
+ * repository itself.
+ */
+export async function preparePlanlessAdvisorExecution(
+  request: PlanlessAdvisorPreparationRequest
+): Promise<PreparedPlanlessSubagentExecution> {
+  const difficulty = normalizeSubagentDifficulty(request.difficulty);
+  const config = await loadEffectiveConfig(request.configPath);
+  const repoRoot =
+    request.repositoryRoot ??
+    (await resolveRepoRoot(request.configPath, (await getGitRoot()) || process.cwd()));
+  const gitRoot = (await getGitRoot(repoRoot)) || repoRoot;
+  const useJj = await getUsingJj(gitRoot);
+  const executor = resolveSubagentExecutor('advisor', request.executor, config);
+  const selectedModel = resolveSubagentModel(
+    'advisor',
+    executor,
+    request.model,
+    config,
+    difficulty
+  );
+
+  const customInstructions = await loadAgentInstructionsFor('advisor', gitRoot, config);
+  const inputText = await resolveSubagentInput(request.inputPolicy);
+  const allInstructions = [customInstructions, inputText]
+    .filter((value): value is string => Boolean(value?.trim()))
+    .join('\n\n');
+
+  const contextContent = appendQualityGuidance(
+    buildPlanlessAdvisorContext(gitRoot),
+    config.quality
+  );
+  const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(config, gitRoot);
+  const agentDefinition = getAdvisorPrompt(
+    contextContent,
+    undefined,
+    allInstructions || undefined,
+    selectedModel,
+    { mode: 'report', useJj }
+  );
+
+  return {
+    agentType: 'advisor',
+    executor,
+    model: selectedModel,
+    gitRoot,
+    useJj,
+    prompt: agentDefinition.prompt,
+    config,
+    timEnvironment,
+  };
+}
+
+/**
+ * Builds the context section used when the advisor runs without a plan.
+ *
+ * It replaces the plan and task sections of a normal subagent prompt, and says
+ * plainly that the repository plus the supplied question are the whole context,
+ * so the advisor does not go looking for a plan that does not exist.
+ */
+function buildPlanlessAdvisorContext(gitRoot: string): string {
+  return `This consultation is not attached to a tim plan. There is no plan file, no task list, and no implementation in progress to read.
+
+The repository at \`${gitRoot}\` and the question in the instructions below are the entire context. Investigate the code, tests, configuration, and history directly to ground your answer, and answer the question that was asked rather than assuming a plan or task exists behind it.
+`;
+}
+
+/**
+ * Validates the requested difficulty before any other preparation work.
+ *
+ * The parameter is typed as a string because the value reaches here straight
+ * from the CLI, where the declared union is not enforced at runtime.
+ */
+function normalizeSubagentDifficulty(difficulty: string | undefined): 'low' | 'high' {
+  const resolved = difficulty ?? 'high';
+  if (resolved !== 'low' && resolved !== 'high') {
+    throw new Error(`Invalid subagent difficulty: ${resolved}. Expected low or high.`);
+  }
+  return resolved;
+}
+
+/**
  * Starts a prepared one-shot provider execution and returns its completion
  * handle immediately.
  */
-export function launchPreparedSubagent(prepared: PreparedSubagentExecution): SubagentLaunchHandle {
+export function launchPreparedSubagent(
+  prepared: PreparedSubagentExecutionBase
+): SubagentLaunchHandle {
   const completion =
     prepared.executor === 'codex-cli' ? executeWithCodex(prepared) : executeWithClaude(prepared);
 
@@ -274,7 +365,7 @@ export function launchPreparedSubagent(prepared: PreparedSubagentExecution): Sub
   };
 }
 
-async function executeWithCodex(prepared: PreparedSubagentExecution): Promise<string> {
+async function executeWithCodex(prepared: PreparedSubagentExecutionBase): Promise<string> {
   const parsedModel = parseCodexModel(prepared.model);
   return executeCodexStep(prepared.prompt, prepared.gitRoot, prepared.config, {
     appServerMode: 'single-turn-with-steering',
@@ -284,7 +375,7 @@ async function executeWithCodex(prepared: PreparedSubagentExecution): Promise<st
   });
 }
 
-async function executeWithClaude(prepared: PreparedSubagentExecution): Promise<string> {
+async function executeWithClaude(prepared: PreparedSubagentExecutionBase): Promise<string> {
   const claudeCodeOptions =
     ((prepared.config.executors as Record<string, unknown> | undefined)?.['claude-code'] as
       | ClaudeCodeSubprocessOptions

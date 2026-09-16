@@ -10,8 +10,18 @@ import * as fs from 'fs/promises';
 import * as path from 'node:path';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { log } from '../../logging.js';
-import { launchPreparedSubagent, prepareSubagentExecution } from '../subagents/index.js';
-import type { SubagentPreparationRequest, SubagentType } from '../subagents/index.js';
+import {
+  launchPreparedSubagent,
+  preparePlanlessAdvisorExecution,
+  prepareSubagentExecution,
+} from '../subagents/index.js';
+import type {
+  PlanlessAdvisorPreparationRequest,
+  PreparedSubagentExecutionBase,
+  SubagentInputPolicy,
+  SubagentPreparationRequest,
+  SubagentType,
+} from '../subagents/index.js';
 
 export type { SubagentType } from '../subagents/index.js';
 export { buildSubagentTaskContext } from '../subagents/index.js';
@@ -31,34 +41,64 @@ interface GlobalCliOptions {
 }
 
 /**
- * Handles the `tim subagent <type> <planFile>` command.
+ * Handles the `tim subagent <type> [planFile]` command.
  *
  * This wrapper explicitly preserves the legacy stdin fallback and all command
  * output behavior. Preparation and provider execution do not depend on a
  * Commander command object.
+ *
+ * The plan ID is optional for the advisor only: a plan-less consultation reads
+ * the local repository instead of a plan, which is what makes the advisor
+ * reachable from planning, before a plan has any tasks.
  */
 export async function handleSubagentCommand(
   agentType: SubagentType,
-  planId: number,
+  planId: number | undefined,
   options: SubagentOptions,
   globalCliOptions: GlobalCliOptions
 ): Promise<void> {
-  const preparationRequest: SubagentPreparationRequest = {
-    agentType,
-    planId,
-    executor: options.executor,
-    model: options.model,
-    difficulty: options.difficulty,
-    inputPolicy: {
-      type: 'orchestrator',
-      input: options.input,
-      inputFile: options.inputFile,
-      fallbackToStdin: true,
-    },
-    taskIndex: options.taskIndex,
-    configPath: globalCliOptions.config,
+  const inputPolicy: SubagentInputPolicy = {
+    type: 'orchestrator',
+    input: options.input,
+    inputFile: options.inputFile,
+    fallbackToStdin: true,
   };
-  const prepared = await prepareSubagentExecution(preparationRequest);
+
+  let prepared: PreparedSubagentExecutionBase;
+  if (planId === undefined) {
+    if (agentType !== 'advisor') {
+      throw new Error(
+        `The ${agentType} subagent requires a plan ID. Only 'tim subagent advisor' can run without one.`
+      );
+    }
+    if (options.taskIndex !== undefined) {
+      throw new Error(
+        '--task-index requires a plan ID because it selects tasks from that plan. Pass a plan ID or drop the option.'
+      );
+    }
+
+    const planlessRequest: PlanlessAdvisorPreparationRequest = {
+      executor: options.executor,
+      model: options.model,
+      difficulty: options.difficulty,
+      inputPolicy,
+      configPath: globalCliOptions.config,
+    };
+    prepared = await preparePlanlessAdvisorExecution(planlessRequest);
+  } else {
+    const preparationRequest: SubagentPreparationRequest = {
+      agentType,
+      planId,
+      executor: options.executor,
+      model: options.model,
+      difficulty: options.difficulty,
+      inputPolicy,
+      taskIndex: options.taskIndex,
+      configPath: globalCliOptions.config,
+    };
+    prepared = await prepareSubagentExecution(preparationRequest);
+  }
+
   const handle = launchPreparedSubagent(prepared);
   const { finalMessage } = await handle.completion;
 

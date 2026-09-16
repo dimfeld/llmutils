@@ -52,22 +52,63 @@ export interface SubagentPreparationRequest {
 }
 
 /**
- * All validated data needed to start one provider run.
+ * Input used to prepare one advisor consultation that has no plan behind it.
  *
- * Callers should treat this value as immutable after preparation.
+ * This is the planning-time shape of the advisor role: the question and the
+ * repository are the entire context, so there is no plan, no task scope, and no
+ * plan file to materialize.
  */
-export interface PreparedSubagentExecution {
+export interface PlanlessAdvisorPreparationRequest {
+  executor?: string;
+  model?: string;
+  difficulty?: 'low' | 'high';
+  configPath?: string;
+  inputPolicy: SubagentInputPolicy;
+  repositoryRoot?: string;
+}
+
+/**
+ * Everything a provider launch needs that does not come from a plan.
+ *
+ * `launchPreparedSubagent()` accepts this base type so a plan-less advisor
+ * consultation launches through exactly the same path as a plan-bound run.
+ */
+export interface PreparedSubagentExecutionBase {
   readonly agentType: PreparedSubagentType;
   readonly executor: SubagentExecutor;
   readonly model: string | undefined;
-  readonly plan: PlanSchema;
-  readonly planId: number;
-  readonly planPath: string;
   readonly gitRoot: string;
   readonly useJj: boolean;
   readonly prompt: string;
   readonly config: TimConfig;
   readonly timEnvironment: TimWorkspaceCommandEnvironmentOptions;
+}
+
+/**
+ * All validated data needed to start one plan-bound provider run.
+ *
+ * Callers should treat this value as immutable after preparation.
+ */
+export interface PreparedSubagentExecution extends PreparedSubagentExecutionBase {
+  readonly plan: PlanSchema;
+  readonly planId: number;
+  readonly planPath: string;
+}
+
+/**
+ * A prepared advisor consultation that is not attached to a plan.
+ *
+ * The advisor is the only role that can run this way: it is read-only and
+ * answers questions about the repository itself, so a question that arises
+ * before a plan exists (during planning, for instance) still has a way to
+ * reach it. The plan fields are declared as `undefined` rather than omitted so
+ * a value of this type never passes where a plan-bound execution is required.
+ */
+export interface PreparedPlanlessSubagentExecution extends PreparedSubagentExecutionBase {
+  readonly agentType: 'advisor';
+  readonly plan?: undefined;
+  readonly planId?: undefined;
+  readonly planPath?: undefined;
 }
 
 export interface SubagentExecutionResult {
