@@ -67,6 +67,17 @@ function describeTarget(kind: 'plan' | 'pr', id: number | string): string {
   return `${kind} ${id}`;
 }
 
+const CHAT_WAIT_INSTRUCTION =
+  "This is an interactive chat session. Wait for the user's first question before doing anything. Until the user sends that question, do not read files, inspect the repository, run commands, query GitHub, or perform any other inspection or action.";
+
+function buildPlanChatPrompt(planId: number): string {
+  return `${CHAT_WAIT_INSTRUCTION} This chat is about plan ${planId}. After the user's first question, use the plan and repository context as needed to answer it. Do not change files unless the user explicitly asks you to.`;
+}
+
+function buildPrChatPrompt(prUrl: string): string {
+  return `${CHAT_WAIT_INSTRUCTION} This chat is about pull request ${prUrl}. After the user's first question, use gh to read the pull request's diff and description and read any stored tim review guide for this PR as needed to answer it. Do not change files unless the user explicitly asks you to.`;
+}
+
 async function spawnTimProcess(
   targetLabel: string,
   planId: number | null,
@@ -237,7 +248,15 @@ export async function spawnChatProcess(
   executor: string,
   model?: string
 ): Promise<SpawnProcessResult> {
-  const args = ['chat', '--plan', String(planId), '--executor', executor, '--auto-workspace'];
+  const args = [
+    'chat',
+    buildPlanChatPrompt(planId),
+    '--plan',
+    String(planId),
+    '--executor',
+    executor,
+    '--auto-workspace',
+  ];
   if (model !== undefined) {
     args.push('--model', model);
   }
@@ -252,7 +271,7 @@ export async function spawnChatForPrProcess(
   executor: string,
   model?: string
 ): Promise<SpawnTargetProcessResult> {
-  const prompt = `Help me understand pull request ${prUrl}. Read its diff and description with gh and read any stored tim review guide for this PR. Explain the changes and answer my questions. Do not change files unless I ask you to.`;
+  const prompt = buildPrChatPrompt(prUrl);
   const args = ['chat', prompt, '--executor', executor, '--auto-workspace'];
   if (model !== undefined) args.push('--model', model);
   args.push('--no-terminal-input');

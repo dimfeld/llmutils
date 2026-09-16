@@ -399,7 +399,8 @@ describe('lib/server/plan_actions', () => {
     await vi.advanceTimersByTimeAsync(2000);
     expect(await resultPromise).toEqual({ success: true });
     const options = spawnSpy.mock.calls[0][1];
-    expect(daemonPayload(options as never).workerCommand).toEqual([
+    const workerCommand = daemonPayload(options as never).workerCommand;
+    expect(workerCommand).toEqual([
       'tim',
       'chat',
       expect.stringContaining(prUrl),
@@ -408,6 +409,9 @@ describe('lib/server/plan_actions', () => {
       '--auto-workspace',
       '--no-terminal-input',
     ]);
+    expect(workerCommand[2]).toContain("Wait for the user's first question before doing anything");
+    expect(workerCommand[2]).toContain('do not read files');
+    expect(workerCommand[2]).toContain('stored tim review guide');
     expect(buildWorkspaceCommandEnv).toHaveBeenCalledWith(
       '/tmp/primary-workspace',
       expect.objectContaining({ TIM_LINKED_PR_URL: prUrl })
@@ -477,6 +481,7 @@ describe('lib/server/plan_actions', () => {
     expect(daemonPayload(spawnSpy.mock.calls[0][1] as never).workerCommand).toEqual([
       'tim',
       'chat',
+      expect.stringContaining("Wait for the user's first question before doing anything"),
       '--plan',
       '192',
       '--executor',
