@@ -120,7 +120,7 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     `- The bottom slice must target ${options.baseBranch}. Each later slice must target the branch immediately below it. Change the base of ${options.mainPrUrl} to the branch immediately below ${options.mainBranch}.`,
     '- Push every slice branch. A history rewrite of the original branch can use a force-with-lease equivalent, but do not use an unguarded force push when a guarded form is available.',
     '- Create every new lower-slice pull request as a draft. Preserve the current draft/ready state of the original pull request.',
-    '- Give each pull request a focused title and body for only its slice.',
+    '- Give each pull request a focused title and body for only its slice. In every pull-request description, explain the goal of the complete stack, how this pull request contributes to that goal, and what remains to be implemented in higher slices.',
     '- Add or update a clearly marked "Stack" section in every pull-request body. It must list the complete stack in merge order, identify the current pull request, link the other pull requests, state each slice scope, and explain that reviewers should start at the bottom. Preserve useful existing body content.',
     '- In every intermediate pull-request description, refer to related issues with language such as "Related to ISSUE". Do not use "Closes", "Fixes", or other issue-closing keywords in intermediate descriptions, so the issue stays open until the complete stack is merged. The existing top pull request may keep its current issue-closing language.',
     '- After all pull requests exist, verify each head branch, base branch, draft state, title, and body with `gh pr view`.',
