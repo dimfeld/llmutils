@@ -9,23 +9,21 @@
   let prNumber = $derived(page.params.prNumber ?? '');
 </script>
 
-<div class="flex min-h-0 flex-1 flex-col">
-  <ReviewGuideView
-    review={data.review}
-    issues={data.issues}
-    submissions={data.submissions}
-    linkedPlans={data.linkedPlans}
-    linkedPlanUuid={data.linkedPlanUuid}
-    currentBranch={data.currentBranch}
-    currentHeadSha={data.currentHeadSha}
-    submissionPrUrl={data.submissionPrUrl}
-    submitAsCommentOnly={data.submitAsCommentOnly}
-    reviewThreads={data.reviewThreads}
-    {projectId}
-    backHref="/projects/{projectId}/prs/{prNumber}"
-    backLabel="Back to PR #{prNumber}"
-    allowGithubSubmission={true}
-    chatTarget={{ projectId, prNumber: Number(prNumber) }}
-    chatExecutorOptions={data.chatExecutorOptions}
-  />
-</div>
+<ReviewGuideView
+  review={data.review}
+  issues={data.issues}
+  submissions={data.submissions}
+  linkedPlans={data.linkedPlans}
+  linkedPlanUuid={data.linkedPlanUuid}
+  currentBranch={data.currentBranch}
+  currentHeadSha={data.currentHeadSha}
+  submissionPrUrl={data.submissionPrUrl}
+  submitAsCommentOnly={data.submitAsCommentOnly}
+  reviewThreads={data.reviewThreads}
+  {projectId}
+  backHref="/projects/{projectId}/prs/{prNumber}"
+  backLabel="Back to PR #{prNumber}"
+  allowGithubSubmission={true}
+  chatTarget={{ projectId, prNumber: Number(prNumber) }}
+  chatExecutorOptions={data.chatExecutorOptions}
+/>
