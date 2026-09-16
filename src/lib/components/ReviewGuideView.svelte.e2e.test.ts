@@ -9,6 +9,7 @@ vi.mock('$lib/components/Diff.svelte', async () => {
 });
 
 import ReviewGuideView from './ReviewGuideView.svelte';
+import { REVIEW_GUIDE_VIRTUALIZATION_STORAGE_KEY } from '$lib/utils/review_guide_preferences.js';
 
 const DIFF_STYLE_STORAGE_KEY = 'tim.reviewGuide.diffStyle';
 
@@ -44,6 +45,7 @@ function makeReview(overrides: Partial<ReviewRow> = {}): ReviewRow {
 describe('ReviewGuideView diff layout toggle', () => {
   beforeEach(() => {
     localStorage.removeItem(DIFF_STYLE_STORAGE_KEY);
+    localStorage.removeItem(REVIEW_GUIDE_VIRTUALIZATION_STORAGE_KEY);
   });
 
   test('switches review guide diffs from stacked to side-by-side', async () => {
@@ -86,5 +88,20 @@ describe('ReviewGuideView diff layout toggle', () => {
     await expect
       .element(page.getByRole('button', { name: 'Side by side' }))
       .toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('uses the saved virtualization setting for review guide diffs', async () => {
+    localStorage.setItem(REVIEW_GUIDE_VIRTUALIZATION_STORAGE_KEY, 'false');
+    render(ReviewGuideView, {
+      props: {
+        review: makeReview(),
+        issues: [],
+        projectId: '1',
+        backHref: '/projects/1/plans/plan-uuid-1',
+        backLabel: 'Back to plan #7001',
+      },
+    });
+
+    await expect.element(page.getByTestId('diff-stub')).toHaveAttribute('data-virtualize', 'false');
   });
 });

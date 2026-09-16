@@ -12,6 +12,7 @@ import MarkdownContent from './MarkdownContent.svelte';
 
 interface DiffOverrides {
   id?: string;
+  virtualize?: boolean;
   lineAnnotations?: unknown[];
   enableGutterUtility?: boolean;
   enableLineSelection?: boolean;
@@ -112,6 +113,25 @@ describe('MarkdownContent diffOverrides forwarding', () => {
     const barEl = document.querySelector('[data-testid="diff-stub"][data-filename="bar.ts"]');
     expect(fooEl!.getAttribute('data-gutter-enabled')).toBe('true');
     expect(barEl!.getAttribute('data-gutter-enabled')).toBe('false');
+  });
+
+  test('virtualize is forwarded per diff', async () => {
+    const content = `${patchFor('foo.ts')}\n\n${patchFor('bar.ts')}\n`;
+
+    const overrides = (
+      filename: string | null,
+      _patch: string,
+      _diffIndex: number
+    ): DiffOverrides | undefined => (filename === 'foo.ts' ? { virtualize: false } : undefined);
+
+    render(MarkdownContent, { content, diffOverrides: overrides });
+
+    const fooEl = document.querySelector('[data-testid="diff-stub"][data-filename="foo.ts"]');
+    const barEl = document.querySelector('[data-testid="diff-stub"][data-filename="bar.ts"]');
+    await expect.element(page.getByTestId('diff-stub').nth(0)).toBeInTheDocument();
+    await expect.element(page.getByTestId('diff-stub').nth(1)).toBeInTheDocument();
+    expect(fooEl?.getAttribute('data-virtualize')).toBe('false');
+    expect(barEl?.getAttribute('data-virtualize')).toBe('true');
   });
 
   test('forwards diffAnnotation snippet to each diff', async () => {

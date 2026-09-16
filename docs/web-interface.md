@@ -88,7 +88,7 @@ The top-level `/projects/[projectId]/reviews` page lists review guides generated
 
 Shared rendering behavior:
 
-- **Inline diffs**: Markdown review guide ` ```unified-diff ` fenced blocks are rendered as Pierre `Diff.svelte` instances. `MarkdownContent.svelte` uses per-filename `diffOverrides` to pass annotation and interaction props to each diff segment.
+- **Inline diffs**: Markdown review guide ` ```unified-diff ` fenced blocks are rendered as Pierre `Diff.svelte` instances. `MarkdownContent.svelte` uses per-filename `diffOverrides` to pass annotation and interaction props to each diff segment. **Virtualize Review Guide Diffs** in Project Settings controls lazy mounting for these blocks and is saved in browser `localStorage`.
 - **Issue annotations**: Existing review issues render as clickable diff annotations via `lineAnnotations` + `renderAnnotation` (mounting `ReviewIssueAnnotation.svelte`). Annotation click scrolls to/highlights the matching issue card. The issue card "Jump to diff" action scrolls to/highlights the matching annotation node.
 - **Notes**: Review-guide `<annotation file="..." line="...">...</annotation>` tags are extracted into `review_issue` rows with severity `note`. Notes render in the sidebar's bottom group with Copy and Jump-to-diff actions, and they can still be deleted locally even though they remain non-actionable for resolution or plan conversion. Inline diff notes use muted neutral styling, preserve whitespace, and are excluded from GitHub submission.
 

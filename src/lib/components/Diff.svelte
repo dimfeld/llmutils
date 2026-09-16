@@ -172,6 +172,7 @@
     fileDiff,
     id,
     diffStyle = 'unified',
+    virtualize = true,
     hunkSeparators = 'line-info-basic',
     lineDiffType = 'word-alt',
     overflow = 'scroll',
@@ -203,6 +204,8 @@
     id?: string;
     /** Side-by-side or single column */
     diffStyle?: DiffStyle;
+    /** Lazily mount the diff when it approaches the viewport */
+    virtualize?: boolean;
     /** What to show between diff hunks */
     hunkSeparators?: HunkSeparatorStyle;
     /** Inline change highlighting mode */
@@ -418,13 +421,17 @@
 </script>
 
 {#if resolvedDiff}
-  <div
-    {id}
-    class={className}
-    style={hasEnteredViewport ? undefined : `min-height: ${estimatedHeightPx}px;`}
-    {@attach lazyMountAttachment}
-  >
-    {#if hasEnteredViewport}
+  <div {id} class={className}>
+    {#if virtualize}
+      <div
+        style={hasEnteredViewport ? undefined : `min-height: ${estimatedHeightPx}px;`}
+        {@attach lazyMountAttachment}
+      >
+        {#if hasEnteredViewport}
+          <div {@attach diffAttachment}></div>
+        {/if}
+      </div>
+    {:else}
       <div {@attach diffAttachment}></div>
     {/if}
   </div>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invalidateAll, afterNavigate } from '$app/navigation';
+  import { onMount } from 'svelte';
   import { updateProjectSettings } from '$lib/remote/project_settings.remote.js';
   import { getProjectSettingsSyncStatus } from '$lib/remote/sync_status.remote.js';
   import { getSettingsBannerState } from '$lib/components/sync_indicator_state.js';
@@ -15,6 +16,10 @@
   import { Label } from '$lib/components/ui/label/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import type { PageData } from './$types';
+  import {
+    readReviewGuideVirtualizationPreference,
+    writeReviewGuideVirtualizationPreference,
+  } from '$lib/utils/review_guide_preferences.js';
 
   let { data }: { data: PageData } = $props();
 
@@ -39,6 +44,19 @@
   let abbreviation = $derived(serverAbbreviation);
   let color = $derived(serverColor);
   let branchPrefix = $derived(serverBranchPrefix);
+  let virtualizeReviewGuideDiffs = $state(true);
+  let virtualizationPreferenceLoaded = $state(false);
+
+  onMount(() => {
+    virtualizeReviewGuideDiffs = readReviewGuideVirtualizationPreference(localStorage);
+    virtualizationPreferenceLoaded = true;
+  });
+
+  $effect(() => {
+    if (virtualizationPreferenceLoaded) {
+      writeReviewGuideVirtualizationPreference(localStorage, virtualizeReviewGuideDiffs);
+    }
+  });
 
   let hasChanges = $derived(
     featured !== serverFeatured ||
@@ -235,5 +253,37 @@
         <p class="text-sm text-red-600 dark:text-red-400">{errorMessage}</p>
       {/if}
     </div>
+
+    <section
+      class="space-y-3 border-t border-border pt-6"
+      aria-labelledby="global-settings-heading"
+    >
+      <div>
+        <h2 id="global-settings-heading" class="text-lg font-semibold text-foreground">
+          Global Settings
+        </h2>
+        <p class="mt-1 text-sm text-muted-foreground">
+          These settings apply across projects and are saved in this browser.
+        </p>
+      </div>
+
+      <div class="rounded-lg border border-border p-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <Label
+              for="review-guide-virtualization-toggle"
+              class="text-sm font-medium text-foreground">Virtualize Review Guide Diffs</Label
+            >
+            <p class="text-sm text-muted-foreground">
+              Mount diff blocks only when they are near the visible area.
+            </p>
+          </div>
+          <Switch
+            id="review-guide-virtualization-toggle"
+            bind:checked={virtualizeReviewGuideDiffs}
+          />
+        </div>
+      </div>
+    </section>
   </div>
 </div>

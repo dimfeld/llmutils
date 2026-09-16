@@ -6,6 +6,7 @@
     filename = '',
     id = '',
     diffStyle = 'unified',
+    virtualize = true,
     lineAnnotations: annotations,
     enableGutterUtility,
     enableLineSelection,
@@ -16,6 +17,7 @@
     filename?: string;
     id?: string;
     diffStyle?: string;
+    virtualize?: boolean;
     lineAnnotations?: Array<unknown>;
     enableGutterUtility?: boolean;
     enableLineSelection?: boolean;
@@ -27,6 +29,7 @@
   let annotationsCount = $derived(annotations?.length ?? 0);
   let gutterEnabled = $derived(Boolean(enableGutterUtility));
   let lineSelection = $derived(Boolean(enableLineSelection));
+  let virtualization = $derived(Boolean(virtualize));
   let hasAnnotation = $derived(Boolean(annotation));
   let hasGutterClick = $derived(Boolean(onGutterUtilityClick));
   let hasLineSelected = $derived(Boolean(onLineSelected));
@@ -37,6 +40,7 @@
   data-testid="diff-stub"
   data-filename={filename}
   data-diff-style={diffStyle}
+  data-virtualize={String(virtualization)}
   data-annotations-count={String(annotationsCount)}
   data-gutter-enabled={String(gutterEnabled)}
   data-line-selection-enabled={String(lineSelection)}

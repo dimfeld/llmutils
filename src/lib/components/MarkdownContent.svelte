@@ -13,6 +13,7 @@
   export interface DiffOverrides {
     id?: string;
     diffStyle?: 'unified' | 'split';
+    virtualize?: boolean;
     stickyHeader?: boolean;
     lineAnnotations?: DiffLineAnnotation<unknown>[];
     enableGutterUtility?: boolean;
@@ -60,6 +61,7 @@
         <Diff
           id={overrides.id}
           diffStyle={overrides.diffStyle}
+          virtualize={overrides.virtualize ?? true}
           stickyHeader={overrides.stickyHeader ?? false}
           patch={segment.patch}
           filename={segment.filename ?? undefined}

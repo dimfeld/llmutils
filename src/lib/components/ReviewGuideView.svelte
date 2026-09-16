@@ -51,6 +51,7 @@
     type AnnotationHighlightHandle,
   } from '../../routes/projects/[projectId]/prs/[prNumber]/reviews/[reviewId]/annotation_highlight.js';
   import { getReviewGuideAnnotationId, getReviewGuideDiffId } from '$lib/utils/review_diff_ids.js';
+  import { readReviewGuideVirtualizationPreference } from '$lib/utils/review_guide_preferences.js';
   import {
     createSaveEditHandler,
     createAnnotationClickHandler,
@@ -112,6 +113,7 @@
 
   let submitDialogOpen = $state(false);
   let guideDiffStyle = $state<GuideDiffStyle>('unified');
+  let virtualizeDiffs = $state(true);
 
   function parseStoredDiffStyle(value: string | null): GuideDiffStyle | null {
     return value === 'unified' || value === 'split' ? value : null;
@@ -127,6 +129,7 @@
     if (storedStyle) {
       guideDiffStyle = storedStyle;
     }
+    virtualizeDiffs = readReviewGuideVirtualizationPreference(localStorage);
   });
 
   function openSubmitDialog() {
@@ -218,6 +221,7 @@
       filename: string | null;
       patch: string | null;
       diffStyle: GuideDiffStyle;
+      virtualizeDiffs: boolean;
       lineAnnotations: DiffLineAnnotation<unknown>[];
       override: DiffOverrides;
     }
@@ -285,7 +289,8 @@
     annotationsBySegment: Map<number, GuideIssueAnnotation[]>,
     filename: string | null,
     diffIndex: number,
-    diffStyle: GuideDiffStyle
+    diffStyle: GuideDiffStyle,
+    shouldVirtualizeDiffs: boolean
   ): DiffOverrides {
     const lineAnnotations = (annotationsBySegment.get(diffIndex) ??
       EMPTY_DIFF_ANNOTATIONS) as DiffLineAnnotation<unknown>[];
@@ -294,6 +299,7 @@
       cached &&
       cached.filename === filename &&
       cached.diffStyle === diffStyle &&
+      cached.virtualizeDiffs === shouldVirtualizeDiffs &&
       cached.lineAnnotations === lineAnnotations &&
       cached.patch ===
         (guideSegments[diffIndex]?.type === 'unified-diff' ? guideSegments[diffIndex].patch : null)
@@ -307,6 +313,7 @@
     const override: DiffOverrides = {
       id: getReviewGuideDiffId(filename, patch ?? ''),
       diffStyle,
+      virtualize: shouldVirtualizeDiffs,
       stickyHeader: true,
       lineAnnotations,
       enableLineSelection: flags.enableLineSelection,
@@ -320,6 +327,7 @@
       filename,
       patch,
       diffStyle,
+      virtualizeDiffs: shouldVirtualizeDiffs,
       lineAnnotations,
       override,
     });
@@ -699,7 +707,13 @@
       _patch: string,
       diffIndex: number
     ): DiffOverrides | undefined => {
-      return getDiffOverrides(annotationsBySegment, filename, diffIndex, currentDiffStyle);
+      return getDiffOverrides(
+        annotationsBySegment,
+        filename,
+        diffIndex,
+        currentDiffStyle,
+        virtualizeDiffs
+      );
     };
   });
 
