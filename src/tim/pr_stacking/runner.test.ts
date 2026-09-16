@@ -321,6 +321,12 @@ describe('runPrStacking', () => {
     expect(prompt).toContain(
       'move the required changes into the lower slice or revise the split until the lower PR passes on its own'
     );
+    expect(prompt).toContain(
+      'You may make minor implementation changes in an intermediate PR when needed to make that PR pass CI'
+    );
+    expect(prompt).toContain(
+      'The PRs higher in the stack must account for those changes, and the complete stack must converge to exactly the original final file tree'
+    );
     expect(prompt).toContain('Create every new lower-slice pull request as a draft');
     expect(prompt).toContain(
       'In every pull-request description, explain the goal of the complete stack, how this pull request contributes to that goal, and what remains to be implemented in higher slices'

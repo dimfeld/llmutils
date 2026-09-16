@@ -114,6 +114,7 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     '- Split the work only if you can make at least two coherent vertical slices. Give each slice a focused, reviewable scope with its necessary tests and documentation. Do not make horizontal layers such as "types", "implementation", and "tests" into separate slices.',
     '- After identifying the vertical slices, inspect every large candidate slice for further coherent splits. An intermediate PR does not need to contain the full end-to-end functionality of the larger slice; it may be a partial or enabling increment because the stack will normally merge together in a merge queue. Every PR must still pass CI and remain buildable and testable on its own.',
     "- After creating or updating each slice branch, run the repository's relevant validation commands on that branch, including linting, type checking, tests, builds, and other required checks as applicable. Do not validate only the combined stack. If a lower slice fails because it depends on changes that remain in a higher slice, move the required changes into the lower slice or revise the split until the lower PR passes on its own.",
+    '- You may make minor implementation changes in an intermediate PR when needed to make that PR pass CI. The PRs higher in the stack must account for those changes, and the complete stack must converge to exactly the original final file tree. Verify both conditions before you finish.',
     '- Use one commit per vertical slice. Order dependent slices from the stack base upward.',
     `- Keep ${options.mainBranch} and ${options.mainPrUrl} as the top and final slice of the stack. Never close or replace the original pull request.`,
     `- Create a unique, descriptive branch for every lower slice. Do not reuse or overwrite an unrelated local or remote branch.${branchPrefixGuidance} If the branch being split starts with the plan number, every new lower-slice branch name should also start with that plan number. Do not copy external issue-tracker IDs, such as a trailing Linear issue tag, into new lower-slice branch names. The existing top branch may retain those external IDs.`,
@@ -129,7 +130,7 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     '',
     'If the change cannot be split into at least two coherent vertical slices without changing the final file tree, leave all commits, branches, and pull requests unchanged. Report why a split was not useful.',
     '',
-    'Do not run implementation work or modify file content. This phase changes only commit history, branches, and pull-request metadata.',
+    'Do not run unrelated implementation work or modify file content outside the minor CI-enabling adjustments allowed above. This phase changes commit history, branches, pull-request metadata, and, when needed, those intermediate-PR adjustments.',
   ].join('\n');
 }
 
