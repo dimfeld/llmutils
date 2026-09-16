@@ -653,6 +653,58 @@ describe('common/github/webhook_ingest', () => {
     expect(getPlanByUuid(db, planUuid)?.status).toBe('needs_review');
   });
 
+  test('ingestWebhookEvents ignores closed linked PRs when all remaining PRs are ready', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const closedPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/79',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 79,
+      title: 'Closed PR',
+      state: 'closed',
+      draft: false,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const openDraftPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/80',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 80,
+      title: 'Ready PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const planUuid = '00000000-0000-4000-8000-000000000079';
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 79,
+      title: 'Closed and ready PRs',
+      branch: 'feature/closed-and-ready-prs',
+      filename: '79.plan.md',
+      status: 'needs_review',
+      pullRequest: [closedPr.status.pr_url, openDraftPr.status.pr_url],
+    });
+    linkPlanToPr(planUuid, closedPr.status.id);
+    linkPlanToPr(planUuid, openDraftPr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 80,
+      deliveryId: 'delivery-ready-with-closed-sibling',
+      action: 'ready_for_review',
+      prNumber: 80,
+      title: 'Ready PR',
+      draft: false,
+      headRef: 'feature/closed-and-ready-prs',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(getPlanByUuid(db, planUuid)?.status).toBe('reviewed');
+  });
+
   test('ingestWebhookEvents leaves draft/ready linked plan statuses unchanged when plan status updates are disabled', async () => {
     const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
     const pr = upsertPrStatus(db, {

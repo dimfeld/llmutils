@@ -143,7 +143,7 @@ function areAllPlanPrsReady(db: Database, planUuid: string, explicitPrUrls: stri
   return (
     linkedPrs.length > 0 &&
     explicitPrUrls.every((prUrl) => linkedPrUrls.has(prUrl)) &&
-    linkedPrs.every((detail) => detail.status.state === 'open' && detail.status.draft === 0)
+    linkedPrs.every((detail) => detail.status.draft === 0)
   );
 }
 
