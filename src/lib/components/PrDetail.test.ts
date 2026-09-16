@@ -367,6 +367,63 @@ describe('PrDetail', () => {
     expect(body).not.toContain('text-red-600');
   });
 
+  test('renders Draft and Open badges for applicable PR stack entries', async () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = null;
+    pr.status.base_branch = 'feature-draft';
+
+    const draftPr = createPr();
+    draftPr.currentUserReviewRequestLabel = null;
+    draftPr.status.pr_number = 41;
+    draftPr.status.title = 'Draft PR';
+    draftPr.status.head_branch = 'feature-draft';
+    draftPr.status.draft = 1;
+
+    const openPr = createPr();
+    openPr.currentUserReviewRequestLabel = null;
+    openPr.status.pr_number = 43;
+    openPr.status.title = 'Open PR';
+    openPr.status.base_branch = 'feature-x';
+    openPr.status.head_branch = 'feature-open';
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        allPrs: [draftPr, openPr],
+      },
+    });
+
+    expect(body).toContain('Draft');
+    expect(body).toContain('bg-gray-100');
+    expect(body).toContain('Open');
+    expect(body).toContain('bg-yellow-100');
+  });
+
+  test('keeps the Approved badge for approved PR stack entries', async () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = null;
+    pr.status.base_branch = 'feature-approved';
+
+    const approvedPr = createPr();
+    approvedPr.currentUserReviewRequestLabel = null;
+    approvedPr.status.pr_number = 41;
+    approvedPr.status.title = 'Approved PR';
+    approvedPr.status.head_branch = 'feature-approved';
+    approvedPr.status.review_decision = 'APPROVED';
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        allPrs: [approvedPr],
+      },
+    });
+
+    expect(body).toContain('Approved');
+    expect(body).toContain('bg-green-100');
+  });
+
   test('renders requested reviewers who have not reviewed yet', async () => {
     const pr = createPr();
     pr.status.requested_reviewers = '["dimfeld","bob"]';

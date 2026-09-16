@@ -728,6 +728,18 @@
                 >
                   {reviewDecisionLabel(entry.pr.status.review_decision)}
                 </span>
+              {:else if entry.pr.status.draft}
+                <span
+                  class="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                >
+                  Draft
+                </span>
+              {:else if entry.pr.status.state === 'open'}
+                <span
+                  class="shrink-0 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                >
+                  Open
+                </span>
               {/if}
               <span class="shrink-0 font-mono text-[10px] text-muted-foreground/70">
                 {entry.pr.status.head_branch ?? ''}
