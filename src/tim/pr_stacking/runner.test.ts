@@ -329,6 +329,10 @@ describe('runPrStacking', () => {
     );
     expect(prompt).toContain('Create every new lower-slice pull request as a draft');
     expect(prompt).toContain(
+      'Both the overall stack description and the current slice description must explain why the change is needed and how it works, not only what it changes'
+    );
+    expect(prompt).toContain('Use the plan context as a source for this explanation when helpful');
+    expect(prompt).toContain(
       'In every pull-request description, explain the goal of the complete stack, how this pull request contributes to that goal, and what remains to be implemented in higher slices'
     );
     expect(prompt).toContain('clearly marked "Stack" section');
