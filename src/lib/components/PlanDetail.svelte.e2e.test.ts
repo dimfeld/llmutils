@@ -328,6 +328,25 @@ describe('PlanDetail action selection', () => {
       .not.toBeInTheDocument();
   });
 
+  test('shows Chat outside the actions menu', async () => {
+    renderPlan(
+      makePlanDetail({
+        status: 'needs_review',
+        displayStatus: 'needs_review',
+        canUpdateDocs: false,
+        prStatuses: [],
+      })
+    );
+
+    await expect
+      .element(page.getByRole('button', { name: 'Chat', exact: true }))
+      .toBeInTheDocument();
+    await page.getByRole('button', { name: 'Actions', exact: true }).click();
+    await expect
+      .element(page.getByRole('menuitem', { name: 'Chat', exact: true }))
+      .not.toBeInTheDocument();
+  });
+
   test('shows only Generate (no Run Agent) for a taskless non-simple plan', async () => {
     const screen = renderPlan(
       makePlanDetail({
@@ -564,7 +583,8 @@ describe('PlanDetail review deferral', () => {
       projectId: 123,
     });
     renderPlan(makePlanDetail({ status, displayStatus: status }));
-    await page.getByRole('button', { name: action, exact: true }).click();
+    await page.getByRole('button', { name: 'Actions', exact: true }).click();
+    await page.getByRole('menuitem', { name: action, exact: true }).click();
     expect(updatePlanMetadata).toHaveBeenCalledWith({
       projectId: 123,
       planUuid: 'plan-1',

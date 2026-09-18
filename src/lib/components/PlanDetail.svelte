@@ -183,6 +183,13 @@
         'bg-slate-200 text-slate-800 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600',
       starting: !!startingChat,
     };
+    const reviewDeferralItem: ActionItem = {
+      label: plan.status === 'review_deferred' ? 'Resume review' : 'Defer review',
+      startingLabel: 'Saving…',
+      onclick: handleReviewDeferral,
+      colorClass: '',
+      starting: changingReviewStatus,
+    };
     const agentItem: ActionItem = {
       label: 'Run Agent',
       startingLabel: 'Starting…',
@@ -270,7 +277,7 @@
       starting: startingUploadArtifacts,
     };
 
-    let primary: ActionItem;
+    let primary: ActionItem | null = null;
     let menuItems: ActionItem[] = [];
     let fixedActions: ActionItem[] = [autoreviewItem, shellItem];
 
@@ -281,7 +288,6 @@
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (isEligibleForPrStack) menuItems.push(prStackItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
-      menuItems.push(chatItem);
       menuItems.push(finishItem);
       if (isEligibleForProof) menuItems.push(proofItem);
       if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
@@ -292,7 +298,6 @@
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (isEligibleForPrStack) menuItems.push(prStackItem);
       if (isEligibleForReview) menuItems.push(reviewItem);
-      menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
       if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
     } else if (showAgentOnly) {
@@ -301,10 +306,8 @@
       if (isEligibleForRebase) menuItems.push(rebaseItem);
       if (isEligibleForCreatePr) menuItems.push(createPrItem);
       if (isEligibleForPrStack) menuItems.push(prStackItem);
-      menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
       if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
-      primary = menuItems.shift()!;
     } else if (showGenerateWithAgent) {
       if (isSimplePlan) {
         // Surface "Run Agent" as its own standalone button (not buried in the dropdown).
@@ -312,10 +315,8 @@
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
         if (isEligibleForPrStack) menuItems.push(prStackItem);
-        menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
         if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
-        primary = menuItems.shift()!;
       } else {
         // Taskless, non-simple plans should be generated before running an agent, so surface
         // only "Generate" as a standalone button and omit "Run Agent" entirely.
@@ -323,10 +324,8 @@
         if (isEligibleForRebase) menuItems.push(rebaseItem);
         if (isEligibleForCreatePr) menuItems.push(createPrItem);
         if (isEligibleForPrStack) menuItems.push(prStackItem);
-        menuItems.push(chatItem);
         if (isEligibleForProof) menuItems.push(proofItem);
         if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
-        primary = menuItems.shift()!;
       }
     } else {
       primary = shellItem;
@@ -337,15 +336,20 @@
       if (showUpdateDocsInDropdown) {
         menuItems.push(finishNoMarkDoneItem);
       }
-      menuItems.push(chatItem);
       if (isEligibleForProof) menuItems.push(proofItem);
       if (isEligibleForUploadArtifacts) menuItems.push(uploadArtifactsItem);
+    }
+
+    if (plan.status === 'needs_review' || plan.status === 'review_deferred') {
+      menuItems.push(reviewDeferralItem);
     }
 
     // Pending plans haven't produced work to review yet, so hide Autoreview.
     if (isPending) {
       fixedActions = fixedActions.filter((action) => action !== autoreviewItem);
     }
+
+    fixedActions.push(chatItem);
 
     return { primary, menuItems, fixedActions };
   });
@@ -1184,20 +1188,6 @@
             <Pencil class="h-3 w-3" />
             Edit
           </Button>
-          {#if plan.status === 'needs_review' || plan.status === 'review_deferred'}
-            <Button
-              onclick={handleReviewDeferral}
-              disabled={changingReviewStatus}
-              size="xs"
-              variant="outline"
-            >
-              {changingReviewStatus
-                ? 'Saving…'
-                : plan.status === 'review_deferred'
-                  ? 'Resume review'
-                  : 'Defer review'}
-            </Button>
-          {/if}
           {#if openInEditorEnabled}
             <Button
               onclick={handleOpenInEditor}
@@ -1248,7 +1238,14 @@
             </a>
           {:else}
             {@const { primary, menuItems, fixedActions } = actionConfig}
-            <ActionButtonWithDropdown {primary} {menuItems} disabled={controlsDisabled} size="xs" />
+            {#if primary || menuItems.length > 0}
+              <ActionButtonWithDropdown
+                {primary}
+                {menuItems}
+                disabled={controlsDisabled}
+                size="xs"
+              />
+            {/if}
             {#each fixedActions as action}
               <Button
                 onclick={action.onclick}

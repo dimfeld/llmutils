@@ -69,18 +69,18 @@ vi.mock('./ActionButtonWithDropdown.svelte', () => ({
   default: (
     payload: { push: (content: string) => void },
     props: {
-      primary: { label: string };
+      primary: { label: string } | null;
       menuItems?: Array<{ label: string }>;
       fixedActions?: Array<{ label: string }>;
     }
   ) => {
     if (props.menuItems?.length) {
       payload.push('<div data-testid="action-config"><button>Actions</button>');
-      payload.push(`<button>${props.primary.label}</button>`);
+      if (props.primary) payload.push(`<button>${props.primary.label}</button>`);
       for (const item of props.menuItems) {
         payload.push(`<button>${item.label}</button>`);
       }
-    } else {
+    } else if (props.primary) {
       payload.push(`<div data-testid="action-config"><button>${props.primary.label}</button>`);
     }
     for (const item of props.fixedActions ?? []) {

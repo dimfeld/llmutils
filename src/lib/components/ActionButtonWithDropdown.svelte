@@ -20,13 +20,13 @@
     disabled = false,
     size = 'sm' as const,
   }: {
-    primary: ActionItem;
+    primary: ActionItem | null;
     menuItems?: ActionItem[];
     disabled?: boolean;
     size?: 'xs' | 'sm' | 'default';
   } = $props();
 
-  let dropdownActions = $derived([primary, ...menuItems]);
+  let dropdownActions = $derived(primary ? [primary, ...menuItems] : menuItems);
 </script>
 
 {#if menuItems.length > 0}
@@ -72,7 +72,7 @@
       {/each}
     </DropdownMenu.Content>
   </DropdownMenu.Root>
-{:else}
+{:else if primary}
   <Button
     onclick={primary.onclick}
     {disabled}
