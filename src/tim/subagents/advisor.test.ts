@@ -18,9 +18,9 @@ describe('resolveAdvisorConfiguration', () => {
   test('returns the codex executor and model when both are configured', () => {
     expect(
       resolveAdvisorConfiguration(
-        config({ advisor: { executor: 'codex-cli', model: { codex: 'gpt-5.6:high' } } })
+        config({ advisor: { executor: 'codex-cli', model: { codex: 'gpt-6:high' } } })
       )
-    ).toEqual({ executor: 'codex-cli', model: 'gpt-5.6:high' });
+    ).toEqual({ executor: 'codex-cli', model: 'gpt-6:high' });
   });
 
   test('trims the configured model', () => {
@@ -35,7 +35,7 @@ describe('resolveAdvisorConfiguration', () => {
     expect(
       resolveAdvisorConfiguration(
         config({
-          advisor: { executor: 'claude-code', model: { codex: 'gpt-5.6:high' } },
+          advisor: { executor: 'claude-code', model: { codex: 'gpt-6:high' } },
         })
       )
     ).toBeUndefined();
@@ -43,10 +43,10 @@ describe('resolveAdvisorConfiguration', () => {
     expect(
       resolveAdvisorConfiguration(
         config({
-          advisor: { executor: 'codex-cli', model: { claude: 'opus', codex: 'gpt-5.6:high' } },
+          advisor: { executor: 'codex-cli', model: { claude: 'opus', codex: 'gpt-6:high' } },
         })
       )
-    ).toEqual({ executor: 'codex-cli', model: 'gpt-5.6:high' });
+    ).toEqual({ executor: 'codex-cli', model: 'gpt-6:high' });
   });
 
   test('returns undefined when the executor is missing', () => {

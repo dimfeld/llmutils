@@ -22,7 +22,7 @@ function deeplyNestedObject(depth: number): Record<string, unknown> {
 
 describe('createAppServerFormatter', () => {
   test('captures thread/session ids from thread/started and emits session start message', () => {
-    const formatter = createAppServerFormatter('gpt-5.6-terra');
+    const formatter = createAppServerFormatter('gpt-6-terra');
     const message = formatter.handleNotification('thread/started', {
       thread: { id: 'thread-123' },
       session: { id: 'session-456' },
@@ -37,7 +37,7 @@ describe('createAppServerFormatter', () => {
           type: 'agent_session_start',
           threadId: 'thread-123',
           sessionId: 'session-456',
-          model: 'gpt-5.6-terra',
+          model: 'gpt-6-terra',
         }),
       })
     );

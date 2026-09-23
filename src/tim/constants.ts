@@ -6,7 +6,7 @@
 export const DEFAULT_EXECUTOR = 'claude-code';
 
 /**
- * Latest GPT-5 model versions. For generic use we choose the Terra version instead of Sol.
+ * Latest GPT model versions.
  */
-export const LATEST_GPT5_MODEL = 'gpt-5.6-terra';
-export const LATEST_GPT5_MINI_MODEL = 'gpt-5.6-luna';
+export const LATEST_GPT5_MODEL = 'gpt-6-sol';
+export const LATEST_GPT5_MINI_MODEL = 'gpt-6-luna';

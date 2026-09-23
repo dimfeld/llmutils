@@ -455,9 +455,9 @@ For the regular `tim review` command, configure its structural pass with `review
 ```yaml
 reviewGuide:
   guideModel:
-    codex: gpt-5.6-sol:high
+    codex: gpt-6-sol:high
   issuesModel:
-    codex: gpt-5.6-terra:medium
+    codex: gpt-6-terra:medium
 ```
 
 `tim review-guide list-issues <planId|branch|prUrl>` finds the latest stored review guide for the resolved plan or PR and includes linked guides from the other object when a plan is linked to a PR or a PR is linked to a plan. By default it shows unresolved actionable issues; use `--all` to include resolved issues. `tim review-guide resolve-issue <issueId> [planId|branch|prUrl]` marks an issue resolved, and the optional target validates that the issue belongs to the latest review guide.
@@ -511,7 +511,7 @@ Project-specific directions for the generated PR comment can live in the project
 reviewGuideComments:
   executor: codex-cli
   model:
-    codex: gpt-5.6-terra
+    codex: gpt-6-terra
   instructions: |
     Call out database migrations before UI-only changes.
     Mention generated files only when reviewers need to inspect them.
@@ -814,7 +814,7 @@ Important config areas:
 - `lifecycle.commands` - start/stop dev servers or services around agent runs
 - `lifecycle.env` - merge selected values into each managed workspace `.env`
 - `subprocessMonitor` - opt-in timeouts for stuck Claude/Codex tool subprocesses
-- `smallTasks` - executor/model for lightweight helper passes (defaults to `codex-cli` with `gpt-5.6-luna:medium`)
+- `smallTasks` - executor/model for lightweight helper passes (defaults to `codex-cli` with `gpt-6-luna:medium`)
 - `chat` - executor and model choices shown in the web Chat dialog
 - `generate.linearChildIssueLabel` - optional Linear label to apply to issues created for child plans during generation
 - `updateDocs` - controls automatic agent documentation updates; `applyLessons` is retained for manual finalization compatibility
@@ -834,7 +834,7 @@ in one place when you want to swap the lightweight model or executor:
 ```yaml
 smallTasks:
   executor: codex-cli
-  model: gpt-5.6-luna:medium
+  model: gpt-6-luna:medium
 ```
 
 Configure the web Chat dialog with one or more executor/model choices. If `chat` is not set, the
@@ -843,9 +843,9 @@ dialog shows Claude Code and Codex CLI with their default models.
 ```yaml
 chat:
   - executor: claude-code
-    model: claude-opus-4.6
+    model: opus:medium
   - executor: codex-cli
-    model: gpt-5.6-luna:high
+    model: gpt-6-luna:high
 ```
 
 The `simplify` block controls the optional code-simplification pass that runs after an agent finishes implementation and before final review. `simplify.mode` accepts `after-completion` (default) or `never`; `simplify.model` and `simplify.executor` (`claude-code` or `codex-cli`) override the executor used for the pass; `simplify.include` and `simplify.exclude` add free-form scoping guidance. The standalone `tim simplify <planId>` command always runs regardless of `simplify.mode`.
@@ -1081,7 +1081,7 @@ Set `minChangedLines` to enable the phase. Tim measures additions plus deletions
 prStacking:
   minChangedLines: 500
   executor: codex-cli # optional; falls back to defaultExecutor
-  model: gpt-5.6-sol # optional; falls back to models.execution
+  model: gpt-6-sol # optional; falls back to models.execution
 ```
 
 The executor can decide that the change has no useful vertical split. In that case, it must leave the history and PR unchanged. When it creates a stack, each PR body contains a marked Stack section that lists the PRs in merge order and explains the scope of each slice. Tim associates every PR in the stack with the original plan without changing the plan file. New lower PRs are drafts. The original PR keeps its existing draft or ready state. Lower-slice branch names preserve a leading plan number from the original branch but do not repeat external issue-tracker IDs, such as a trailing Linear issue tag, and lower-slice PR descriptions use non-closing issue references such as `Related to ENG-123`. A stacking failure produces a warning and does not change the successful agent result.

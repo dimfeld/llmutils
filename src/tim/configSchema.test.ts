@@ -49,9 +49,9 @@ describe('configSchema', () => {
     test('accepts executor and model without enabling the phase', () => {
       expect(
         timConfigSchema.parse({
-          prStacking: { executor: 'codex-cli', model: 'gpt-5.6-sol' },
+          prStacking: { executor: 'codex-cli', model: 'gpt-6-sol' },
         }).prStacking
-      ).toEqual({ executor: 'codex-cli', model: 'gpt-5.6-sol' });
+      ).toEqual({ executor: 'codex-cli', model: 'gpt-6-sol' });
     });
 
     test('accepts a positive integer changed-line threshold', () => {
@@ -72,13 +72,13 @@ describe('configSchema', () => {
       const result = timConfigSchema.parse({
         chat: [
           { executor: 'claude-code', model: 'claude-opus-4.6' },
-          { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+          { executor: 'codex-cli', model: 'gpt-6-luna:high' },
         ],
       });
 
       expect(result.chat).toEqual([
         { executor: 'claude-code', model: 'claude-opus-4.6' },
-        { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+        { executor: 'codex-cli', model: 'gpt-6-luna:high' },
       ]);
       expect(timConfigSchema.parse({}).chat).toBeUndefined();
     });
@@ -87,8 +87,8 @@ describe('configSchema', () => {
       expect(() =>
         timConfigSchema.parse({
           chat: [
-            { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
-            { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+            { executor: 'codex-cli', model: 'gpt-6-luna:high' },
+            { executor: 'codex-cli', model: 'gpt-6-luna:high' },
           ],
         })
       ).toThrow();
@@ -1955,39 +1955,39 @@ describe('configSchema', () => {
     test('should accept separate guide and issue model configurations', () => {
       const result = timConfigSchema.parse({
         reviewGuide: {
-          guideModel: { codex: 'gpt-5.6-sol:high' },
-          issuesModel: { codex: 'gpt-5.6-terra:medium' },
+          guideModel: { codex: 'gpt-6-sol:high' },
+          issuesModel: { codex: 'gpt-6-terra:medium' },
         },
       });
 
-      expect(result.reviewGuide?.guideModel?.codex).toBe('gpt-5.6-sol:high');
-      expect(result.reviewGuide?.issuesModel?.codex).toBe('gpt-5.6-terra:medium');
+      expect(result.reviewGuide?.guideModel?.codex).toBe('gpt-6-sol:high');
+      expect(result.reviewGuide?.issuesModel?.codex).toBe('gpt-6-terra:medium');
     });
 
     test('should accept a separate structural review model configuration', () => {
       const result = timConfigSchema.parse({
         reviewGuide: {
-          issuesModel: { codex: 'gpt-5.6-terra:medium' },
-          structuralModel: { codex: 'gpt-5.6-codex:high' },
+          issuesModel: { codex: 'gpt-6-terra:medium' },
+          structuralModel: { codex: 'gpt-6-codex:high' },
         },
       });
 
-      expect(result.reviewGuide?.structuralModel?.codex).toBe('gpt-5.6-codex:high');
+      expect(result.reviewGuide?.structuralModel?.codex).toBe('gpt-6-codex:high');
     });
 
     test('should accept a regular review structural model configuration', () => {
       const result = timConfigSchema.parse({
-        review: { structuralModel: { codex: 'gpt-5.6-codex:high' } },
+        review: { structuralModel: { codex: 'gpt-6-codex:high' } },
       });
 
-      expect(result.review?.structuralModel?.codex).toBe('gpt-5.6-codex:high');
+      expect(result.review?.structuralModel?.codex).toBe('gpt-6-codex:high');
     });
 
     test('should accept review guide comments instructions', () => {
       const config = {
         reviewGuideComments: {
           executor: 'codex-cli',
-          model: { codex: 'gpt-5.6-terra' },
+          model: { codex: 'gpt-6-terra' },
           instructions: 'Mention migration risk before UI changes when both are present in the PR.',
         },
       };
@@ -2057,13 +2057,13 @@ describe('configSchema', () => {
       const result = timConfigSchema.parse({
         smallTasks: {
           executor: 'codex-cli',
-          model: 'gpt-5.6-luna:medium',
+          model: 'gpt-6-luna:medium',
         },
       });
 
       expect(result.smallTasks).toEqual({
         executor: 'codex-cli',
-        model: 'gpt-5.6-luna:medium',
+        model: 'gpt-6-luna:medium',
       });
     });
 

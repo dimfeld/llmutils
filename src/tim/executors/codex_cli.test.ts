@@ -24,10 +24,10 @@ describe('CodexCliExecutor - failure detection across agents', () => {
     (await import('node:fs/promises')).mkdir(tempDir, { recursive: true }).catch(() => {});
   });
 
-  test('uses gpt-5.6-sol as its default model for step generation', async () => {
+  test('uses gpt-6-sol as its default model for step generation', async () => {
     const { CodexCliExecutor } = await import('./codex_cli.js');
 
-    expect(CodexCliExecutor.defaultModel.stepGeneration).toBe('gpt-5.6-sol');
+    expect(CodexCliExecutor.defaultModel.stepGeneration).toBe('gpt-6-sol');
   });
 
   test('implementer failure short-circuits execution and skips auto-mark', async () => {
@@ -707,7 +707,7 @@ describe('CodexCliExecutor - orchestrator routing contract', () => {
 
   test('extracts an optional reasoning effort suffix from the model string', async () => {
     const { CodexCliExecutor, executeCodexStepMock } = await setupOrchestratorMocks();
-    const exec = new CodexCliExecutor({}, { baseDir: tempDir, model: 'gpt-5.6-sol:high' }, {
+    const exec = new CodexCliExecutor({}, { baseDir: tempDir, model: 'gpt-6-sol:high' }, {
       executors: { 'codex-cli': { reasoning: { default: 'medium' } } },
     } as any);
 
@@ -719,7 +719,7 @@ describe('CodexCliExecutor - orchestrator routing contract', () => {
     });
 
     const options = executeCodexStepMock.mock.calls[0][3];
-    expect(options).toMatchObject({ model: 'gpt-5.6-sol', reasoningLevel: 'high' });
+    expect(options).toMatchObject({ model: 'gpt-6-sol', reasoningLevel: 'high' });
   });
 
   test('uses reasoningLevel from timConfig executor config', async () => {

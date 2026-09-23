@@ -805,7 +805,7 @@ describe('create_pr command helpers', () => {
         'codex-cli',
         expect.objectContaining({
           baseDir: '/tmp',
-          model: 'gpt-5.6-luna:medium',
+          model: 'gpt-6-luna:medium',
           terminalInput: false,
         }),
         {},
@@ -926,7 +926,7 @@ describe('create_pr command helpers', () => {
         'codex-cli',
         expect.objectContaining({
           baseDir: '/tmp',
-          model: 'gpt-5.6-luna:medium',
+          model: 'gpt-6-luna:medium',
           terminalInput: false,
         }),
         {},
@@ -968,16 +968,16 @@ describe('create_pr command helpers', () => {
         {
           baseDir: '/tmp',
           config: {
-            smallTasks: { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+            smallTasks: { executor: 'codex-cli', model: 'gpt-6-luna:high' },
           } as any,
         }
       );
 
       expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
         'codex-cli',
-        expect.objectContaining({ baseDir: '/tmp', model: 'gpt-5.6-luna:high' }),
+        expect.objectContaining({ baseDir: '/tmp', model: 'gpt-6-luna:high' }),
         expect.objectContaining({
-          smallTasks: { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+          smallTasks: { executor: 'codex-cli', model: 'gpt-6-luna:high' },
         }),
         {}
       );

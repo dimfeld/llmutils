@@ -741,7 +741,7 @@ export const timConfigSchema = z
         model: z
           .string()
           .optional()
-          .describe('Model for small helper tasks (default: gpt-5.6-luna:medium)'),
+          .describe('Model for small helper tasks (default: gpt-6-luna:medium)'),
       })
       .strict()
       .optional()

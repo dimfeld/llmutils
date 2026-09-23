@@ -239,7 +239,7 @@ describe('generateRemediationPlan', () => {
         '  advisor:',
         '    executor: codex-cli',
         '    model:',
-        '      codex: gpt-5.6:high',
+        '      codex: gpt-6:high',
         '',
       ].join('\n'),
       'utf8'
@@ -290,7 +290,7 @@ describe('generateRemediationPlan', () => {
 
     const [prompt, cwd, , options] = providerMocks.executeCodexStep.mock.calls[0];
     expect(cwd).toBe(repositoryRoot);
-    expect(options.model).toBe('gpt-5.6');
+    expect(options.model).toBe('gpt-6');
     expect(prompt).toContain('You are a tim advisor agent');
     expect(prompt).toContain('# Remediation Planning Request');
     expect(prompt).toContain('The queue drops a message when the worker restarts.');

@@ -2,7 +2,7 @@ import { codexReasoningLevelSchema, type CodexReasoningLevel } from '../schemas.
 
 /**
  * Separates an optional `:reasoning-effort` suffix from a Codex model name.
- * For example, `gpt-5.6-sol:high` runs `gpt-5.6-sol` with high reasoning.
+ * For example, `gpt-6-sol:high` runs `gpt-6-sol` with high reasoning.
  */
 export function parseCodexModel(model: string | undefined): {
   model: string | undefined;

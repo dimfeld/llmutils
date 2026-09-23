@@ -1790,10 +1790,10 @@ describe('optional advisor subagent', () => {
 
   it('names the configured codex executor and model', () => {
     const out = wrapWithOrchestration('Context', '12', {
-      advisor: { executor: 'codex-cli', model: 'gpt-5.6:high' },
+      advisor: { executor: 'codex-cli', model: 'gpt-6:high' },
     });
     expect(out).toContain('`codex-cli`');
-    expect(out).toContain('`gpt-5.6:high`');
+    expect(out).toContain('`gpt-6:high`');
   });
 
   it('keeps the advisor out of the required workflow phases', () => {

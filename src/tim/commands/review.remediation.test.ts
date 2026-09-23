@@ -168,7 +168,7 @@ beforeEach(async () => {
   });
   advisorConfig = {
     paths: { tasks: tasksDir },
-    subagents: { advisor: { executor: 'codex-cli', model: { codex: 'gpt-5.6:high' } } },
+    subagents: { advisor: { executor: 'codex-cli', model: { codex: 'gpt-6:high' } } },
   };
   // `tim subagent advisor` reads its own config from disk rather than from the review command.
   await writeFile(

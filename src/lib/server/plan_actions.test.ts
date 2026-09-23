@@ -473,7 +473,7 @@ describe('lib/server/plan_actions', () => {
       192,
       '/tmp/primary-workspace',
       'codex-cli',
-      'gpt-5.6-luna:high'
+      'gpt-6-luna:high'
     );
     await vi.advanceTimersByTimeAsync(2000);
     await resultPromise;
@@ -488,7 +488,7 @@ describe('lib/server/plan_actions', () => {
       'codex-cli',
       '--auto-workspace',
       '--model',
-      'gpt-5.6-luna:high',
+      'gpt-6-luna:high',
       '--no-terminal-input',
     ]);
   });

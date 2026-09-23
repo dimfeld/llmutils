@@ -32,7 +32,7 @@ describe('resolveSmallTaskExecutor', () => {
     const config = {
       smallTasks: {
         executor: 'codex-cli',
-        model: 'gpt-5.6-luna:medium',
+        model: 'gpt-6-luna:medium',
       },
     } satisfies TimConfig;
 
@@ -43,9 +43,9 @@ describe('resolveSmallTaskExecutor', () => {
   });
 
   test('command model overrides take precedence', () => {
-    expect(resolveSmallTaskExecutor({}, { model: 'gpt-5.6-sol:high' })).toEqual({
+    expect(resolveSmallTaskExecutor({}, { model: 'gpt-6-sol:high' })).toEqual({
       executorName: 'codex-cli',
-      model: 'gpt-5.6-sol:high',
+      model: 'gpt-6-sol:high',
     });
   });
 });

@@ -85,7 +85,7 @@ function createPreparation(): AgentPreparation {
     prepare: async ({ identity, initialMessage }): Promise<PreparedAgentExecution> => ({
       agentType: identity.type,
       executor: identity.executor,
-      model: 'gpt-5.6-sol:high',
+      model: 'gpt-6-sol:high',
       plan: {} as PreparedAgentExecution['plan'],
       planId: 420,
       planPath: '/repo/.tim/plans/420.plan.md',
@@ -175,7 +175,7 @@ describe('Codex AgentManager launch integration', () => {
     expect(mocked.connection.turnStart).toHaveBeenLastCalledWith({
       threadId: 'thread-manager-test',
       input: [{ type: 'text', text: 'Agent message from orchestrator:\nRun the edge cases.' }],
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-sol',
       effort: 'high',
     });
 
@@ -197,7 +197,7 @@ describe('Codex AgentManager launch integration', () => {
           text: 'The orchestrator has requested a graceful shutdown. Complete your current work, then provide your final status update or result before ending your session.\n\nAdditional shutdown context:\n---\nProvide the final status.\n---',
         },
       ],
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-sol',
       effort: 'high',
     });
 

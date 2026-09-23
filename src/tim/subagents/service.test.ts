@@ -365,7 +365,7 @@ describe('reusable subagent service', () => {
   });
 
   test('returns a provider-neutral Codex completion handle', async () => {
-    const prepared = await prepare({ model: 'gpt-5.6-sol:high' });
+    const prepared = await prepare({ model: 'gpt-6-sol:high' });
     const handle = launchPreparedSubagent(prepared);
 
     expect(handle.executor).toBe('codex-cli');
@@ -379,7 +379,7 @@ describe('reusable subagent service', () => {
       repositoryRoot,
       prepared.config,
       expect.objectContaining({
-        model: 'gpt-5.6-sol',
+        model: 'gpt-6-sol',
         reasoningLevel: 'high',
         appServerMode: 'single-turn-with-steering',
         timEnvironment: prepared.timEnvironment,

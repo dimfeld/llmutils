@@ -192,7 +192,7 @@ function createPreparation(cwd: string): AgentPreparation {
     prepare: async ({ identity, initialMessage }): Promise<PreparedAgentExecution> => ({
       agentType: identity.type,
       executor: identity.executor,
-      model: 'gpt-5.6-sol:high',
+      model: 'gpt-6-sol:high',
       plan: {} as PreparedAgentExecution['plan'],
       planId: 420,
       planPath: '/repo/.tim/plans/420.plan.md',

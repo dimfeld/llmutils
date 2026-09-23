@@ -72,7 +72,7 @@ describe('lib/server/plans_browser', () => {
       if (options?.cwd === '/tmp/repo-plans-browser-1') {
         return {
           updateDocs: { mode: 'after-completion', applyLessons: true },
-          chat: [{ executor: 'codex-cli', model: 'gpt-5.6-luna:high' }],
+          chat: [{ executor: 'codex-cli', model: 'gpt-6-luna:high' }],
         } as any;
       }
       if (options?.cwd === '/tmp/repo-plans-browser-2') {
@@ -311,7 +311,7 @@ describe('lib/server/plans_browser', () => {
 
   test('loadChatExecutorOptionsForProject reads choices from the project git root', async () => {
     await expect(loadChatExecutorOptionsForProject(db, projectId)).resolves.toEqual([
-      { executor: 'codex-cli', model: 'gpt-5.6-luna:high' },
+      { executor: 'codex-cli', model: 'gpt-6-luna:high' },
     ]);
   });
 

@@ -218,7 +218,7 @@ function installExecutorMock(options: {
       return { execute: options.repairExecute } as any;
     }
 
-    if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.6-luna:medium') {
+    if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-6-luna:medium') {
       if (!options.smallTaskExecute) {
         throw new Error('Unexpected small-task executor request');
       }
@@ -717,7 +717,7 @@ describe('review_pr command', () => {
     }
     expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
       'codex-cli',
-      expect.objectContaining({ model: 'gpt-5.6-luna:medium', terminalInput: false }),
+      expect.objectContaining({ model: 'gpt-6-luna:medium', terminalInput: false }),
       expect.anything()
     );
 
@@ -1747,7 +1747,7 @@ describe('review_pr command', () => {
     });
 
     mockBuildExecutorAndLog.mockImplementation((name, sharedOptions) => {
-      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.6-luna:medium') {
+      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-6-luna:medium') {
         return { execute: smallTaskExecute } as any;
       }
       if (name === 'claude-code') {
@@ -1845,7 +1845,7 @@ describe('review_pr command', () => {
       if (name === 'claude-code') {
         return { execute: claudeExecute } as any;
       }
-      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-5.6-luna:medium') {
+      if (name === 'codex-cli' && (sharedOptions as any)?.model === 'gpt-6-luna:medium') {
         return { execute: codexCombinationExecute } as any;
       }
       if (name === 'codex-cli') {
@@ -1859,7 +1859,7 @@ describe('review_pr command', () => {
     expect(codexCombinationExecute).toHaveBeenCalledTimes(1);
     expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
       'codex-cli',
-      expect.objectContaining({ model: 'gpt-5.6-luna:medium', terminalInput: false }),
+      expect.objectContaining({ model: 'gpt-6-luna:medium', terminalInput: false }),
       expect.objectContaining({ defaultExecutor: 'codex-cli' })
     );
     const inserted = mockInsertReviewIssues.mock.calls[0]?.[1];
