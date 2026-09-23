@@ -169,8 +169,8 @@ Acceptance Criteria
 - [ ] All new code paths are covered by tests.
 
 Dependencies & Constraints
-- **Dependencies**: Relies on existing Pagination component.
-- **Technical Constraints**: Must handle >10K records efficiently.
+- **Dependencies**: e.g. Relies on the existing Pagination component.
+- **Technical Constraints**: e.g. Must handle >10K records efficiently.
 
 Implementation Notes
 - **Recommended Approach**
@@ -216,13 +216,10 @@ Please analyze this project description and the codebase. Your task is to:
 4. Consider dependencies between different parts of the implementation
 5. Identify any potential challenges or considerations
 
-Once you've analyzed the codebase, I'll ask you to generate a detailed implementation plan in a specific format.
-
 For now, please:
 - Explore the relevant parts of the codebase
 - Understand the existing patterns and conventions
 - Identify the key files and components that will be involved
-- Think deeply about the best approach to implement this feature
 
 If you are unsure whether something is already implemented in the codebase, look it up using your tools instead of asking the user.
 
@@ -230,15 +227,15 @@ Make sure your plan includes these details:
 
 ${commonGenerateDetails}
 
-IMPORTANT: Do NOT create tasks for manual verification. Focus on automated testing and implementation tasks only.
+Do not create tasks for manual verification, because an AI coding agent executes the plan and verification happens separately. Focus on automated testing and implementation tasks only.
 
-Do not perform any implementation or write any files yet.
+Do not implement the feature or change source files during planning; writing to the plan file is expected.
 
 ${blockingSection}
 ${discoveredIssueSection}
 
-Use parallel subagents to analyze the requirements against different parts of the codebase, and generate detailed reports.
-Then prepare to synthesize these reports into the final plan.`;
+When the requirements touch several independent, sizeable parts of the codebase, use parallel subagents to analyze those parts.
+Then prepare to synthesize your findings into the final plan.`;
 
   if (includeNextInstructionSentence) {
     prompt += `\nWhen you're done with your analysis, let me know and I'll provide the next instruction.`;
@@ -252,7 +249,6 @@ export function generateClaudeCodeResearchPrompt(
   return `${prefix}, capture every insight you've gathered.
 
 Generate structured Markdown that preserves your research findings and provides a detailed implementation guide.
-Be very exhaustive and think deeply when creating this content.
 
 Your output should have three distinct sections:
 
@@ -325,11 +321,11 @@ Please output the plan in the exact Markdown format specified below:
 
 ${phaseBasedMarkdownExampleFormat}
 
-Everything you said above will not be saved anywhere, so be sure to include it again when generating the plan below. Remember to include all the below sections in the project details, along with any other relevant details that an engineer will require to know how to implement the plan:
+Include all of the sections below in the plan details, along with any other details an engineer needs to implement the plan:
 ${commonGenerateDetails}`;
   } else {
     formatInstructions = `
-Everything you said above will not be saved anywhere, so be sure to include it again when generating the plan below. Remember to include all the below sections in the project details, along with any other relevant details that an engineer will require to know how to implement the plan:
+Include all of the sections below in the plan details, along with any other details an engineer needs to implement the plan:
 ${commonGenerateDetails}`;
   }
 
@@ -360,9 +356,9 @@ The plan should be formatted as follows:
 - Focus on logical progression and incremental functionality
 - Include acceptance criteria for each phase
 
-IMPORTANT: Do NOT create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
+Do not create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
 
-IMPORTANT: Testing should be INTEGRATED into your implementation tasks, not separate tasks. Each task that introduces new functionality should include writing tests as part of that task. Do NOT create standalone "Write tests" or "Add test coverage" tasks. Instead, ensure each implementation task description mentions the testing requirements for that specific feature.
+Integrate testing into the implementation tasks: each task that introduces new functionality includes writing the tests for it, and its description states those testing requirements. Do not create standalone "Write tests" or "Add test coverage" tasks.
 
 ${formatInstructions}
 

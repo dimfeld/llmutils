@@ -451,7 +451,7 @@ ${ASSUME_CHECKS_PASS_SECTION}
 - Report every high-confidence actionable issue you find. Avoid speculative noise, but do not stop after a small sample of findings.
 ${planContextInstruction}
 - Do not provide a verdict.
-- Use the same severity bar as the reviewer prompt: only report genuine issues that would matter in review.
+- Apply the severity rubric above: only report genuine issues that would matter in review.
 ${maybeCustomInstructions(customInstructions)}`;
 }
 
@@ -487,7 +487,7 @@ ${ASSUME_CHECKS_PASS_SECTION}
 - Report every high-confidence simplification issue you find. Avoid speculative cleanup notes, but do not stop after a small sample of findings.
 ${planContextInstruction}
 - Do not provide a verdict.
-- Use the same severity bar as the reviewer prompt: only report genuine issues that would matter in review.
+- Apply the severity calibration in the Simplification Review section above: only report genuine issues that would matter in review.
 - Use \`style\` for code-structure simplification findings unless another category is clearly more accurate.
 ${maybeCustomInstructions(customInstructions)}`;
 }

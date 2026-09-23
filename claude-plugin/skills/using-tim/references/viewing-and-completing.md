@@ -78,13 +78,12 @@ tim set-task-done 123 --index 2              # By index (1-based)
 When all tasks are complete, mark the entire plan as done:
 
 ```bash
-tim done 123                    # Mark plan complete
+tim set 123 --status done       # Mark plan complete
 ```
 
 You can also use `tim set` to change plan status and other metadata:
 
 ```bash
-tim set 123 --status done
 tim set 123 --status in_progress
 tim set 123 --status pending
 tim set 123 --depends-on 101 102       # Add dependencies

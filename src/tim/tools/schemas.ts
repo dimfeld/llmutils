@@ -210,7 +210,7 @@ export const createPlanParameters = z
       .positive()
       .optional()
       .describe(
-        'Plan ID whose branch should serve as the base branch for stacked PR workflows (alternative to baseBranch)'
+        "Plan ID whose branch this plan's branch stacks on, for stacked PRs. Omit to branch from trunk. This sets branch stacking only; use dependsOn to order the work."
       ),
     dependsOn: z
       .array(z.number().int().positive())

@@ -27,7 +27,7 @@ Create a plan stub in the DB for later generation.
 tim add "Plan title"
 tim add "Plan title" --priority high
 tim add "Plan title" --parent 100
-tim add "Plan title" --depends-on 101,102
+tim add "Plan title" --depends-on 101 102
 tim add "Plan title" --base-plan 122             # Stack branch on plan 122's branch
 tim add "Plan title" --discovered-from 99
 tim add "Plan title" --tag frontend --tag urgent
@@ -71,8 +71,6 @@ tim run 123                            # Alias
 # Executor selection
 tim agent 123 --executor claude-code
 tim agent 123 --executor codex-cli
-tim agent 123 --executor direct-call
-tim agent 123 --executor copy-paste
 
 # Execution modes
 tim agent 123 --serial-tasks           # One task at a time
@@ -90,15 +88,6 @@ tim agent 123 --workspace feature-xyz  # Specific workspace
 # Summary
 tim agent 123 --no-summary             # Disable summary
 tim agent 123 --summary-file report.txt
-```
-
-### tim done
-
-Mark a plan as complete.
-
-```bash
-tim done 123
-tim done 123 --commit                  # Commit changes
 ```
 
 ### tim edit
@@ -245,9 +234,6 @@ tim set 123 --epic                     # Mark as epic
 tim set 123 --no-epic
 tim set 123 --simple                   # Mark as simple
 tim set 123 --no-simple
-
-# Rmfilter files
-tim set 123 --rmfilter src/api.ts src/db.ts
 ```
 
 ## Prompt Commands
@@ -393,7 +379,7 @@ Fix unresolved PR review threads by spawning an agent session. The agent receive
 tim pr fix 123                                 # Interactive thread selection
 tim pr fix 123 --all                           # Fix all unresolved threads
 tim pr fix 123 --executor claude-code          # Specify executor
-tim pr fix 123 --model claude-sonnet-4-5-20250514  # Model override
+tim pr fix 123 --model sonnet                 # Model override
 tim pr fix 123 --auto-workspace                # Auto-select workspace
 tim pr fix 123 --all --no-terminal-input       # Non-interactive (web UI mode)
 tim pr fix --pr 456 --auto-workspace           # No linked plan: fix a PR by URL/number
@@ -549,7 +535,7 @@ tim rebase --next                             # Next ready plan
 
 # Executor options (only used if conflicts arise)
 tim rebase 123 --executor claude-code
-tim rebase 123 --model claude-sonnet-4-5-20250514
+tim rebase 123 --model sonnet
 
 # Skip push after rebase
 tim rebase 123 --no-push
@@ -591,17 +577,6 @@ Delete stale materialized plan files from `.tim/plans/`. Primary files are remov
 
 ```bash
 tim cleanup-materialized
-```
-
-### tim answer-pr
-
-Respond to PR comments.
-
-```bash
-tim answer-pr
-tim answer-pr 123
-tim answer-pr --commit
-tim answer-pr --comment
 ```
 
 ### tim update-docs
@@ -690,7 +665,7 @@ tim mcp-server --mode generate --config path/to/tim.yml
 
 ```bash
 tim add "Feature title" --issue https://github.com/org/repo/issues/123
-tim generate 456 -- src/**/*.ts
+tim generate 456
 tim agent 456
 ```
 

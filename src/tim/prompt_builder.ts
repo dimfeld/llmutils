@@ -309,38 +309,8 @@ ${todoDirections}
   return `
 ## Execution Guidelines
 
-### Understand the Codebase Context
-Before implementing changes:
-- Examine existing patterns and conventions in the codebase
-- Look for similar implementations or components that can serve as examples
-- Understand the project structure and where your changes fit
-- Review any relevant tests to understand expected behavior
-
 ${todoDirections || ''}
 
-### Follow Best Practices
-Ensure your implementation:
-- Matches the existing code style and patterns
-- Uses the same libraries and utilities already in the codebase
-- Follows the project's naming conventions
-- Maintains consistent error handling patterns
-- Includes appropriate type annotations
-
 ### Verify Your Work
-After implementing changes:
-- Run the build command to ensure compilation succeeds
-- Execute tests to verify functionality
-- Run linting tools to check code quality
-- Fix any issues before considering the task complete
-
-### Self-Review Checklist
-Before marking the task as done, verify:
-- [ ] Changes align with the plan's goals and requirements
-- [ ] Code follows existing patterns in the codebase
-- [ ] All tests pass successfully
-- [ ] Linting checks pass without errors
-- [ ] No unnecessary files or debug code included
-- [ ] Changes are focused and don't include modifications to unrelated parts of the code
-
-Remember: Quality is more important than speed. Take time to understand the codebase and verify your changes work correctly within the existing system.`;
+After implementing changes, run the build, tests, and linting, and fix any issues before considering the task complete. Keep changes focused on the task: no debug code and no modifications to unrelated parts of the code.`;
 }

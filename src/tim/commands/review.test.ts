@@ -7350,8 +7350,8 @@ describe('Autofix functionality', () => {
 
     // Verify instructions are included
     expect(autofixPrompt).toContain('## Instructions');
-    expect(autofixPrompt).toContain('Please fix all the issues identified in the review');
-    expect(autofixPrompt).toContain('maintaining the plan requirements');
+    expect(autofixPrompt).toContain('Fix the issues listed above with targeted changes');
+    expect(autofixPrompt).toContain("still fulfill the plan's goals and tasks");
   });
 
   test('buildAutofixPrompt excludes note severity annotations', () => {

@@ -1379,7 +1379,7 @@ describe('orchestrator_prompt subagent commands', () => {
       expect(out).toContain('tim subagent');
       expect(out).toContain('--input');
       expect(out).toContain('--input-file');
-      expect(out).toContain('DO NOT implement code directly');
+      expect(out).toContain('Do not implement code directly');
     });
 
     it('includes large input guidance for input-file usage', () => {

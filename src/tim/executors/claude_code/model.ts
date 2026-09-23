@@ -2,7 +2,7 @@ import { claudeCodeReasoningEffortSchema, type ClaudeCodeReasoningEffort } from 
 
 /**
  * Separates an optional `:reasoning-effort` suffix from a Claude model name.
- * For example, `claude-opus-4:high` runs `claude-opus-4` with high effort.
+ * For example, `opus:high` runs `opus` with high effort.
  */
 export function parseClaudeModel(model: string | undefined): {
   model: string | undefined;

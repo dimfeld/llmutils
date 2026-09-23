@@ -23,7 +23,7 @@ After adding a plan, you may fill in the details of the plan in the Markdown sec
 ```bash
 tim add "Plan title" --priority high          # Set priority (low/medium/high/urgent/maybe)
 tim add "Plan title" --parent 100             # Create as child of plan 100
-tim add "Plan title" --depends-on 101,102    # Block on other plans
+tim add "Plan title" --depends-on 101 102    # Block on other plans
 tim add "Plan title" --base-plan 122          # Stack branch on top of plan 122's branch
 tim add "Plan title" --discovered-from 99     # Link to source plan
 tim add "Plan title" --tag frontend --tag urgent  # Add tags

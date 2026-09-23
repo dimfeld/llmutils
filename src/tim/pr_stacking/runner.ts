@@ -106,7 +106,7 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     '',
     '## Required outcome',
     '',
-    `- Preserve the exact final file tree currently at ${options.mainBranch}. Do not change source, test, documentation, generated, or plan file content.`,
+    `- Preserve the exact final file tree currently at ${options.mainBranch}. Apart from the minor CI-enabling changes to intermediate PRs described below, do not change source, test, documentation, generated, or plan file content.`,
     '- First record the final tree identifier. After all history edits, verify that the original branch has the same final tree. If it differs, repair the stack before you finish.',
     '- A single changed file may have its hunks distributed across several slices and branches. Do not require each slice to contain all changes to a file or to change a separate set of files.',
     '- Intermediate branches may contain new changes or a temporary version of a file. This is acceptable when the combined changes from all stack commits produce exactly the original final tree. Verify the combined result before you finish.',

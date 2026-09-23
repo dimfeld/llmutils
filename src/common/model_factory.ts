@@ -54,7 +54,7 @@ function getCustomApiKey(modelString: string, config?: TimConfig): string | unde
 
 /**
  * Creates a language model instance based on the provided model string in the format `provider/model-name`.
- * @param modelString The model identifier in the format `provider/model-name` (e.g., `openai/gpt-4o`, `anthropic/claude-3-5-sonnet-20241022`).
+ * @param modelString The model identifier in the format `provider/model-name` (e.g., `openai/gpt-4o`, `anthropic/claude-opus-5-5`).
  * @param config Optional configuration that may contain custom API key mappings.
  * @returns A LanguageModel instance for the specified provider and model.
  * @throws Error if the provider or model is not supported.

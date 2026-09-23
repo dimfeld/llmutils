@@ -863,7 +863,7 @@ export const timConfigSchema = z
       .optional()
       .describe(
         'Map of model ID or prefix to environment variable name for API key. ' +
-          'Example: {"openai/": "MY_OPENAI_KEY", "anthropic/claude-3.5-sonnet": "CLAUDE_SONNET_KEY"}'
+          'Example: {"openai/": "MY_OPENAI_KEY", "anthropic/claude-opus-5-5": "CLAUDE_OPUS_KEY"}'
       ),
     /** Default executor to use when not specified via --executor option */
     defaultExecutor: z.string().optional().describe('Default executor to use for plan execution'),

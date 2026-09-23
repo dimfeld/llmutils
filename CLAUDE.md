@@ -23,7 +23,7 @@ Top-level source layout:
 - `src/common/` — shared utilities (CLI, fs, git, process, cleanup registry, terminal, config paths, GitHub integration, webhook ingest, prompts)
 - `src/tim/` — plan management commands, DB layer, workspace management, MCP server, executors
 - `src/lib/`, `src/routes/` — SvelteKit web interface (plans browser, sessions monitor)
-- `src/rmfilter/`, `src/rmfind/`, `src/apply-llm-edits/`, etc. — other legacy CLI entry points
+- `src/rmfilter/` — legacy rmfilter CLI entry point
 
 ## Documentation Index
 

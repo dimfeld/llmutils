@@ -153,27 +153,15 @@ When selecting which tasks to batch together, consider:
 - **Efficiency**: Tasks that can reuse context or setup work
 - **Reasonable scope**: Select a single task or 2-5 related tasks rather than attempting all tasks at once.
 
-**IMPORTANT**: Do not attempt to complete all tasks in a single batch. Focus on a reasonable subset that can be completed thoroughly and tested properly.
+Do not attempt to complete all tasks in a single batch. Focus on a reasonable subset that can be completed thoroughly and tested properly.
 
 ## Plan File Updates
 
-After successfully completing your selected tasks, you MUST edit the plan file at: ${options.planFilePath || 'PLAN_FILE_PATH_NOT_PROVIDED'}
+The plan file is at: ${options.planFilePath || 'PLAN_FILE_PATH_NOT_PROVIDED'}
 
-For each completed task, update the YAML structure by setting \`done: true\`. Find each task item using the title. Here's an example:
+Mark each completed task done with \`tim set-task-done\` as described under "Marking Tasks Done".
 
-\`\`\`yaml
-tasks:
-  - title: "Implement user authentication"
-    done: true  # Already completed
-    description: "Add login/logout functionality"
-    
-  - title: "Add password validation"
-    # Add done: true here if this has been completed
-    description: "Implement password strength checking"
-\`\`\`
-
-
-**CRITICAL**: Only mark tasks as \`done: true\` after they have been successfully implemented, tested, and reviewed. Do not mark tasks as done if:
+Only mark tasks done after they have been successfully implemented, tested, and reviewed. Do not mark tasks as done if:
 - Implementation failed or is incomplete
 - Tests are failing
 - Review findings remain unhandled under the Review Iteration Policy
@@ -589,7 +577,7 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
     ? `1. **Task Selection Phase**
    - First, analyze all provided tasks and select a logical subset to work on
    - Document your selection and reasoning before proceeding
-   - Focus on 2-5 related tasks that can be completed together efficiently
+   - Focus on a single task or 2-5 related tasks that can be completed together efficiently
 
 2. **Implementation Phase**`
     : `1. **Implementation Phase**`;
@@ -693,8 +681,8 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
 - After blocking review follow-ups, run focused verification and repeat \`${reviewCommand}\` according to the Review Iteration Policy's scope tiers.`;
   const baseGuidelines = `## Important Guidelines
 
-- **DO NOT implement code directly**. Always delegate implementation tasks to the appropriate subagent via \`tim subagent\`.
-- **DO NOT write tests directly**. Always use the tester subagent via \`tim subagent tester\` for test execution and updates.
+- Do not implement code directly. Delegate implementation tasks to the appropriate subagent via \`tim subagent\`, except for the contained review fixes described below.
+- Do not write tests directly. Use the tester subagent via \`tim subagent tester\` for test execution and updates.
 ${buildReviewIssueCleanupGuidance(planId)}
 ${reviewGuidelines}
 - Exception: if an accepted blocking review finding requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
@@ -886,7 +874,6 @@ ${reviewExecutorGuidance}
 You MUST follow this simplified loop:
 
 ${taskSelectionPhase}
-   - Explore the repository and create a plan on how to implement the task.
    - Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
    - Wait for the subagent to complete and review its output

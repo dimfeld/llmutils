@@ -320,9 +320,9 @@ export async function loadResearchPrompt(
 
 # Plan Split Recommendation
 
-Before you create the structured tasks for this plan, you MUST evaluate whether the work should be split into multiple sibling child plans and check in with your human partner. Propose a concrete split (proposed plan titles, the scope each child owns, and the order they should ship in) and ASK the user whether to apply that split or keep everything in a single plan.
+Before you create the structured tasks for this plan, evaluate whether the work should be split into multiple sibling child plans and check in with your human partner. Propose a concrete split (proposed plan titles, the scope each child owns, and the order they should ship in) and ask the user whether to apply that split or keep everything in a single plan.
 
-This step may be skipped ONLY for exceptionally small, self-contained changes (e.g. a one-file tweak, a localized bug fix, or a tiny refactor where splitting would clearly add overhead without improving clarity). For anything else, present the split proposal even if your recommendation is to keep it as a single plan, so the user can make the call.
+Skip this step only for exceptionally small, self-contained changes (e.g. a one-file tweak, a localized bug fix, or a tiny refactor where splitting would clearly add overhead without improving clarity). For anything else, present the split proposal even if your recommendation is to keep it as a single plan, so the user can make the call.
 
 Consider splitting when:
 
@@ -517,9 +517,9 @@ export async function loadGeneratePrompt(
 
 # Plan Split Recommendation
 
-Before you create the structured tasks for this plan, you MUST evaluate whether the work should be split into multiple sibling child plans and check in with your human partner. Propose a concrete split (proposed plan titles, the scope each child owns, and the order they should ship in) and ASK the user whether to apply that split or keep everything in a single plan.
+Before you create the structured tasks for this plan, evaluate whether the work should be split into multiple sibling child plans and check in with your human partner. Propose a concrete split (proposed plan titles, the scope each child owns, and the order they should ship in) and ask the user whether to apply that split or keep everything in a single plan.
 
-This step may be skipped ONLY for exceptionally small, self-contained changes (e.g. a one-file tweak, a localized bug fix, or a tiny refactor where splitting would clearly add overhead without improving clarity). For anything else, present the split proposal even if your recommendation is to keep it as a single plan, so the user can make the call.
+Skip this step only for exceptionally small, self-contained changes (e.g. a one-file tweak, a localized bug fix, or a tiny refactor where splitting would clearly add overhead without improving clarity). For anything else, present the split proposal even if your recommendation is to keep it as a single plan, so the user can make the call.
 
 Consider splitting when:
 
@@ -544,7 +544,7 @@ If the user approves the split, the main agent should create each child plan usi
 - Document the stacking/dependency relationship in each child plan's details section
 - Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality that works end-to-end${linearChildIssueGuidance}
 
-IMPORTANT: Do NOT split plans purely by architectural layers (frontend/backend, UI/API, client/server) when those layers must ship together to be useful. Each child plan should deliver a complete, working slice that produces real, testable value. (A backend foundation plan followed by stacked UI plans is fine when the foundation is independently useful or the stacking is explicit.)
+Do not split plans purely by architectural layers (frontend/backend, UI/API, client/server) when those layers must ship together to be useful. Each child plan should deliver a complete, working slice that produces real, testable value. (A backend foundation plan followed by stacked UI plans is fine when the foundation is independently useful or the stacking is explicit.)
 
 Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.`
     : '';
@@ -733,7 +733,7 @@ export function registerGenerateMode(
         {
           name: 'allowMultiplePlans',
           description:
-            'Set to true to allow the agent to split work into multiple independent plans whenever that makes the work smaller, clearer, or more independently testable.',
+            'Whether the agent may propose splitting the work into multiple sibling child plans when that makes the work smaller, clearer, or more independently testable. Defaults to true; set to false to keep the work in a single plan.',
           required: false,
         },
       ],
@@ -783,7 +783,7 @@ export function registerGenerateMode(
     server.addTool({
       name: 'update-plan-tasks',
       description:
-        'Update a tim file with generated tasks and details. Takes pre-generated plan content and merges it into the existing plan file, preserving metadata and completed tasks.',
+        'Replace the task list of a tim plan, and optionally update its title, goal, priority, and generated details. The `tasks` array becomes the new task list: pending tasks that are not in the array are removed. Completed tasks are always kept; an incoming task whose title matches a completed task (or that names it as [TASK-N], 1-based) keeps the completed version. `details` replaces only the content between the tim-generated delimiters (adding them if missing) and leaves other sections such as Research unchanged. Plan metadata (ID, parent, dependencies, issue links, status) is not changed, except that a completed plan is reopened to in_progress when the new task list has work left. Returns the plan path and the resulting task count. To add, edit, or remove a single task, use manage-plan-task instead.',
       parameters: generateTasksParameters,
       annotations: {
         destructiveHint: true,
@@ -804,7 +804,7 @@ export function registerGenerateMode(
     server.addTool({
       name: 'manage-plan-task',
       description:
-        'Manage tasks in a plan. Use action="add" to create a new task, action="update" to modify an existing task (by title or index), or action="remove" to delete a task.',
+        'Add, update, or remove one task in a tim plan. action="add" appends a new pending task to the end of the list and requires title and description. action="update" finds a task by taskTitle (case-insensitive partial match, preferred) or taskIndex (1-based) and changes only the fields you pass (title, description, done); it needs at least one of them, and it reopens a completed plan to in_progress if the plan has work left. action="remove" deletes the matched task, and the indexes of later tasks shift down by one. Returns a one-line confirmation with the task index. To replace the whole task list, use update-plan-tasks.',
       parameters: managePlanTaskParameters,
       annotations: {
         destructiveHint: true,
@@ -879,7 +879,7 @@ export function registerGenerateMode(
     server.addTool({
       name: 'create-plan',
       description:
-        'Create a new tim plan file with specified properties. Do not use this tool as part of your internal "plan mode".',
+        'Create a new pending tim plan with no tasks and return its new numeric ID and path. The IDs in parent, dependsOn, discoveredFrom, and basePlan must refer to existing plans, or the call fails. When parent is set, the new plan is also added to the parent\'s dependencies, and a completed parent is reopened to in_progress. Add tasks afterwards with update-plan-tasks or manage-plan-task. Do not use this tool as part of your internal "plan mode".',
       parameters: createPlanParameters,
       annotations: {
         destructiveHint: true,
@@ -894,7 +894,7 @@ export function registerGenerateMode(
     server.addTool({
       name: 'attach_plan_artifact',
       description:
-        'Attach a file artifact to a tim plan. Returns a UUID that can be referenced in follow-up responses.',
+        'Attach a local file to a tim plan as an artifact. filePath must be a readable regular file; tim copies it into artifact storage, so later changes to the source file are not included. Set reference=true for reference material (specs, schemas, designs) that planning and implementation agents should read; tim then gives the file to those agents under .tim/reference-artifacts, and message becomes its description. Returns JSON with the artifact uuid, filename, mimeType, and size.',
       parameters: attachPlanArtifactParameters,
       annotations: {
         destructiveHint: false,

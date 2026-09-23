@@ -124,7 +124,7 @@ If no plan ID is given, `tim sync` scans all `.plan.md` files in `.tim/plans/` a
 
 ### list-ready-plans
 
-Find plans ready to execute (dependencies satisfied). You can also use `rmp ready` for a plain text output.
+Find plans ready to execute (dependencies satisfied). You can also use `tim ready` for a plain text output.
 
 ```bash
 echo '{}' | tim tools list-ready-plans

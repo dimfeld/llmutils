@@ -199,7 +199,7 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('Test Plan');
     expect(message?.text).toContain('Please analyze this project description');
     expect(message?.text).toContain(
-      'Before you create the structured tasks for this plan, you MUST evaluate whether the work should be split'
+      'Before you create the structured tasks for this plan, evaluate whether the work should be split'
     );
     expect(message?.text).toContain('## Manual Testing Runbooks');
   });
@@ -285,7 +285,7 @@ describe('tim MCP generate mode helpers', () => {
       'Do not create a VCS commit for plan-only work because there is nothing to commit.'
     );
     expect(message?.text).toContain(
-      'Before you create the structured tasks for this plan, you MUST evaluate whether the work should be split'
+      'Before you create the structured tasks for this plan, evaluate whether the work should be split'
     );
     expect(message?.text).toContain('Break the project into phases');
   });

@@ -71,12 +71,12 @@ Use read-only inspection and non-mutating test commands. Other agents may be cha
 `;
   }
   const subagentDirective = useSubagents
-    ? 'CRITICAL: Use the available sub-agents to delegate in-depth analysis, run tests, and create findings before delivering your final verdict.\n\n'
+    ? 'Use the available sub-agents for in-depth analysis and test runs when the review scope is large enough to split into independent parts.\n\n'
     : '';
 
   return `You are a tim critical code reviewer whose job is to find problems and issues with implementations. tim is a tool for managing step-by-step project plans. Your output will be used by other agents to determine if they need to go back and fix things, so you must be thorough in identifying actual problems.
 
-${subagentDirective}CRITICAL: Do not be polite or encouraging. Your job is to find issues, not to praise good code. If code is acceptable, simply state that briefly. Focus your energy on identifying real problems that need fixing.
+${subagentDirective}Do not be polite or encouraging. Your job is to find issues, not to praise good code. If code is acceptable, simply state that briefly. Focus your energy on identifying real problems that need fixing.
 
 Use version-control commands to see the recent related commits and which files were changed, so you know what to focus on. When the review context provides an exact \`Diff Base\` or \`Base SHA\`, use that commit as the diff start and do not recompute it from a branch or remote ref. Those refs may have moved after the review started. Only when no exact base SHA is provided, and you must diff against a base branch, use its merge-base (for example, \`git diff $(git merge-base <branch> HEAD)\` or \`git diff <branch>...HEAD\`).
 
@@ -85,8 +85,6 @@ Other reviewers may be examining the same workspace in parallel. Do not mutate c
 Make sure that your feedback is congruent with the requirements of the project. For example, flagging increased number of rows from a database query is not useful feedback if the feature being implemented requires it.
 
 When reviewing changes that were made due to review feedback, be sure that the fix not only addresses the original issue, but also does not introduce any new issues.
-
-Think deeply before providing your review output.
 `;
 }
 
@@ -151,9 +149,7 @@ If you notice issues in the codebase that pre-date the current changes (i.e. the
 by this work), they may still be useful to note. However, pre-existing issues MUST always be labeled as "info" severity
 in the review output. Only issues introduced or affected by the current changes should receive higher severity ratings.
 
-## Don't be too Pedantic
-
-Although you should be thorough in reviewing, you should not be too picky.
+## Out-of-Scope Items
 
 - Do not mention code formatting issues--we have autoformatters for that.
 - When a function is wrapped in middleware, you can assume that the middleware is doing its job. For example, if the
@@ -161,7 +157,7 @@ middleware already verifies the presence of an organization and user, the handle
 
 ## Final Pass Before Reporting
 
-Once you have finished your analysis and are ready to produce your report, review your list of issues one last time. Remove any issues that you have determined are not actually problems, and downgrade to "info" severity any issues that are only minor concerns or unlikely to cause real harm. The goal is to avoid confusing the person reading the report with false positives or overstated severity.
+Once you have finished your analysis and are ready to produce your report, review your list of issues one last time. Remove any issues that you have determined are not actually problems, and lower any overstated severity so it matches the rubric above. The goal is to avoid confusing the person reading the report with false positives or overstated severity.
 `;
 }
 
@@ -178,12 +174,12 @@ Above all, be **ambitious** about code structure. Do not merely identify local c
 - **Diff-only scope**: Only review code that appears in the diff (added or modified lines). Do not flag issues in unchanged surrounding context. The one exception is pre-existing code that the diff makes materially worse — and even then see "Pre-existing Issues" below.
 - **Confidence gate**: Only report findings you are confident about. If you cannot articulate the concrete maintainability cost or the cleaner alternative, leave it out. Precision matters more than recall.
 - **Clarity is required**: Every suggested restructure must improve code clarity and make the implementation easier to understand. Do not suggest a refactor that makes the code harder to understand unless it provides a clear, substantial benefit; if the other benefit is small, leave the suggestion out.
-- **Suggestions are mandatory for medium+ severity**: Every finding at medium severity or above MUST include a concrete suggestion showing the cleaner structure — which code moves where, which branch disappears, which abstraction to collapse. "Consider refactoring" or "this could be cleaner" is NOT a suggestion.
+- **Suggestions are mandatory for minor+ severity**: Every finding at \`minor\` severity or above must include a concrete suggestion showing the cleaner structure — which code moves where, which branch disappears, which abstraction to collapse. "Consider refactoring" or "this could be cleaner" is NOT a suggestion.
 - **No artificial finding cap**: Report every high-conviction structural issue you find in the changed code. Avoid cosmetic nits and speculative cleanup notes, but do not suppress real structural problems because several have already been found.
 
 ## Non-negotiable standards
 
-0. **Be ambitious about structural simplification.** Do not stop at "this could be a bit cleaner." Look for opportunities to reframe the change so whole branches, helpers, modes, conditionals, or layers disappear entirely. Assume there is often a simplification move available: a re-organization that uses the existing architecture more effectively and makes the change dramatically simpler.
+0. **Be ambitious about structural simplification.** Do not stop at "this could be a bit cleaner." Look for opportunities to reframe the change so whole branches, helpers, modes, conditionals, or layers disappear entirely. Check whether a re-organization that uses the existing architecture more effectively would make the change dramatically simpler.
 
 1. **Guard the 1000-line boundary.** Do not let the PR push a file from under 1,000 lines to over 1,000 lines without a very strong reason. Treat crossing that threshold as a strong code-quality smell. Prefer extracting helpers, subcomponents, modules, or local abstractions over letting a file sprawl. Only waive this when there is a compelling structural reason and the resulting file is still clearly organized.
 
@@ -244,10 +240,11 @@ Do not be satisfied with "maybe rename this" feedback when the real issue is str
 
 ## Severity calibration
 
+Use only the four output severities: \`critical\`, \`major\`, \`minor\`, and \`info\`.
+
 - **critical**: A structural regression or boundary violation that will significantly harm maintainability and require rework: feature logic scattered across shared core paths, a module turned into a god object, a magical mechanism that makes a core flow unreasonable.
-- **high**: A clear missed simplification opportunity or spaghetti-growth that will compound: ad-hoc branching tangling an existing flow, a file pushed past 1,000 lines with splittable new code, a bespoke duplicate of a canonical helper.
-- **medium**: A structural smell worth fixing now: an unnecessary wrapper/cast, mildly misplaced logic, optionality obscuring an invariant.
-- **low**: A minor structural improvement that would help but is not urgent.
+- **major**: A clear missed simplification opportunity or spaghetti-growth that will compound: ad-hoc branching tangling an existing flow, a file pushed past 1,000 lines with splittable new code, a bespoke duplicate of a canonical helper.
+- **minor**: A structural smell or improvement that does not block: an unnecessary wrapper/cast, mildly misplaced logic, optionality obscuring an invariant.
 - **info**: An observation, or a pre-existing issue in unchanged code.
 
 ## Pre-existing Issues
@@ -384,13 +381,7 @@ ${contextContent}${customInstructionsSection}
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to implement together. When working with multiple tasks:
 - ${contextTaskFocus}
-- Work on them efficiently by considering shared code, utilities, and patterns
-- Look for opportunities to implement common functionality once and reuse it
-- Avoid duplicating similar logic across different tasks
-- Consider the interdependencies between tasks and implement in a logical order
-- Group related changes together to maintain code coherence
-- Ensure that all tasks work together harmoniously without conflicts
-- Test the complete batch of functionality, not just individual pieces
+- Implement functionality the tasks share once and reuse it, and test the complete batch of functionality, not just individual pieces
 
 ## Key Guidelines:
 
@@ -423,11 +414,9 @@ ${progressGuidance}${buildPersistentAgentCommunicationGuidance(promptContext, 'i
 ${buildCommitGuidance(promptContext)}${buildVcsGuidance(progressGuidanceOptions?.useJj)}
 
 ### Implementation Approach
-1. First understand the existing code structure and patterns. If you have a plan file to reference and existing work has been done on the plan, you can find it described in the "# Implementation Notes" section of the plan file's details field.
-2. Look at similar implementations in the codebase
-3. Implement features incrementally - don't try to do everything at once
-4. Test your implementation as you go. Tests must test the actual code and not just simulate or reproduce it. Move functions to another file and export them from there if it makes it easier to test.
-5. Ensure all checks and validations pass before marking work as complete
+- If you have a plan file to reference and existing work has been done on the plan, you can find it described in the "# Implementation Notes" section of the plan file's details field.
+- Tests must test the actual code and not just simulate or reproduce it. Move functions to another file and export them from there if it makes it easier to test.
+- Ensure all checks and validations pass before marking work as complete.
 
 ## Reporting Plan Changes
 
@@ -476,14 +465,7 @@ ${buildCommitGuidance(promptContext)}${buildVcsGuidance(progressGuidanceOptions?
 ## Handling Multiple Tasks:
 You may receive a single task or multiple related tasks to test. When testing multiple tasks:
 - ${contextTaskFocus}
-- Create comprehensive tests that cover all functionality from all provided tasks
-- Look for integration points between different tasks and test their interactions
-- Avoid duplicating similar test setups - consolidate shared test infrastructure
-- Test the complete workflow across all implemented tasks, not just individual features
-- Ensure test coverage spans the entire batch of functionality
-- Create tests that verify tasks work together correctly without conflicts
-- Consider edge cases that might arise from the interaction of multiple tasks
-- Group related tests logically while maintaining clear test organization
+- Cover the functionality from all provided tasks, including the integration points and edge cases where the tasks interact
 
 ## Testing Guidelines:
 
@@ -778,8 +760,6 @@ The plan file tasks may not be marked as done in the plan file, because they are
 ${buildReviewerCriticalIssuesGuidance()}
 
 ${responseFormatGuidance}${failureProtocolGuidance}
-
-DO NOT include praise, encouragement, or positive feedback. Focus exclusively on identifying problems that need to be resolved.
 `,
   };
 }
@@ -860,7 +840,7 @@ Generate a comprehensive pull request description based on the provided plan con
 
 ## Required Sections
 
-Your pull request description must include the following sections:
+Your pull request description must include the following sections. Sections 5 and 7 are included only when the conditions they state apply.
 
 ### 1. Summary of Implementation
 - Provide a clear, concise overview of what was implemented
@@ -919,7 +899,7 @@ Structure your response as a well-formatted markdown document with:
 - Use technical language appropriate for the development team
 - Reference specific files, functions, or modules when relevant
 - Explain the "why" behind decisions, not just the "what"
-- Keep the description comprehensive but concise
+- Match the length to what the change needs: cover the substance, but do not pad the description with filler sections, redundant summaries, or boilerplate
 - Ensure all sections are relevant to the actual changes made
 
 Generate the pull request description now, ensuring it covers all required sections based on the provided context.`,

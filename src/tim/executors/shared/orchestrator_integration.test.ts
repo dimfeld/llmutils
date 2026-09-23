@@ -32,7 +32,8 @@ test('wrapWithOrchestration integrates batch mode properly', () => {
   expect(batchResult).toContain('Task Selection Guidelines');
   expect(batchResult).toContain('Related functionality');
   expect(batchResult).toContain('Shared files');
-  expect(batchResult).toContain('done: true');
+  expect(batchResult).toContain('tim set-task-done');
+  expect(batchResult).not.toContain('done: true');
   expect(batchResult).toContain(`tim subagent implementer`);
   expect(batchResult).toContain('Test context content for implementation');
 
@@ -75,16 +76,14 @@ test('wrapWithOrchestration includes batch mode workflow instructions', () => {
   expect(result).toContain('1. **Task Selection Phase**');
   expect(result).toContain('analyze all provided tasks and select a logical subset to work on');
   expect(result).toContain('Document your selection and reasoning');
-  expect(result).toContain('Focus on 2-5 related tasks');
+  expect(result).toContain('Focus on a single task or 2-5 related tasks');
 
   // Check for plan update instructions
   expect(result).toContain('4. **Update the plan file**');
   expect(result).toContain('5. Mark the tasks done.');
   expect(result).toContain('## Plan File Updates');
-  expect(result).toContain('edit the plan file');
-  expect(result).toContain(
-    'Only mark tasks as `done: true` after they have been successfully implemented'
-  );
+  expect(result).toContain('tim set-task-done');
+  expect(result).toContain('Only mark tasks done after they have been successfully implemented');
 
   // Check for batch mode guidelines
   expect(result).toContain('**Be selective**');

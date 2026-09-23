@@ -37,12 +37,16 @@ export const SUBAGENT_AGENT_TOOL_NAMES = [
 
 /** Canonical model-facing descriptions shared by the Claude and Codex adapters. */
 export const AGENT_TOOL_DESCRIPTIONS = {
-  StartTimAgent: 'Start a named subagent with a task and initial message.',
+  StartTimAgent:
+    'Start a persistent tim subagent and return immediately without waiting for it to finish. `type` is implementer, tester, tdd-tests, or reviewer (reviewers are read-only and advisory). `executor` is claude-code or codex-cli. `initialMessage` is the assignment. `name` is optional: lowercase letters, digits, and hyphens, at most 48 characters, and `orchestrator` is reserved; omit it to get a generated name. Returns the canonical name, id, type, executor, and lifecycle state; address the agent by the returned name. Fails when the session already has 8 nonterminal subagents.',
   ListTimAgents:
-    'List active agents other than yourself, including canonical names, types, executors, and current states.',
-  SendTimAgentMessage: 'Send a message to an active agent by name.',
-  StopTimAgent: 'Gracefully or forcibly stop an active subagent by name.',
-  FinishTimAgent: 'Finish your current subagent work and provide an optional final status.',
+    'List active agents other than yourself, including canonical names, types, executors, and current states. Only nonterminal agents appear; agents that exited or failed are not listed.',
+  SendTimAgentMessage:
+    'Send a message to an active agent by its canonical name (`orchestrator` addresses the root). The runtime adds trusted sender attribution. Returns `delivery`: `steered` (delivered into the active turn), `queued` (accepted and waiting in the recipient queue), or `started-idle-turn` (an idle agent started a new turn). All three mean the message was accepted, so do not resend a queued message. Messages are limited to 65,536 UTF-8 bytes.',
+  StopTimAgent:
+    'Stop an active subagent by name. By default the stop is graceful: the agent gets `message` as shutdown context and is forced to stop if it produces no output for 2 minutes. Set `force` to stop it immediately. Returns `graceful-requested`, `forced`, or `already-stopping` and the resulting lifecycle state. Wait for the terminal notification before treating the agent as finished.',
+  FinishTimAgent:
+    'Finish your own subagent assignment. It cannot finish another agent. `message` is an optional final status that the orchestrator receives in the terminal notification. Returns the `finishing` state.',
 } as const satisfies Readonly<Record<AgentToolName, string>>;
 
 export function getAgentToolNames(role: AgentRuntimeRole): readonly AgentToolName[] {

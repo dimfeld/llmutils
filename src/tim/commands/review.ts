@@ -4323,16 +4323,7 @@ export function buildAutofixPrompt(
     ``,
     `## Instructions`,
     ``,
-    `Please fix all the issues identified in the review while maintaining the plan requirements. Ensure that:`,
-    ``,
-    `1. All identified bugs and issues are resolved`,
-    `2. The code still fulfills the plan's goals and tasks`,
-    `3. Code quality is improved according to the review feedback`,
-    `4. All existing functionality is preserved`,
-    `5. Proper error handling is maintained or improved`,
-    `6. Tests are updated if necessary`,
-    ``,
-    `Focus on making targeted fixes that address the specific issues found during the review.`
+    `Fix the issues listed above with targeted changes. The code must still fulfill the plan's goals and tasks, and existing functionality must be preserved. Update tests where a fix changes tested behavior.`
   );
 
   return prompt.join('\n');
