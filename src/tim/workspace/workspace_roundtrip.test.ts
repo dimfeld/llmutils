@@ -20,6 +20,7 @@ vi.mock('../../common/git.js', () => ({
     workingTreeChanged: false,
     hasDifferences: true,
   })),
+  hasNonEmptyCommitsSince: vi.fn(async () => true),
   ensureJjPublishedCommitsHaveDescriptions: vi.fn(async () => []),
   getUsingJj: vi.fn(async () => true),
   getCurrentBranchName: vi.fn(async () => 'task-123'),
@@ -73,6 +74,7 @@ import {
   captureRepositoryState,
   compareRepositoryStates,
   ensureJjPublishedCommitsHaveDescriptions,
+  hasNonEmptyCommitsSince,
   getUsingJj,
   getCurrentBranchName,
   getTrunkBranch,
@@ -103,6 +105,7 @@ describe('runPostExecutionWorkspaceSync', () => {
   const mockGetTrunkBranch = vi.mocked(getTrunkBranch);
   const mockCaptureRepositoryState = vi.mocked(captureRepositoryState);
   const mockCompareRepositoryStates = vi.mocked(compareRepositoryStates);
+  const mockHasNonEmptyCommitsSince = vi.mocked(hasNonEmptyCommitsSince);
   const mockHasUncommittedChanges = vi.mocked(hasUncommittedChanges);
   const mockSetWorkspaceBookmarkToCurrent = vi.mocked(setWorkspaceBookmarkToCurrent);
   const mockPushWorkspaceRefToRemote = vi.mocked(pushWorkspaceRefToRemote);
@@ -121,6 +124,7 @@ describe('runPostExecutionWorkspaceSync', () => {
     mockLogSpawn.mockReturnValue({ exited: Promise.resolve(0), exitCode: 0 } as any);
     mockEnsureJjPublishedCommitsHaveDescriptions.mockResolvedValue([]);
     mockGetUsingJj.mockResolvedValue(true);
+    mockHasNonEmptyCommitsSince.mockResolvedValue(true);
     mockGetTrunkBranch.mockResolvedValue('main');
     mockCaptureRepositoryState.mockResolvedValue({
       commitHash: 'after',

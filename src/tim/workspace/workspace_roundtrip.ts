@@ -7,6 +7,7 @@ import {
   getCurrentBranchName,
   getTrunkBranch,
   getUsingJj,
+  hasNonEmptyCommitsSince,
   hasUncommittedChanges,
   type RepositoryState,
 } from '../../common/git.js';
@@ -137,12 +138,22 @@ export async function runPostExecutionWorkspaceSync(
   }
   const postExecutionState = await captureRepositoryState(context.executionWorkspacePath);
   const hasPendingChanges = await hasUncommittedChanges(context.executionWorkspacePath);
-  const hasRepositoryChanges = context.preExecutionState
+  const repositoryStateChanged = context.preExecutionState
     ? compareRepositoryStates(context.preExecutionState, postExecutionState).hasDifferences
     : true;
+  const hasContentChanges =
+    repositoryStateChanged &&
+    context.preExecutionState?.commitHash &&
+    postExecutionState.commitHash
+      ? await hasNonEmptyCommitsSince(
+          context.executionWorkspacePath,
+          context.preExecutionState.commitHash,
+          postExecutionState.commitHash
+        )
+      : repositoryStateChanged;
 
   try {
-    if (!hasRepositoryChanges && !hasPendingChanges) {
+    if (!hasContentChanges && !hasPendingChanges) {
       if (context.branchCreatedDuringSetup) {
         await deleteUnusedLocalBranch(context);
       }

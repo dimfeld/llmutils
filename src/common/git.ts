@@ -341,6 +341,36 @@ export function compareRepositoryStates(
   };
 }
 
+/** Returns whether any commit after `beforeCommit` adds or removes repository content. */
+export async function hasNonEmptyCommitsSince(
+  gitRoot: string,
+  beforeCommit: string,
+  afterCommit: string
+): Promise<boolean> {
+  const commitsResult = await $`git rev-list --reverse ${beforeCommit}..${afterCommit}`
+    .cwd(gitRoot)
+    .nothrow()
+    .quiet();
+  if (commitsResult.exitCode !== 0) {
+    // If the range cannot be checked, preserve the existing behavior and allow the push.
+    return true;
+  }
+
+  const commits = commitsResult.stdout.toString().trim().split('\n').filter(Boolean);
+  for (const commit of commits) {
+    const diffResult = await $`git diff-tree --quiet --root -r -m ${commit}`
+      .cwd(gitRoot)
+      .nothrow()
+      .quiet();
+    if (diffResult.exitCode !== 0) {
+      // Exit code 1 means the commit has a diff. Other errors must also fail open.
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function computeGitWorkingTreeHash(cwd: string): Promise<string | undefined> {
   try {
     const diffResult = await $`git diff --no-color HEAD`.cwd(cwd).quiet().nothrow();
