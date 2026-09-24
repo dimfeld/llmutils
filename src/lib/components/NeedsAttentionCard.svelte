@@ -13,7 +13,7 @@
     projectId: string;
     projectName?: string;
     selected?: boolean;
-    developmentWorkflow?: 'pr-based' | 'trunk-based';
+    developmentWorkflow?: 'pr-based' | 'trunk-based' | 'squash-rebase';
   } = $props();
 
   let planHref = $derived(`/projects/${projectId}/active/plan/${item.planUuid}`);

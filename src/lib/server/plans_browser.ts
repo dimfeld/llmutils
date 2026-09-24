@@ -219,7 +219,7 @@ export async function getPlansPageData(db: Database, projectId: string): Promise
 export interface DashboardData {
   plans: DashboardPlan[];
   /** Per-project development workflow setting. Keyed by numeric project ID. */
-  developmentWorkflowByProjectId: Record<number, 'pr-based' | 'trunk-based'>;
+  developmentWorkflowByProjectId: Record<number, 'pr-based' | 'trunk-based' | 'squash-rebase'>;
 }
 
 const DASHBOARD_DISPLAY_STATUSES = new Set<EnrichedPlan['displayStatus']>([
@@ -265,7 +265,10 @@ export async function getDashboardData(db: Database, projectId: string): Promise
 
   // Build per-project developmentWorkflow map, grouping by git root to avoid
   // duplicate config loads when multiple projects share a repository.
-  const developmentWorkflowByProjectId: Record<number, 'pr-based' | 'trunk-based'> = {};
+  const developmentWorkflowByProjectId: Record<
+    number,
+    'pr-based' | 'trunk-based' | 'squash-rebase'
+  > = {};
   const projectIds = [...new Set(plans.map((p) => p.projectId))];
   const gitRootToWorkflowProjectIds = new Map<string, number[]>();
   for (const pid of projectIds) {
@@ -279,7 +282,7 @@ export async function getDashboardData(db: Database, projectId: string): Promise
   }
   for (const [gitRoot, groupedProjectIds] of gitRootToWorkflowProjectIds) {
     const cwd = gitRoot === '__default__' ? undefined : gitRoot;
-    let workflow: 'pr-based' | 'trunk-based' = 'pr-based';
+    let workflow: 'pr-based' | 'trunk-based' | 'squash-rebase' = 'pr-based';
     if (cwd) {
       try {
         const config = await loadEffectiveConfig(undefined, { cwd });

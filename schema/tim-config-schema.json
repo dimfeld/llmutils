@@ -894,11 +894,12 @@
       "additionalProperties": false
     },
     "developmentWorkflow": {
-      "description": "Development workflow type, affects UI button visibility",
+      "description": "Development workflow: pr-based creates pull requests, trunk-based uses direct integration, or squash-rebase finalizes completed plan branches after execution.",
       "type": "string",
       "enum": [
         "pr-based",
-        "trunk-based"
+        "trunk-based",
+        "squash-rebase"
       ]
     },
     "generate": {

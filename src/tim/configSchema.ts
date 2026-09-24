@@ -832,9 +832,11 @@ export const timConfigSchema = z
       .optional()
       .describe('Configuration for the autoreview command'),
     developmentWorkflow: z
-      .enum(['pr-based', 'trunk-based'])
+      .enum(['pr-based', 'trunk-based', 'squash-rebase'])
       .optional()
-      .describe('Development workflow type, affects UI button visibility'),
+      .describe(
+        'Development workflow: pr-based creates pull requests, trunk-based uses direct integration, or squash-rebase finalizes completed plan branches after execution.'
+      ),
     /** Default settings for the generate command */
     generate: z
       .object({

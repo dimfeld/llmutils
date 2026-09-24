@@ -5,7 +5,12 @@ import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'node:fs/promises';
 import { promptConfirm } from '../../../common/input.js';
-import { getCurrentBranchName, getGitRoot, getTrunkBranch } from '../../../common/git.js';
+import {
+  getCurrentBranchName,
+  getGitRoot,
+  getTrunkBranch,
+  getUsingJj,
+} from '../../../common/git.js';
 import { getLogDir } from '../../../common/config_paths.js';
 import { CleanupRegistry } from '../../../common/cleanup_registry.js';
 import { getLoggerAdapter } from '../../../logging/adapter.js';
@@ -32,7 +37,7 @@ import {
   defaultModelForExecutor,
 } from '../../executors/index.js';
 import type { ClaudeCodeReasoningEffort, CodexReasoningLevel } from '../../executors/schemas.js';
-import type { ExecutorCommonOptions } from '../../executors/types.js';
+import type { Executor, ExecutorCommonOptions } from '../../executors/types.js';
 import { DEFAULT_ORCHESTRATOR_INSTRUCTION_MODE } from '../../executors/shared/orchestrator_instruction_mode.js';
 import type { PlanSchema } from '../../planSchema.js';
 import {
@@ -51,6 +56,7 @@ import { buildExecutionPromptWithoutSteps } from '../../prompt_builder.js';
 import { tryMaterializeReferenceArtifactPathsForExecution } from '../../reference_artifacts.js';
 import { buildDescriptionFromPlan } from '../../display_utils.js';
 import { executeBatchMode } from './batch_mode.js';
+import { runPlanDevelopmentMode } from './development_mode.js';
 import { sendFailureReport, timestamp } from './agent_helpers.js';
 import { moveLinearIssuesToInProgressForAgentRun } from './linear_issue_state.js';
 import { markParentInProgress } from './parent_plans.js';
@@ -462,6 +468,7 @@ export async function timAgent(
   let postExecutionError: Error | undefined;
   let failureReason: Error | undefined;
   let lastKnownPlan: PlanSchema | undefined;
+  let planExecutor: Executor | undefined;
   let recordedBranch: string | undefined;
   let proofGenerated = false;
   let lifecycleManager: LifecycleManager | undefined;
@@ -768,6 +775,7 @@ export async function timAgent(
       executorOptions !== undefined
         ? buildExecutorAndLog(executorName, sharedExecutorOptions, config, executorOptions)
         : buildExecutorAndLog(executorName, sharedExecutorOptions, config);
+    planExecutor = executor;
     const isNonInteractiveReview = !terminalInputEnabled;
     const executionMode: 'normal' | 'simple' | 'tdd' = tddModeEnabled
       ? 'tdd'
@@ -1658,8 +1666,48 @@ export async function timAgent(
       }
     }
 
+    if (
+      !isShuttingDown() &&
+      !executionError &&
+      !options.dryRun &&
+      config.developmentWorkflow === 'squash-rebase' &&
+      lastKnownPlan &&
+      (lastKnownPlan.status === 'done' || lastKnownPlan.status === 'needs_review') &&
+      lastKnownPlan.tasks.every((task) => task.done)
+    ) {
+      try {
+        const branch = lastKnownPlan.branch ?? recordedBranch;
+        if (!branch) {
+          throw new Error('Completed plan has no branch to squash and rebase.');
+        }
+        if (branch === 'main') {
+          throw new Error('Completed plan branch is main; refusing to rewrite main.');
+        }
+        if (!planExecutor) {
+          throw new Error('Completed plan has no executor for branch finalization.');
+        }
+        await runPlanDevelopmentMode({
+          executor: planExecutor,
+          planId: String(lastKnownPlan.id),
+          planTitle: lastKnownPlan.title ?? 'Untitled Plan',
+          planFilePath: currentPlanFile,
+          branch,
+          useJj: await getUsingJj(currentBaseDir),
+        });
+      } catch (err) {
+        const finalizationError = err instanceof Error ? err : new Error(String(err));
+        executionError = finalizationError;
+        postExecutionError = finalizationError;
+      }
+    }
+
     // Auto-create PR if configured and plan completed successfully
-    if (!isShuttingDown() && !executionError && lastKnownPlan) {
+    if (
+      !isShuttingDown() &&
+      !executionError &&
+      lastKnownPlan &&
+      config.developmentWorkflow !== 'squash-rebase'
+    ) {
       let mainPrUrl: string | null = null;
       const autoCreateSetting = config.prCreation?.autoCreatePr ?? 'never';
       const completionStatus = lastKnownPlan.status;

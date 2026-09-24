@@ -33,7 +33,7 @@
     epic: boolean;
     projectId: string;
     depsFullyResolved?: boolean;
-    developmentWorkflow?: 'pr-based' | 'trunk-based';
+    developmentWorkflow?: 'pr-based' | 'trunk-based' | 'squash-rebase';
     waitingForInputReason?: string;
     inline?: boolean;
   } = $props();

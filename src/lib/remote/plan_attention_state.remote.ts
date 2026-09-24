@@ -17,7 +17,7 @@ export interface PlanAttentionState {
   canUpdateDocs: boolean;
   hasPr: boolean;
   epic: boolean;
-  developmentWorkflow: 'pr-based' | 'trunk-based';
+  developmentWorkflow: 'pr-based' | 'trunk-based' | 'squash-rebase';
 }
 
 export const getPlanAttentionState = query(planUuidSchema, async ({ planUuid }) => {
@@ -30,7 +30,7 @@ export const getPlanAttentionState = query(planUuidSchema, async ({ planUuid }) 
   const plan = plans.find((p) => p.uuid === planUuid);
   if (!plan) return null;
 
-  let developmentWorkflow: 'pr-based' | 'trunk-based' = 'pr-based';
+  let developmentWorkflow: 'pr-based' | 'trunk-based' | 'squash-rebase' = 'pr-based';
   const gitRoot = getPreferredProjectGitRoot(db, planRow.project_id);
   if (gitRoot) {
     try {

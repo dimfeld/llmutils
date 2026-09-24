@@ -1573,6 +1573,13 @@ describe('configSchema', () => {
       expect(result.developmentWorkflow).toBe('trunk-based');
     });
 
+    test('should accept "squash-rebase" value', () => {
+      const config = { developmentWorkflow: 'squash-rebase' as const };
+
+      const result = timConfigSchema.parse(config);
+      expect(result.developmentWorkflow).toBe('squash-rebase');
+    });
+
     test('should reject invalid developmentWorkflow values', () => {
       const config = {
         developmentWorkflow: 'hybrid',

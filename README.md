@@ -823,6 +823,7 @@ Important config areas:
 - `inbox.prs` - PR inbox behavior; `enabled` plus an `ignoreUsers` list that concatenates across config layers (see [PR inbox](#pr-inbox))
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
 - `quality` - `production` (default) keeps the existing prompt requirements. Set `quality: hobby` for an implementer-only execution flow. The implementer writes code and tests, and the orchestrator skips the separate tester and review phases. Explicit task requirements and existing protections still apply.
+- `developmentWorkflow` - `pr-based` (default) uses pull requests, `trunk-based` hides pull request actions, or `squash-rebase` squashes a completed plan onto the latest `main` and pushes it directly. With `squash-rebase`, the agent resolves conflicts and retries if `main` moves during the push. It does not create a pull request and removes the plan branch after the push. This applies to both batch and serial `tim agent` runs.
 - `orchestratorInstructionMode` - how prescriptive the `tim agent` orchestrator is with its subagents; `detailed` (default) or `delegated`
 - `subagents.advisor` - executor and model for the optional advisor consultation subagent; the orchestrator is only told about the advisor when both are set
 - `review.remediationPlan` - set to `false` to stop a full-plan `tim review` from consulting the advisor for a remediation plan; only meaningful when `subagents.advisor` is configured

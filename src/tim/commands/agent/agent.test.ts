@@ -2162,6 +2162,42 @@ describe('timAgent - Batch Tasks Mode', () => {
     expect(updatedPlan.status).toBe('needs_review');
   });
 
+  test('squash-rebase development mode runs after a completed batch', async () => {
+    loadEffectiveConfigImpl = async () => ({
+      models: {},
+      postApplyCommands: [],
+      developmentWorkflow: 'squash-rebase',
+    });
+    const plan = await readPlanFile(batchPlanFile);
+    plan.branch = 'feature/batch-test';
+    await writePlanFile(batchPlanFile, plan);
+    vi.spyOn(testBatchExecutor!, 'execute').mockImplementation(async (_prompt, planInfo) => {
+      if (planInfo.executionMode === 'bare') {
+        return { success: true, content: 'Branch pushed' };
+      }
+      const current = await readPlanFile(planInfo.planFilePath);
+      current.tasks.forEach((task) => {
+        task.done = true;
+      });
+      await writePlanFile(planInfo.planFilePath, current);
+      return { success: true, content: 'Tasks complete' };
+    });
+    const execute = vi.spyOn(testBatchExecutor!, 'execute');
+
+    const { timAgent } = await import('./agent.js');
+    await timAgent(200, { batchTasks: true, log: false, nonInteractive: true } as any, {
+      config: {},
+    });
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({ executionMode: 'bare', planId: '200' })
+    );
+    expect(execute.mock.calls[1]?.[0]).toContain(
+      'Pull the latest `main` state from `origin` before rewriting'
+    );
+  });
+
   test('batch mode completes in multiple iterations with incremental task completion', async () => {
     testBatchExecutor = new TestBatchExecutor('incremental', 2);
     buildExecutorAndLogSpy.mockReturnValue(testBatchExecutor as any);
