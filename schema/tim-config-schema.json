@@ -224,6 +224,9 @@
       "properties": {
         "agentMessaging": {
           "type": "boolean"
+        },
+        "implementerTests": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false

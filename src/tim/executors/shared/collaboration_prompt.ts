@@ -10,13 +10,16 @@ import {
 
 /** Root-only tool and lifecycle contract for enabled collaborative sessions. */
 export function buildCollaborativeToolGuidance(options?: OrchestrationOptions): string {
+  const agentTypes = options?.implementerTests
+    ? '`implementer`, `tdd-tests`, or `reviewer`'
+    : '`implementer`, `tester`, `tdd-tests`, or `reviewer`';
   return `## Collaborative Agent Tools
 
 This root session has collaborative agent tools enabled. Use them for delegated implementation, testing, TDD test writing, and advisory review work.
 
 These \`Tim\` agent tools belong to the \`tim\` collaborative runtime. They are separate from any built-in subagent creation or messaging tools provided by your model host. Use the \`Tim\` tools for this workflow, and do not mix their agent names, lifecycle state, or messages with the host's built-in subagent system.
 
-- **StartTimAgent** starts a persistent subagent without waiting for it to finish. Its type is one of \`implementer\`, \`tester\`, \`tdd-tests\`, or \`reviewer\`; its executor is \`claude-code\` or \`codex-cli\`; and ${buildStartAgentInitialMessageContract(options)}. For a multi-phase assignment, state that the agent should remain available and what completes the full assignment. A subagent can remain active across implementation, review, and follow-up turns.
+- **StartTimAgent** starts a persistent subagent without waiting for it to finish. Its type is one of ${agentTypes}; its executor is \`claude-code\` or \`codex-cli\`; and ${buildStartAgentInitialMessageContract(options)}. For a multi-phase assignment, state that the agent should remain available and what completes the full assignment. A subagent can remain active across implementation, review, and follow-up turns.
 - **ListTimAgents** returns the canonical names, types, executors, and visible lifecycle states for the other active agents, excluding the calling agent. Use it only when team state is unclear, a dependency needs checking, or before retrying a target; do not poll it for routine progress updates.
 - **SendTimAgentMessage** sends useful context, questions, blockers, decisions, and handoffs. The runtime supplies trusted source attribution; agents must use the canonical names returned by ListTimAgents when replying.
 - **StopTimAgent** is available only to the orchestrator. Use it only for explicit cancellation, an unrecoverable coordination deadlock, a safety issue, or an unresponsive agent. Do not stop an agent just because its expected work appears complete; let it finish naturally.
@@ -47,8 +50,9 @@ export function buildCollaborativeAvailableAgents(
   options: OrchestrationOptions
 ): string {
   const descriptions: Record<OrchestratedAgentType, string> = {
-    implementer:
-      'Change only the assigned implementation files and report the changes and verification.',
+    implementer: options.implementerTests
+      ? 'Implement the assigned work, write or update its tests, run checks, and report results.'
+      : 'Change only the assigned implementation files and report the changes and verification.',
     tester:
       'Inspect or change only the assigned test and fixture files, run checks, and report failures and coverage gaps.',
     'tdd-tests':

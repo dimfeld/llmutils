@@ -607,6 +607,8 @@ export const timConfigSchema = z
       .object({
         /** Enable the dormant agent-messaging session snapshot for new agent runs. */
         agentMessaging: z.boolean().optional(),
+        /** Assign implementation and tests to the implementer without a tester agent. */
+        implementerTests: z.boolean().optional(),
       })
       .strict()
       .optional()

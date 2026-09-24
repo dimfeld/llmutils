@@ -27,6 +27,8 @@ export interface OrchestrationOptions {
    * Collaborative prompt branches consume this immutable session value.
    */
   agentMessagingEnabled?: boolean;
+  /** When true, the implementer owns tests and no tester agent is assigned. */
+  implementerTests?: boolean;
   /**
    * Which executor to use for subagents: 'codex-cli', 'claude-code', or 'dynamic'.
    * When 'dynamic', the orchestrator decides per-task based on dynamicSubagentInstructions.

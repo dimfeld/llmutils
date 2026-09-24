@@ -617,6 +617,7 @@ export class ClaudeCodeExecutor implements Executor {
         reviewerInstructionsPath: this.timConfig.agents?.reviewer?.instructions,
         simpleMode: this.sharedOptions.simpleMode,
         agentMessagingEnabled: this.sharedOptions.agentMessagingEnabled,
+        implementerTests: this.sharedOptions.implementerTests,
         subagentExecutor: this.sharedOptions.subagentExecutor,
         dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         orchestratorInstructionMode: this.sharedOptions.orchestratorInstructionMode,

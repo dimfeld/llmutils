@@ -826,7 +826,7 @@ Important config areas:
 - `orchestratorInstructionMode` - how prescriptive the `tim agent` orchestrator is with its subagents; `detailed` (default) or `delegated`
 - `subagents.advisor` - executor and model for the optional advisor consultation subagent; the orchestrator is only told about the advisor when both are set
 - `review.remediationPlan` - set to `false` to stop a full-plan `tim review` from consulting the advisor for a remediation plan; only meaningful when `subagents.advisor` is configured
-- `experimental` - opt-in flags for features not yet on by default; currently only `agentMessaging`, which is disabled unless set to `true`
+- `experimental` - opt-in flags for features not yet on by default. Set `implementerTests: true` to give code, tests, and checks to the implementer without a tester subagent. The review phase still runs. `agentMessaging` enables persistent collaborative agents.
 
 PR creation and dual-review issue merging share the `smallTasks` defaults. Override both
 in one place when you want to swap the lightweight model or executor:
@@ -919,7 +919,10 @@ The `experimental` block holds opt-in flags for features that are not yet on by 
 ```yaml
 experimental:
   agentMessaging: true
+  implementerTests: true
 ```
+
+`implementerTests` assigns implementation, test changes, and checks to the implementer in normal and TDD runs. It removes the tester subagent and keeps the existing review process. In TDD, the `tdd-tests` agent still writes the initial failing tests.
 
 `agentMessaging` enables collaborative orchestration for `tim agent` sessions. When `true`, the orchestrator uses `StartTimAgent`, `ListTimAgents`, `SendTimAgentMessage`, and `StopTimAgent` tools to manage persistent subagents instead of synchronous `tim subagent` shell commands. Subagents can message each other and the orchestrator directly. Supported agent types are `implementer`, `tester`, `tdd-tests`, and `reviewer` (read-only, advisory). Both `claude-code` and `codex-cli` executors are supported. The formal review gate remains a separate one-shot `tim review` command with fresh context and no messaging tools. When the flag is absent or `false`, all prompts and execution paths keep the current synchronous behavior. Config changes affect new `tim agent` sessions only; already running sessions keep their original mode. See [docs/agent-messaging.md](docs/agent-messaging.md) for the full operational reference, and [docs/agent-manager.md](docs/agent-manager.md), [docs/claude-mcp-bridge.md](docs/claude-mcp-bridge.md), [docs/persistent-claude-agent.md](docs/persistent-claude-agent.md), and [docs/persistent-codex-agent.md](docs/persistent-codex-agent.md) for internal details.
 

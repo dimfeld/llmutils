@@ -43,6 +43,16 @@ describe('configSchema', () => {
 
       expect(() => timConfigSchema.parse({ experimental: { unknownFeature: true } })).toThrow();
     });
+
+    test('accepts an optional implementerTests boolean without a default', () => {
+      expect(timConfigSchema.parse({}).experimental).toBeUndefined();
+      expect(
+        timConfigSchema.parse({ experimental: { implementerTests: true } }).experimental
+      ).toEqual({
+        implementerTests: true,
+      });
+      expect(() => timConfigSchema.parse({ experimental: { implementerTests: 'true' } })).toThrow();
+    });
   });
 
   describe('prStacking', () => {

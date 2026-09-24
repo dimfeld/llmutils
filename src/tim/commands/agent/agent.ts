@@ -740,6 +740,7 @@ export async function timAgent(
       terminalInput: terminalInputEnabled,
       simpleMode: simpleModeEnabled ? true : undefined,
       agentMessagingEnabled,
+      implementerTests: config.experimental?.implementerTests === true,
       claudePermissionPromptCoordinator:
         collaborativeAgentSession?.claudePermissionPromptCoordinator,
       claudeAgentToolContext: collaborativeAgentSession?.claudeAgentToolContext,

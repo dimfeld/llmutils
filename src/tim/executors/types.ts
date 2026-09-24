@@ -42,6 +42,8 @@ export interface ExecutorCommonOptions {
    * Prompt and provider-tool activation consume this immutable value.
    */
   agentMessagingEnabled?: boolean;
+  /** Root-session snapshot of experimental implementer-owned testing. */
+  implementerTests?: boolean;
   /**
    * Optional override for which executor to use during external review phases.
    */

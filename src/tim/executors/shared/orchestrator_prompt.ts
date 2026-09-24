@@ -174,7 +174,14 @@ You don't need to mark the entire plan file as complete. We will handle that for
 const DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS =
   'Prefer claude-code for frontend tasks, codex-cli for backend tasks. When choosing executors for implementer and tester, prefer using the same executor for both to maintain consistency and leverage the same strengths.';
 
-function buildSubagentDifficultyGuidance(): string {
+function buildSubagentDifficultyGuidance(options: OrchestrationOptions): string {
+  if (options.implementerTests) {
+    return `## Subagent Difficulty
+
+For the implementer subagent command, use \`--difficulty low\` when the work is easy, routine, or tightly scoped. The reviewer command does not accept this option.
+
+`;
+  }
   return `## Subagent Difficulty
 
 For the implementer and tester subagent commands, use \`--difficulty low\` when you know the work is easy, routine, or tightly scoped and needs little reasoning. The reviewer command does not accept this option.
@@ -184,9 +191,15 @@ For the implementer and tester subagent commands, use \`--difficulty low\` when 
 
 /** Builds the subagent executor selection guidance for dynamic mode. */
 function buildDynamicExecutorGuidance(options: OrchestrationOptions): string {
+  const supportedRoles = options.implementerTests
+    ? 'implementer, tdd-tests, and reviewer'
+    : 'implementer, tester, tdd-tests, and reviewer';
   if (options.agentMessagingEnabled === true) {
     const instructions =
-      options.dynamicSubagentInstructions || DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS;
+      options.dynamicSubagentInstructions ||
+      (options.implementerTests
+        ? 'Prefer claude-code for frontend tasks and codex-cli for backend tasks.'
+        : DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS);
     const executorRule =
       options.subagentExecutor === 'codex-cli' || options.subagentExecutor === 'claude-code'
         ? `Use \`${options.subagentExecutor}\` as the executor value for every StartTimAgent call.`
@@ -195,7 +208,7 @@ function buildDynamicExecutorGuidance(options: OrchestrationOptions): string {
     return `## Subagent Executor Selection
 
 ${executorRule}
-Both executors are supported for implementer, tester, tdd-tests, and reviewer agents. ${instructions}
+Both executors are supported for ${supportedRoles} agents. ${instructions}
 `;
   }
 
@@ -203,7 +216,11 @@ Both executors are supported for implementer, tester, tdd-tests, and reviewer ag
     return '';
   }
 
-  const instructions = options.dynamicSubagentInstructions || DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS;
+  const instructions =
+    options.dynamicSubagentInstructions ||
+    (options.implementerTests
+      ? 'Prefer claude-code for frontend tasks and codex-cli for backend tasks.'
+      : DEFAULT_DYNAMIC_SUBAGENT_INSTRUCTIONS);
 
   return `## Subagent Executor Selection
 
@@ -297,15 +314,14 @@ function buildCollaborativeWorkflowInstructions(
 You MUST follow this collaborative development process:
 
 ${batchSelection}${implementationPhaseNumber}. **Implementation Phase**
-   - Start one or more implementer agents only when each has a clear task and disjoint or explicitly coordinated file scope.
+   - Start one or more implementer agents only when each has a clear task and disjoint or explicitly coordinated file scope.${options.implementerTests ? '\n   - Assign code, tests, and verification to each implementer.' : ''}
    - ${buildCollaborativeInitialMessageLine(options)}
    - Safe independent work may run concurrently, including multiple implementers of the same type. Coordinate before any shared-file edit.
    - Keep subagent assignments active across implementation, review, and follow-up turns when useful. A progress message is not completion; preserve the canonical name and send later work directly through SendTimAgentMessage.
    - Use SendTimAgentMessage acknowledgements as described above and do not duplicate queued messages.
 
 ${testingPhaseNumber}. **Testing Phase**
-   - Start tester agents for completed or stable implementation scopes. Test analysis may run early, but final validation must run against the completed implementation.
-   - Give each tester an explicit test or fixture file scope. A tester must claim that scope before editing it and must report the checks it ran and any remaining gaps.
+${options.implementerTests ? '   - Assign test changes and final checks to the implementer. Ask it to fix failures and report the results.' : '   - Start tester agents for completed or stable implementation scopes. Test analysis may run early, but final validation must run against the completed implementation.\n   - Give each tester an explicit test or fixture file scope. A tester must claim that scope before editing it and must report the checks it ran and any remaining gaps.'}
    - Do not claim success until the required implementation and testing work is complete.
 
 ${reviewPhase}
@@ -346,7 +362,7 @@ ${batchSelection}${options.batchMode ? '2' : '1'}. **Implementation Phase**
    - ${buildCollaborativeSimpleImplementerLine(options)}
    - Keep the implementer alive for follow-up work when useful, and keep an advisory reviewer alive when it may verify the fix. Do not overlap mutating file ownership without coordination.
    - Use SendTimAgentMessage for changed facts and handoffs; a queued acknowledgement is already successful.
-   - Before formal review, require the implementer to run the required tests and checks and report their results. Start a tester for independent validation when the scope needs one.
+   - Before formal review, require the implementer to run the required tests and checks and report their results.${options.implementerTests ? '' : ' Start a tester for independent validation when the scope needs one.'}
 
 ${reviewPhase}
 
@@ -431,7 +447,7 @@ function buildCollaborativeTddPrompt(
   planId: string,
   options: OrchestrationOptions
 ): string {
-  const isSimpleTdd = options.simpleMode === true;
+  const isSimpleTdd = options.simpleMode === true || options.implementerTests === true;
   const reviewCommand = buildCollaborativeReviewCommand(planId, options);
   const implementationPhaseNumber = options.batchMode ? '3' : '2';
   const verificationPhaseNumber = options.batchMode ? '4' : '3';
@@ -514,7 +530,7 @@ ${batchSelection}${options.batchMode ? '2' : '1'}. **TDD Test Phase**
 
 ${implementationPhaseNumber}. **Implementation Phase**
    - ${buildCollaborativeTddImplementerLine(options)}
-   - Implementers for independent scopes may run concurrently. Coordinate before shared-file edits and do not let an implementer change a scope whose red phase is incomplete.
+${options.implementerTests ? '   - Ask the implementer to extend the tests as needed, run the final checks, and fix failures.\n' : ''}   - Implementers for independent scopes may run concurrently. Coordinate before shared-file edits and do not let an implementer change a scope whose red phase is incomplete.
    - Send follow-up facts through SendTimAgentMessage and treat queued delivery as accepted.
 ${testingPhase}
 ${reviewPhase}
@@ -540,7 +556,9 @@ function buildAvailableAgents(planId: string, options: OrchestrationOptions): st
   if (options.agentMessagingEnabled === true) {
     return `${buildCollaborativeToolGuidance(options)}\n${buildCollaborativeAvailableAgents(
       planId,
-      ['implementer', 'tester', 'reviewer'],
+      options.implementerTests
+        ? ['implementer', 'reviewer']
+        : ['implementer', 'tester', 'reviewer'],
       options
     )}`;
   }
@@ -551,9 +569,9 @@ function buildAvailableAgents(planId: string, options: OrchestrationOptions): st
     : `- **Reviewer**: Run \`tim subagent reviewer ${planId} --input "<instructions>"\` via the shell command tool (or \`--input-file <paths...>\`)`;
   return `## Available Agents
 
-You have access to three specialized agents via the shell command tool:
+You have access to ${options.implementerTests ? 'an implementer and reviewer' : 'three specialized agents'} via the shell command tool:
 - **Implementer**: Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool (or \`--input-file <paths...>\`)
-- **Tester**: Run \`${renderer.subagentCommand('tester')}\` via the shell command tool (or \`--input-file <paths...>\`)
+${options.implementerTests ? '' : `- **Tester**: Run \`${renderer.subagentCommand('tester')}\` via the shell command tool (or \`--input-file <paths...>\`)`}
 
 ${reviewer}
 
@@ -590,9 +608,12 @@ function buildWorkflowInstructions(planId: string, options: OrchestrationOptions
   const implementationSteps = `
    - Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool with a long timeout${dynamicNote}
    - In the input (\`--input\` or \`--input-file\`), specify which tasks to work on and provide relevant context
-   - Wait for the subagent to complete and review its output`;
+   - Wait for the subagent to complete and review its output${options.implementerTests ? '\n   - Ask the implementer to write or update relevant tests and run the required checks.' : ''}`;
 
-  const testingPhase = `${options.batchMode ? '3' : '2'}. **Testing Phase**
+  const testingPhase = options.implementerTests
+    ? `${options.batchMode ? '3' : '2'}. **Testing Phase**
+   - The implementer writes or updates tests for its assigned implementation, runs the relevant checks, and fixes failures. Ask it to address missing coverage or failed checks before review.`
+    : `${options.batchMode ? '3' : '2'}. **Testing Phase**
    - After implementation is complete, run \`${renderer.subagentCommand('tester')}\` via the shell command tool with a long timeout${dynamicNote}
    - When choosing an executor dynamically, prefer using the same executor that was used for the implementer to maintain consistency and leverage the same strengths.
    - In the input (\`--input\` or \`--input-file\`), ask the tester to create comprehensive tests for the implemented functionality, if needed
@@ -682,7 +703,7 @@ function buildImportantGuidelines(planId: string, options: OrchestrationOptions)
   const baseGuidelines = `## Important Guidelines
 
 - Do not implement code directly. Delegate implementation tasks to the appropriate subagent via \`tim subagent\`, except for the contained review fixes described below.
-- Do not write tests directly. Use the tester subagent via \`tim subagent tester\` for test execution and updates.
+${options.implementerTests ? '- Do not write tests directly. Assign test changes and checks to the implementer.' : '- Do not write tests directly. Use the tester subagent via `tim subagent tester` for test execution and updates.'}
 ${buildReviewIssueCleanupGuidance(planId)}
 ${reviewGuidelines}
 - Exception: if an accepted blocking review finding requires only straightforward, contained edits, you may apply those edits directly instead of spawning implementer again.
@@ -707,14 +728,14 @@ Instruct subagents to report any plan changes they believe are necessary in thei
   const failureProtocol = `
 \n## Failure Protocol (Conflicting/Impossible Requirements)
 
-- Monitor all subagent outputs (implementer, tester, reviewer) for a line starting with "FAILED:".
+- Monitor all subagent outputs (${options.implementerTests ? 'implementer, reviewer' : 'implementer, tester, reviewer'}) for a line starting with "FAILED:".
 - A FAILED report is a signal to investigate, not an automatic reason to stop orchestration.
 - Read the detailed report, inspect the current work, and evaluate whether the problem is real.
 - If the problem is fixable, including a pre-existing error or an ordinary code, test, lint, type-check, build, or setup error, fix it yourself or delegate the fix to the appropriate subagent. Rerun the relevant checks and continue the workflow.
 - Treat the failure as real only when it cannot be resolved without a user decision, such as a conflicting design requirement, or when major expected functionality is missing and cannot be added safely within scope.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
-    - Where <agent> is one of: implementer | tester | fixer | reviewer
+    - Where <agent> is one of: ${options.implementerTests ? 'implementer | fixer | reviewer' : 'implementer | tester | fixer | reviewer'}
   - Then include the subagent's detailed report verbatim (requirements, problems, possible solutions).
 - Only after deciding that the failure is real should you stop further phases and output the FAILED message. Do not mark tasks done after a real failure.
 - You may add brief additional context if necessary (e.g., which tasks were being processed).`;
@@ -832,7 +853,7 @@ ${contextContent}`;
 
   return `${header}${availableAgents}${advisorGuidance}
 
-${dynamicGuidance}${instructionStyleSection}${buildSubagentDifficultyGuidance()}${workflowInstructions}
+${dynamicGuidance}${instructionStyleSection}${buildSubagentDifficultyGuidance(options)}${workflowInstructions}
 
 ${importantGuidelines}
 
@@ -993,7 +1014,7 @@ ${contextContent}`;
 
 ${batchModeInstructions}${availableAgents}${buildAdvisorGuidance(planId, options)}
 
-${dynamicGuidance}${instructionStyleSection}${buildSubagentDifficultyGuidance()}${workflowInstructions}
+${dynamicGuidance}${instructionStyleSection}${buildSubagentDifficultyGuidance(options)}${workflowInstructions}
 
 ${failureProtocol}
 
@@ -1023,7 +1044,7 @@ export function wrapWithOrchestrationTdd(
   const renderer = createOrchestrationDelegationRenderer(planId, options);
   const dynamicGuidance = buildDynamicExecutorGuidance(options);
   const instructionStyleSection = buildSubagentInstructionStyleSection(options);
-  const isSimpleTdd = options.simpleMode === true;
+  const isSimpleTdd = options.simpleMode === true || options.implementerTests === true;
 
   const header = `# TDD Orchestration Instructions
 
@@ -1152,7 +1173,7 @@ ${taskSelectionPhase}
 ${implementationPhaseNumber}. **Implementation Phase**
    - Run \`${renderer.subagentCommand('implementer')}\` via the shell command tool with a long timeout${dynamicNote}
    - In the input, include the TDD tests output and direct the implementer to make those tests pass
-   - Emphasize that implementation should be driven by existing TDD tests, not by adding unrelated new behavior
+${options.implementerTests ? '   - Ask the implementer to add any needed tests, run the final checks, and fix failures.\n' : ''}   - Emphasize that implementation should be driven by existing TDD tests, not by adding unrelated new behavior
    - Wait for the subagent to complete and review its output
 
 ${verificationPhase}
@@ -1179,7 +1200,7 @@ ${buildReviewIterationGuidance(reviewCommand, planId, options)}`;
 - Treat the failure as real only when it cannot be resolved without a user decision, such as a conflicting design requirement, or when major expected functionality is missing and cannot be added safely within scope.
 - Output a concise failure message and propagate details:
   - First line: FAILED: <agent> reported a failure — <1-sentence summary>
-    - <agent> must be one of: tdd-tests | implementer | tester | reviewer | orchestrator
+    - <agent> must be one of: ${options.implementerTests ? 'tdd-tests | implementer | reviewer | orchestrator' : 'tdd-tests | implementer | tester | reviewer | orchestrator'}
   - Then include the subagent's detailed report verbatim.
 - Only after deciding that the failure is real should you stop further phases and output the FAILED message. Do not mark tasks done after a real failure.
 - You may add brief context (e.g. which tasks were active) if helpful.`;
@@ -1242,7 +1263,7 @@ ${contextContent}`;
 
 ${batchModeInstructions}${availableAgents}${buildAdvisorGuidance(planId, options)}
 
-${dynamicGuidance}${instructionStyleSection}${buildSubagentDifficultyGuidance()}${workflowInstructions}
+${dynamicGuidance}${instructionStyleSection}${buildSubagentDifficultyGuidance(options)}${workflowInstructions}
 
 ${failureProtocol}
 

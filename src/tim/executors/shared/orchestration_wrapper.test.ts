@@ -3,6 +3,23 @@ import { wrapForExecutionMode, type OrchestrationExecutionMode } from './orchest
 
 describe('wrapForExecutionMode', () => {
   test.each(['normal', 'simple', 'tdd'] as OrchestrationExecutionMode[])(
+    'experimental implementerTests removes tester in %s mode and keeps review',
+    (mode) => {
+      for (const agentMessagingEnabled of [false, true]) {
+        const output = wrapForExecutionMode(mode, 'context', 'plan-1', {
+          implementerTests: true,
+          agentMessagingEnabled,
+        });
+        expect(output).toContain('implementer');
+        expect(output).toContain('review');
+        expect(output).not.toContain('tim subagent tester');
+        expect(output).not.toContain('type `tester`');
+        expect(output).not.toContain('Start a tester');
+      }
+    }
+  );
+
+  test.each(['normal', 'simple', 'tdd'] as OrchestrationExecutionMode[])(
     'hobby %s uses only an implementer for code and tests',
     (mode) => {
       for (const agentMessagingEnabled of [false, true]) {
