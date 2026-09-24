@@ -35,6 +35,8 @@ export interface ExecutorCommonOptions {
    * When true, executors should run in the streamlined implement → review flow.
    */
   simpleMode?: boolean;
+  /** Code-quality profile selected for this run. */
+  quality?: 'hobby' | 'production';
   /**
    * Root-session snapshot of the experimental agent-messaging setting.
    * Prompt and provider-tool activation consume this immutable value.

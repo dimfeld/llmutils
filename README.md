@@ -822,7 +822,7 @@ Important config areas:
 - `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`
 - `inbox.prs` - PR inbox behavior; `enabled` plus an `ignoreUsers` list that concatenates across config layers (see [PR inbox](#pr-inbox))
 - `environment` - project-level variables rendered at process launch time with plan/workspace context
-- `quality` - `production` (default) keeps the existing prompt requirements. Set `quality: hobby` to keep correctness, good code style, maintainability, and visual fidelity while reducing requirements for rare race conditions, malformed inputs, and other production hardening. This applies to planning, execution, subagents, and review. Explicit task requirements and existing protections still apply.
+- `quality` - `production` (default) keeps the existing prompt requirements. Set `quality: hobby` for an implementer-only execution flow. The implementer writes code and tests, and the orchestrator skips the separate tester and review phases. Explicit task requirements and existing protections still apply.
 - `orchestratorInstructionMode` - how prescriptive the `tim agent` orchestrator is with its subagents; `detailed` (default) or `delegated`
 - `subagents.advisor` - executor and model for the optional advisor consultation subagent; the orchestrator is only told about the advisor when both are set
 - `review.remediationPlan` - set to `false` to stop a full-plan `tim review` from consulting the advisor for a remediation plan; only meaningful when `subagents.advisor` is configured

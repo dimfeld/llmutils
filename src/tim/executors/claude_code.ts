@@ -620,6 +620,7 @@ export class ClaudeCodeExecutor implements Executor {
         subagentExecutor: this.sharedOptions.subagentExecutor,
         dynamicSubagentInstructions: this.sharedOptions.dynamicSubagentInstructions,
         orchestratorInstructionMode: this.sharedOptions.orchestratorInstructionMode,
+        quality: this.sharedOptions.quality,
         advisor: resolveAdvisorConfiguration(this.timConfig),
         useJj,
       };

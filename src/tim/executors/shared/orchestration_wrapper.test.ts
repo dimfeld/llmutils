@@ -2,6 +2,25 @@ import { describe, test, expect } from 'vitest';
 import { wrapForExecutionMode, type OrchestrationExecutionMode } from './orchestration_wrapper.ts';
 
 describe('wrapForExecutionMode', () => {
+  test.each(['normal', 'simple', 'tdd'] as OrchestrationExecutionMode[])(
+    'hobby %s uses only an implementer for code and tests',
+    (mode) => {
+      for (const agentMessagingEnabled of [false, true]) {
+        const output = wrapForExecutionMode(mode, 'context', 'plan-1', {
+          quality: 'hobby',
+          batchMode: true,
+          agentMessagingEnabled,
+        });
+        expect(output).toContain('implementer');
+        expect(output).toContain('tim set-task-done plan-1');
+        expect(output).not.toContain('tim review');
+        expect(output).not.toContain('tim subagent tester');
+        expect(output).not.toContain('tim subagent reviewer');
+        expect(output).not.toContain('type `tester`');
+        expect(output).not.toContain('type `reviewer`');
+      }
+    }
+  );
   test('reviewExecutor reaches normal and tdd wrappers but not simple', () => {
     const normalOutput = wrapForExecutionMode('normal', 'context', 'plan-1', {
       reviewExecutor: 'codex-cli',

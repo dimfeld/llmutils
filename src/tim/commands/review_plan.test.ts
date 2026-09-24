@@ -531,6 +531,7 @@ describe('buildPlanMetadata', () => {
           issue: [],
         },
       ],
+      siblingPlans: [],
       diffResult: {
         baseBranch: 'main',
         hasChanges: true,

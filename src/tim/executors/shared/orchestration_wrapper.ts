@@ -1,4 +1,5 @@
 import {
+  wrapWithHobbyOrchestration,
   wrapWithOrchestration,
   wrapWithOrchestrationSimple,
   wrapWithOrchestrationTdd,
@@ -21,6 +22,9 @@ export function wrapForExecutionMode(
   planId: string,
   options: OrchestrationOptions
 ): string {
+  if (options.quality === 'hobby') {
+    return wrapWithHobbyOrchestration(contextContent, planId, options);
+  }
   const { reviewExecutor, simpleMode, ...sharedOptions } = options;
 
   switch (mode) {

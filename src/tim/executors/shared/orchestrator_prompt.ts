@@ -761,6 +761,45 @@ ${buildFinalBatchReviewGuidance(planId, options)}
    - Your review should focus on problems; lack of findings means the batch review passed.`;
 }
 
+/** Hobby quality uses one implementer for implementation and verification. */
+export function wrapWithHobbyOrchestration(
+  contextContent: string,
+  planId: string,
+  options: OrchestrationOptions = {}
+): string {
+  const renderer = createOrchestrationDelegationRenderer(planId, options);
+  const dynamicExecutorGuidance =
+    !options.subagentExecutor || options.subagentExecutor === 'dynamic'
+      ? 'Choose `claude-code` or `codex-cli` for the implementer. Use `-x` with `tim subagent`, or the executor field with StartTimAgent.'
+      : `Use \`${options.subagentExecutor}\` for the implementer.`;
+  const assignmentGuidance = buildSubagentCapabilityGuidance(options);
+  const batchGuidance = options.batchMode
+    ? 'Select and document a focused set of related tasks. Tell the implementer which task titles are in scope.'
+    : 'Work on the assigned task.';
+  const delegateGuidance = options.agentMessagingEnabled
+    ? `Start one persistent agent with type \`implementer\` using StartTimAgent. Choose \`claude-code\` or \`codex-cli\` as its executor. Send its assignment and later corrections with SendTimAgentMessage. Wait for its final handoff and terminal state.`
+    : `Run \`${renderer.subagentCommand('implementer')}\` through the shell command tool. Pass the task scope with \`--input\` or \`--input-file\` and wait for its result.`;
+
+  return `# Hobby Orchestration Instructions
+
+You are the orchestrator for plan ${planId}. ${batchGuidance}
+
+## Workflow
+
+- ${delegateGuidance}
+- Ask implementer subagents to take responsibility end to end: make the changes, update unit tests, and verify the quality. ${assignmentGuidance}
+- Read the implementer's result and check that the assigned tasks are complete. Send any missing work back to the same implementer when possible.
+- Update the plan progress and mark completed tasks done with \`tim set-task-done ${planId} --title "<taskTitle>"\`. Commit the completed work with a descriptive message.
+- Do not start tester, TDD test, or reviewer subagents. Do not run a separate review phase. The implementer owns both code and tests.
+${BRANCH_SETUP_GUIDANCE}${buildJjGuidance(options)}
+
+${dynamicExecutorGuidance}${progressSectionGuidance(options.planFilePath, { useAtPrefix: options.useAtPrefix })}
+
+## Task Context
+
+${contextContent}`;
+}
+
 /**
  * Wraps the original context content with orchestration instructions for managing subagents
  */

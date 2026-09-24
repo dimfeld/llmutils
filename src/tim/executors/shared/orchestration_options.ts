@@ -20,6 +20,8 @@ export interface OrchestrationOptions {
   /** Path to custom reviewer instructions configured in agents.reviewer.instructions. */
   reviewerInstructionsPath?: string;
   simpleMode?: boolean;
+  /** Code-quality profile selected for this run. */
+  quality?: 'hobby' | 'production';
   /**
    * Root-session snapshot of the experimental agent-messaging setting.
    * Collaborative prompt branches consume this immutable session value.

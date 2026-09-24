@@ -750,6 +750,7 @@ export async function timAgent(
       subagentExecutor,
       dynamicSubagentInstructions,
       orchestratorInstructionMode,
+      quality: config.quality,
       timEnvironment,
       agentEnvironmentIdentity: collaborativeAgentSession?.orchestratorEnvironmentIdentity,
     };

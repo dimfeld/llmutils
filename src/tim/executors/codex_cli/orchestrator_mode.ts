@@ -51,6 +51,7 @@ export async function executeOrchestratorMode(
       subagentExecutor: sharedOptions.subagentExecutor,
       dynamicSubagentInstructions: sharedOptions.dynamicSubagentInstructions,
       orchestratorInstructionMode: sharedOptions.orchestratorInstructionMode,
+      quality: sharedOptions.quality,
       advisor: resolveAdvisorConfiguration(timConfig),
       useJj,
       useAtPrefix,
