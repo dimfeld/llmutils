@@ -5,6 +5,7 @@
     getDisplayCategory,
     formatStructuredMessage,
     formatMessageTimestamp,
+    getTimAgentToolPresentation,
     type DisplayCategory,
   } from '$lib/utils/message_formatting.js';
   import {
@@ -35,6 +36,14 @@
   );
 
   let timeStr = $derived(formatMessageTimestamp(message.timestamp));
+
+  let timAgentToolPresentation = $derived(
+    message.body.type === 'structured' &&
+      (message.body.message.type === 'llm_tool_use' ||
+        message.body.message.type === 'llm_tool_result')
+      ? getTimAgentToolPresentation(message.body.message)
+      : null
+  );
 
   /** The body to render — either the message body directly, or the formatted structured message. */
   let renderBody: DisplayMessageBody | null = $derived.by(() => {
@@ -128,6 +137,19 @@
     <ReviewResultDisplay message={message.body.message} />
   {:else if message.body.type === 'structured' && message.body.message.type === 'execution_summary'}
     <ExecutionSummaryDisplay message={message.body.message} />
+  {:else if timAgentToolPresentation}
+    <div class="mt-1 rounded border border-cyan-900/70 bg-gray-900/40 px-2 py-1.5">
+      <div class="mb-1 text-xs font-semibold text-cyan-300">{timAgentToolPresentation.title}</div>
+      {#each timAgentToolPresentation.entries as entry (entry.key)}
+        <div class="flex gap-2">
+          <span class="shrink-0 text-gray-400">{entry.key}:</span>
+          <span class="whitespace-pre-wrap">{entry.value}</span>
+        </div>
+      {/each}
+      {#if timAgentToolPresentation.fallback}
+        <div class="whitespace-pre-wrap text-gray-300">{timAgentToolPresentation.fallback}</div>
+      {/if}
+    </div>
   {:else if renderBody?.type === 'text'}
     {#if isLlmOutput}
       <MarkdownContent content={displayText} class="inline-block align-top" />

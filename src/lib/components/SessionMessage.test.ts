@@ -311,4 +311,74 @@ describe('SessionMessage', () => {
     expect(body).toContain('Input:');
     expect(body).toContain('"query": "plan 253"');
   });
+
+  test('renders tim agent tool calls with labels for their known arguments', () => {
+    const { body } = render(SessionMessage, {
+      props: {
+        message: createStructuredMessage({
+          type: 'llm_tool_use',
+          toolName: 'tim.StartTimAgent',
+          input: {
+            name: 'worker-a',
+            type: 'implementer',
+            executor: 'codex-cli',
+            initialMessage: 'Implement the session viewer change.',
+          },
+        }),
+      },
+    });
+
+    expect(body).toContain('Start agent');
+    expect(body).toContain('worker-a');
+    expect(body).toContain('implementer');
+    expect(body).toContain('codex-cli');
+    expect(body).toContain('Assignment:');
+  });
+
+  test('renders tim agent tool results using the known response fields', () => {
+    const { body } = render(SessionMessage, {
+      props: {
+        message: createStructuredMessage({
+          type: 'llm_tool_result',
+          toolName: 'SendTimAgentMessage',
+          result: {
+            status: 'completed',
+            success: true,
+            contentItems: [
+              {
+                type: 'inputText',
+                text: '{"name":"worker-a","messageId":"msg-4","delivery":"queued"}',
+              },
+            ],
+          },
+          resultSummary: 'Status: completed',
+        }),
+      },
+    });
+
+    expect(body).toContain('Send agent message');
+    expect(body).toContain('To:');
+    expect(body).toContain('worker-a');
+    expect(body).toContain('Delivery:');
+    expect(body).toContain('queued');
+    expect(body).toContain('Message ID:');
+    expect(body).toContain('msg-4');
+  });
+
+  test('renders tim agent results from MCP text content', () => {
+    const { body } = render(SessionMessage, {
+      props: {
+        message: createStructuredMessage({
+          type: 'llm_tool_result',
+          toolName: 'mcp__tim__FinishTimAgent',
+          result: [{ type: 'text', text: '{"state":"finishing"}' }],
+          resultSummary: 'Finished assignment.',
+        }),
+      },
+    });
+
+    expect(body).toContain('Finish assignment');
+    expect(body).toContain('State:');
+    expect(body).toContain('finishing');
+  });
 });

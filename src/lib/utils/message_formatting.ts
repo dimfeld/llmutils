@@ -20,6 +20,147 @@ export type DisplayCategory =
   | 'log'
   | 'userInput';
 
+export interface TimAgentToolPresentation {
+  title: string;
+  entries: KeyValuePairEntry[];
+  fallback?: string;
+}
+
+/** Build a compact display for calls to the known tim agent tools. */
+export function getTimAgentToolPresentation(
+  message: Extract<StructuredMessagePayload, { type: 'llm_tool_use' | 'llm_tool_result' }>
+): TimAgentToolPresentation | null {
+  const toolName = message.toolName.replace(/^tim\./, '').replace(/^mcp__tim__/, '');
+  const titles: Record<string, string> = {
+    StartTimAgent: 'Start agent',
+    ListTimAgents: 'List agents',
+    SendTimAgentMessage: 'Send agent message',
+    StopTimAgent: 'Stop agent',
+    FinishTimAgent: 'Finish assignment',
+  };
+  const title = titles[toolName];
+  if (!title) return null;
+
+  if (message.type === 'llm_tool_use') {
+    const input = asRecord(message.input);
+    const fields: Record<string, Array<[string, unknown]>> = {
+      StartTimAgent: [
+        ['Name', input.name],
+        ['Type', input.type],
+        ['Executor', input.executor],
+        ['Assignment', input.initialMessage],
+      ],
+      ListTimAgents: [],
+      SendTimAgentMessage: [
+        ['To', input.name],
+        ['Message', input.message],
+      ],
+      StopTimAgent: [
+        ['Agent', input.name],
+        ['Force', input.force],
+        ['Message', input.message],
+      ],
+      FinishTimAgent: [['Final status', input.message]],
+    };
+    const entries = keyValueEntries(fields[toolName] ?? []);
+    return {
+      title,
+      entries: entries.length > 0 ? entries : [],
+      fallback:
+        entries.length === 0 && toolName !== 'ListTimAgents' ? message.inputSummary : undefined,
+    };
+  }
+
+  const result = getTimAgentResult(message.result, message.resultSummary);
+  if (!result) return { title, entries: [], fallback: message.resultSummary };
+  if (toolName === 'ListTimAgents' && Array.isArray(result.agents)) {
+    const agents = result.agents
+      .map((agent) => {
+        const row = asRecord(agent);
+        if (typeof row.name !== 'string') return null;
+        const details = [row.type, row.executor, row.state]
+          .filter((value): value is string => typeof value === 'string')
+          .join(' · ');
+        return details ? `${row.name} · ${details}` : row.name;
+      })
+      .filter((agent): agent is string => agent !== null);
+    return {
+      title,
+      entries: agents.length > 0 ? [{ key: 'Agents', value: agents.join('\n') }] : [],
+      fallback: agents.length === 0 ? 'No active agents.' : undefined,
+    };
+  }
+
+  const resultFields: Record<string, Array<[string, unknown]>> = {
+    StartTimAgent: [
+      ['Name', result.name],
+      ['Type', result.type],
+      ['Executor', result.executor],
+      ['State', result.state],
+    ],
+    ListTimAgents: [],
+    SendTimAgentMessage: [
+      ['To', result.name],
+      ['Delivery', result.delivery],
+      ['Message ID', result.messageId],
+    ],
+    StopTimAgent: [
+      ['Agent', result.name],
+      ['Result', result.mode],
+      ['State', result.state],
+    ],
+    FinishTimAgent: [['State', result.state]],
+  };
+  const entries = keyValueEntries(resultFields[toolName] ?? []);
+  return { title, entries, fallback: entries.length === 0 ? message.resultSummary : undefined };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function getTimAgentResult(
+  value: unknown,
+  summary: string | undefined
+): Record<string, unknown> | null {
+  const record = asRecord(value);
+  const contentItems = Array.isArray(value)
+    ? value
+    : Array.isArray(record.contentItems)
+      ? record.contentItems
+      : Array.isArray(record.content)
+        ? record.content
+        : [];
+  for (const item of contentItems) {
+    const text = asRecord(item).text;
+    if (typeof text === 'string') {
+      try {
+        const parsed: unknown = JSON.parse(text);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return asRecord(parsed);
+      } catch {
+        // Keep searching; adapters can return multiple text content items.
+      }
+    }
+  }
+
+  const nestedResult = asRecord(record.result);
+  if (Object.keys(nestedResult).length > 0) return nestedResult;
+  if (Object.keys(record).some((key) => ['name', 'state', 'delivery', 'agents'].includes(key))) {
+    return record;
+  }
+  if (summary) {
+    try {
+      const parsed: unknown = JSON.parse(summary);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return asRecord(parsed);
+    } catch {
+      // The summary is often prose, so preserve it as the fallback display.
+    }
+  }
+  return null;
+}
+
 export function getDisplayCategory(message: StructuredMessagePayload): DisplayCategory {
   switch (message.type) {
     case 'agent_session_start':
