@@ -20,6 +20,7 @@ export interface SessionInfoFile {
   linkedPrUrl?: string;
   linkedPrNumber?: number;
   linkedPrTitle?: string;
+  returnTo?: string;
   gitRemote?: string;
   startedAt: string;
   token?: boolean;
@@ -100,6 +101,9 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
   if (data.linkedPrTitle != null && typeof data.linkedPrTitle !== 'string') {
     throw new Error('Session info file has invalid linkedPrTitle');
   }
+  if (data.returnTo != null && typeof data.returnTo !== 'string') {
+    throw new Error('Session info file has invalid returnTo');
+  }
   if (data.gitRemote != null && typeof data.gitRemote !== 'string') {
     throw new Error('Session info file has invalid gitRemote');
   }
@@ -124,6 +128,7 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
     linkedPrUrl: data.linkedPrUrl as string | undefined,
     linkedPrNumber: data.linkedPrNumber as number | undefined,
     linkedPrTitle: data.linkedPrTitle as string | undefined,
+    returnTo: data.returnTo as string | undefined,
     gitRemote: data.gitRemote as string | undefined,
     startedAt: data.startedAt,
     token: data.token as boolean | undefined,

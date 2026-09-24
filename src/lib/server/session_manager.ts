@@ -601,6 +601,7 @@ export class SessionManager {
           linkedPrUrl: message.linkedPrUrl,
           linkedPrNumber: message.linkedPrNumber,
           linkedPrTitle: message.linkedPrTitle,
+          returnTo: message.returnTo,
           workspacePath: message.workspacePath,
           gitRemote: message.gitRemote,
           terminalPaneId: message.terminalPaneId,

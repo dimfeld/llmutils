@@ -869,6 +869,7 @@ export class HeadlessAdapter implements LoggerAdapter {
       linkedPrUrl: this.sessionInfo.linkedPrUrl,
       linkedPrNumber: this.sessionInfo.linkedPrNumber,
       linkedPrTitle: this.sessionInfo.linkedPrTitle,
+      returnTo: this.sessionInfo.returnTo,
       gitRemote: this.sessionInfo.gitRemote,
       startedAt: this.serverStartedAt,
       token: this.bearerToken ? true : undefined,

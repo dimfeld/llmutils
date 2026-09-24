@@ -449,6 +449,14 @@
             </span>
           {/if}
         {/if}
+        {#if session.sessionInfo.returnTo}
+          <a
+            href={session.sessionInfo.returnTo}
+            class="truncate text-sm text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Return to review guide
+          </a>
+        {/if}
         <span class="text-xs text-muted-foreground">{statusText}</span>
       </div>
 

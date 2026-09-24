@@ -20,6 +20,9 @@ export const DEFAULT_HEADLESS_URL = 'ws://localhost:8123/tim-agent';
  * before the command calls `updateHeadlessSessionInfo`.
  */
 export const TIM_LINKED_PR_URL_ENV = 'TIM_LINKED_PR_URL';
+export const TIM_LINKED_PR_NUMBER_ENV = 'TIM_LINKED_PR_NUMBER';
+export const TIM_LINKED_PR_TITLE_ENV = 'TIM_LINKED_PR_TITLE';
+export const TIM_SESSION_RETURN_TO_ENV = 'TIM_SESSION_RETURN_TO';
 const warnedInvalidHeadlessUrls = new Set<string>();
 const jobIdsByAdapter = new WeakMap<HeadlessAdapter, number>();
 
@@ -135,6 +138,10 @@ export async function buildHeadlessSessionInfo(
   }
 
   const linkedPrUrl = process.env[TIM_LINKED_PR_URL_ENV]?.trim() || undefined;
+  const linkedPrNumberValue = process.env[TIM_LINKED_PR_NUMBER_ENV]?.trim();
+  const linkedPrNumber = linkedPrNumberValue ? Number(linkedPrNumberValue) : undefined;
+  const linkedPrTitle = process.env[TIM_LINKED_PR_TITLE_ENV]?.trim() || undefined;
+  const returnTo = process.env[TIM_SESSION_RETURN_TO_ENV]?.trim() || undefined;
 
   return {
     command,
@@ -144,6 +151,9 @@ export async function buildHeadlessSessionInfo(
     planUuid: plan?.uuid,
     planTitle: plan?.title,
     linkedPrUrl,
+    linkedPrNumber: Number.isInteger(linkedPrNumber) ? linkedPrNumber : undefined,
+    linkedPrTitle,
+    returnTo,
     workspacePath,
     gitRemote,
     terminalPaneId: weztermPaneId || undefined,

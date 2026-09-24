@@ -17,11 +17,13 @@
 
   let {
     target,
+    returnTo = undefined,
     chatExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
     variant = 'ghost',
     buttonClass = '',
   }: {
     target: ChatTarget;
+    returnTo?: string;
     chatExecutorOptions?: ChatExecutorOption[];
     variant?: ButtonVariant;
     buttonClass?: string;
@@ -66,6 +68,7 @@
               prNumber: launchTarget.prNumber,
               executor: option.executor,
               model: option.model,
+              returnTo,
             });
       if (result.status === 'already_running') {
         if (result.connectionId) windows?.open(result.connectionId);

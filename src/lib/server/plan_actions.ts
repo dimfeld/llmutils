@@ -269,7 +269,8 @@ export async function spawnChatForPrProcess(
   prUrl: string,
   cwd: string,
   executor: string,
-  model?: string
+  model?: string,
+  sessionEnv: Record<string, string> = {}
 ): Promise<SpawnTargetProcessResult> {
   const prompt = buildPrChatPrompt(prUrl);
   const args = ['chat', prompt, '--executor', executor, '--auto-workspace'];
@@ -278,6 +279,7 @@ export async function spawnChatForPrProcess(
   return spawnTimProcess(describeTarget('pr', prUrl), null, args, cwd, {
     TIM_HIDE_PLAN_DETAILS: '1',
     [TIM_LINKED_PR_URL_ENV]: prUrl,
+    ...sessionEnv,
   });
 }
 

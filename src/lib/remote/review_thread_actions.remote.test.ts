@@ -1599,7 +1599,9 @@ describe('startFixPrThreads', () => {
     expect(spawnChatForPrProcessMock).toHaveBeenLastCalledWith(
       CANONICAL_PR_URL,
       '/tmp/pr-primary-workspace',
-      'codex'
+      'codex',
+      undefined,
+      { TIM_LINKED_PR_NUMBER: '42' }
     );
     expect(
       await invokeCommand(startPrChat, { projectId, prNumber: 42, executor: 'codex' })
@@ -1636,7 +1638,8 @@ describe('startFixPrThreads', () => {
       CANONICAL_PR_URL,
       '/tmp/pr-primary-workspace',
       'codex-cli',
-      'gpt-test'
+      'gpt-test',
+      { TIM_LINKED_PR_NUMBER: '42' }
     );
   });
 

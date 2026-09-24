@@ -155,6 +155,7 @@ export interface HeadlessSessionInfo {
   linkedPrUrl?: string;
   linkedPrNumber?: number;
   linkedPrTitle?: string;
+  returnTo?: string;
   workspacePath?: string;
   gitRemote?: string;
   terminalPaneId?: string;

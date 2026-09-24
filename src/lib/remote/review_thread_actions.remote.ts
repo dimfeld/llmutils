@@ -39,7 +39,12 @@ import {
   resolveReviewThread,
 } from '$common/github/pull_requests.js';
 import { getGitHubUsername } from '$common/github/user.js';
-import { TIM_LINKED_PR_URL_ENV } from '$tim/headless.js';
+import {
+  TIM_LINKED_PR_NUMBER_ENV,
+  TIM_LINKED_PR_TITLE_ENV,
+  TIM_LINKED_PR_URL_ENV,
+  TIM_SESSION_RETURN_TO_ENV,
+} from '$tim/headless.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import {
@@ -531,7 +536,11 @@ async function launchPrTimCommand(
   commandName: string,
   projectId: number,
   prNumber: number,
-  spawnProcess: (prUrlOrNumber: string, cwd: string) => Promise<SpawnTargetProcessResult>,
+  spawnProcess: (
+    prUrlOrNumber: string,
+    cwd: string,
+    prStatus: PrStatusDetail
+  ) => Promise<SpawnTargetProcessResult>,
   eligibilityCheck?: (prStatus: PrStatusDetail) => Promise<boolean>
 ): Promise<
   { status: 'started'; prUrl: string } | { status: 'already_running'; connectionId?: string }
@@ -570,7 +579,7 @@ async function launchPrTimCommand(
 
   let result;
   try {
-    result = await spawnProcess(canonicalPrUrl, primaryWorkspacePath);
+    result = await spawnProcess(canonicalPrUrl, primaryWorkspacePath, prStatus);
   } catch (e) {
     clearPrLaunchLock(canonicalPrUrl);
     throw e;
@@ -619,11 +628,24 @@ export const startPrChat = command(
   startPrReviewGuideSchema.extend({
     executor: z.enum(['claude', 'codex', 'claude-code', 'codex-cli']),
     model: z.string().min(1).optional(),
+    returnTo: z
+      .string()
+      .refine(
+        (value) =>
+          value.startsWith('/') && !value.startsWith('//') && !/[\\\u0000-\u001f]/.test(value),
+        'Must be a local path'
+      )
+      .optional(),
   }),
-  async ({ projectId, prNumber, executor, model }) =>
-    launchPrTimCommand('chat', projectId, prNumber, (prUrl, cwd) =>
-      model === undefined
-        ? spawnChatForPrProcess(prUrl, cwd, executor)
-        : spawnChatForPrProcess(prUrl, cwd, executor, model)
-    )
+  async ({ projectId, prNumber, executor, model, returnTo }) =>
+    launchPrTimCommand('chat', projectId, prNumber, (prUrl, cwd, prStatus) => {
+      const sessionEnv = {
+        [TIM_LINKED_PR_NUMBER_ENV]: String(prStatus.status.pr_number),
+        ...(prStatus.status.title ? { [TIM_LINKED_PR_TITLE_ENV]: prStatus.status.title } : {}),
+        ...(returnTo ? { [TIM_SESSION_RETURN_TO_ENV]: returnTo } : {}),
+      };
+      return model === undefined
+        ? spawnChatForPrProcess(prUrl, cwd, executor, undefined, sessionEnv)
+        : spawnChatForPrProcess(prUrl, cwd, executor, model, sessionEnv);
+    })
 );

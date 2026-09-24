@@ -79,6 +79,7 @@
     submitAsCommentOnly?: boolean;
     reviewThreads?: PrReviewThreadDetail[];
     chatTarget?: ChatTarget;
+    chatReturnTo?: string;
     chatExecutorOptions?: ChatExecutorOption[];
   }
 
@@ -98,6 +99,7 @@
     submitAsCommentOnly = false,
     reviewThreads = [],
     chatTarget = undefined,
+    chatReturnTo = undefined,
     chatExecutorOptions = undefined,
   }: Props = $props();
 
@@ -1116,6 +1118,7 @@
       {#if chatTarget}
         <SessionChatButton
           target={chatTarget}
+          returnTo={chatReturnTo}
           {chatExecutorOptions}
           variant="outline"
           buttonClass="rounded-md text-xs font-medium text-foreground"
