@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import ReviewGuideView from '$lib/components/ReviewGuideView.svelte';
   import type { PageData } from './$types';
 
@@ -33,5 +34,6 @@
   submitAsCommentOnly={data.submitAsCommentOnly}
   reviewThreads={data.reviewThreads}
   chatTarget={{ planUuid: data.plan.uuid }}
+  chatReturnTo={`${page.url.pathname}${page.url.search}${page.url.hash}`}
   chatExecutorOptions={data.chatExecutorOptions}
 />

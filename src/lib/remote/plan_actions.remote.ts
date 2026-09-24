@@ -44,6 +44,7 @@ import { checkAndMarkParentDone } from '$tim/plans/parent_cascade.js';
 import { isWorkComplete } from '$tim/plans/plan_state_utils.js';
 import { getProjectUuidForId, writePlanSetStatus } from '$tim/sync/write_router.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
+import { TIM_SESSION_RETURN_TO_ENV } from '$tim/headless.js';
 
 type PlanDetail = Awaited<ReturnType<typeof getPlanDetail>>;
 type PlanDetailResult = NonNullable<PlanDetail>;
@@ -370,22 +371,37 @@ const startChatSchema = z.object({
   planUuid: z.string().min(1),
   executor: z.enum(['claude', 'codex', 'claude-code', 'codex-cli']),
   model: z.string().min(1).optional(),
+  returnTo: z
+    .string()
+    .refine(
+      (value) =>
+        value.startsWith('/') && !value.startsWith('//') && !/[\\\u0000-\u001f]/.test(value),
+      'Must be a local path'
+    )
+    .optional(),
 });
 
-export const startChat = command(startChatSchema, async ({ planUuid, executor, model }) => {
-  return launchTimCommand(
-    'chat',
-    planUuid,
-    isPlanEligibleForChat,
-    'Plan is not eligible for chat',
-    (planId, cwd) => {
-      if (model === undefined) {
-        return spawnChatProcess(planId, cwd, executor);
+export const startChat = command(
+  startChatSchema,
+  async ({ planUuid, executor, model, returnTo }) => {
+    return launchTimCommand(
+      'chat',
+      planUuid,
+      isPlanEligibleForChat,
+      'Plan is not eligible for chat',
+      (planId, cwd) => {
+        if (returnTo) {
+          const sessionEnv = { [TIM_SESSION_RETURN_TO_ENV]: returnTo };
+          return spawnChatProcess(planId, cwd, executor, model, sessionEnv);
+        }
+        if (model === undefined) {
+          return spawnChatProcess(planId, cwd, executor);
+        }
+        return spawnChatProcess(planId, cwd, executor, model);
       }
-      return spawnChatProcess(planId, cwd, executor, model);
-    }
-  );
-});
+    );
+  }
+);
 
 const openInEditorSchema = z.object({
   planUuid: z.string().min(1),

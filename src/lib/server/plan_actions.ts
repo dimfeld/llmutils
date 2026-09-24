@@ -246,7 +246,8 @@ export async function spawnChatProcess(
   planId: number,
   cwd: string,
   executor: string,
-  model?: string
+  model?: string,
+  sessionEnv?: Record<string, string>
 ): Promise<SpawnProcessResult> {
   const args = [
     'chat',
@@ -262,7 +263,7 @@ export async function spawnChatProcess(
   }
   args.push('--no-terminal-input');
 
-  return spawnPlanTimProcess(describeTarget('plan', planId), planId, args, cwd);
+  return spawnPlanTimProcess(describeTarget('plan', planId), planId, args, cwd, sessionEnv);
 }
 
 export async function spawnChatForPrProcess(

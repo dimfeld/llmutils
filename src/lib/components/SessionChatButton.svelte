@@ -62,6 +62,7 @@
               planUuid: launchTarget.planUuid,
               executor: option.executor,
               model: option.model,
+              returnTo,
             })
           : await startPrChat({
               projectId: Number(launchTarget.projectId),
