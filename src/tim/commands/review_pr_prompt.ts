@@ -38,6 +38,18 @@ export interface PrReviewMetadata {
   headBranch: string;
   owner: string;
   repo: string;
+  linkedPlans?: LinkedPlanReviewMetadata[];
+}
+
+export interface RelatedPlanMetadata {
+  planId: number;
+  title: string;
+  order?: 'earlier' | 'later';
+}
+
+export interface LinkedPlanReviewMetadata extends RelatedPlanMetadata {
+  siblingPlans: RelatedPlanMetadata[];
+  siblingPlanDirectory?: string;
 }
 
 export interface PlanReviewMetadata {
@@ -50,6 +62,8 @@ export interface PlanReviewMetadata {
   tasks: Array<{ title: string; status?: string | null }>;
   parentChain: Array<{ planId: number; title: string }>;
   completedChildren: Array<{ planId: number; title: string }>;
+  siblingPlans?: RelatedPlanMetadata[];
+  siblingPlanDirectory?: string;
   baseBranch: string;
   /** The immutable commit used as the start of the review diff, when available. */
   baseSha: string | null;
@@ -130,7 +144,7 @@ function getDiffInstructions(metadata: ReviewSubjectMetadata, useJj: boolean): s
 }
 
 function formatPrMetadata(metadata: PrReviewMetadata): string {
-  return [
+  const lines = [
     `- PR URL: ${metadata.prUrl}`,
     `- PR Number: #${metadata.prNumber}`,
     `- Repository: ${metadata.owner}/${metadata.repo}`,
@@ -139,7 +153,36 @@ function formatPrMetadata(metadata: PrReviewMetadata): string {
     `- Base Branch: ${metadata.baseBranch}`,
     `- Base SHA: ${metadata.baseSha}`,
     `- Head Branch: ${metadata.headBranch}`,
-  ].join('\n');
+  ];
+
+  for (const linkedPlan of metadata.linkedPlans ?? []) {
+    lines.push('', ...formatRelatedPlan(linkedPlan, `Linked Plan #${linkedPlan.planId}`));
+    lines.push(...formatSiblingPlans(linkedPlan.siblingPlans, linkedPlan.siblingPlanDirectory));
+  }
+
+  return lines.join('\n');
+}
+
+function formatRelatedPlan(plan: RelatedPlanMetadata, heading: string): string[] {
+  return [`### ${heading}: ${plan.title}`];
+}
+
+function formatSiblingPlans(
+  siblingPlans: RelatedPlanMetadata[],
+  siblingPlanDirectory?: string
+): string[] {
+  if (siblingPlans.length === 0) {
+    return ['- Sibling Plans available if needed: (none)'];
+  }
+
+  return [
+    `- Sibling plan markdowns available if needed in: ${siblingPlanDirectory ?? '(directory unavailable)'}`,
+    '- Files are named `<plan-id>.plan.md`; sibling plans are ordered by plan ID:',
+    ...siblingPlans.map(
+      (plan) =>
+        `  - ${plan.order === 'later' ? 'Later' : 'Earlier'} sibling #${plan.planId}: ${plan.title}`
+    ),
+  ];
 }
 
 function formatPlanMetadata(metadata: PlanReviewMetadata): string {
@@ -157,6 +200,10 @@ function formatPlanMetadata(metadata: PlanReviewMetadata): string {
     metadata.completedChildren.length > 0
       ? metadata.completedChildren.map((plan) => `  - #${plan.planId}: ${plan.title}`).join('\n')
       : '  - (none)';
+  const siblingPlans = formatSiblingPlans(
+    metadata.siblingPlans ?? [],
+    metadata.siblingPlanDirectory
+  ).join('\n');
 
   return [
     `- Plan ID: #${metadata.planId}`,
@@ -173,6 +220,7 @@ function formatPlanMetadata(metadata: PlanReviewMetadata): string {
     parentChain,
     '- Completed Children:',
     completedChildren,
+    siblingPlans,
   ].join('\n');
 }
 
@@ -291,6 +339,8 @@ Treat the guide as an architectural map of the change, not only as a transcripti
 
 ${REVIEW_CATEGORIES_SECTION}
 
+${buildSiblingPlanReviewGuidance(metadata)}
+
 ## Output File
 Write the guide as markdown to:
 \`${guidePath}\`
@@ -298,6 +348,21 @@ Write the guide as markdown to:
 The guide must be structured with section headers and subsection headers, and must explicitly call out major-risk areas first.${maybeCustomInstructions(
     customInstructions
   )}`;
+}
+
+function buildSiblingPlanReviewGuidance(metadata: ReviewSubjectMetadata): string {
+  const hasSiblingPlans =
+    metadata.kind === 'plan'
+      ? (metadata.siblingPlans ?? []).length > 0
+      : (metadata.linkedPlans ?? []).some((plan) => plan.siblingPlans.length > 0);
+  if (!hasSiblingPlans) {
+    return '';
+  }
+
+  return `## Sibling Plan Awareness
+- Review the current plan or PR context first. The sibling plan references above are available if you need them; do not read sibling plans by default.
+- If new code, symbols, configuration, or data appears unused and the current context does not explain whether it is intended for later work, inspect only the relevant later sibling markdown from the directory shown in the metadata. Its filename is \`<plan-id>.plan.md\`.
+- If that plan clearly expects to use or complete the addition, explain the planned use and do not call it unused only because this change does not use it yet. Do not assume a future use when the plan does not support it.`;
 }
 
 interface ReviewGuideCommentPromptOptions {
@@ -430,7 +495,9 @@ export function buildStandaloneReviewIssuesPrompt(
       : 'Evaluate the implementation against the plan goal, details, task list, parent context, and completed child plans. Focus only on defects or meaningful review issues in the changed code.\n';
   const planContextInstruction =
     metadata.kind === 'pr'
-      ? '- Do not include plan/task context; this is PR-only review.'
+      ? (metadata.linkedPlans ?? []).length > 0
+        ? '- Keep findings scoped to the PR diff. Use linked plan context only to judge whether code that appears unused is planned for later sibling work.'
+        : '- Do not include plan/task context; this is PR-only review.'
       : '- Use the plan/task context only to judge whether changed code correctly implements the requested plan.';
 
   return `${buildReviewerPromptIntro(false)}You are performing a standalone ${metadata.kind === 'pr' ? 'PR' : 'plan implementation'} code review.
@@ -443,6 +510,8 @@ ${formatSubjectMetadata(metadata)}
 ${getDiffInstructions(metadata, useJj)}
 
 ${buildReviewerCriticalIssuesGuidance()}
+
+${buildSiblingPlanReviewGuidance(metadata)}
 
 ${ASSUME_CHECKS_PASS_SECTION}
 

@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import { getGitRoot, getMergeBase } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
@@ -6,12 +7,13 @@ import { getDatabase } from '../db/database.js';
 import { getPlanByPlanId } from '../db/plan.js';
 import { createReview } from '../db/review.js';
 import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
+import { MATERIALIZED_DIR, materializeRelatedPlans } from '../plan_materialize.js';
 import { parsePlanIdFromCliArg, resolvePlanByNumericId } from '../plans.js';
 import { resolveReviewExecutorSelection } from '../review_runner.js';
 import { getSignalExitCode, isShuttingDown, setDeferSignalExit } from '../shutdown_state.js';
 import { gatherPlanContext, type PlanContext } from '../utils/context_gathering.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
-import type { PlanReviewMetadata } from './review_pr_prompt.js';
+import type { PlanReviewMetadata, RelatedPlanMetadata } from './review_pr_prompt.js';
 import {
   buildReviewGuideDiffCatalog,
   loadCustomReviewInstructions,
@@ -91,6 +93,25 @@ export function buildPlanMetadata(
     })),
     parentChain: mapRelatedPlans(context.parentChain, 'parent plan'),
     completedChildren: mapRelatedPlans(context.completedChildren, 'completed child plan'),
+    siblingPlans: context.siblingPlans.flatMap((plan): RelatedPlanMetadata[] => {
+      const siblingPlanId = Number(plan.id);
+      if (Number.isNaN(siblingPlanId)) {
+        warn(
+          `Warning: Skipping sibling plan with non-numeric id "${String(plan.id)}" while building plan review metadata.`
+        );
+        return [];
+      }
+
+      return [
+        {
+          planId: siblingPlanId,
+          title: plan.title ?? `(plan ${siblingPlanId})`,
+          order: siblingPlanId > planId ? 'later' : 'earlier',
+        },
+      ];
+    }),
+    siblingPlanDirectory:
+      context.siblingPlans.length > 0 ? path.join(context.gitRoot, MATERIALIZED_DIR) : undefined,
     baseBranch: context.diffResult.baseBranch,
     baseSha,
     headRef,
@@ -179,6 +200,10 @@ export async function handlePlanReviewGuideCommand(
         if (context.noChangesDetected) {
           log('No changes detected for plan review guide. Nothing to do.');
           return;
+        }
+
+        if (context.siblingPlans.length > 0) {
+          await materializeRelatedPlans(planId, context.gitRoot);
         }
 
         const customInstructions = await loadCustomReviewInstructions(config, baseDir);

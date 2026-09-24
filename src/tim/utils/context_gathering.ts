@@ -42,6 +42,11 @@ export interface PlanContext {
   noChangesDetected?: boolean;
 }
 
+export interface PlanSiblingContext {
+  planData: PlanSchema;
+  siblingPlans: PlanSchema[];
+}
+
 /**
  * Dependencies that can be injected for testing
  */
@@ -73,6 +78,30 @@ const defaultDependencies: ContextGatheringDependencies = {
   loadEffectiveConfig,
   resolveEffectivePlanBase,
 };
+
+export async function gatherPlanSiblingContext(
+  planId: number,
+  options: { cwd?: string },
+  globalOpts: { config?: string },
+  deps: ContextGatheringDependencies = defaultDependencies
+): Promise<PlanSiblingContext> {
+  const repoRoot = await deps.resolveRepoRoot(globalOpts.config, options.cwd);
+  const resolvedPlan = await deps.resolvePlanByNumericId(planId, repoRoot);
+  const gitRoot = await deps.getGitRoot(repoRoot);
+  const { repositoryId } = await deps.getRepositoryIdentity({ cwd: repoRoot });
+  const { plans: allPlans } = deps.loadPlansFromDb(
+    getLegacyAwareSearchDir(gitRoot, repoRoot),
+    repositoryId
+  );
+  const planData = resolvedPlan.plan;
+  const siblingPlans = planData.parent
+    ? Array.from(allPlans.values())
+        .filter((candidate) => candidate.id !== planData.id && candidate.parent === planData.parent)
+        .toSorted((a, b) => (a.id ?? 0) - (b.id ?? 0))
+    : [];
+
+  return { planData, siblingPlans };
+}
 
 /**
  * Gathers comprehensive context for a plan including hierarchy and diff information.

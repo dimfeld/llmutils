@@ -13,7 +13,7 @@ import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_request
 import { parseLineRange } from '../../common/review_line_range.js';
 export { parseLineRange };
 import { isTunnelActive } from '../../logging/tunnel_client.js';
-import { log } from '../../logging.js';
+import { log, warn } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import {
@@ -24,7 +24,12 @@ import {
 } from '../db/review.js';
 import { getLinkedPlansByPrUrl } from '../db/pr_status.js';
 import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
-import { type PrReviewMetadata } from './review_pr_prompt.js';
+import { MATERIALIZED_DIR, materializeRelatedPlans } from '../plan_materialize.js';
+import {
+  type LinkedPlanReviewMetadata,
+  type PrReviewMetadata,
+  type RelatedPlanMetadata,
+} from './review_pr_prompt.js';
 import {
   loadCustomReviewInstructions,
   loadReviewGuideDiffCatalog,
@@ -38,6 +43,7 @@ import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { WorkspaceAutoSelector } from '../workspace/workspace_auto_selector.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
 import { getSignalExitCode, isShuttingDown, setDeferSignalExit } from '../shutdown_state.js';
+import { gatherPlanSiblingContext } from '../utils/context_gathering.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -76,7 +82,8 @@ function getRootOptions(command: RootCommandLike | undefined): { config?: string
 
 function buildPrMetadata(
   context: Awaited<ReturnType<typeof gatherPrContext>>,
-  baseSha: string = context.baseSha
+  baseSha: string = context.baseSha,
+  linkedPlans: LinkedPlanReviewMetadata[] = []
 ): PrReviewMetadata {
   return {
     kind: 'pr',
@@ -89,7 +96,58 @@ function buildPrMetadata(
     headBranch: context.headBranch,
     owner: context.owner,
     repo: context.repo,
+    linkedPlans,
   };
+}
+
+async function loadLinkedPlanReviewMetadata(
+  db: Database,
+  prUrl: string,
+  baseDir: string,
+  globalOpts: { config?: string }
+): Promise<LinkedPlanReviewMetadata[]> {
+  const linkedPlans = getLinkedPlansByPrUrl(db, [prUrl]).get(prUrl) ?? [];
+  const metadata: LinkedPlanReviewMetadata[] = [];
+  const materializedRoot = await getGitRoot(baseDir);
+
+  for (const linkedPlan of linkedPlans) {
+    try {
+      const context = await gatherPlanSiblingContext(
+        linkedPlan.planId,
+        { cwd: baseDir },
+        globalOpts
+      );
+      if (context.siblingPlans.length > 0) {
+        await materializeRelatedPlans(linkedPlan.planId, materializedRoot);
+      }
+      const toRelatedPlan = (
+        plan: typeof context.planData,
+        order?: 'earlier' | 'later'
+      ): RelatedPlanMetadata => ({
+        planId: plan.id,
+        title: plan.title ?? `(plan ${plan.id})`,
+        ...(order ? { order } : {}),
+      });
+
+      metadata.push({
+        ...toRelatedPlan(context.planData),
+        siblingPlans: context.siblingPlans.map((plan) =>
+          toRelatedPlan(plan, plan.id > context.planData.id ? 'later' : 'earlier')
+        ),
+        siblingPlanDirectory:
+          context.siblingPlans.length > 0
+            ? path.join(materializedRoot, MATERIALIZED_DIR)
+            : undefined,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warn(
+        `Warning: Could not load sibling plan context for plan #${linkedPlan.planId} linked to ${prUrl}: ${message}`
+      );
+    }
+  }
+
+  return metadata;
 }
 
 function updateReviewGuideSessionInfo(
@@ -348,7 +406,13 @@ export async function handleReviewGuideCommand(
           prContext.baseBranch,
           prContext.baseSha
         );
-        const metadata = buildPrMetadata(prContext, baseSha);
+        const linkedPlanMetadata = await loadLinkedPlanReviewMetadata(
+          db,
+          prContext.prUrl,
+          baseDir,
+          globalOpts
+        );
+        const metadata = buildPrMetadata(prContext, baseSha, linkedPlanMetadata);
         const diffCatalog = await loadReviewGuideDiffCatalog({
           baseDir,
           baseSha,
