@@ -169,6 +169,54 @@ describe('common/github/pr_status_service', () => {
     expect(getBranchMergeRequirements(db, 'example', 'repo', 'main')?.requirements).toHaveLength(1);
   });
 
+  test('digest refresh skips review detail queries for a PR that is still draft', async () => {
+    const prUrl = 'https://github.com/example/repo/pull/203';
+    upsertPrStatus(db, {
+      prUrl,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 203,
+      title: 'Old title',
+      state: 'open',
+      draft: false,
+      readyAt: '2026-01-01T00:00:00.000Z',
+      lastFetchedAt: '2026-01-01T00:00:00.000Z',
+    });
+    vi.mocked(parsePrOrIssueNumber).mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      number: 203,
+    });
+    vi.mocked(fetchPrFullStatus).mockResolvedValue({
+      number: 203,
+      title: 'Current draft title',
+      state: 'open',
+      isDraft: true,
+      mergeable: 'UNKNOWN',
+      mergedAt: null,
+      headSha: 'draft-sha',
+      baseRefName: 'main',
+      headRefName: 'draft',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'pending',
+    });
+    vi.mocked(fetchPrReviewThreads).mockResolvedValue([]);
+
+    const result = await refreshPrStatus(db, prUrl, { refreshDigestMetadata: true });
+
+    expect(fetchPrReviewThreads).not.toHaveBeenCalled();
+    expect(fetchPrDigestTimeline).not.toHaveBeenCalled();
+    expect(result.status.draft).toBe(1);
+    expect(result.status.title).toBe('Current draft title');
+    expect(result.status.ready_at).toBeNull();
+
+    await refreshPrStatus(db, prUrl);
+    expect(fetchPrReviewThreads).toHaveBeenCalledWith('example', 'repo', 203);
+  });
+
   test('refreshPrStatus rolls back PR status when a digest review-request write fails', async () => {
     const prUrl = 'https://github.com/example/repo/pull/202';
     upsertPrStatus(db, {

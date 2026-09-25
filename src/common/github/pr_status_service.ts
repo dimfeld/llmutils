@@ -8,6 +8,8 @@ import {
   fetchPrMergeableAndReviewDecision,
   fetchPrReviewThread,
   fetchPrReviewThreads,
+  type PrDigestTimeline,
+  type PrFullStatus,
 } from './pr_status.js';
 import {
   getPrStatusByUrl,
@@ -18,6 +20,7 @@ import {
   upsertPrReviewRequestByReviewer,
   upsertPrStatus,
   type PrStatusDetail,
+  type StoredPrReviewThreadInput,
   type UpsertPrStatusInput,
 } from '../../tim/db/pr_status.js';
 
@@ -53,43 +56,69 @@ export async function refreshPrStatus(
   }
 
   const fetchOptions = githubFetchOptions(options);
-  const [fullStatusResult, reviewThreadsResult] = await Promise.allSettled([
-    fetchPrFullStatus(
-      parsed.owner,
-      parsed.repo,
-      parsed.number,
-      ...(fetchOptions ? [fetchOptions] : [])
-    ),
-    fetchPrReviewThreads(
-      parsed.owner,
-      parsed.repo,
-      parsed.number,
-      ...(fetchOptions ? [fetchOptions] : [])
-    ),
-  ]);
+  let fullStatus: PrFullStatus;
+  let reviewThreadsResult: PromiseSettledResult<StoredPrReviewThreadInput[]> | null = null;
+  let digestTimeline: PrDigestTimeline | null = null;
 
-  if (fullStatusResult.status !== 'fulfilled') {
-    throw fullStatusResult.reason;
+  if (options.refreshDigestMetadata) {
+    fullStatus = await fetchPrFullStatus(
+      parsed.owner,
+      parsed.repo,
+      parsed.number,
+      ...(fetchOptions ? [fetchOptions] : [])
+    );
+    if (!fullStatus.isDraft) {
+      const [threadsResult, timelineResult] = await Promise.allSettled([
+        fetchPrReviewThreads(
+          parsed.owner,
+          parsed.repo,
+          parsed.number,
+          ...(fetchOptions ? [fetchOptions] : [])
+        ),
+        fetchPrDigestTimeline(
+          parsed.owner,
+          parsed.repo,
+          parsed.number,
+          fullStatus.isDraft,
+          fullStatus.createdAt ?? null,
+          ...(fetchOptions ? [fetchOptions] : [])
+        ),
+      ]);
+      reviewThreadsResult = threadsResult;
+      if (timelineResult.status === 'rejected') {
+        throw timelineResult.reason;
+      }
+      digestTimeline = timelineResult.value;
+    }
+  } else {
+    const [fullStatusResult, threadsResult] = await Promise.allSettled([
+      fetchPrFullStatus(
+        parsed.owner,
+        parsed.repo,
+        parsed.number,
+        ...(fetchOptions ? [fetchOptions] : [])
+      ),
+      fetchPrReviewThreads(
+        parsed.owner,
+        parsed.repo,
+        parsed.number,
+        ...(fetchOptions ? [fetchOptions] : [])
+      ),
+    ]);
+    if (fullStatusResult.status === 'rejected') {
+      throw fullStatusResult.reason;
+    }
+    fullStatus = fullStatusResult.value;
+    reviewThreadsResult = threadsResult;
   }
 
-  if (reviewThreadsResult.status === 'rejected') {
+  if (reviewThreadsResult?.status === 'rejected') {
     console.warn(
       `[pr_status] Failed to fetch review threads for ${canonicalPrUrl}:`,
       reviewThreadsResult.reason
     );
   }
 
-  const fullStatus = fullStatusResult.value;
-  const digestTimeline = options.refreshDigestMetadata
-    ? await fetchPrDigestTimeline(
-        parsed.owner,
-        parsed.repo,
-        parsed.number,
-        fullStatus.isDraft,
-        fullStatus.createdAt ?? null,
-        ...(fetchOptions ? [fetchOptions] : [])
-      )
-    : null;
   if (fullStatus.baseRefName) {
     await ensureBranchMergeRequirementsFresh(
       db,
@@ -125,7 +154,11 @@ export async function refreshPrStatus(
         deletions: fullStatus.deletions,
         changedFiles: fullStatus.changedFiles,
         lastFetchedAt: getNowIsoString(),
-        ...(digestTimeline ? { readyAt: digestTimeline.readyAt } : {}),
+        ...(options.refreshDigestMetadata && fullStatus.isDraft
+          ? { readyAt: null }
+          : digestTimeline
+            ? { readyAt: digestTimeline.readyAt }
+            : {}),
         checks: fullStatus.checks.map((check) => ({
           name: check.name,
           source: check.source,
@@ -146,7 +179,7 @@ export async function refreshPrStatus(
           color: label.color,
         })),
         reviewThreads:
-          reviewThreadsResult.status === 'fulfilled' ? reviewThreadsResult.value : undefined,
+          reviewThreadsResult?.status === 'fulfilled' ? reviewThreadsResult.value : undefined,
       });
 
       if (digestTimeline) {
