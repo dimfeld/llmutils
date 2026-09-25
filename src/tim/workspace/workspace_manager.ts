@@ -23,7 +23,7 @@ import { buildDescriptionFromPlan } from '../display_utils.js';
 import { readPlanFile } from '../plans.js';
 import { findPrimaryWorkspaceForRepository } from './workspace_info.js';
 import type { PlanSchema } from '../planSchema.js';
-import { DEFAULT_WORKSPACE_CLONE_LOCATION } from './workspace_paths.js';
+import { getDefaultWorkspaceCloneLocation } from './workspace_paths.js';
 
 interface WorkspaceCommandEnvironmentContextInput {
   repoPath: string;
@@ -1169,7 +1169,8 @@ export async function createWorkspace(
   }
 
   // Step 2: Determine clone location
-  const cloneLocation = workspaceConfig.cloneLocation ?? DEFAULT_WORKSPACE_CLONE_LOCATION;
+  const cloneLocation =
+    workspaceConfig.cloneLocation ?? getDefaultWorkspaceCloneLocation(mainRepoRoot);
 
   // If relative, resolve against mainRepoRoot
   const cloneLocationBase = path.isAbsolute(cloneLocation)

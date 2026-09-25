@@ -224,7 +224,9 @@ inbox:
 
 `tim` is designed to run AI work outside your main checkout. A project should have one primary workspace and any number of execution workspaces.
 
-The primary workspace is a normal Git checkout that anchors the project in `tim`'s database. The web UI launches `generate`, `agent`, `chat`, `update-docs`, and `rebase` commands from the primary workspace, and new workspaces are created as siblings of it.
+The primary workspace is a normal Git checkout that anchors the project in `tim`'s database. The web UI launches `generate`, `agent`, `chat`, `update-docs`, and `rebase` commands from the primary workspace.
+
+By default, tim creates execution workspaces in a directory specific to the primary checkout under `~/.local/share/tim/workspaces/` on Unix systems. It uses `XDG_DATA_HOME` when set, or `%APPDATA%\\tim\\workspaces` on Windows. Set `workspaceCreation.cloneLocation` to use another directory. Existing registered workspaces remain available at their recorded paths.
 
 `tim init` registers the current checkout as primary. To register a checkout without
 running init, use:

@@ -34,6 +34,7 @@ import type { TimConfig, TimConfigInput } from '../configSchema.js';
 import { log, debugLog } from '../../logging.js';
 import { spawnAndLogOutput } from '../../common/process.js';
 import { executePostApplyCommand } from '../actions.js';
+import { getDefaultWorkspaceCloneLocation } from './workspace_paths.js';
 
 const mockLog = vi.mocked(log);
 const mockDebugLog = vi.mocked(debugLog);
@@ -451,7 +452,7 @@ describe('createWorkspace', () => {
     );
   });
 
-  test('createWorkspace defaults cloneLocation to .tim/workspaces when not specified', async () => {
+  test('createWorkspace defaults cloneLocation to the project data directory', async () => {
     // Setup
     const taskId = 'task-123';
     const planPath = '/path/to/plan.yml';
@@ -465,7 +466,9 @@ describe('createWorkspace', () => {
       },
     };
 
-    const expectedCloneLocation = path.join(mainRepoRoot, '.tim', 'workspaces');
+    const previousDataHome = process.env.XDG_DATA_HOME;
+    process.env.XDG_DATA_HOME = path.join(testTempDir, 'data');
+    const expectedCloneLocation = getDefaultWorkspaceCloneLocation(mainRepoRoot);
     const expectedTargetPath = path.join(expectedCloneLocation, `repo-${taskId}`);
 
     mockSpawnAndLogOutput.mockImplementation(async (cmd: string[], options?: { cwd?: string }) => {
@@ -486,14 +489,35 @@ describe('createWorkspace', () => {
       return { exitCode: 0, stdout: '', stderr: '' };
     });
 
-    const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
+    try {
+      const result = await createWorkspace(mainRepoRoot, taskId, planPath, config);
 
-    expect(result).not.toBeNull();
-    expect(result?.path).toBe(expectedTargetPath);
-    await expect(fs.access(expectedCloneLocation)).resolves.toBeNull();
-    expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(
-      ['git', 'clone', repositoryUrl, expectedTargetPath],
-      expect.objectContaining({ cwd: mainRepoRoot })
+      expect(result).not.toBeNull();
+      expect(result?.path).toBe(expectedTargetPath);
+      expect(
+        expectedCloneLocation.startsWith(path.join(testTempDir, 'data', 'tim', 'workspaces'))
+      ).toBe(true);
+      await expect(fs.access(expectedCloneLocation)).resolves.toBeNull();
+      expect(mockSpawnAndLogOutput).toHaveBeenCalledWith(
+        ['git', 'clone', repositoryUrl, expectedTargetPath],
+        expect.objectContaining({ cwd: mainRepoRoot })
+      );
+    } finally {
+      if (previousDataHome === undefined) {
+        delete process.env.XDG_DATA_HOME;
+      } else {
+        process.env.XDG_DATA_HOME = previousDataHome;
+      }
+    }
+  });
+
+  test('default clone locations distinguish checkouts with the same name', () => {
+    const first = path.join(testTempDir, 'first', 'repo');
+    const second = path.join(testTempDir, 'second', 'repo');
+
+    expect(getDefaultWorkspaceCloneLocation(first)).toBe(getDefaultWorkspaceCloneLocation(first));
+    expect(getDefaultWorkspaceCloneLocation(first)).not.toBe(
+      getDefaultWorkspaceCloneLocation(second)
     );
   });
 
