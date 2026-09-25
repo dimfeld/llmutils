@@ -26,6 +26,7 @@ import {
   getEligibleDailyDigestWorkspaces,
   runAllDailyDigests,
   runDailyDigestForWorkspace,
+  refreshProjectDigestPrs,
   type CollectedProjectDigest,
 } from '../../lib/server/daily_digest.js';
 import type { DigestEntry, PrDigest } from '../../lib/server/pr_digest.js';
@@ -53,6 +54,7 @@ interface RootCommandLike {
     config?: string;
     dryRun?: boolean;
     pin?: boolean;
+    refresh?: boolean;
   };
 }
 
@@ -76,6 +78,7 @@ interface SlackDigestRunOptions {
 interface SlackDigestUpdateOptions {
   dryRun?: boolean;
   pin?: boolean;
+  refresh?: boolean;
 }
 
 interface SlackWorkspaceOption {
@@ -671,6 +674,10 @@ export async function handleSlackDigestUpdateCommand(
   const existingMessage = getLatestSlackDailyDigestMessage(db, workspace, channel, repoFullName);
 
   const shouldPin = hasPinOption(options, command);
+  const shouldRefresh = options.refresh === true || command?.opts?.().refresh === true;
+  if (shouldRefresh && existingMessage) {
+    await refreshProjectDigestPrs(db, ownerRepo.owner, ownerRepo.repo);
+  }
   if (hasDryRunOption(options, command)) {
     log(chalk.bold('Slack daily PR digest update dry run'));
     log(`Repository: ${repoFullName}`);

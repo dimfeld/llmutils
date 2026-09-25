@@ -692,6 +692,160 @@ describe('tim slack CLI handlers', () => {
   });
 
   describe('handleSlackDigestUpdateCommand', () => {
+    test('refreshes the dry-run preview without updating Slack', async () => {
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      upsertSlackDailyDigestMessage(db, {
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+        repoFullName: `${OWNER}/${REPO}`,
+        digestDate: '2026-01-01',
+        slackChannel: 'C123',
+        slackTs: '1710000000.000100',
+      });
+      const prUrl = `https://github.com/${OWNER}/${REPO}/pull/7`;
+      upsertPrStatus(db, {
+        prUrl,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 7,
+        title: 'Cached title',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+      vi.mocked(refreshPrStatus).mockImplementationOnce(async (database, url) => {
+        upsertPrStatus(database, {
+          prUrl: url,
+          owner: OWNER,
+          repo: REPO,
+          prNumber: 7,
+          title: 'Fresh preview title',
+          state: 'open',
+          draft: false,
+          reviewDecision: 'APPROVED',
+          lastFetchedAt: '2026-01-02T00:00:00.000Z',
+        });
+        return getPrStatusByUrl(database, url)!;
+      });
+      const sender = vi.fn(
+        async (_args: SlackUpdateSenderArgs): Promise<SlackPostResult> => ({ ok: true })
+      );
+
+      await handleSlackDigestUpdateCommand({ refresh: true, dryRun: true }, fakeCommand, sender);
+
+      expect(refreshPrStatus).toHaveBeenCalledWith(db, prUrl, { refreshDigestMetadata: true });
+      expect(sender).not.toHaveBeenCalled();
+      const { log } = await import('../../logging.js');
+      expect(
+        vi
+          .mocked(log)
+          .mock.calls.map((call) => String(call[0]))
+          .join('\n')
+      ).toContain('Fresh preview title');
+    });
+
+    test('refreshes cached PRs before updating when requested', async () => {
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      upsertSlackDailyDigestMessage(db, {
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+        repoFullName: `${OWNER}/${REPO}`,
+        digestDate: '2026-01-01',
+        slackChannel: 'C123',
+        slackTs: '1710000000.000100',
+      });
+      const prUrl = `https://github.com/${OWNER}/${REPO}/pull/8`;
+      upsertPrStatus(db, {
+        prUrl,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 8,
+        title: 'Old title',
+        state: 'open',
+        draft: false,
+        reviewDecision: 'APPROVED',
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+      vi.mocked(refreshPrStatus).mockImplementationOnce(async (database, url) => {
+        upsertPrStatus(database, {
+          prUrl: url,
+          owner: OWNER,
+          repo: REPO,
+          prNumber: 8,
+          title: 'Fresh title',
+          state: 'open',
+          draft: false,
+          reviewDecision: 'APPROVED',
+          lastFetchedAt: '2026-01-02T00:00:00.000Z',
+        });
+        return getPrStatusByUrl(database, url)!;
+      });
+      const updates: SlackUpdateSenderArgs[] = [];
+      const sender = async (args: SlackUpdateSenderArgs): Promise<SlackPostResult> => {
+        updates.push(args);
+        return { ok: true, channel: args.channel, ts: args.ts };
+      };
+
+      await handleSlackDigestUpdateCommand({ refresh: true }, fakeCommand, sender);
+
+      expect(refreshPrStatus).toHaveBeenCalledWith(db, prUrl, { refreshDigestMetadata: true });
+      expect(updates).toHaveLength(1);
+      expect(JSON.stringify(updates[0].payload.blocks)).toContain('Fresh title');
+    });
+
+    test('does not update Slack when a requested PR refresh fails', async () => {
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      upsertSlackDailyDigestMessage(db, {
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+        repoFullName: `${OWNER}/${REPO}`,
+        digestDate: '2026-01-01',
+        slackChannel: 'C123',
+        slackTs: '1710000000.000100',
+      });
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/9`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 9,
+        title: 'Cached title',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+      vi.mocked(refreshPrStatus).mockRejectedValueOnce(new Error('GitHub failed'));
+      const sender = vi.fn(
+        async (_args: SlackUpdateSenderArgs): Promise<SlackPostResult> => ({ ok: true })
+      );
+
+      await expect(
+        handleSlackDigestUpdateCommand({ refresh: true }, fakeCommand, sender)
+      ).rejects.toThrow('GitHub failed');
+      expect(sender).not.toHaveBeenCalled();
+    });
+
     test('dry run reports the latest stored message for the current repo', async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-01-02T12:00:00.000Z'));

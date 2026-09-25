@@ -89,7 +89,11 @@ export interface CollectDailyDigestsOptions {
   onProjectError?: (repositoryId: string, error: unknown) => void;
 }
 
-async function refreshProjectDigestPrs(db: Database, owner: string, repo: string): Promise<void> {
+export async function refreshProjectDigestPrs(
+  db: Database,
+  owner: string,
+  repo: string
+): Promise<void> {
   const prUrls = getOpenPrStatusUrlsForRepo(db, owner, repo);
 
   for (const prUrl of prUrls) {

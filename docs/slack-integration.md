@@ -220,10 +220,11 @@ Runs the daily digest immediately for every workspace with `dailyDigest.enabled:
 ### Update the Latest Daily Digest
 
 ```bash
-tim slack digest update [--dry-run] [--pin]
+tim slack digest update [--dry-run] [--pin] [--refresh]
 ```
 
 Updates the current repo's latest stored daily digest message in place, using the Slack message timestamp stored by a previous scheduled or manual digest post. `--pin` also pins the updated message and unpins the latest previous digest message for the same repo/channel. `--dry-run` prints the lookup key (`workspace`, configured channel, and repo), reports whether a stored Slack message was found, and prints the current computed digest without calling Slack. If no stored message exists, the command does not post a new one.
+`--refresh` fetches current status and digest history for the repo's cached open PRs from GitHub before computing the update. It also works with `--dry-run`; the preview does not call Slack, but the GitHub refresh updates the local database. If any PR refresh fails, the update stops before calling Slack.
 
 ## Posted Message Shape
 

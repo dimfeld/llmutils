@@ -6,6 +6,7 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from '../../tim/db/database.js';
 import { getBranchMergeRequirements } from '../../tim/db/branch_merge_requirements.js';
+import { refreshPrStatus } from './pr_status_service.js';
 import { getPrStatusByUrl, getPrStatusForPlan, upsertPrStatus } from '../../tim/db/pr_status.js';
 import { nonSyncedUpsertPlan } from '../../tim/db/plan.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
@@ -20,6 +21,7 @@ vi.mock('../../common/github/identifiers.ts', () => ({
 
 vi.mock('../../common/github/pr_status.ts', () => ({
   fetchPrFullStatus: vi.fn(),
+  fetchPrDigestTimeline: vi.fn(),
   fetchPrCheckStatus: vi.fn(),
   fetchPrMergeableAndReviewDecision: vi.fn(),
   fetchPrReviewThread: vi.fn(),
@@ -40,6 +42,7 @@ import {
 import {
   fetchPrCheckStatus,
   fetchPrFullStatus,
+  fetchPrDigestTimeline,
   fetchPrMergeableAndReviewDecision,
   fetchPrReviewThread,
   fetchPrReviewThreads,
@@ -164,6 +167,59 @@ describe('common/github/pr_status_service', () => {
       1
     );
     expect(getBranchMergeRequirements(db, 'example', 'repo', 'main')?.requirements).toHaveLength(1);
+  });
+
+  test('refreshPrStatus rolls back PR status when a digest review-request write fails', async () => {
+    const prUrl = 'https://github.com/example/repo/pull/202';
+    upsertPrStatus(db, {
+      prUrl,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 202,
+      title: 'Original title',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-01-01T00:00:00.000Z',
+    });
+    vi.mocked(parsePrOrIssueNumber).mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      number: 202,
+    });
+    vi.mocked(fetchPrFullStatus).mockResolvedValue({
+      number: 202,
+      title: 'Changed title',
+      state: 'open',
+      isDraft: false,
+      mergeable: 'MERGEABLE',
+      mergedAt: null,
+      headSha: 'new-sha',
+      baseRefName: 'main',
+      headRefName: 'feature',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'success',
+    });
+    vi.mocked(fetchPrReviewThreads).mockResolvedValue([]);
+    vi.mocked(fetchPrDigestTimeline).mockResolvedValue({
+      readyAt: '2026-01-02T00:00:00.000Z',
+      reviewRequestEvents: [
+        { reviewer: 'first', action: 'requested', eventAt: '2026-01-02T01:00:00.000Z' },
+        { reviewer: 'second', action: 'requested', eventAt: '2026-01-02T02:00:00.000Z' },
+      ],
+    });
+    db.exec(`CREATE TRIGGER fail_second_request BEFORE INSERT ON pr_review_request
+      WHEN NEW.reviewer = 'second' BEGIN SELECT RAISE(ABORT, 'request write failed'); END`);
+
+    await expect(refreshPrStatus(db, prUrl, { refreshDigestMetadata: true })).rejects.toThrow(
+      'request write failed'
+    );
+    const stored = getPrStatusByUrl(db, prUrl);
+    expect(stored?.status.title).toBe('Original title');
+    expect(stored?.status.ready_at).toBeNull();
+    expect(stored?.reviewRequests).toEqual([]);
   });
 
   test('refreshPrStatus persists additions, deletions, and changedFiles to the DB', async () => {

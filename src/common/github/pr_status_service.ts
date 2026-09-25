@@ -101,88 +101,92 @@ export async function refreshPrStatus(
     );
   }
 
-  const detail = upsertPrStatus(db, {
-    prUrl: canonicalPrUrl,
-    owner: parsed.owner,
-    repo: parsed.repo,
-    prNumber: parsed.number,
-    author: fullStatus.author,
-    title: fullStatus.title,
-    state: fullStatus.state,
-    draft: fullStatus.isDraft,
-    mergeable: fullStatus.mergeable,
-    headSha: fullStatus.headSha,
-    baseSha: fullStatus.baseSha,
-    baseBranch: fullStatus.baseRefName,
-    headBranch: fullStatus.headRefName,
-    requestedReviewers: fullStatus.requestedReviewers,
-    reviewDecision: fullStatus.reviewDecision,
-    checkRollupState: fullStatus.checkRollupState,
-    mergedAt: fullStatus.mergedAt,
-    additions: fullStatus.additions,
-    deletions: fullStatus.deletions,
-    changedFiles: fullStatus.changedFiles,
-    lastFetchedAt: getNowIsoString(),
-    ...(digestTimeline ? { readyAt: digestTimeline.readyAt } : {}),
-    checks: fullStatus.checks.map((check) => ({
-      name: check.name,
-      source: check.source,
-      status: check.status,
-      conclusion: check.conclusion,
-      detailsUrl: check.detailsUrl,
-      startedAt: check.startedAt,
-      completedAt: check.completedAt,
-    })),
-    reviews: fullStatus.reviews.map((review) => ({
-      author: review.author,
-      state: review.state,
-      body: review.body,
-      submittedAt: review.submittedAt,
-    })),
-    labels: fullStatus.labels.map((label) => ({
-      name: label.name,
-      color: label.color,
-    })),
-    reviewThreads:
-      reviewThreadsResult.status === 'fulfilled' ? reviewThreadsResult.value : undefined,
-  });
+  return db
+    .transaction((): PrStatusDetail => {
+      const detail = upsertPrStatus(db, {
+        prUrl: canonicalPrUrl,
+        owner: parsed.owner,
+        repo: parsed.repo,
+        prNumber: parsed.number,
+        author: fullStatus.author,
+        title: fullStatus.title,
+        state: fullStatus.state,
+        draft: fullStatus.isDraft,
+        mergeable: fullStatus.mergeable,
+        headSha: fullStatus.headSha,
+        baseSha: fullStatus.baseSha,
+        baseBranch: fullStatus.baseRefName,
+        headBranch: fullStatus.headRefName,
+        requestedReviewers: fullStatus.requestedReviewers,
+        reviewDecision: fullStatus.reviewDecision,
+        checkRollupState: fullStatus.checkRollupState,
+        mergedAt: fullStatus.mergedAt,
+        additions: fullStatus.additions,
+        deletions: fullStatus.deletions,
+        changedFiles: fullStatus.changedFiles,
+        lastFetchedAt: getNowIsoString(),
+        ...(digestTimeline ? { readyAt: digestTimeline.readyAt } : {}),
+        checks: fullStatus.checks.map((check) => ({
+          name: check.name,
+          source: check.source,
+          status: check.status,
+          conclusion: check.conclusion,
+          detailsUrl: check.detailsUrl,
+          startedAt: check.startedAt,
+          completedAt: check.completedAt,
+        })),
+        reviews: fullStatus.reviews.map((review) => ({
+          author: review.author,
+          state: review.state,
+          body: review.body,
+          submittedAt: review.submittedAt,
+        })),
+        labels: fullStatus.labels.map((label) => ({
+          name: label.name,
+          color: label.color,
+        })),
+        reviewThreads:
+          reviewThreadsResult.status === 'fulfilled' ? reviewThreadsResult.value : undefined,
+      });
 
-  if (digestTimeline) {
-    const latestEventByReviewer = new Map<
-      string,
-      (typeof digestTimeline.reviewRequestEvents)[number]
-    >();
-    for (const event of digestTimeline.reviewRequestEvents) {
-      const previous = latestEventByReviewer.get(event.reviewer);
-      if (!previous || Date.parse(event.eventAt) > Date.parse(previous.eventAt)) {
-        latestEventByReviewer.set(event.reviewer, event);
+      if (digestTimeline) {
+        const latestEventByReviewer = new Map<
+          string,
+          (typeof digestTimeline.reviewRequestEvents)[number]
+        >();
+        for (const event of digestTimeline.reviewRequestEvents) {
+          const previous = latestEventByReviewer.get(event.reviewer);
+          if (!previous || Date.parse(event.eventAt) > Date.parse(previous.eventAt)) {
+            latestEventByReviewer.set(event.reviewer, event);
+          }
+        }
+
+        const lastEventAtByReviewer = new Map(
+          detail.reviewRequests.map((request) => [request.reviewer, request.last_event_at])
+        );
+        for (const event of latestEventByReviewer.values()) {
+          const lastEventAt = lastEventAtByReviewer.get(event.reviewer);
+          if (!lastEventAt || Date.parse(event.eventAt) > Date.parse(lastEventAt)) {
+            upsertPrReviewRequestByReviewer(db, detail.status.id, {
+              reviewer: event.reviewer,
+              action: event.action,
+              eventAt: event.eventAt,
+            });
+          }
+        }
+
+        const refreshedDetail = getPrStatusByUrl(db, canonicalPrUrl);
+        if (!refreshedDetail) {
+          throw new Error(
+            `Failed to reload PR status after refreshing review requests: ${canonicalPrUrl}`
+          );
+        }
+        return refreshedDetail;
       }
-    }
 
-    const lastEventAtByReviewer = new Map(
-      detail.reviewRequests.map((request) => [request.reviewer, request.last_event_at])
-    );
-    for (const event of latestEventByReviewer.values()) {
-      const lastEventAt = lastEventAtByReviewer.get(event.reviewer);
-      if (!lastEventAt || Date.parse(event.eventAt) > Date.parse(lastEventAt)) {
-        upsertPrReviewRequestByReviewer(db, detail.status.id, {
-          reviewer: event.reviewer,
-          action: event.action,
-          eventAt: event.eventAt,
-        });
-      }
-    }
-
-    const refreshedDetail = getPrStatusByUrl(db, canonicalPrUrl);
-    if (!refreshedDetail) {
-      throw new Error(
-        `Failed to reload PR status after refreshing review requests: ${canonicalPrUrl}`
-      );
-    }
-    return refreshedDetail;
-  }
-
-  return detail;
+      return detail;
+    })
+    .immediate();
 }
 
 /** Lightweight refresh that only updates check runs and rollup state, not PR lifecycle fields.
