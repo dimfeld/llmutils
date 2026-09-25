@@ -9,11 +9,13 @@ import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { log, warn, error } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import {
+  getChildPlans,
   resolvePlanByNumericId,
   setPlanStatusById,
   writePlanToDb,
   writePlanFile,
 } from '../plans.js';
+import { loadPlansFromDb } from '../plans_db.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import { readPlanFile } from '../plans.js';
@@ -470,23 +472,42 @@ export async function handleGenerateCommand(
 
   if (options.queue) {
     const generatedPlan = await resolvePlanByNumericId(currentPlanId, currentBaseDir);
-    if (generatedPlan.plan.epic || !generatedPlan.plan.tasks.some((task) => !task.done)) {
+    let plansToQueue = [generatedPlan.plan];
+    if (generatedPlan.plan.epic) {
+      const projectContext = await resolveProjectContext(currentBaseDir);
+      const allPlans = loadPlansFromDb(
+        currentBaseDir,
+        projectContext.repository.repositoryId
+      ).plans;
+      plansToQueue = getChildPlans(currentPlanId, allPlans)
+        .filter((plan) => !plan.epic && plan.tasks?.some((task) => !task.done))
+        .toSorted((a, b) => (a.id ?? 0) - (b.id ?? 0));
+      if (plansToQueue.length === 0) {
+        throw new Error('The generated epic has no child plans with unfinished tasks to queue.');
+      }
+    } else if (!generatedPlan.plan.tasks?.some((task) => !task.done)) {
       throw new Error('Only a generated plan with unfinished tasks can enter the automatic queue.');
     }
-    const queuedPlan = {
-      ...generatedPlan.plan,
-      status: 'queued' as const,
-      updatedAt: new Date().toISOString(),
-    };
-    await writePlanFile(currentPlanFile, queuedPlan, {
-      cwdForIdentity: currentBaseDir,
-      skipDb: true,
-    });
+    const queuedPlanIds: number[] = [];
+    for (const plan of plansToQueue) {
+      if (plan.id == null) continue;
+      const resolvedPlan = await resolvePlanByNumericId(plan.id, currentBaseDir);
+      await writePlanFile(
+        resolvedPlan.planPath,
+        {
+          ...resolvedPlan.plan,
+          status: 'queued',
+          updatedAt: new Date().toISOString(),
+        },
+        { cwdForIdentity: currentBaseDir, skipDb: true }
+      );
+      queuedPlanIds.push(plan.id);
+    }
     if (options.commit) {
       const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
       const commitExitCode = await commitAll(`Add plan: ${planTitle}`, currentBaseDir);
       if (commitExitCode !== 0) {
-        throw new Error(`Failed to commit queued plan ${currentPlanId}.`);
+        throw new Error(`Failed to commit queued plans for ${currentPlanId}.`);
       }
       log(chalk.green('✓ Committed changes'));
     }
@@ -496,9 +517,15 @@ export async function handleGenerateCommand(
         `Queue generated plan ${currentPlanId}`
       );
     }
-    await withPlanAutoSync(currentPlanId, currentBaseDir, async (): Promise<void> => {
-      await setPlanStatusById(currentPlanId, 'queued', currentBaseDir);
-    });
-    log(chalk.green(`✓ Queued plan ${currentPlanId} for automatic execution`));
+    for (const planId of queuedPlanIds) {
+      await withPlanAutoSync(planId, currentBaseDir, async (): Promise<void> => {
+        await setPlanStatusById(planId, 'queued', currentBaseDir);
+      });
+    }
+    log(
+      chalk.green(
+        `✓ Queued plan${queuedPlanIds.length === 1 ? '' : 's'} ${queuedPlanIds.join(', ')} for automatic execution`
+      )
+    );
   }
 }
