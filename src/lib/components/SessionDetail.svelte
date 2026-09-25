@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AppWindow from '@lucide/svelte/icons/app-window';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Download from '@lucide/svelte/icons/download';
   import Info from '@lucide/svelte/icons/info';
@@ -470,9 +471,13 @@
         {#if windows && !floating}
           <button
             type="button"
-            class="rounded px-2 py-1 text-sm hover:bg-muted"
-            onclick={() => windows.open(session.connectionId)}>Open in window</button
+            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            onclick={() => windows.open(session.connectionId)}
+            aria-label="Open in window"
+            title="Open in window"
           >
+            <AppWindow class="size-4" />
+          </button>
         {/if}
         {#if showEndSession}
           {#if confirmingEndSession}
