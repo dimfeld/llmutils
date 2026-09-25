@@ -271,6 +271,26 @@ describe('tim init command', () => {
     );
   });
 
+  test('interactive init asks whether to queue plans after generation', async () => {
+    vi.mocked(select)
+      .mockResolvedValueOnce('claude-code')
+      .mockResolvedValueOnce('production')
+      .mockResolvedValueOnce('pr-based')
+      .mockResolvedValueOnce('never');
+    vi.mocked(confirm).mockResolvedValue(true);
+    vi.mocked(input).mockResolvedValue('npm run format');
+
+    await handleInitCommand({}, {});
+
+    const config = yaml.parse(
+      await fs.readFile(path.join(tempDir, '.tim/config/tim.yml'), 'utf-8')
+    );
+    expect(config.generate.queueWhenDone).toBe(true);
+    expect(vi.mocked(confirm).mock.calls.map(([options]) => options.message)).toContain(
+      'Queue plans for automatic execution after generation completes?'
+    );
+  });
+
   test('writes selected workflow settings and the detected install command', async () => {
     await fs.writeFile(path.join(tempDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0');
     vi.mocked(select)

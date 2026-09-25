@@ -274,6 +274,12 @@ async function promptForConfig(gitRoot: string): Promise<TimConfigInput> {
     defaultExecutor: executor,
   };
 
+  const queueWhenDone = await confirm({
+    message: 'Queue plans for automatic execution after generation completes?',
+    default: false,
+  });
+  config.generate = { queueWhenDone };
+
   config.quality = await select({
     message: 'What code quality level should agents use?',
     choices: [
