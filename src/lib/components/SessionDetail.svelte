@@ -399,8 +399,8 @@
 <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
   <!-- Session header -->
   <div class="shrink-0 border-b border-border px-4 py-3">
-    <div class={['flex items-start justify-between gap-3', floating && 'flex-wrap']}>
-      <div class="flex min-w-0 items-center gap-3">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="flex max-w-full min-w-0 flex-[1_0_auto] items-center gap-3">
         <span
           class="h-2.5 w-2.5 shrink-0 rounded-full {statusDotClass}"
           aria-label={statusText}
@@ -467,18 +467,7 @@
         <span class="text-xs text-muted-foreground">{statusText}</span>
       </div>
 
-      <div class={['flex shrink-0 items-center gap-2', floating && 'flex-wrap']}>
-        {#if windows && !floating}
-          <button
-            type="button"
-            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            onclick={() => windows.open(session.connectionId)}
-            aria-label="Open in window"
-            title="Open in window"
-          >
-            <AppWindow class="size-4" />
-          </button>
-        {/if}
+      <div class="ml-auto flex shrink-0 items-center gap-2">
         {#if showEndSession}
           {#if confirmingEndSession}
             <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -592,6 +581,18 @@
             </dl>
           </PopoverContent>
         </Popover>
+
+        {#if windows && !floating}
+          <button
+            type="button"
+            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            onclick={() => windows.open(session.connectionId)}
+            aria-label="Open in window"
+            title="Open in window"
+          >
+            <AppWindow class="size-4" />
+          </button>
+        {/if}
 
         {#if hasLifecycleOutput}
           <Tooltip.Root>
