@@ -3,9 +3,13 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'path';
 import yaml from 'yaml';
+import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
+import { getWorkspaceByPath, recordWorkspace } from '../db/workspace.js';
+import { getOrCreateProject } from '../db/project.js';
 
 vi.mock('../../common/git.js', () => ({
   getGitRoot: vi.fn(),
+  getCurrentBranchName: vi.fn(async () => null),
 }));
 
 vi.mock('@inquirer/prompts', () => ({
@@ -21,6 +25,7 @@ import { confirm, input, select } from '@inquirer/prompts';
 describe('tim init command', () => {
   let tempDir: string;
   let originalCwd: string;
+  let originalConfigHome: string | undefined;
 
   beforeEach(async () => {
     // Create temporary directory
@@ -28,6 +33,9 @@ describe('tim init command', () => {
 
     // Change to temp directory to simulate git root
     originalCwd = process.cwd();
+    originalConfigHome = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = path.join(tempDir, 'user-config');
+    closeDatabaseForTesting();
     process.chdir(tempDir);
 
     // Mock git.js to return our temp directory as git root
@@ -37,6 +45,12 @@ describe('tim init command', () => {
   afterEach(async () => {
     // Restore original directory
     process.chdir(originalCwd);
+    closeDatabaseForTesting();
+    if (originalConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalConfigHome;
+    }
 
     // Clean up temporary directory
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -66,6 +80,7 @@ describe('tim init command', () => {
     const configContent = await fs.readFile(configPath, 'utf-8');
     const config = yaml.parse(configContent);
     expect(config).toHaveProperty('defaultExecutor');
+    expect(getWorkspaceByPath(getDatabase(), tempDir)?.workspace_type).toBe(1);
   });
 
   test('creates minimal configuration with --minimal flag', async () => {
@@ -210,7 +225,11 @@ describe('tim init command', () => {
 
   test('interactive init no longer prompts for a plan files directory', async () => {
     const inputSpy = vi.mocked(input).mockResolvedValue('npm run format');
-    vi.mocked(select).mockResolvedValue('copy-only');
+    vi.mocked(select)
+      .mockResolvedValueOnce('claude-code')
+      .mockResolvedValueOnce('production')
+      .mockResolvedValueOnce('pr-based')
+      .mockResolvedValueOnce('never');
     vi.mocked(confirm).mockResolvedValue(true);
 
     const command = {
@@ -221,7 +240,88 @@ describe('tim init command', () => {
 
     await handleInitCommand({}, command);
 
-    expect(inputSpy).toHaveBeenCalledTimes(1);
+    expect(inputSpy).toHaveBeenCalledTimes(2);
+    expect(inputSpy.mock.calls.map(([options]) => options.message)).not.toContain(
+      'Where should plan files be stored?'
+    );
+  });
+
+  test('writes selected workflow settings and the detected install command', async () => {
+    await fs.writeFile(path.join(tempDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0');
+    vi.mocked(select)
+      .mockResolvedValueOnce('codex-cli')
+      .mockResolvedValueOnce('hobby')
+      .mockResolvedValueOnce('squash-rebase')
+      .mockResolvedValueOnce('never');
+    vi.mocked(confirm).mockResolvedValue(false);
+    vi.mocked(input).mockResolvedValue('pnpm install --frozen-lockfile');
+
+    await handleInitCommand({}, {});
+
+    const config = yaml.parse(
+      await fs.readFile(path.join(tempDir, '.tim/config/tim.yml'), 'utf-8')
+    );
+    expect(config.quality).toBe('hobby');
+    expect(config.developmentWorkflow).toBe('squash-rebase');
+    expect(config.lifecycle.commands).toEqual([
+      { title: 'Install dependencies', command: 'pnpm install --frozen-lockfile' },
+    ]);
+    expect(vi.mocked(input).mock.calls[0]?.[0].default).toBe('pnpm install');
+  });
+
+  test('does not add an install command when the answer is blank', async () => {
+    vi.mocked(select)
+      .mockResolvedValueOnce('claude-code')
+      .mockResolvedValueOnce('production')
+      .mockResolvedValueOnce('pr-based')
+      .mockResolvedValueOnce('never');
+    vi.mocked(confirm).mockResolvedValue(false);
+    vi.mocked(input).mockResolvedValue('  ');
+
+    await handleInitCommand({}, {});
+
+    const config = yaml.parse(
+      await fs.readFile(path.join(tempDir, '.tim/config/tim.yml'), 'utf-8')
+    );
+    expect(config.lifecycle).toBeUndefined();
+  });
+
+  test('prefers the declared package manager over a lockfile', async () => {
+    await fs.writeFile(
+      path.join(tempDir, 'package.json'),
+      JSON.stringify({ packageManager: 'yarn@4.1.0' })
+    );
+    await fs.writeFile(path.join(tempDir, 'package-lock.json'), '{}');
+    vi.mocked(select)
+      .mockResolvedValueOnce('claude-code')
+      .mockResolvedValueOnce('production')
+      .mockResolvedValueOnce('pr-based')
+      .mockResolvedValueOnce('never');
+    vi.mocked(confirm).mockResolvedValue(false);
+    vi.mocked(input).mockResolvedValue('yarn install');
+
+    await handleInitCommand({}, {});
+
+    expect(vi.mocked(input).mock.calls[0]?.[0].default).toBe('yarn install');
+  });
+
+  test('keeps an existing workspace id when marking it primary', async () => {
+    const db = getDatabase();
+    const project = getOrCreateProject(db, 'existing');
+    recordWorkspace(db, {
+      projectId: project.id,
+      taskId: 'existing-workspace',
+      workspacePath: tempDir,
+      workspaceType: 'standard',
+    });
+
+    await handleInitCommand({ yes: true }, {});
+    const workspace = getWorkspaceByPath(db, tempDir);
+    expect(workspace?.task_id).toBe('existing-workspace');
+    expect(workspace?.workspace_type).toBe(1);
+
+    await handleInitCommand({ yes: true }, {});
+    expect(getWorkspaceByPath(db, tempDir)?.task_id).toBe('existing-workspace');
   });
 
   test('creates .gitignore with required entries when file does not exist', async () => {

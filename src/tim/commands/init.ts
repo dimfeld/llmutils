@@ -7,9 +7,17 @@ import { confirm, input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import yaml from 'yaml';
 import { log } from '../../logging.js';
-import { getGitRoot } from '../../common/git.js';
+import { getCurrentBranchName, getGitRoot } from '../../common/git.js';
 import { DEFAULT_EXECUTOR } from '../constants.js';
 import type { TimConfigInput } from '../configSchema.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
+import { getDatabase } from '../db/database.js';
+import { getOrCreateProject } from '../db/project.js';
+import { recordWorkspace } from '../db/workspace.js';
+import { getWorkspaceInfoByPath } from '../workspace/workspace_info.js';
+import { generateAlphanumericId } from '../id_utils.js';
+import { loadEffectiveConfig } from '../configLoader.js';
+import { writeProjectUpsert } from '../sync/write_router.js';
 
 interface InitOptions {
   force?: boolean;
@@ -59,7 +67,7 @@ export async function handleInitCommand(options: InitOptions, _command: any) {
       log(chalk.blue('Creating default configuration...'));
     } else {
       // Interactive mode - ask user for preferences
-      config = await promptForConfig();
+      config = await promptForConfig(gitRoot);
     }
 
     // Create directory structure
@@ -82,6 +90,8 @@ export async function handleInitCommand(options: InitOptions, _command: any) {
     // Update .gitignore
     await updateGitignore(gitRoot);
 
+    await registerPrimaryWorkspace(gitRoot);
+
     // Show success message with next steps
     log(chalk.green('\n✓ Initialization complete!'));
     log(chalk.gray('\nNext steps:'));
@@ -95,6 +105,36 @@ export async function handleInitCommand(options: InitOptions, _command: any) {
     log(chalk.red('✗ Initialization failed:'), (err as Error).message);
     throw err;
   }
+}
+
+async function registerPrimaryWorkspace(gitRoot: string): Promise<void> {
+  const identity = await getRepositoryIdentity({ cwd: gitRoot });
+  const db = getDatabase();
+  const project = getOrCreateProject(db, identity.repositoryId, {
+    remoteUrl: identity.remoteUrl ?? undefined,
+  });
+  await writeProjectUpsert(db, await loadEffectiveConfig(), {
+    projectUuid: project.uuid,
+    repositoryId: project.repository_id,
+    remoteUrl: project.remote_url,
+    remoteLabel: project.remote_label,
+    highestPlanId: project.highest_plan_id,
+  });
+
+  const existing = getWorkspaceInfoByPath(identity.gitRoot);
+  if (existing?.workspaceType === 'primary') {
+    log(chalk.green('✓ Primary workspace already registered:'), identity.gitRoot);
+    return;
+  }
+
+  recordWorkspace(db, {
+    projectId: project.id,
+    taskId: existing?.taskId ?? generateAlphanumericId(),
+    workspacePath: identity.gitRoot,
+    branch: await getCurrentBranchName(identity.gitRoot),
+    workspaceType: 'primary',
+  });
+  log(chalk.green('✓ Registered primary workspace:'), identity.gitRoot);
 }
 
 async function findExistingConfigPath(paths: string[]): Promise<string | null> {
@@ -194,7 +234,7 @@ function createDefaultConfig(): TimConfigInput {
 /**
  * Prompts the user for configuration preferences interactively
  */
-async function promptForConfig(): Promise<TimConfigInput> {
+async function promptForConfig(gitRoot: string): Promise<TimConfigInput> {
   log(chalk.blue('Setting up tim configuration...\n'));
 
   // Ask for default executor
@@ -224,6 +264,35 @@ async function promptForConfig(): Promise<TimConfigInput> {
   const config: TimConfigInput = {
     defaultExecutor: executor,
   };
+
+  config.quality = await select({
+    message: 'What code quality level should agents use?',
+    choices: [
+      { name: 'production', value: 'production', description: 'Use the full agent workflow' },
+      { name: 'hobby', value: 'hobby', description: 'Use the implementer-only workflow' },
+    ],
+    default: 'production',
+  });
+
+  config.developmentWorkflow = await select({
+    message: 'Which development workflow should agents use?',
+    choices: [
+      { name: 'pr-based', value: 'pr-based', description: 'Create pull requests' },
+      { name: 'trunk-based', value: 'trunk-based', description: 'Use direct integration' },
+      { name: 'squash-rebase', value: 'squash-rebase', description: 'Squash and push to main' },
+    ],
+    default: 'pr-based',
+  });
+
+  const installCommand = await input({
+    message: 'What command installs project dependencies? Leave blank to skip.',
+    default: await detectInstallCommand(gitRoot),
+  });
+  if (installCommand.trim()) {
+    config.lifecycle = {
+      commands: [{ title: 'Install dependencies', command: installCommand.trim() }],
+    };
+  }
 
   if (includePostApply) {
     const formatCommand = await input({
@@ -284,4 +353,37 @@ async function promptForConfig(): Promise<TimConfigInput> {
   };
 
   return config;
+}
+
+async function detectInstallCommand(gitRoot: string): Promise<string> {
+  try {
+    const packageJson = JSON.parse(await fs.readFile(path.join(gitRoot, 'package.json'), 'utf-8'));
+    const manager = packageJson.packageManager?.split('@')[0];
+    if (['bun', 'pnpm', 'yarn', 'npm'].includes(manager)) {
+      return `${manager} install`;
+    }
+  } catch {
+    // A missing or invalid package.json has no package manager to suggest.
+  }
+
+  const lockfiles: [string, string][] = [
+    ['bun.lock', 'bun install'],
+    ['bun.lockb', 'bun install'],
+    ['pnpm-lock.yaml', 'pnpm install'],
+    ['yarn.lock', 'yarn install'],
+    ['package-lock.json', 'npm install'],
+    ['npm-shrinkwrap.json', 'npm install'],
+  ];
+  for (const [file, command] of lockfiles) {
+    if (
+      await fs
+        .access(path.join(gitRoot, file))
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      return command;
+    }
+  }
+
+  return '';
 }

@@ -75,6 +75,11 @@ tim init
 tim show-config
 ```
 
+Interactive `tim init` asks for the agent quality level, development workflow, and a
+dependency install command. It suggests the install command from the project lockfile
+or `package.json` package manager. The command is saved in `lifecycle.commands` when
+provided. Init also registers the current checkout as the primary workspace.
+
 The default project config lives at:
 
 ```text
@@ -221,7 +226,8 @@ inbox:
 
 The primary workspace is a normal Git checkout that anchors the project in `tim`'s database. The web UI launches `generate`, `agent`, `chat`, `update-docs`, and `rebase` commands from the primary workspace, and new workspaces are created as siblings of it.
 
-Register the primary workspace from the checkout you want to use as the anchor:
+`tim init` registers the current checkout as primary. To register a checkout without
+running init, use:
 
 ```bash
 cd /path/to/your-project-primary
