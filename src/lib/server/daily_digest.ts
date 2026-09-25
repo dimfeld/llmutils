@@ -100,7 +100,7 @@ export async function refreshProjectDigestPrs(
   } = {}
 ): Promise<number> {
   const prUrls = getOpenPrStatusUrlsForRepo(db, owner, repo);
-  const queue = new PQueue({ concurrency: options.concurrency ?? 1 });
+  const queue = new PQueue({ concurrency: options.concurrency ?? 10 });
 
   const results = await Promise.allSettled(
     prUrls.map((prUrl, index) =>
