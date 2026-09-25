@@ -1,4 +1,4 @@
-import type { UIStateStore } from '$lib/stores/ui_state.svelte.js';
+import type { SessionUIState, UIStateStore } from '$lib/stores/ui_state.svelte.js';
 
 interface EndSessionAndRefreshPlanDeps {
   connectionId: string;
@@ -38,6 +38,32 @@ export function toggleLifecycleOutput(
   showLifecycleOutput: boolean
 ): void {
   uiState.setSessionState(connectionId, { showLifecycleOutput: !showLifecycleOutput });
+}
+
+export function isProcessListExpanded(uiState: UIStateStore, connectionId: string): boolean {
+  return uiState.getSessionState(connectionId).processListExpanded ?? false;
+}
+
+export function toggleProcessList(
+  uiState: UIStateStore,
+  connectionId: string,
+  processListExpanded: boolean
+): void {
+  uiState.setSessionState(connectionId, { processListExpanded: !processListExpanded });
+}
+
+export type NarrowScreenPane = SessionUIState['narrowScreenPane'];
+
+export function getNarrowScreenPane(uiState: UIStateStore, connectionId: string): NarrowScreenPane {
+  return uiState.getSessionState(connectionId).narrowScreenPane ?? 'transcript';
+}
+
+export function setNarrowScreenPane(
+  uiState: UIStateStore,
+  connectionId: string,
+  pane: NarrowScreenPane
+): void {
+  uiState.setSessionState(connectionId, { narrowScreenPane: pane });
 }
 
 export async function endSessionAndRefreshPlan({

@@ -169,7 +169,43 @@ describe('SessionDetail', () => {
     expect(body).not.toContain('role="tree"');
   });
 
+  test('collapses the process list by default and shows the live process count', async () => {
+    const session = createSession({
+      status: 'active',
+      processTree: [
+        {
+          processId: 'tim1',
+          kind: 'tim',
+          label: 'root agent',
+          startedAt: '2026-03-25T10:00:00.000Z',
+          state: 'running',
+        },
+        {
+          processId: 'exec-old',
+          parentProcessId: 'tim1',
+          kind: 'executor',
+          label: 'finished executor',
+          startedAt: '2026-03-25T10:00:00.000Z',
+          state: 'exited',
+        },
+      ],
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('Processes');
+    expect(body).toContain('(1)');
+    expect(body).toContain('aria-expanded="false"');
+    expect(body).not.toContain('role="tree"');
+    expect(body).not.toContain('root agent');
+  });
+
   test('renders the process tree section alongside, but distinct from, End Session controls', async () => {
+    uiState.getSessionState.mockReturnValue({
+      planPaneCollapsed: false,
+      messageDraft: '',
+      showLifecycleOutput: false,
+      processListExpanded: true,
+    });
     const session = createSession({
       status: 'active',
       processTree: [
@@ -400,6 +436,41 @@ describe('SessionDetail', () => {
     expect(body).toContain('aria-label="Hide plan pane"');
   });
 
+  test('shows the transcript and hides the plan on narrow screens by default', async () => {
+    const session = createSession({
+      sessionInfo: {
+        planId: 302,
+      },
+      planContent: '## Current Plan',
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('aria-label="Visible pane"');
+    expect(body).toMatch(/aria-pressed="true"[^>]*>\s*Transcript/);
+    expect(body).toContain('min-h-0 min-w-0 flex-col lg:flex lg:w-1/2 flex');
+    expect(body).toContain('min-h-0 min-w-0 lg:block lg:w-1/2 lg:border-r hidden');
+  });
+
+  test('shows the plan and hides the transcript on narrow screens when the plan pane is selected', async () => {
+    uiState.getSessionState.mockReturnValue({
+      planPaneCollapsed: false,
+      messageDraft: '',
+      showLifecycleOutput: false,
+      narrowScreenPane: 'plan',
+    });
+    const session = createSession({
+      sessionInfo: {
+        planId: 302,
+      },
+      planContent: '## Current Plan',
+    });
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toMatch(/aria-pressed="true"[^>]*>\s*Plan/);
+    expect(body).toContain('min-h-0 min-w-0 flex-col lg:flex lg:w-1/2 hidden');
+    expect(body).toContain('min-h-0 min-w-0 lg:block lg:w-1/2 lg:border-r block');
+  });
+
   test('renders a linked pull request in the session header', async () => {
     const session = createSession({
       sessionInfo: {
@@ -480,6 +551,7 @@ describe('SessionDetail', () => {
     const { body } = await render(SessionDetail, { props: { session } });
 
     expect(body).not.toContain('lg:flex-row');
+    expect(body).not.toContain('aria-label="Visible pane"');
     expect(body).not.toContain('Waiting for plan content...');
     expect(body).toContain('aria-label="Show plan pane"');
     expect(body).toContain('No messages yet');

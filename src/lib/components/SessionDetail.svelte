@@ -1,6 +1,7 @@
 <script lang="ts">
   import TerminalIcon from '@lucide/svelte/icons/terminal';
   import AppWindow from '@lucide/svelte/icons/app-window';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Download from '@lucide/svelte/icons/download';
   import Info from '@lucide/svelte/icons/info';
   import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
@@ -28,13 +29,18 @@
     togglePlanPane,
     isLifecycleOutputShown,
     toggleLifecycleOutput,
+    isProcessListExpanded,
+    toggleProcessList,
+    getNarrowScreenPane,
+    setNarrowScreenPane,
+    type NarrowScreenPane,
   } from './session_detail_state.js';
   import ProcessTree from './ProcessTree.svelte';
   import { isLiveProcess } from './process_tree.js';
   import CopyButton from './CopyButton.svelte';
   import { afterNavigate, invalidateAll } from '$app/navigation';
   import { page } from '$app/state';
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { getPlanTaskCounts } from '$lib/remote/plan_task_counts.remote.js';
   import { getPlanAttentionState } from '$lib/remote/plan_attention_state.remote.js';
   import { startAgent } from '$lib/remote/plan_actions.remote.js';
@@ -103,6 +109,15 @@
         behavior: isFirstScroll ? 'instant' : 'smooth',
       });
       isFirstScroll = false;
+    }
+  });
+
+  // A hidden container cannot scroll, so scroll again when the narrow-screen
+  // pane toggle shows the transcript.
+  $effect(() => {
+    if (narrowScreenPane === 'transcript' && scrollContainer && untrack(() => autoScroll)) {
+      isProgrammaticallyScrolled = true;
+      scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'instant' });
     }
   });
 
@@ -349,6 +364,12 @@
     togglePlanPane(uiState, session.connectionId, planPaneCollapsed);
   }
 
+  let narrowScreenPane = $derived(getNarrowScreenPane(uiState, session.connectionId));
+
+  function handleSelectNarrowScreenPane(pane: NarrowScreenPane): void {
+    setNarrowScreenPane(uiState, session.connectionId, pane);
+  }
+
   function handleToggleLifecycleOutput() {
     toggleLifecycleOutput(uiState, session.connectionId, showLifecycleOutput);
   }
@@ -361,6 +382,14 @@
     hasLiveProcessTree || (session.status === 'active' && !hasProcessTreeData)
   );
   let processTreeLoading = $derived(session.status === 'active' && !hasProcessTreeData);
+  let liveProcessCount = $derived(
+    session.processTree.filter((process) => isLiveProcess(process.state)).length
+  );
+  let processListExpanded = $derived(isProcessListExpanded(uiState, session.connectionId));
+
+  function handleToggleProcessList(): void {
+    toggleProcessList(uiState, session.connectionId, processListExpanded);
+  }
 
   let hasMessages = $derived(session.messages.length > 0);
   let activePrompt = $derived(session.activePrompts[0] ?? null);
@@ -741,13 +770,37 @@
   </div>
 
   {#if showProcessSection}
-    <div class="shrink-0 border-b border-border px-4 py-2">
-      <ProcessTree
-        processTree={session.processTree}
-        connectionId={session.connectionId}
-        sessionStatus={session.status}
-        loading={processTreeLoading}
-      />
+    <div class="shrink-0 border-b border-border px-4 py-1.5">
+      <button
+        type="button"
+        class="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        onclick={handleToggleProcessList}
+        aria-expanded={processListExpanded}
+        aria-controls="session-process-list-{session.connectionId}"
+      >
+        <ChevronRight
+          class={['size-3.5 transition-transform', processListExpanded && 'rotate-90']}
+          aria-hidden="true"
+        />
+        <span class="font-medium">Processes</span>
+        {#if processTreeLoading}
+          {#if !processListExpanded}
+            <span role="status">Loading processes…</span>
+          {/if}
+        {:else}
+          <span class="tabular-nums">({liveProcessCount})</span>
+        {/if}
+      </button>
+      {#if processListExpanded}
+        <div id="session-process-list-{session.connectionId}" class="pt-1">
+          <ProcessTree
+            processTree={session.processTree}
+            connectionId={session.connectionId}
+            sessionStatus={session.status}
+            loading={processTreeLoading}
+          />
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -820,12 +873,43 @@
   {/snippet}
 
   {#if showPlanPane && !planPaneCollapsed && !floating}
+    <!-- On narrow screens only one pane fits, so a toggle selects which pane shows. -->
+    <div
+      class="flex shrink-0 gap-1 border-b border-border px-4 py-1.5 lg:hidden"
+      role="group"
+      aria-label="Visible pane"
+    >
+      {#each [{ pane: 'transcript', label: 'Transcript' }, { pane: 'plan', label: 'Plan' }] as const as option (option.pane)}
+        <button
+          type="button"
+          class={[
+            'rounded px-2 py-0.5 text-xs font-medium transition-colors',
+            narrowScreenPane === option.pane
+              ? 'bg-muted text-foreground'
+              : 'text-muted-foreground hover:text-foreground',
+          ]}
+          aria-pressed={narrowScreenPane === option.pane}
+          onclick={() => handleSelectNarrowScreenPane(option.pane)}
+        >
+          {option.label}
+        </button>
+      {/each}
+    </div>
     <div class="flex min-h-0 flex-1 flex-col lg:flex-row">
-      <div class="flex min-h-0 min-w-0 flex-col lg:w-1/2" style="flex: 1 1 0%;">
+      <div
+        class={[
+          'min-h-0 min-w-0 flex-col lg:flex lg:w-1/2',
+          narrowScreenPane === 'transcript' ? 'flex' : 'hidden',
+        ]}
+        style="flex: 1 1 0%;"
+      >
         {@render messagesPane()}
       </div>
       <div
-        class="min-h-0 min-w-0 border-b border-border lg:w-1/2 lg:border-r lg:border-b-0"
+        class={[
+          'min-h-0 min-w-0 lg:block lg:w-1/2 lg:border-r',
+          narrowScreenPane === 'plan' ? 'block' : 'hidden',
+        ]}
         style="flex: 1 1 0%;"
       >
         <PlanContentPane content={session.planContent} tasks={session.planTasks} />

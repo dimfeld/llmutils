@@ -6,10 +6,20 @@ export interface SessionUIState {
   messageDraft: string;
   /** When true, render stdout/stderr from workspace lifecycle commands (hidden by default). */
   showLifecycleOutput: boolean;
+  /** When true, show the full list of active processes (collapsed by default). */
+  processListExpanded: boolean;
+  /** Which pane is visible on narrow screens, where the transcript and plan panes do not fit side by side. */
+  narrowScreenPane: 'transcript' | 'plan';
 }
 
 function defaultSessionUIState(): SessionUIState {
-  return { planPaneCollapsed: false, messageDraft: '', showLifecycleOutput: false };
+  return {
+    planPaneCollapsed: false,
+    messageDraft: '',
+    showLifecycleOutput: false,
+    processListExpanded: false,
+    narrowScreenPane: 'transcript',
+  };
 }
 
 export class UIStateStore {

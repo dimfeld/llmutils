@@ -7,7 +7,12 @@ import {
   togglePlanPane,
   isLifecycleOutputShown,
   toggleLifecycleOutput,
+  isProcessListExpanded,
+  toggleProcessList,
+  getNarrowScreenPane,
+  setNarrowScreenPane,
 } from './session_detail_state.js';
+import { UIStateStore } from '$lib/stores/ui_state.svelte.js';
 
 describe('session_detail_state', () => {
   test('reads plan pane collapse state for a session', () => {
@@ -73,6 +78,32 @@ describe('session_detail_state', () => {
     expect(uiState.setSessionState).toHaveBeenLastCalledWith('conn-1', {
       showLifecycleOutput: false,
     });
+  });
+
+  test('collapses the process list by default and toggles it per session', () => {
+    const uiState = new UIStateStore();
+
+    expect(isProcessListExpanded(uiState, 'conn-1')).toBe(false);
+
+    toggleProcessList(uiState, 'conn-1', false);
+    expect(isProcessListExpanded(uiState, 'conn-1')).toBe(true);
+    expect(isProcessListExpanded(uiState, 'conn-2')).toBe(false);
+
+    toggleProcessList(uiState, 'conn-1', true);
+    expect(isProcessListExpanded(uiState, 'conn-1')).toBe(false);
+  });
+
+  test('shows the transcript on narrow screens by default and stores the selected pane per session', () => {
+    const uiState = new UIStateStore();
+
+    expect(getNarrowScreenPane(uiState, 'conn-1')).toBe('transcript');
+
+    setNarrowScreenPane(uiState, 'conn-1', 'plan');
+    expect(getNarrowScreenPane(uiState, 'conn-1')).toBe('plan');
+    expect(getNarrowScreenPane(uiState, 'conn-2')).toBe('transcript');
+
+    setNarrowScreenPane(uiState, 'conn-1', 'transcript');
+    expect(getNarrowScreenPane(uiState, 'conn-1')).toBe('transcript');
   });
 
   test('ends the session and invalidates plan data when shutdown succeeds', async () => {

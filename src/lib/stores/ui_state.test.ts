@@ -11,6 +11,8 @@ describe('UIStateStore', () => {
         planPaneCollapsed: false,
         messageDraft: '',
         showLifecycleOutput: false,
+        processListExpanded: false,
+        narrowScreenPane: 'transcript',
       });
     });
 
@@ -21,6 +23,8 @@ describe('UIStateStore', () => {
         planPaneCollapsed: true,
         messageDraft: '',
         showLifecycleOutput: false,
+        processListExpanded: false,
+        narrowScreenPane: 'transcript',
       });
     });
 
@@ -32,6 +36,8 @@ describe('UIStateStore', () => {
         planPaneCollapsed: true,
         messageDraft: 'hello',
         showLifecycleOutput: false,
+        processListExpanded: false,
+        narrowScreenPane: 'transcript',
       });
     });
 
@@ -43,6 +49,8 @@ describe('UIStateStore', () => {
         planPaneCollapsed: false,
         messageDraft: '',
         showLifecycleOutput: false,
+        processListExpanded: false,
+        narrowScreenPane: 'transcript',
       });
     });
 
@@ -60,11 +68,15 @@ describe('UIStateStore', () => {
         planPaneCollapsed: true,
         messageDraft: 'first',
         showLifecycleOutput: false,
+        processListExpanded: false,
+        narrowScreenPane: 'transcript',
       });
       expect(store.getSessionState('conn-2')).toEqual({
         planPaneCollapsed: false,
         messageDraft: 'second',
         showLifecycleOutput: false,
+        processListExpanded: false,
+        narrowScreenPane: 'transcript',
       });
     });
   });
