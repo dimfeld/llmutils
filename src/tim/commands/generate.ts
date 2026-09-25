@@ -113,6 +113,7 @@ export async function handleGenerateCommand(
 ) {
   const globalOpts = command.parent.opts();
   const config = await loadEffectiveConfig(globalOpts.config);
+  const shouldQueue = options.queue === true || config.generate?.queueWhenDone === true;
   const pathContext = await resolvePlanPathContext(config);
   const { gitRoot } = pathContext;
 
@@ -470,7 +471,7 @@ export async function handleGenerateCommand(
     },
   });
 
-  if (options.queue) {
+  if (shouldQueue) {
     const generatedPlan = await resolvePlanByNumericId(currentPlanId, currentBaseDir);
     let plansToQueue = [generatedPlan.plan];
     if (generatedPlan.plan.epic) {

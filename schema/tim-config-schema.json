@@ -906,6 +906,10 @@
       "description": "Configuration for tim generate defaults",
       "type": "object",
       "properties": {
+        "queueWhenDone": {
+          "description": "Queue plans for automatic execution after generation completes",
+          "type": "boolean"
+        },
         "executor": {
           "description": "Default executor to use for the generate command",
           "type": "string",

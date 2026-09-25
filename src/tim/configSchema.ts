@@ -840,6 +840,10 @@ export const timConfigSchema = z
     /** Default settings for the generate command */
     generate: z
       .object({
+        queueWhenDone: z
+          .boolean()
+          .optional()
+          .describe('Queue plans for automatic execution after generation completes'),
         executor: z
           .enum([ClaudeCodeExecutorName, CodexCliExecutorName])
           .optional()

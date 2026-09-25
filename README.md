@@ -72,6 +72,8 @@ In the web interface, open a project's Settings page, enter a **Concurrent Plans
 
 Queue a plan after generation with `tim generate <id> --queue`, or queue an existing plan with `tim set <id> --status queued`. A queued plan must have unfinished tasks before the scheduler starts it. The scheduler uses separate workspaces and counts live agent sessions against the project limit. The node that saves the enabled setting runs the queue. A run that exits without completing its plan moves the plan to `needs_attention`.
 
+Set `generate.queueWhenDone: true` in the project config to queue generated plans by default. You can still use `--queue` to queue a plan when this setting is off.
+
 ## Configure a Project
 
 Run these commands inside the repository you want `tim` to manage, not necessarily inside the `llmutils` repository:
@@ -832,6 +834,7 @@ Important config areas:
 - `smallTasks` - executor/model for lightweight helper passes (defaults to `codex-cli` with `gpt-6-luna:medium`)
 - `chat` - executor and model choices shown in the web Chat dialog
 - `generate.linearChildIssueLabel` - optional Linear label to apply to issues created for child plans during generation
+- `generate.queueWhenDone` - set to `true` to queue generated plans automatically
 - `updateDocs` - controls automatic agent documentation updates; `applyLessons` is retained for manual finalization compatibility
 - `artifactRetentionDays` - days before soft-deleted artifacts and artifacts on completed plans are eligible for purge (default 30)
 - `mediaHost.baseUrl` - origin-only media host URL used by `tim pr upload-artifacts`
