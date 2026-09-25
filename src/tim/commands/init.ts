@@ -109,9 +109,14 @@ export async function handleInitCommand(options: InitOptions, _command: any) {
 
 async function registerPrimaryWorkspace(gitRoot: string): Promise<void> {
   const identity = await getRepositoryIdentity({ cwd: gitRoot });
+  if (!identity.remoteUrl) {
+    log(chalk.gray('Skipping primary workspace registration: no origin remote found.'));
+    return;
+  }
+
   const db = getDatabase();
   const project = getOrCreateProject(db, identity.repositoryId, {
-    remoteUrl: identity.remoteUrl ?? undefined,
+    remoteUrl: identity.remoteUrl,
   });
   await writeProjectUpsert(db, await loadEffectiveConfig(), {
     projectUuid: project.uuid,

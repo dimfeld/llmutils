@@ -12,6 +12,10 @@ vi.mock('../../common/git.js', () => ({
   getCurrentBranchName: vi.fn(async () => null),
 }));
 
+vi.mock('../assignments/workspace_identifier.js', () => ({
+  getRepositoryIdentity: vi.fn(),
+}));
+
 vi.mock('@inquirer/prompts', () => ({
   confirm: vi.fn(),
   input: vi.fn(),
@@ -20,6 +24,7 @@ vi.mock('@inquirer/prompts', () => ({
 
 import { handleInitCommand } from './init.js';
 import { getGitRoot } from '../../common/git.js';
+import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { confirm, input, select } from '@inquirer/prompts';
 
 describe('tim init command', () => {
@@ -40,6 +45,11 @@ describe('tim init command', () => {
 
     // Mock git.js to return our temp directory as git root
     vi.mocked(getGitRoot).mockResolvedValue(tempDir);
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'github.com__test__repository',
+      remoteUrl: 'git@github.com:test/repository.git',
+      gitRoot: tempDir,
+    });
   });
 
   afterEach(async () => {
@@ -101,6 +111,21 @@ describe('tim init command', () => {
 
     // Should not have optional fields like postApplyCommands
     expect(config).not.toHaveProperty('postApplyCommands');
+  });
+
+  test('skips primary workspace registration when the repository has no origin remote', async () => {
+    vi.mocked(getRepositoryIdentity).mockResolvedValue({
+      repositoryId: 'repository-without-remote',
+      remoteUrl: null,
+      gitRoot: tempDir,
+    });
+
+    await handleInitCommand({ yes: true }, {});
+
+    expect(getWorkspaceByPath(getDatabase(), tempDir)).toBeNull();
+    expect(getDatabase().prepare('SELECT COUNT(*) AS count FROM project').get()).toEqual({
+      count: 0,
+    });
   });
 
   test('refuses to overwrite existing configuration without --force', async () => {
