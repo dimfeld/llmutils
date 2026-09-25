@@ -17,7 +17,6 @@ import {
   type Project,
 } from '$tim/db/project.js';
 import { prioritySchema, statusSchema, type Priority } from '$tim/planSchema.js';
-import { isWorkCompleteStatus } from '$tim/plans/plan_state_utils.js';
 import { AUTO_RUN_SETTING_KEY, parseAutoRunSetting } from '$tim/auto_run/settings.js';
 import {
   getMaterializedPlanPath,
@@ -777,19 +776,6 @@ export async function queuePlanForAutoRun(
   }
   if (plan.epic || plan.status !== 'pending') {
     fail('validation_failed', 'Only pending non-epic plans can be queued', 'status');
-  }
-
-  const dependencyUuids = getPlanDependenciesByUuid(db, plan.uuid).map(
-    (dependency) => dependency.depends_on_uuid
-  );
-  if (plan.base_plan_uuid) dependencyUuids.push(plan.base_plan_uuid);
-  if (
-    dependencyUuids.some((dependencyUuid) => {
-      const dependency = getPlanByUuid(db, dependencyUuid);
-      return !dependency || !isWorkCompleteStatus(dependency.status);
-    })
-  ) {
-    fail('validation_failed', 'This plan has unfinished dependencies', 'status');
   }
 
   const taskCounts = db

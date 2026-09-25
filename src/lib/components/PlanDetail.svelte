@@ -144,7 +144,6 @@
     autoRunEnabled &&
       !plan.epic &&
       plan.status === 'pending' &&
-      (plan.displayStatus === 'ready' || plan.displayStatus === 'pending') &&
       (plan.taskCounts.total === 0 || plan.taskCounts.done < plan.taskCounts.total)
   );
 
