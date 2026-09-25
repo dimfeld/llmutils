@@ -274,7 +274,7 @@ async function promptForConfig(gitRoot: string): Promise<TimConfigInput> {
     default: 'production',
   });
 
-  config.developmentWorkflow = await select({
+  const developmentWorkflow = await select({
     message: 'Which development workflow should agents use?',
     choices: [
       { name: 'pr-based', value: 'pr-based', description: 'Create pull requests' },
@@ -283,6 +283,7 @@ async function promptForConfig(gitRoot: string): Promise<TimConfigInput> {
     ],
     default: 'pr-based',
   });
+  config.developmentWorkflow = developmentWorkflow;
 
   const installCommand = await input({
     message: 'What command installs project dependencies? Leave blank to skip.',
@@ -310,47 +311,49 @@ async function promptForConfig(gitRoot: string): Promise<TimConfigInput> {
     ];
   }
 
-  // Ask about PR creation settings
-  const draftPRs = await confirm({
-    message: 'Create pull requests as drafts by default?',
-    default: true,
-  });
+  if (developmentWorkflow !== 'squash-rebase') {
+    // Ask about PR creation settings only for workflows that create pull requests.
+    const draftPRs = await confirm({
+      message: 'Create pull requests as drafts by default?',
+      default: true,
+    });
 
-  const autoCreatePr = await select({
-    message: 'When should agent mode automatically create a pull request?',
-    choices: [
-      {
-        name: 'never',
-        value: 'never',
-        description: 'Do not create PRs automatically',
-      },
-      {
-        name: 'done',
-        value: 'done',
-        description: 'Create a PR only when the plan ends in done',
-      },
-      {
-        name: 'needs_review',
-        value: 'needs_review',
-        description: 'Create a PR only when the plan ends in needs_review',
-      },
-      {
-        name: 'always',
-        value: 'always',
-        description: 'Create a PR for either done or needs_review completion',
-      },
-    ],
-    default: 'never',
-  });
+    const autoCreatePr = await select({
+      message: 'When should agent mode automatically create a pull request?',
+      choices: [
+        {
+          name: 'never',
+          value: 'never',
+          description: 'Do not create PRs automatically',
+        },
+        {
+          name: 'done',
+          value: 'done',
+          description: 'Create a PR only when the plan ends in done',
+        },
+        {
+          name: 'needs_review',
+          value: 'needs_review',
+          description: 'Create a PR only when the plan ends in needs_review',
+        },
+        {
+          name: 'always',
+          value: 'always',
+          description: 'Create a PR for either done or needs_review completion',
+        },
+      ],
+      default: 'never',
+    });
 
-  config.prCreation = {
-    draft: draftPRs,
-    ...(autoCreatePr === 'never'
-      ? {}
-      : {
-          autoCreatePr: autoCreatePr,
-        }),
-  };
+    config.prCreation = {
+      draft: draftPRs,
+      ...(autoCreatePr === 'never'
+        ? {}
+        : {
+            autoCreatePr: autoCreatePr,
+          }),
+    };
+  }
 
   return config;
 }
