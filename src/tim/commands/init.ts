@@ -110,7 +110,11 @@ export async function handleInitCommand(options: InitOptions, _command: any) {
 async function registerPrimaryWorkspace(gitRoot: string): Promise<void> {
   const identity = await getRepositoryIdentity({ cwd: gitRoot });
   if (!identity.remoteUrl) {
-    log(chalk.gray('Skipping primary workspace registration: no origin remote found.'));
+    log(
+      chalk.gray(
+        'Skipping primary workspace registration: no origin remote found. Run `tim workspace register --primary` after adding a Git remote.'
+      )
+    );
     return;
   }
 
