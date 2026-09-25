@@ -1508,6 +1508,7 @@ slackDigestCommand
   .option('--dry-run', 'Show whether the latest stored digest message would be updated')
   .option('--pin', 'Pin the updated digest message and unpin the previous digest message')
   .option('--refresh', 'Refresh cached open PRs from GitHub before updating the digest')
+  .option('--refresh-concurrency <count>', 'Number of PRs to refresh at once (default: 2)')
   .action(async (options, command) => {
     const { handleSlackDigestUpdateCommand } = await import('./commands/slack.js');
     await handleSlackDigestUpdateCommand(options, command).catch(handleCommandError);

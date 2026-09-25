@@ -589,7 +589,7 @@ tim slack unmap <github-login> --workspace <name>
 tim slack list [--workspace <name>]
 tim slack digest enable | disable
 tim slack digest [--dry-run]
-tim slack digest update [--dry-run] [--pin] [--refresh]
+tim slack digest update [--dry-run] [--pin] [--refresh] [--refresh-concurrency <count>]
 ```
 
 Workspace names must exist in `slack.workspaces`. User mappings are keyed by `(workspace, github_login)` and shared across repos in that Slack workspace; mapped reviewers render as Slack mentions, while unmapped reviewers are named by GitHub login without a ping.

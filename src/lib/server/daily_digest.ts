@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import PQueue from 'p-queue';
 
 import {
   constructGitHubRepositoryId,
@@ -92,13 +93,30 @@ export interface CollectDailyDigestsOptions {
 export async function refreshProjectDigestPrs(
   db: Database,
   owner: string,
-  repo: string
-): Promise<void> {
+  repo: string,
+  options: {
+    concurrency?: number;
+    onProgress?: (prUrl: string, index: number, total: number, phase: 'start' | 'complete') => void;
+  } = {}
+): Promise<number> {
   const prUrls = getOpenPrStatusUrlsForRepo(db, owner, repo);
+  const queue = new PQueue({ concurrency: options.concurrency ?? 1 });
 
-  for (const prUrl of prUrls) {
-    await refreshPrStatus(db, prUrl, { refreshDigestMetadata: true });
+  const results = await Promise.allSettled(
+    prUrls.map((prUrl, index) =>
+      queue.add(async (): Promise<void> => {
+        options.onProgress?.(prUrl, index + 1, prUrls.length, 'start');
+        await refreshPrStatus(db, prUrl, { refreshDigestMetadata: true });
+        options.onProgress?.(prUrl, index + 1, prUrls.length, 'complete');
+      })
+    )
+  );
+  const failure = results.find((result) => result.status === 'rejected');
+  if (failure?.status === 'rejected') {
+    throw failure.reason;
   }
+
+  return prUrls.length;
 }
 
 function isDailyDigestEnabledForWorkspace(config: TimConfig, workspaceName: string): boolean {

@@ -692,6 +692,48 @@ describe('tim slack CLI handlers', () => {
   });
 
   describe('handleSlackDigestUpdateCommand', () => {
+    test('refreshes open PRs even when the cached digest is empty', async () => {
+      const db = getDatabase();
+      const project = getOrCreateProject(db, REPOSITORY_ID);
+      setProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY, {
+        enabled: true,
+        dailyDigest: true,
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+      });
+      upsertSlackDailyDigestMessage(db, {
+        workspace: WORKSPACE_NAME,
+        channel: '#reviews',
+        repoFullName: `${OWNER}/${REPO}`,
+        digestDate: '2026-01-01',
+        slackChannel: 'C123',
+        slackTs: '1710000000.000100',
+      });
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/82`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 82,
+        title: 'Open PR outside digest',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      vi.mocked(refreshPrStatus).mockImplementationOnce(async (database, url) => {
+        return getPrStatusByUrl(database, url)!;
+      });
+      await handleSlackDigestUpdateCommand({ refresh: true, dryRun: true }, fakeCommand);
+
+      expect(refreshPrStatus).toHaveBeenCalledWith(
+        db,
+        `https://github.com/${OWNER}/${REPO}/pull/82`,
+        { refreshDigestMetadata: true }
+      );
+      const { log } = await import('../../logging.js');
+      expect(vi.mocked(log)).toHaveBeenCalledWith(`Refreshed 1 open PR for ${OWNER}/${REPO}.`);
+    });
+
     test('refreshes the dry-run preview without updating Slack', async () => {
       const db = getDatabase();
       const project = getOrCreateProject(db, REPOSITORY_ID);
@@ -721,18 +763,30 @@ describe('tim slack CLI handlers', () => {
         reviewDecision: 'APPROVED',
         lastFetchedAt: '2026-01-01T00:00:00.000Z',
       });
-      vi.mocked(refreshPrStatus).mockImplementationOnce(async (database, url) => {
-        upsertPrStatus(database, {
-          prUrl: url,
-          owner: OWNER,
-          repo: REPO,
-          prNumber: 7,
-          title: 'Fresh preview title',
-          state: 'open',
-          draft: false,
-          reviewDecision: 'APPROVED',
-          lastFetchedAt: '2026-01-02T00:00:00.000Z',
-        });
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/${OWNER}/${REPO}/pull/81`,
+        owner: OWNER,
+        repo: REPO,
+        prNumber: 81,
+        title: 'Open PR outside digest',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+      vi.mocked(refreshPrStatus).mockImplementation(async (database, url) => {
+        if (url === prUrl) {
+          upsertPrStatus(database, {
+            prUrl: url,
+            owner: OWNER,
+            repo: REPO,
+            prNumber: 7,
+            title: 'Fresh preview title',
+            state: 'open',
+            draft: false,
+            reviewDecision: 'APPROVED',
+            lastFetchedAt: '2026-01-02T00:00:00.000Z',
+          });
+        }
         return getPrStatusByUrl(database, url)!;
       });
       const sender = vi.fn(
@@ -742,6 +796,7 @@ describe('tim slack CLI handlers', () => {
       await handleSlackDigestUpdateCommand({ refresh: true, dryRun: true }, fakeCommand, sender);
 
       expect(refreshPrStatus).toHaveBeenCalledWith(db, prUrl, { refreshDigestMetadata: true });
+      expect(refreshPrStatus).toHaveBeenCalledTimes(2);
       expect(sender).not.toHaveBeenCalled();
       const { log } = await import('../../logging.js');
       expect(
@@ -804,8 +859,12 @@ describe('tim slack CLI handlers', () => {
       await handleSlackDigestUpdateCommand({ refresh: true }, fakeCommand, sender);
 
       expect(refreshPrStatus).toHaveBeenCalledWith(db, prUrl, { refreshDigestMetadata: true });
+      expect(refreshPrStatus).toHaveBeenCalledTimes(1);
       expect(updates).toHaveLength(1);
       expect(JSON.stringify(updates[0].payload.blocks)).toContain('Fresh title');
+      const { log } = await import('../../logging.js');
+      expect(vi.mocked(log)).toHaveBeenCalledWith(`Refreshing PR 1/1: ${prUrl}`);
+      expect(vi.mocked(log)).toHaveBeenCalledWith(`Refreshed 1 open PR for ${OWNER}/${REPO}.`);
     });
 
     test('does not update Slack when a requested PR refresh fails', async () => {
@@ -833,6 +892,7 @@ describe('tim slack CLI handlers', () => {
         title: 'Cached title',
         state: 'open',
         draft: false,
+        reviewDecision: 'APPROVED',
         lastFetchedAt: '2026-01-01T00:00:00.000Z',
       });
       vi.mocked(refreshPrStatus).mockRejectedValueOnce(new Error('GitHub failed'));
@@ -844,6 +904,11 @@ describe('tim slack CLI handlers', () => {
         handleSlackDigestUpdateCommand({ refresh: true }, fakeCommand, sender)
       ).rejects.toThrow('GitHub failed');
       expect(sender).not.toHaveBeenCalled();
+      const { log } = await import('../../logging.js');
+      expect(vi.mocked(log)).toHaveBeenCalledWith(
+        `Refreshing PR 1/1: https://github.com/${OWNER}/${REPO}/pull/9`
+      );
+      expect(vi.mocked(log)).not.toHaveBeenCalledWith(`Refreshed 1 open PR for ${OWNER}/${REPO}.`);
     });
 
     test('dry run reports the latest stored message for the current repo', async () => {

@@ -24,6 +24,7 @@ vi.mock('$common/github/pr_status_service.js', () => ({
 }));
 
 import {
+  refreshProjectDigestPrs,
   runAllDailyDigests,
   runDailyDigestForWorkspace,
   shouldStartDailyDigest,
@@ -147,6 +148,38 @@ describe('lib/server/daily_digest', () => {
     restoreEnv('TIM_WEBHOOK_SERVER_URL', originalWebhookServerUrl);
     restoreEnv('WEBHOOK_INTERNAL_API_TOKEN', originalWebhookInternalApiToken);
     db.close(false);
+  });
+
+  test('refreshProjectDigestPrs runs two PR refreshes concurrently and waits for all', async () => {
+    const prUrls = [1, 2, 3].map((number) => `https://github.com/owner/repo/pull/${number}`);
+    for (const [index, prUrl] of prUrls.entries()) {
+      upsertPrStatus(db, {
+        prUrl,
+        owner: 'owner',
+        repo: 'repo',
+        prNumber: index + 1,
+        title: `PR ${index + 1}`,
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+      });
+    }
+    const release = new Map<string, () => void>();
+    vi.mocked(refreshPrStatus).mockImplementation(async (database: Database, prUrl: string) => {
+      await new Promise<void>((resolve) => release.set(prUrl, resolve));
+      return getPrStatusByUrl(database, prUrl)!;
+    });
+
+    const refresh = refreshProjectDigestPrs(db, 'owner', 'repo', { concurrency: 2 });
+    await vi.waitFor(() => expect(release.size).toBe(2));
+    expect(release.has(prUrls[2])).toBe(false);
+    release.get(prUrls[0])!();
+    await vi.waitFor(() => expect(release.size).toBe(3));
+    release.get(prUrls[1])!();
+    release.get(prUrls[2])!();
+
+    await expect(refresh).resolves.toBe(3);
+    expect(refreshPrStatus).toHaveBeenCalledTimes(3);
   });
 
   function setupProject(

@@ -55,6 +55,7 @@ interface RootCommandLike {
     dryRun?: boolean;
     pin?: boolean;
     refresh?: boolean;
+    refreshConcurrency?: string;
   };
 }
 
@@ -79,6 +80,7 @@ interface SlackDigestUpdateOptions {
   dryRun?: boolean;
   pin?: boolean;
   refresh?: boolean;
+  refreshConcurrency?: string;
 }
 
 interface SlackWorkspaceOption {
@@ -676,7 +678,25 @@ export async function handleSlackDigestUpdateCommand(
   const shouldPin = hasPinOption(options, command);
   const shouldRefresh = options.refresh === true || command?.opts?.().refresh === true;
   if (shouldRefresh && existingMessage) {
-    await refreshProjectDigestPrs(db, ownerRepo.owner, ownerRepo.repo);
+    const concurrencyOption = options.refreshConcurrency ?? command?.opts?.().refreshConcurrency;
+    const concurrency = concurrencyOption === undefined ? 2 : Number(concurrencyOption);
+    if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+      throw new Error('--refresh-concurrency must be a positive integer');
+    }
+    const refreshedCount = await refreshProjectDigestPrs(db, ownerRepo.owner, ownerRepo.repo, {
+      concurrency,
+      onProgress: (
+        prUrl: string,
+        index: number,
+        total: number,
+        phase: 'start' | 'complete'
+      ): void => {
+        log(`${phase === 'start' ? 'Refreshing' : 'Refreshed'} PR ${index}/${total}: ${prUrl}`);
+      },
+    });
+    log(
+      `Refreshed ${refreshedCount} open ${refreshedCount === 1 ? 'PR' : 'PRs'} for ${repoFullName}.`
+    );
   }
   if (hasDryRunOption(options, command)) {
     log(chalk.bold('Slack daily PR digest update dry run'));
