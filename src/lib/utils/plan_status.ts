@@ -5,6 +5,7 @@ export const STATUS_ORDER: PlanDisplayStatus[] = [
   'needs_review',
   'reviewed',
   'in_progress',
+  'queued',
   'ready',
   'pending',
   'recently_done',

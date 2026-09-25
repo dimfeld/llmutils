@@ -54,13 +54,13 @@ export function isPlanDeferred(plan: PlanSchema): boolean {
 }
 
 /**
- * Checks if a plan is actionable (either 'pending' or 'in_progress').
+ * Checks if a plan is actionable (pending, queued, or in_progress).
  * Actionable plans are those that can have work performed on them.
  * @param plan - The plan to check
- * @returns true if the plan status is 'pending' or 'in_progress'
+ * @returns true if the plan status is pending, queued, or in_progress
  */
 export function isPlanActionable(plan: PlanSchema): boolean {
-  return isPlanPending(plan) || isPlanInProgress(plan);
+  return isPlanPending(plan) || plan.status === 'queued' || isPlanInProgress(plan);
 }
 
 /**
@@ -136,6 +136,8 @@ export function getStatusDisplayName(status: PlanStatus | undefined): string {
   switch (status) {
     case 'pending':
       return 'Pending';
+    case 'queued':
+      return 'Queued';
     case 'in_progress':
       return 'In Progress';
     case 'done':

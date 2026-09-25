@@ -43,7 +43,7 @@ function getDependency<T>(plans: Map<number, T>, dependency: number | string): T
  * Determines if a plan is "ready" to be worked on.
  *
  * A plan is considered ready if:
- * 1. It has the correct status (pending or in_progress)
+ * 1. It has the correct status (pending, queued, or in_progress)
  * 2. All its dependencies are work-complete (for example 'done' or 'needs_review')
  *
  * IMPORTANT: Unlike findNextReadyDependency and dependency_traversal which are used for
@@ -67,8 +67,8 @@ export function isReadyPlan<T extends PlanSchema>(
 ): boolean {
   const status = plan.status ?? 'pending';
   const statusMatch = pendingOnly
-    ? status === 'pending'
-    : status === 'pending' || status === 'in_progress';
+    ? status === 'pending' || status === 'queued'
+    : status === 'pending' || status === 'queued' || status === 'in_progress';
 
   if (!statusMatch) {
     return false;

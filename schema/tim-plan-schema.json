@@ -41,6 +41,7 @@
       "type": "string",
       "enum": [
         "pending",
+        "queued",
         "in_progress",
         "needs_attention",
         "needs_review",

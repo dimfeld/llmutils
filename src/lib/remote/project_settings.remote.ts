@@ -5,6 +5,8 @@ import * as z from 'zod/v4';
 import { getServerContext } from '$lib/server/init.js';
 import { PROJECT_COLOR_PALETTE } from '$lib/stores/project.svelte.js';
 import { branchPrefixSchema } from '$tim/branch_prefix.js';
+import { autoRunSettingSchema } from '$tim/auto_run/settings.js';
+import { getLocalNodeId } from '$tim/sync/config.js';
 import { getProjectById } from '$tim/db/project.js';
 import { deleteProjectSettingOperation, setProjectSettingOperation } from '$tim/sync/operations.js';
 import {
@@ -19,6 +21,7 @@ const settingValueSchemas: Record<string, z.ZodType> = {
   abbreviation: z.string().max(4),
   color: z.enum(PROJECT_COLOR_PALETTE),
   branchPrefix: branchPrefixSchema,
+  autoRun: autoRunSettingSchema,
 };
 
 const updateSettingSchema = z.object({
@@ -97,6 +100,12 @@ export const updateProjectSetting = command(
 
     validateProjectExists(projectId, db);
     const validatedUpdate = validateProjectSettingUpdate(setting, value, baseRevision);
+    if (setting === 'autoRun' && !validatedUpdate.clear) {
+      validatedUpdate.value = {
+        ...(validatedUpdate.value as z.infer<typeof autoRunSettingSchema>),
+        runnerNodeId: await getLocalNodeId(config),
+      };
+    }
 
     if (validatedUpdate.clear) {
       await writeProjectSettingDelete(
@@ -130,6 +139,14 @@ export const updateProjectSettings = command(
     const validatedUpdates = settings.map(({ setting, value, baseRevision }) =>
       validateProjectSettingUpdate(setting, value, baseRevision)
     );
+    for (const update of validatedUpdates) {
+      if (update.setting === 'autoRun' && !update.clear) {
+        update.value = {
+          ...(update.value as z.infer<typeof autoRunSettingSchema>),
+          runnerNodeId: await getLocalNodeId(config),
+        };
+      }
+    }
 
     const projectUuid = getProjectUuidForId(db, projectId);
     const batch = await beginSyncBatch(db, config, {

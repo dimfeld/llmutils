@@ -920,7 +920,9 @@ export async function timAgent(
 
       // Start or resume execution after the user requests a run.
       if (
-        (planData.status === 'pending' || planData.status === 'needs_attention') &&
+        (planData.status === 'pending' ||
+          planData.status === 'queued' ||
+          planData.status === 'needs_attention') &&
         !isShuttingDown()
       ) {
         planData.status = 'in_progress';

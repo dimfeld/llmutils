@@ -33,17 +33,30 @@
   let serverAbbreviation = $derived((data.settings.abbreviation as string | undefined) ?? '');
   let serverColor = $derived((data.settings.color as string | undefined) ?? '');
   let serverBranchPrefix = $derived((data.settings.branchPrefix as string | undefined) ?? '');
+  let serverAutoRun = $derived(
+    (data.settings.autoRun as
+      | { enabled: boolean; maxConcurrent: number | null; runnerNodeId?: string }
+      | undefined) ?? {
+      enabled: false,
+      maxConcurrent: null,
+    }
+  );
   let baseRevisions = $derived({
     featured: data.settingMetadata.featured?.revision ?? 0,
     abbreviation: data.settingMetadata.abbreviation?.revision ?? 0,
     color: data.settingMetadata.color?.revision ?? 0,
     branchPrefix: data.settingMetadata.branchPrefix?.revision ?? 0,
+    autoRun: data.settingMetadata.autoRun?.revision ?? 0,
   });
 
   let featured = $derived(serverFeatured);
   let abbreviation = $derived(serverAbbreviation);
   let color = $derived(serverColor);
   let branchPrefix = $derived(serverBranchPrefix);
+  let autoRunEnabled = $derived(serverAutoRun.enabled);
+  let autoRunMaxConcurrent = $derived(
+    serverAutoRun.maxConcurrent === null ? '' : String(serverAutoRun.maxConcurrent)
+  );
   let virtualizeReviewGuideDiffs = $state(true);
   let virtualizationPreferenceLoaded = $state(false);
 
@@ -62,7 +75,10 @@
     featured !== serverFeatured ||
       abbreviation !== serverAbbreviation ||
       color !== serverColor ||
-      branchPrefix !== serverBranchPrefix
+      branchPrefix !== serverBranchPrefix ||
+      autoRunEnabled !== serverAutoRun.enabled ||
+      autoRunMaxConcurrent !==
+        (serverAutoRun.maxConcurrent === null ? '' : String(serverAutoRun.maxConcurrent))
   );
 
   let submitting = $state(false);
@@ -114,6 +130,25 @@
           setting: 'branchPrefix',
           value: branchPrefix,
           baseRevision: baseRevisions.branchPrefix,
+        });
+      }
+      if (
+        autoRunEnabled !== serverAutoRun.enabled ||
+        autoRunMaxConcurrent !==
+          (serverAutoRun.maxConcurrent === null ? '' : String(serverAutoRun.maxConcurrent))
+      ) {
+        const maxConcurrent =
+          autoRunMaxConcurrent.trim() === '' ? null : Number(autoRunMaxConcurrent);
+        if (
+          (autoRunEnabled && maxConcurrent === null) ||
+          (maxConcurrent !== null && (!Number.isInteger(maxConcurrent) || maxConcurrent < 1))
+        ) {
+          throw new Error('Enter a positive concurrency limit for automatic execution.');
+        }
+        updates.push({
+          setting: 'autoRun',
+          value: { enabled: autoRunEnabled, maxConcurrent },
+          baseRevision: baseRevisions.autoRun,
         });
       }
 
@@ -242,6 +277,36 @@
           bind:value={branchPrefix}
           class="w-40"
         />
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-border p-4">
+      <div class="space-y-4">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <Label for="auto-run-toggle" class="text-sm font-medium text-foreground"
+              >Automatic Plan Execution</Label
+            >
+            <p class="text-sm text-muted-foreground">
+              Run queued plans when their dependencies are complete.
+            </p>
+          </div>
+          <Switch id="auto-run-toggle" bind:checked={autoRunEnabled} />
+        </div>
+        <div class="space-y-2">
+          <Label for="auto-run-limit" class="text-sm font-medium text-foreground"
+            >Concurrent Plans</Label
+          >
+          <Input
+            id="auto-run-limit"
+            type="text"
+            inputmode="numeric"
+            pattern="[1-9][0-9]*"
+            placeholder="Enter a limit"
+            bind:value={autoRunMaxConcurrent}
+            class="w-40"
+          />
+        </div>
       </div>
     </div>
 

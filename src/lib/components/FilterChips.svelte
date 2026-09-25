@@ -40,6 +40,11 @@
       color: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
     },
     {
+      status: 'queued',
+      label: 'Queued',
+      color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
+    },
+    {
       status: 'needs_review',
       label: 'Needs Review',
       color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',

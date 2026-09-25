@@ -60,6 +60,22 @@ describe('project settings remote actions', () => {
     expect(getProjectSetting(currentDb, projectId, 'featured')).toBe(true);
   });
 
+  test('stores the local runner node with an enabled automatic queue', async () => {
+    currentConfig = { sync: { nodeId: 'node-a' } } as TimConfig;
+    await invokeCommand(updateProjectSetting, {
+      projectId,
+      setting: 'autoRun',
+      value: { enabled: true, maxConcurrent: 2 },
+      baseRevision: 0,
+    });
+
+    expect(getProjectSetting(currentDb, projectId, 'autoRun')).toEqual({
+      enabled: true,
+      maxConcurrent: 2,
+      runnerNodeId: 'node-a',
+    });
+  });
+
   test('successfully updates an existing project setting', async () => {
     await invokeCommand(updateProjectSetting, {
       projectId,
@@ -454,6 +470,7 @@ describe('project settings remote actions', () => {
   });
 
   test('successfully applies multiple settings in one batch', async () => {
+    currentConfig = { sync: { nodeId: 'node-b' } } as TimConfig;
     await expect(
       invokeCommand(updateProjectSettings, {
         projectId,
@@ -462,6 +479,7 @@ describe('project settings remote actions', () => {
           { setting: 'abbreviation', value: ' AB ', baseRevision: 0 },
           { setting: 'color', value: '#e74c3c', baseRevision: 0 },
           { setting: 'branchPrefix', value: 'di/', baseRevision: 0 },
+          { setting: 'autoRun', value: { enabled: true, maxConcurrent: 3 }, baseRevision: 0 },
         ],
       })
     ).resolves.toBeUndefined();
@@ -470,6 +488,11 @@ describe('project settings remote actions', () => {
     expect(getProjectSetting(currentDb, projectId, 'abbreviation')).toBe('AB');
     expect(getProjectSetting(currentDb, projectId, 'color')).toBe('#e74c3c');
     expect(getProjectSetting(currentDb, projectId, 'branchPrefix')).toBe('di/');
+    expect(getProjectSetting(currentDb, projectId, 'autoRun')).toEqual({
+      enabled: true,
+      maxConcurrent: 3,
+      runnerNodeId: 'node-b',
+    });
   });
 
   test('stale baseRevision in a batch rolls back other setting changes', async () => {

@@ -1456,6 +1456,19 @@ const migrations: Migration[] = [
       addReviewPlanLinkage(db);
     },
   },
+  {
+    version: 56,
+    requiresFkOff: true,
+    up: `SELECT 1;`,
+    afterUp: (db: Database): void => {
+      for (const table of ['plan', 'plan_canonical'] as const) {
+        if (tableExists(db, table)) {
+          rebuildPlanTableWithReviewedStatus(db, table, true, true, true);
+        }
+      }
+      addReviewPlanLinkage(db);
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {
@@ -1474,7 +1487,8 @@ function rebuildPlanTableWithReviewedStatus(
   db: Database,
   tableName: 'plan' | 'plan_canonical',
   includeNeedsAttention: boolean = false,
-  includeReviewDeferred: boolean = false
+  includeReviewDeferred: boolean = false,
+  includeQueued: boolean = false
 ): void {
   const existingColumns = tableColumns(db, tableName);
   const newTableName = `${tableName}_new`;
@@ -1540,7 +1554,7 @@ function rebuildPlanTableWithReviewedStatus(
         goal TEXT,
         details TEXT,
         status TEXT NOT NULL DEFAULT 'pending'
-          CHECK(status IN ('pending', 'in_progress', 'needs_review', 'reviewed', 'done', 'cancelled', 'deferred'${includeNeedsAttention ? ", 'needs_attention'" : ''}${includeReviewDeferred ? ", 'review_deferred'" : ''})),
+          CHECK(status IN ('pending', 'in_progress', 'needs_review', 'reviewed', 'done', 'cancelled', 'deferred'${includeNeedsAttention ? ", 'needs_attention'" : ''}${includeReviewDeferred ? ", 'review_deferred'" : ''}${includeQueued ? ", 'queued'" : ''})),
         priority TEXT
           CHECK(priority IN ('low', 'medium', 'high', 'urgent', 'maybe') OR priority IS NULL),
         branch TEXT,

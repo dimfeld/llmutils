@@ -544,6 +544,14 @@ export async function updatePlanMetadataFromWeb(
     effectiveConfig: config,
     projectAlreadyValidated: true,
   });
+  if (normalized.status === 'queued') {
+    const taskCount = db
+      .prepare('SELECT COUNT(*) AS count FROM plan_task WHERE plan_uuid = ? AND done = 0')
+      .get(syncedPlan.uuid) as { count: number };
+    if (syncedPlan.epic || taskCount.count === 0) {
+      fail('validation_failed', 'Only a plan with unfinished tasks can be queued', 'status');
+    }
+  }
   const touchedParentPlanIds =
     normalized.parentUuid !== undefined && normalized.parentUuid !== syncedPlan.parent_uuid
       ? [
@@ -750,6 +758,9 @@ export async function createPlanFromWeb(
     effectiveConfig: config,
     projectAlreadyValidated: true,
   });
+  if (normalized.status === 'queued') {
+    fail('validation_failed', 'Add tasks before setting a new plan to queued', 'status');
+  }
   const parentPlanIds = normalized.parentUuid
     ? collectAncestorPlanIds(db, normalized.parentUuid)
     : [];

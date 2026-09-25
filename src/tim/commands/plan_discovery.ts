@@ -112,7 +112,7 @@ export function findNextPlanFromCollection(
       if (includeInProgress && status === 'in_progress') {
         return true;
       }
-      if (includePending && status === 'pending') {
+      if (includePending && (status === 'pending' || status === 'queued')) {
         return true;
       }
       return false;
@@ -173,7 +173,7 @@ export function findNextReadyDependencyFromCollection(
     .filter((plan): plan is PlanSchema => Boolean(plan))
     .filter((plan) => {
       const status = plan.status || 'pending';
-      if (status !== 'pending' && status !== 'in_progress') {
+      if (status !== 'pending' && status !== 'queued' && status !== 'in_progress') {
         return false;
       }
       if (plan.priority === 'maybe') {
@@ -204,7 +204,7 @@ export function findNextReadyDependencyFromCollection(
   const blockedPlan = allDependencyPlans
     .filter((plan) => {
       const status = plan.status || 'pending';
-      return status === 'pending' || status === 'in_progress';
+      return status === 'pending' || status === 'queued' || status === 'in_progress';
     })
     .toSorted(compareByStatusPriorityAndId)[0];
 

@@ -42,6 +42,7 @@
 
   const STATUSES = [
     { value: 'pending', label: 'Pending' },
+    { value: 'queued', label: 'Queued' },
     { value: 'in_progress', label: 'In Progress' },
     { value: 'needs_attention', label: 'Needs Attention' },
     { value: 'needs_review', label: 'Needs Review' },
@@ -257,7 +258,9 @@
           bind:value={status}
         >
           {#each STATUSES as s (s.value)}
-            <option value={s.value}>{s.label}</option>
+            {#if mode !== 'create' || s.value !== 'queued'}
+              <option value={s.value}>{s.label}</option>
+            {/if}
           {/each}
         </select>
       </div>

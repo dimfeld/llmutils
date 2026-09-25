@@ -51,6 +51,7 @@
     ready: 'Ready',
     blocked: 'Blocked',
     pending: 'Pending',
+    queued: 'Queued',
     needs_attention: 'Needs Attention',
     needs_review: 'Needs Review',
     review_deferred: 'Review deferred',

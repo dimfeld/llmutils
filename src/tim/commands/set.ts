@@ -82,6 +82,9 @@ export async function handleSetCommand(
     const outputPath = await resolveWritablePath(planRow, repoRoot);
 
     const plan = target.plan;
+    if (options.status === 'queued' && (plan.epic || !plan.tasks?.some((task) => !task.done))) {
+      throw new Error('Only a plan with unfinished tasks can be queued.');
+    }
     let modified = false;
     let shouldRemoveAssignment = false;
     let oldParentIdToUpdate: number | undefined;

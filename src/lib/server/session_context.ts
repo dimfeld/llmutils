@@ -2,6 +2,7 @@ import type { SessionManager } from './session_manager.js';
 import type { SessionDiscoveryClient } from './session_discovery.js';
 import type { SyncServiceHandle } from './sync_service.js';
 import type { WebSocketServerHandle } from './ws_server.js';
+import type { AutoRunScheduler } from './auto_run.js';
 
 export interface WebhookPollerHandle {
   stop: () => void;
@@ -24,6 +25,7 @@ interface SessionContextState {
   webhookPoller: WebhookPollerHandle | null;
   slackNotifier: SlackNotifierHandle | null;
   dailyDigestScheduler: DailyDigestSchedulerHandle | null;
+  autoRunScheduler: AutoRunScheduler | null;
   syncService: SyncServiceHandle | null;
   initPromise: Promise<SessionManager> | null;
 }
@@ -42,11 +44,20 @@ function getState(): SessionContextState {
     webhookPoller: null,
     slackNotifier: null,
     dailyDigestScheduler: null,
+    autoRunScheduler: null,
     syncService: null,
     initPromise: null,
   };
 
   return globalState[sessionContextKey];
+}
+
+export function getAutoRunScheduler(): AutoRunScheduler | null {
+  return getState().autoRunScheduler;
+}
+
+export function setAutoRunScheduler(scheduler: AutoRunScheduler | null): void {
+  getState().autoRunScheduler = scheduler;
 }
 
 export function getSessionManager(): SessionManager {

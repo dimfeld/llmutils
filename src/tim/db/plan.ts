@@ -94,7 +94,10 @@ function computeChildDisplayStatus(
   // This intentionally mirrors the dependency-aware branch of the web
   // computeDisplayStatus helper. The simple-plan branch is omitted because
   // the Run Children consumer filters by task count before rendering.
-  if (!child.epic && (child.status === 'pending' || child.status === 'in_progress')) {
+  if (
+    !child.epic &&
+    (child.status === 'pending' || child.status === 'queued' || child.status === 'in_progress')
+  ) {
     const hasUnresolvedDependency = dependencyUuids.some((dependencyUuid) => {
       const dependencyPlan = planByUuid.get(dependencyUuid);
       return dependencyPlan == null || !isWorkCompleteStatus(dependencyPlan.status);

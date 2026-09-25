@@ -48,6 +48,7 @@ function toAgentMultiPlan(
     uuid: row.uuid,
     planId: row.plan_id,
     title: row.title,
+    epic: row.epic === 1,
     status: row.status,
     taskCount: counts.taskCount,
     doneTaskCount: counts.doneTaskCount,

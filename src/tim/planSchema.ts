@@ -14,6 +14,7 @@ export type Priority = z.infer<typeof prioritySchema>;
 
 export const statusSchema = z.enum([
   'pending',
+  'queued',
   'in_progress',
   'needs_attention',
   'needs_review',

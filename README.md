@@ -66,6 +66,12 @@ bun scripts/restore-session-files.ts
 
 Use `--dry-run` to inspect the files before writing them.
 
+### Automatic plan execution
+
+In the web interface, open a project's Settings page, enter a **Concurrent Plans** limit, and enable **Automatic Plan Execution**. The web server starts queued plans when their dependencies are complete. The setting applies only to that project.
+
+Queue a plan after generation with `tim generate <id> --queue`, or queue an existing plan with `tim set <id> --status queued`. A queued plan must have unfinished tasks before the scheduler starts it. The scheduler uses separate workspaces and counts live agent sessions against the project limit. The node that saves the enabled setting runs the queue. A run that exits without completing its plan moves the plan to `needs_attention`.
+
 ## Configure a Project
 
 Run these commands inside the repository you want `tim` to manage, not necessarily inside the `llmutils` repository:

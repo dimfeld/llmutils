@@ -8,7 +8,12 @@ import { getLoggerAdapter } from '../../logging/adapter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
 import { log, warn, error } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import { resolvePlanByNumericId, writePlanToDb } from '../plans.js';
+import {
+  resolvePlanByNumericId,
+  setPlanStatusById,
+  writePlanToDb,
+  writePlanFile,
+} from '../plans.js';
 import { resolvePlanPathContext } from '../path_resolver.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import { readPlanFile } from '../plans.js';
@@ -42,7 +47,7 @@ import {
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
 import { findLatestPlanFromDb, findNextReadyDependencyFromDb } from './plan_discovery.js';
-import { resolveProjectContext } from '../plan_materialize.js';
+import { resolveProjectContext, withPlanAutoSync } from '../plan_materialize.js';
 import { collectIssueDocuments, hasLinearIssueReferences } from './generate_issue_docs.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { tryMaterializeReferenceArtifactPathsForExecution } from '../reference_artifacts.js';
@@ -62,6 +67,7 @@ interface GenerateCommandOptions {
   terminalInput?: boolean;
   executor?: string;
   commit?: boolean;
+  queue?: boolean;
 }
 
 interface GenerateCommandContext {
@@ -409,11 +415,9 @@ export async function handleGenerateCommand(
           );
         }
 
-        // Handle --commit option
-        if (options.commit) {
+        if (options.commit && !options.queue) {
           const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
-          const commitMessage = `Add plan: ${planTitle}`;
-          await commitAll(commitMessage, currentBaseDir);
+          await commitAll(`Add plan: ${planTitle}`, currentBaseDir);
           log(chalk.green('✓ Committed changes'));
         }
 
@@ -463,4 +467,38 @@ export async function handleGenerateCommand(
       }
     },
   });
+
+  if (options.queue) {
+    const generatedPlan = await resolvePlanByNumericId(currentPlanId, currentBaseDir);
+    if (generatedPlan.plan.epic || !generatedPlan.plan.tasks.some((task) => !task.done)) {
+      throw new Error('Only a generated plan with unfinished tasks can enter the automatic queue.');
+    }
+    const queuedPlan = {
+      ...generatedPlan.plan,
+      status: 'queued' as const,
+      updatedAt: new Date().toISOString(),
+    };
+    await writePlanFile(currentPlanFile, queuedPlan, {
+      cwdForIdentity: currentBaseDir,
+      skipDb: true,
+    });
+    if (options.commit) {
+      const planTitle = parsedPlan.title || parsedPlan.goal || 'plan';
+      const commitExitCode = await commitAll(`Add plan: ${planTitle}`, currentBaseDir);
+      if (commitExitCode !== 0) {
+        throw new Error(`Failed to commit queued plan ${currentPlanId}.`);
+      }
+      log(chalk.green('✓ Committed changes'));
+    }
+    if (roundTripContext) {
+      await runPostExecutionWorkspaceSync(
+        roundTripContext,
+        `Queue generated plan ${currentPlanId}`
+      );
+    }
+    await withPlanAutoSync(currentPlanId, currentBaseDir, async (): Promise<void> => {
+      await setPlanStatusById(currentPlanId, 'queued', currentBaseDir);
+    });
+    log(chalk.green(`✓ Queued plan ${currentPlanId} for automatic execution`));
+  }
 }

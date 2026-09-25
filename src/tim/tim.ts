@@ -422,6 +422,7 @@ program
     'For simpler tasks, generate a single-phase plan that already includes the prompts'
   )
   .option('--commit', 'Commit changes to jj/git after successful plan generation')
+  .option('--queue', 'Queue the generated plan for automatic execution')
   .option('-x, --executor <name>', 'The executor to use for generation (e.g., claude_code, codex)')
   .option(
     '--next-ready <planId>',
@@ -1249,12 +1250,12 @@ program
 program
   .command('ready')
   .description(
-    'List all plans that are ready to execute (pending/in_progress with dependencies done)'
+    'List plans that are ready for work (pending/queued/in_progress with dependencies done)'
   )
   .option('--format <format>', 'Output format: list (default), table, json', 'list')
   .option('--sort <field>', 'Sort by: priority (default), id, title, created, updated', 'priority')
   .option('--reverse', 'Reverse sort order')
-  .option('--pending-only', 'Show only pending plans (exclude in_progress)')
+  .option('--pending-only', 'Show pending and queued plans (exclude in_progress)')
   .option('--priority <priority>', 'Filter by priority: low, medium, high, urgent, maybe')
   .option('--all', 'Show ready plans regardless of assignment ownership')
   .option('--unassigned', 'Show only ready plans that are not currently claimed')

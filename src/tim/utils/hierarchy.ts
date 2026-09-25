@@ -138,7 +138,7 @@ export function getCompletedChildren(
 
 /**
  * Gets all pending children of a plan (recursive).
- * Filters getAllChildren to only include plans with status === 'pending' or 'in_progress'.
+ * Filters getAllChildren to include pending, queued, or in_progress plans.
  *
  * @param planId - The ID of the plan to get pending children for
  * @param allPlans - Map of all plans keyed by ID
@@ -149,7 +149,9 @@ export function getPendingChildren(
   allPlans: Map<number, PlanSchema>
 ): PlanSchema[] {
   const allChildren = getAllChildren(planId, allPlans);
-  return allChildren.filter((plan) => plan.status === 'pending' || plan.status === 'in_progress');
+  return allChildren.filter(
+    (plan) => plan.status === 'pending' || plan.status === 'queued' || plan.status === 'in_progress'
+  );
 }
 
 /**

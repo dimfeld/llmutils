@@ -350,14 +350,13 @@ export type PlanFilterOptions = {
 /**
  * Checks if a plan is ready to be executed.
  * A plan is ready if:
- * - Its status is 'pending' (or not set)
+ * - Its status is pending or queued (or not set)
  * - All its dependencies are work-complete
  */
 export function isPlanReady(plan: PlanSchema, allPlans: Map<number, PlanSchema>): boolean {
   const status = plan.status || 'pending';
 
-  // Only pending plans can be "ready"
-  if (status !== 'pending') {
+  if (status !== 'pending' && status !== 'queued') {
     return false;
   }
 

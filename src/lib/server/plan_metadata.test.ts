@@ -632,6 +632,12 @@ describe('updatePlanMetadataFromWeb', () => {
     ]);
   });
 
+  test('rejects queueing a plan without unfinished tasks', async () => {
+    await expect(
+      updatePlanMetadataFromWeb(db, { projectId, planUuid, status: 'queued' })
+    ).rejects.toMatchObject({ field: 'status' });
+  });
+
   test('allows all-project route updates but rejects mismatched concrete route projects', async () => {
     await expect(
       updatePlanMetadataFromWeb(db, {

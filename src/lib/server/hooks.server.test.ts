@@ -5,7 +5,15 @@ describe('hooks.server init', () => {
 
   beforeEach(async () => {
     vi.resetModules();
+    vi.doMock('$lib/server/auto_run.js', () => ({
+      AutoRunScheduler: class {
+        start(): void {}
+        stop(): void {}
+      },
+    }));
     const sessionContext = await import('./session_context.js');
+    sessionContext.getAutoRunScheduler()?.stop();
+    sessionContext.setAutoRunScheduler(null);
     (sessionContext.setSessionManager as unknown as (manager: null) => void)(null);
     (sessionContext.setWebSocketServerHandle as unknown as (server: null) => void)(null);
     sessionContext.setSessionDiscoveryClient(null);
@@ -22,6 +30,8 @@ describe('hooks.server init', () => {
 
   afterEach(async () => {
     const sessionContext = await import('./session_context.js');
+    sessionContext.getAutoRunScheduler()?.stop();
+    sessionContext.setAutoRunScheduler(null);
     (sessionContext.setSessionManager as unknown as (manager: null) => void)(null);
     (sessionContext.setWebSocketServerHandle as unknown as (server: null) => void)(null);
     sessionContext.setSessionDiscoveryClient(null);
@@ -37,6 +47,7 @@ describe('hooks.server init', () => {
     vi.resetModules();
     vi.clearAllMocks();
     vi.doUnmock('$lib/server/init.js');
+    vi.doUnmock('$lib/server/auto_run.js');
     vi.doUnmock('$lib/server/daily_digest.js');
     vi.doUnmock('$lib/server/session_discovery.js');
     vi.doUnmock('$lib/server/sync_service.js');

@@ -1,5 +1,5 @@
 // Command handler for 'tim ready'
-// Lists all plans that are ready to execute (pending/in_progress with dependencies done)
+// Lists plans ready for work (pending/queued/in_progress with dependencies done)
 
 import chalk from 'chalk';
 import fs from 'node:fs';

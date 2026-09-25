@@ -124,6 +124,9 @@ export async function handleAddCommand(
   }
 
   if (options.status) {
+    if (options.status === 'queued') {
+      throw new Error('Create the plan and add tasks before setting its status to queued.');
+    }
     const validStatuses = statusSchema.options;
     if (!validStatuses.includes(options.status)) {
       throw new Error(

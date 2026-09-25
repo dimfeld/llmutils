@@ -1,4 +1,6 @@
 import process from 'node:process';
+import type { Database } from 'bun:sqlite';
+import type { TimConfig } from '$tim/configSchema.js';
 
 import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit';
 
@@ -8,9 +10,11 @@ import {
   updateDailyDigestMessagesForPrUrls,
 } from '$lib/server/daily_digest.js';
 import { getServerContext } from '$lib/server/init.js';
+import { AutoRunScheduler } from '$lib/server/auto_run.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import {
   getDailyDigestScheduler,
+  getAutoRunScheduler,
   getSessionDiscoveryClient,
   getSessionInitPromise,
   getSessionManager,
@@ -20,6 +24,7 @@ import {
   getWebhookPoller,
   setSessionDiscoveryClient,
   setDailyDigestScheduler,
+  setAutoRunScheduler,
   setSessionInitPromise,
   setSessionManager,
   setSlackNotifier,
@@ -76,6 +81,7 @@ function registerCurrentShutdownHandlers(): void {
   // than capturing a stale handle. Do not refactor to capture handles by value.
   registerShutdownHandlers(() => {
     getSyncService()?.stop();
+    getAutoRunScheduler()?.stop();
     getDailyDigestScheduler()?.stop();
     getSlackNotifier()?.stop();
     getWebhookPoller()?.stop();
@@ -85,11 +91,21 @@ function registerCurrentShutdownHandlers(): void {
   });
 }
 
+function ensureAutoRunScheduler(db: Database, config: TimConfig): boolean {
+  if (getAutoRunScheduler()) return false;
+  const scheduler = new AutoRunScheduler(db, config);
+  scheduler.start();
+  setAutoRunScheduler(scheduler);
+  return true;
+}
+
 export const init: ServerInit = async () => {
   const existingPromise = getSessionInitPromise();
   if (existingPromise) {
     await existingPromise;
     const { config, db } = await getServerContext();
+    ensureAutoRunScheduler(db, config);
+    registerCurrentShutdownHandlers();
     // Handle poller state changes during HMR re-init.
     const existingPoller = getWebhookPoller();
     if (existingPoller && !isWebhookPollingEnabled()) {
@@ -146,6 +162,7 @@ export const init: ServerInit = async () => {
   const existingSyncService = getSyncService();
   if (existingServer && existingDiscoveryClient) {
     const { config, db } = await getServerContext();
+    ensureAutoRunScheduler(db, config);
     const shouldRunSync = shouldRunSyncService(config);
     const shouldRunSlack = shouldStartSlackNotifier(config);
     const shouldRunDigest = shouldStartDailyDigest(db, config);
@@ -186,11 +203,13 @@ export const init: ServerInit = async () => {
     webhookPoller: false,
     slackNotifier: false,
     dailyDigestScheduler: false,
+    autoRunScheduler: false,
     syncService: false,
   };
 
   const initPromise = (async () => {
     const { config, db } = await getServerContext();
+    createdResources.autoRunScheduler = ensureAutoRunScheduler(db, config);
     const sessionManager = existingServer
       ? getSessionManager()
       : new SessionManager(db, { retention: config.headless?.sessionRetention });
@@ -264,6 +283,10 @@ export const init: ServerInit = async () => {
     return sessionManager;
   })().catch((error) => {
     // Clean up only resources created during this failed init attempt.
+    if (createdResources.autoRunScheduler) {
+      getAutoRunScheduler()?.stop();
+      setAutoRunScheduler(null);
+    }
     if (createdResources.discoveryClient) {
       const discoveryClient = getSessionDiscoveryClient();
       if (discoveryClient) {

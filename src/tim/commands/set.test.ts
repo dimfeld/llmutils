@@ -129,6 +129,19 @@ describe('tim set command', () => {
     expect(updatedPlan.updatedAt).toBeDefined();
   });
 
+  test('queues only plans with unfinished tasks', async () => {
+    await createTestPlan(11);
+    await expect(handleSetCommand(11, { status: 'queued' }, globalOpts)).rejects.toThrow(
+      'unfinished tasks'
+    );
+
+    await createTestPlan(12, {
+      tasks: [{ title: 'Implement', description: 'Work to do', done: false }],
+    });
+    await handleSetCommand(12, { status: 'queued' }, globalOpts);
+    expect((await resolvePlanByNumericId(12, tempDir)).plan.status).toBe('queued');
+  });
+
   test('should update note', async () => {
     const planPath = await createTestPlan(101);
 

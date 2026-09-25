@@ -44,6 +44,7 @@ import {
 
 export type PlanDisplayStatus =
   | 'pending'
+  | 'queued'
   | 'ready'
   | 'in_progress'
   | 'blocked'
@@ -58,6 +59,7 @@ export type PlanDisplayStatus =
 
 export interface ProjectPlanStatusCounts {
   pending: number;
+  queued: number;
   in_progress: number;
   needs_attention: number;
   needs_review: number;
@@ -254,6 +256,7 @@ export const RECENTLY_ACTIVE_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 const EMPTY_STATUS_COUNTS: ProjectPlanStatusCounts = {
   pending: 0,
+  queued: 0,
   in_progress: 0,
   needs_attention: 0,
   needs_review: 0,
@@ -514,7 +517,10 @@ function computeDisplayStatus(
   planByUuid: ReadonlyMap<string, Pick<PlanRow, 'status'>>,
   now = Date.now()
 ): PlanDisplayStatus {
-  if (!plan.epic && (plan.status === 'pending' || plan.status === 'in_progress')) {
+  if (
+    !plan.epic &&
+    (plan.status === 'pending' || plan.status === 'queued' || plan.status === 'in_progress')
+  ) {
     const dependencyUuids = dependencyRows.map((dependency) => dependency.depends_on_uuid);
     if (plan.base_plan_uuid) {
       dependencyUuids.push(plan.base_plan_uuid);
@@ -884,6 +890,7 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
     const statusCounts = counts
       ? {
           pending: counts.pending,
+          queued: counts.queued,
           in_progress: counts.in_progress,
           needs_attention: counts.needs_attention,
           needs_review: counts.needs_review,
@@ -904,6 +911,7 @@ export function getProjectsWithMetadata(db: Database): ProjectWithMetadata[] {
       planCount: counts?.total ?? 0,
       activePlanCount:
         statusCounts.pending +
+        statusCounts.queued +
         statusCounts.in_progress +
         statusCounts.needs_attention +
         statusCounts.needs_review +

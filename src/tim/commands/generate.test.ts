@@ -24,7 +24,18 @@ vi.mock('../plans.js', async (importOriginal) => {
   return {
     ...actual,
     resolvePlanByNumericId: vi.fn(),
+    setPlanStatusById: vi.fn(),
     writePlanToDb: vi.fn(),
+  };
+});
+
+vi.mock('../plan_materialize.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../plan_materialize.js')>();
+  return {
+    ...actual,
+    withPlanAutoSync: vi.fn(async (_planId: number, _cwd: string, callback: () => Promise<void>) =>
+      callback()
+    ),
   };
 });
 
@@ -98,7 +109,7 @@ vi.mock('./plan_discovery.js', () => ({
 
 import { handleGenerateCommand } from './generate.js';
 import { generateClaudeCodePlanningPrompt } from '../prompt.js';
-import { readPlanFile, writePlanFile, writePlanToDb } from '../plans.js';
+import { readPlanFile, setPlanStatusById, writePlanFile, writePlanToDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { log, warn } from '../../logging.js';
 import { buildExecutorAndLog, defaultModelForExecutor } from '../executors/index.js';
@@ -129,6 +140,7 @@ import { findNextReadyDependencyFromDb, findLatestPlanFromDb } from './plan_disc
 const isTunnelActiveSpy = vi.mocked(isTunnelActive);
 const runWithHeadlessAdapterIfEnabledSpy = vi.mocked(runWithHeadlessAdapterIfEnabled);
 const writePlanToDbSpy = vi.mocked(writePlanToDb);
+const setPlanStatusByIdSpy = vi.mocked(setPlanStatusById);
 const watchPlanFileSpy = vi.mocked(watchPlanFile);
 
 describe('handleGenerateCommand', () => {
@@ -197,6 +209,7 @@ describe('handleGenerateCommand', () => {
       };
     });
     writePlanToDbSpy.mockResolvedValue({} as any);
+    setPlanStatusByIdSpy.mockResolvedValue(undefined);
     watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
     trackedWorkspacePath = undefined;
     getWorkspaceInfoByPathSpy.mockImplementation((baseDir: string) => {
@@ -488,6 +501,58 @@ describe('handleGenerateCommand', () => {
 
     expect(commitAllSpy).toHaveBeenCalledTimes(1);
     expect(commitAllSpy.mock.calls[0][0]).toContain('Commit Test Plan');
+  });
+
+  test('queues a plan only after generation creates unfinished tasks', async () => {
+    const planPath = await createStubPlan(111, { title: 'Queued Plan' });
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      const plan = await readPlanFile(planPath);
+      plan.tasks = [{ title: 'Task 1', description: 'Description', done: false }];
+      await writePlanFile(planPath, plan);
+    });
+
+    await handleGenerateCommand(undefined, { plan: planPath, queue: true }, buildCommand());
+
+    expect(setPlanStatusByIdSpy).toHaveBeenCalledWith(111, 'queued', tempDir);
+    expect(writePlanToDbSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not queue a plan without unfinished tasks', async () => {
+    const planPath = await createStubPlan(112, { title: 'Empty Plan' });
+
+    await expect(
+      handleGenerateCommand(undefined, { plan: planPath, queue: true }, buildCommand())
+    ).rejects.toThrow('unfinished tasks');
+    expect(setPlanStatusByIdSpy).not.toHaveBeenCalled();
+  });
+
+  test('does not publish queue status when the workspace sync fails', async () => {
+    const planPath = await createStubPlan(114, { title: 'Workspace Queue Plan' });
+    const workspaceDir = path.join(tempDir, 'workspace-queue');
+    await fs.mkdir(workspaceDir, { recursive: true });
+    const workspacePlanPath = path.join(workspaceDir, path.basename(planPath));
+    await fs.copyFile(planPath, workspacePlanPath);
+    setupWorkspaceSpy.mockResolvedValueOnce({
+      baseDir: workspaceDir,
+      planFile: workspacePlanPath,
+      branchCreatedDuringSetup: false,
+    } as any);
+    prepareWorkspaceRoundTripSpy.mockResolvedValueOnce({} as any);
+    runPostExecutionWorkspaceSyncSpy.mockResolvedValueOnce(undefined);
+    runPostExecutionWorkspaceSyncSpy.mockRejectedValueOnce(new Error('Workspace sync failed'));
+    mockExecutorExecute.mockImplementationOnce(async () => {
+      for (const filePath of [planPath, workspacePlanPath]) {
+        const plan = await readPlanFile(filePath);
+        plan.tasks = [{ title: 'Task 1', description: 'Work', done: false }];
+        await writePlanFile(filePath, plan);
+      }
+    });
+
+    await expect(
+      handleGenerateCommand(undefined, { plan: planPath, queue: true }, buildCommand())
+    ).rejects.toThrow('Workspace sync failed');
+    expect(runPostExecutionWorkspaceSyncSpy).toHaveBeenCalledTimes(2);
+    expect(setPlanStatusByIdSpy).not.toHaveBeenCalled();
   });
 
   test('updates workspace metadata from plan when workspace is tracked', async () => {

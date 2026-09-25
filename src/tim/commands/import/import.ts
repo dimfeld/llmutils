@@ -859,6 +859,9 @@ export async function handleImportCommand(
 
   // Validate status if provided
   if (options.status) {
+    if (options.status === 'queued') {
+      throw new Error('Generate tasks before setting an imported plan to queued.');
+    }
     const validStatuses = statusSchema.options;
     if (!validStatuses.includes(options.status)) {
       throw new Error(
