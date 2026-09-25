@@ -112,9 +112,13 @@ describe('common/github/pr_status', () => {
       mergeable: 'MERGEABLE',
       mergedAt: null,
       headSha: 'abc123',
+      baseSha: undefined,
       baseRefName: 'main',
       headRefName: 'feature/pr-status',
+      createdAt: undefined,
+      updatedAt: undefined,
       reviewDecision: 'APPROVED',
+      requestedReviewers: [],
       labels: [{ name: 'backend', color: '00ff00' }],
       reviews: [
         {
@@ -160,6 +164,49 @@ describe('common/github/pr_status', () => {
       changedFiles: 3,
     });
     expect(graphql).toHaveBeenCalledTimes(1);
+  });
+
+  test('fetchPrFullStatus includes review requests from later pages', async () => {
+    const graphql = vi.fn(async (_query: string, variables: { cursor?: string }) => ({
+      repository: {
+        pullRequest: variables.cursor
+          ? {
+              reviewRequests: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [{ requestedReviewer: { __typename: 'User', login: 'second-reviewer' } }],
+              },
+            }
+          : {
+              number: 42,
+              title: 'Paged review requests',
+              state: 'OPEN',
+              isDraft: false,
+              mergeable: 'MERGEABLE',
+              mergedAt: null,
+              reviewDecision: 'REVIEW_REQUIRED',
+              reviewRequests: {
+                pageInfo: { hasNextPage: true, endCursor: 'page-2' },
+                nodes: [{ requestedReviewer: { __typename: 'User', login: 'first-reviewer' } }],
+              },
+              labels: { nodes: [] },
+              reviews: { nodes: [] },
+              commits: { nodes: [] },
+            },
+      },
+    }));
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({ graphql });
+
+    const { fetchPrFullStatus } = await import('./pr_status.ts');
+    const result = await fetchPrFullStatus('owner', 'repo', 42);
+
+    expect(result.requestedReviewers).toEqual(['first-reviewer', 'second-reviewer']);
+    expect(graphql).toHaveBeenCalledTimes(2);
+    expect(graphql.mock.calls[1]?.[1]).toEqual({
+      owner: 'owner',
+      repo: 'repo',
+      prNumber: 42,
+      cursor: 'page-2',
+    });
   });
 
   test('fetchPrFullStatus keeps only the latest review per author', async () => {

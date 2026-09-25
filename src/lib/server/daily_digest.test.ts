@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { constructGitHubRepositoryId } from '$common/github/pull_requests.js';
+import { refreshPrStatus } from '$common/github/pr_status_service.js';
 import type {
   SlackPinSenderArgs,
   SlackPostSenderArgs,
@@ -12,7 +13,15 @@ import { getDefaultConfig, type TimConfig } from '$tim/configSchema.js';
 import { openDatabase } from '$tim/db/database.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { setProjectSetting } from '$tim/db/project_settings.js';
-import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '$tim/db/pr_status.js';
+import {
+  getPrStatusByUrl,
+  upsertPrReviewRequestByReviewer,
+  upsertPrStatus,
+} from '$tim/db/pr_status.js';
+
+vi.mock('$common/github/pr_status_service.js', () => ({
+  refreshPrStatus: vi.fn(),
+}));
 
 import {
   runAllDailyDigests,
@@ -114,6 +123,13 @@ describe('lib/server/daily_digest', () => {
 
   beforeEach(() => {
     db = openDatabase(':memory:');
+    vi.mocked(refreshPrStatus).mockImplementation(async (database: Database, prUrl: string) => {
+      const detail = getPrStatusByUrl(database, prUrl);
+      if (!detail) {
+        throw new Error(`Missing test PR ${prUrl}`);
+      }
+      return detail;
+    });
     originalInfo = console.info;
     console.info = (): void => {};
     originalWebhookPollInterval = process.env.TIM_WEBHOOK_POLL_INTERVAL;
@@ -125,6 +141,7 @@ describe('lib/server/daily_digest', () => {
   });
 
   afterEach(async () => {
+    vi.mocked(refreshPrStatus).mockReset();
     console.info = originalInfo;
     restoreEnv('TIM_WEBHOOK_POLL_INTERVAL', originalWebhookPollInterval);
     restoreEnv('TIM_WEBHOOK_SERVER_URL', originalWebhookServerUrl);
@@ -232,6 +249,12 @@ describe('lib/server/daily_digest', () => {
     expect(payloadText(sent[0])).toContain('Needs review');
     expect(payloadText(sent[0])).toContain('`carol` (25 hours)');
     expect(payloadText(sent[0])).not.toContain('<@');
+    expect(refreshPrStatus).toHaveBeenCalledTimes(2);
+    expect(refreshPrStatus).toHaveBeenCalledWith(
+      db,
+      'https://github.com/octocat/hello-world/pull/1',
+      { refreshDigestMetadata: true }
+    );
   });
 
   test('posts other PRs ready for review for more than three days', async () => {
@@ -250,6 +273,30 @@ describe('lib/server/daily_digest', () => {
     expect(payloadText(sent[0])).toContain('Other PRs ready for review for > 3 days');
     expect(payloadText(sent[0])).toContain('Old ready PR');
     expect(payloadText(sent[0])).toContain('no previous review');
+  });
+
+  test('uses refreshed PR status for the scheduled digest', async () => {
+    setupProject('octocat', 'refreshed', { channel: '#reviews' });
+    insertPr('octocat', 'refreshed', 1, { title: 'Old title' });
+    vi.mocked(refreshPrStatus).mockImplementationOnce(async (database: Database, prUrl: string) => {
+      insertPr('octocat', 'refreshed', 1, {
+        title: 'Current title',
+        reviewDecision: 'APPROVED',
+      });
+      const detail = getPrStatusByUrl(database, prUrl);
+      if (!detail) {
+        throw new Error(`Missing test PR ${prUrl}`);
+      }
+      return detail;
+    });
+
+    const { sender, sent } = makeFakeSender();
+    await runDailyDigestForWorkspace(db, buildConfig(), 'work', { sender, nowMs: NOW_MS });
+
+    expect(refreshPrStatus).toHaveBeenCalledOnce();
+    expect(sent).toHaveLength(1);
+    expect(payloadText(sent[0])).toContain('Current title');
+    expect(payloadText(sent[0])).not.toContain('Old title');
   });
 
   test('does not post for projects without digest eligibility', async () => {
@@ -452,6 +499,7 @@ describe('lib/server/daily_digest', () => {
       'octocat',
       'repo-a'
     );
+    vi.mocked(refreshPrStatus).mockClear();
 
     const updateSender = makeFakeUpdateSender();
     await updateDailyDigestMessagesForPrUrls(
@@ -466,6 +514,7 @@ describe('lib/server/daily_digest', () => {
     );
 
     expect(postSender.sent).toHaveLength(1);
+    expect(refreshPrStatus).not.toHaveBeenCalled();
     expect(updateSender.updated).toHaveLength(1);
     expect(updateSender.updated[0].payload.text).toContain('0 approved');
     expect(payloadText({ token: '', payload: updateSender.updated[0].payload })).not.toContain(
@@ -492,6 +541,7 @@ describe('lib/server/daily_digest', () => {
 
     expect(postSender.sent).toHaveLength(0);
     expect(updateSender.updated).toHaveLength(0);
+    expect(refreshPrStatus).not.toHaveBeenCalled();
   });
 
   test('logs a misconfigured workspace only once with a shared logged set and does not throw', async () => {

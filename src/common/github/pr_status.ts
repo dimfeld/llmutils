@@ -81,6 +81,7 @@ export interface PrFullStatus {
   baseRefName: string | null;
   headRefName: string | null;
   reviewDecision: PrReviewDecision;
+  requestedReviewers?: string[];
   labels: PrStatusLabel[];
   reviews: PrStatusReview[];
   checks: PrStatusCheckRun[];
@@ -89,6 +90,17 @@ export interface PrFullStatus {
   deletions: number | null;
   changedFiles: number | null;
   latestCommitPushedAt: string | null;
+}
+
+export interface PrReviewRequestTimelineEvent {
+  reviewer: string;
+  action: 'requested' | 'removed';
+  eventAt: string;
+}
+
+export interface PrDigestTimeline {
+  reviewRequestEvents: PrReviewRequestTimelineEvent[];
+  readyAt: string | null;
 }
 
 export interface PrCheckStatusResult {
@@ -167,6 +179,18 @@ interface GraphQlPullRequestFullStatus {
   baseRefName: string | null;
   headRefName: string | null;
   reviewDecision: string | null;
+  reviewRequests: {
+    pageInfo: {
+      hasNextPage: boolean;
+      endCursor: string | null;
+    };
+    nodes: Array<{
+      requestedReviewer:
+        | { __typename: 'User'; login: string }
+        | { __typename: string; login?: string | null }
+        | null;
+    } | null> | null;
+  } | null;
   additions: number;
   deletions: number;
   changedFiles: number;
@@ -182,6 +206,12 @@ interface GraphQlPullRequestChecksOnly {
 interface FullStatusGraphQlResponse {
   repository: {
     pullRequest: GraphQlPullRequestFullStatus | null;
+  } | null;
+}
+
+interface ReviewRequestsGraphQlResponse {
+  repository: {
+    pullRequest: Pick<GraphQlPullRequestFullStatus, 'reviewRequests'> | null;
   } | null;
 }
 
@@ -315,6 +345,20 @@ const fullStatusQuery = `
           }
         }
         reviewDecision
+        reviewRequests(first: 100) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            requestedReviewer {
+              __typename
+              ... on User {
+                login
+              }
+            }
+          }
+        }
         reviews(last: 50) {
           nodes {
             author {
@@ -351,6 +395,112 @@ const fullStatusQuery = `
                       createdAt
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+const reviewRequestsQuery = `
+  query GetPrReviewRequests($owner: String!, $repo: String!, $prNumber: Int!, $cursor: String!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $prNumber) {
+        reviewRequests(first: 100, after: $cursor) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            requestedReviewer {
+              __typename
+              ... on User {
+                login
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+interface GraphQlReviewRequestTimelineNode {
+  __typename: 'ReviewRequestedEvent' | 'ReviewRequestRemovedEvent';
+  createdAt: string;
+  requestedReviewer:
+    | { __typename: 'User'; login: string }
+    | { __typename: string; login?: string | null }
+    | null;
+}
+
+interface GraphQlReadyTimelineNode {
+  __typename: 'ReadyForReviewEvent' | 'ConvertToDraftEvent';
+  createdAt: string;
+}
+
+type GraphQlDigestTimelineNode = GraphQlReviewRequestTimelineNode | GraphQlReadyTimelineNode;
+
+interface DigestTimelineGraphQlResponse {
+  repository: {
+    pullRequest: {
+      timelineItems: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: Array<GraphQlDigestTimelineNode | null> | null;
+      };
+    } | null;
+  } | null;
+}
+
+const digestTimelineQuery = `
+  query GetPrDigestTimeline(
+    $owner: String!,
+    $repo: String!,
+    $prNumber: Int!,
+    $timelineCursor: String
+  ) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $prNumber) {
+        timelineItems(
+          first: 100,
+          after: $timelineCursor,
+          itemTypes: [
+            READY_FOR_REVIEW_EVENT,
+            CONVERT_TO_DRAFT_EVENT,
+            REVIEW_REQUESTED_EVENT,
+            REVIEW_REQUEST_REMOVED_EVENT
+          ]
+        ) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
+          nodes {
+            __typename
+            ... on ReadyForReviewEvent {
+              createdAt
+            }
+            ... on ConvertToDraftEvent {
+              createdAt
+            }
+            ... on ReviewRequestedEvent {
+              createdAt
+              requestedReviewer {
+                __typename
+                ... on User {
+                  login
+                }
+              }
+            }
+            ... on ReviewRequestRemovedEvent {
+              createdAt
+              requestedReviewer {
+                __typename
+                ... on User {
+                  login
                 }
               }
             }
@@ -965,6 +1115,25 @@ export async function fetchPrFullStatus(
     throw new Error(`Pull request ${owner}/${repo}#${prNumber} not found`);
   }
 
+  const reviewRequests = [...(pullRequest.reviewRequests?.nodes ?? [])];
+  let reviewRequestsPageInfo = pullRequest.reviewRequests?.pageInfo;
+  while (reviewRequestsPageInfo?.hasNextPage) {
+    const cursor = reviewRequestsPageInfo.endCursor;
+    if (!cursor) {
+      throw new Error(`Review requests for ${owner}/${repo}#${prNumber} have no next cursor`);
+    }
+    const nextResponse = await getOctokit(options.authToken).graphql<ReviewRequestsGraphQlResponse>(
+      reviewRequestsQuery,
+      { owner, repo, prNumber, cursor }
+    );
+    const nextPullRequest = nextResponse.repository?.pullRequest;
+    if (!nextPullRequest?.reviewRequests) {
+      throw new Error(`Pull request ${owner}/${repo}#${prNumber} not found`);
+    }
+    reviewRequests.push(...(nextPullRequest.reviewRequests.nodes ?? []));
+    reviewRequestsPageInfo = nextPullRequest.reviewRequests.pageInfo;
+  }
+
   const normalizedChecks = normalizeChecks(pullRequest.commits);
   const normalizedReviews = dedupeReviewsByLatestAuthorReview(
     (pullRequest.reviews?.nodes ?? [])
@@ -997,6 +1166,10 @@ export async function fetchPrFullStatus(
     baseRefName: pullRequest.baseRefName,
     headRefName: pullRequest.headRefName,
     reviewDecision: normalizeReviewDecision(pullRequest.reviewDecision),
+    requestedReviewers: reviewRequests.flatMap((request) => {
+      const reviewer = request?.requestedReviewer;
+      return reviewer?.__typename === 'User' && reviewer.login ? [reviewer.login] : [];
+    }),
     labels: (pullRequest.labels?.nodes ?? [])
       .filter((label): label is GraphQlLabelNode => label !== null)
       .map((label) => ({
@@ -1011,6 +1184,71 @@ export async function fetchPrFullStatus(
     changedFiles: pullRequest.changedFiles ?? null,
     latestCommitPushedAt,
   };
+}
+
+export async function fetchPrDigestTimeline(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  isDraft: boolean,
+  createdAt: string | null,
+  options: GitHubStatusFetchOptions = {}
+): Promise<PrDigestTimeline> {
+  const reviewRequestEvents: PrReviewRequestTimelineEvent[] = [];
+  const readinessEvents: Array<{ type: 'ready' | 'draft'; createdAt: string }> = [];
+  let timelineCursor: string | null = null;
+
+  while (true) {
+    const response: DigestTimelineGraphQlResponse = await getOctokit(options.authToken).graphql(
+      digestTimelineQuery,
+      { owner, repo, prNumber, timelineCursor }
+    );
+    const pullRequest: NonNullable<DigestTimelineGraphQlResponse['repository']>['pullRequest'] =
+      response.repository?.pullRequest ?? null;
+    if (!pullRequest) {
+      throw new Error(`Pull request ${owner}/${repo}#${prNumber} not found`);
+    }
+
+    for (const node of pullRequest.timelineItems.nodes ?? []) {
+      if (!node) {
+        continue;
+      }
+      if (node.__typename === 'ReadyForReviewEvent') {
+        readinessEvents.push({ type: 'ready', createdAt: node.createdAt });
+      } else if (node.__typename === 'ConvertToDraftEvent') {
+        readinessEvents.push({ type: 'draft', createdAt: node.createdAt });
+      } else if (
+        node.__typename === 'ReviewRequestedEvent' ||
+        node.__typename === 'ReviewRequestRemovedEvent'
+      ) {
+        const reviewer = node.requestedReviewer;
+        if (reviewer?.__typename === 'User' && reviewer.login) {
+          reviewRequestEvents.push({
+            reviewer: reviewer.login,
+            action: node.__typename === 'ReviewRequestedEvent' ? 'requested' : 'removed',
+            eventAt: node.createdAt,
+          });
+        }
+      }
+    }
+
+    if (!pullRequest.timelineItems.pageInfo.hasNextPage) {
+      break;
+    }
+    timelineCursor = pullRequest.timelineItems.pageInfo.endCursor;
+    if (!timelineCursor) {
+      throw new Error(`GitHub returned an incomplete timeline for ${owner}/${repo}#${prNumber}`);
+    }
+  }
+
+  let readyAt = isDraft ? null : createdAt;
+  for (const event of readinessEvents.toSorted(
+    (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
+  )) {
+    readyAt = event.type === 'ready' ? event.createdAt : null;
+  }
+
+  return { reviewRequestEvents, readyAt };
 }
 
 export async function fetchPrCheckStatus(

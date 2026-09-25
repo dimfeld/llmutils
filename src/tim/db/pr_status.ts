@@ -656,7 +656,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           pr_updated_at = COALESCE(excluded.pr_updated_at, pr_status.pr_updated_at),
           last_fetched_at = excluded.last_fetched_at,
           latest_commit_pushed_at = COALESCE(excluded.latest_commit_pushed_at, pr_status.latest_commit_pushed_at),
-          ready_at = COALESCE(excluded.ready_at, pr_status.ready_at),
+          ready_at = CASE WHEN ? THEN excluded.ready_at ELSE pr_status.ready_at END,
           updated_at = ${SQL_NOW_ISO_UTC}
       `
     ).run(
@@ -683,7 +683,8 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
       null,
       nextInput.lastFetchedAt,
       nextInput.latestCommitPushedAt ?? null,
-      nextInput.readyAt ?? null
+      nextInput.readyAt ?? null,
+      Object.prototype.hasOwnProperty.call(nextInput, 'readyAt') ? 1 : 0
     );
 
     const row = db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(nextInput.prUrl) as {
@@ -893,6 +894,16 @@ export function getPrStatusByUrl(
   }
 
   return getDetailById(db, row.id, options);
+}
+
+export function getOpenPrStatusUrlsForRepo(db: Database, owner: string, repo: string): string[] {
+  return (
+    db
+      .prepare(
+        "SELECT pr_url FROM pr_status WHERE owner = ? AND repo = ? AND state = 'open' ORDER BY pr_number"
+      )
+      .all(owner, repo) as Array<{ pr_url: string }>
+  ).map((row) => row.pr_url);
 }
 
 export function getPrStatusByProjectAndNumber(

@@ -4,6 +4,7 @@ import {
   constructGitHubRepositoryId,
   parseOwnerRepoFromRepositoryId,
 } from '$common/github/pull_requests.js';
+import { refreshPrStatus } from '$common/github/pr_status_service.js';
 import {
   DEFAULT_SLACK_DAILY_DIGEST_WEEKDAYS,
   DEFAULT_SLACK_DAILY_DIGEST_TIME,
@@ -30,6 +31,7 @@ import { debug as debugEnabled } from '../../common/process_state.js';
 import { debugLog } from '../../logging.js';
 import { listProjects, type Project } from '$tim/db/project.js';
 import { getProjectSetting } from '$tim/db/project_settings.js';
+import { getOpenPrStatusUrlsForRepo } from '$tim/db/pr_status.js';
 import {
   getLatestSlackDailyDigestMessage,
   getLatestSlackDailyDigestMessageBeforeDate,
@@ -85,6 +87,14 @@ export interface CollectDailyDigestsOptions {
   nowMs?: number;
   includeEmpty?: boolean;
   onProjectError?: (repositoryId: string, error: unknown) => void;
+}
+
+async function refreshProjectDigestPrs(db: Database, owner: string, repo: string): Promise<void> {
+  const prUrls = getOpenPrStatusUrlsForRepo(db, owner, repo);
+
+  for (const prUrl of prUrls) {
+    await refreshPrStatus(db, prUrl, { refreshDigestMetadata: true });
+  }
 }
 
 function isDailyDigestEnabledForWorkspace(config: TimConfig, workspaceName: string): boolean {
@@ -485,6 +495,42 @@ export async function runDailyDigestForWorkspace(
   }
 
   const nowMs = options.nowMs ?? Date.now();
+  const failedRefreshRepoFullNames = new Set<string>();
+  if (options.updateExistingOnly !== true) {
+    for (const project of listProjects(db)) {
+      const setting = parseSlackProjectSetting(
+        getProjectSetting(db, project.id, SLACK_PROJECT_SETTING_KEY)
+      );
+      if (
+        setting?.enabled !== true ||
+        setting.dailyDigest !== true ||
+        setting.workspace?.trim() !== workspaceName ||
+        !setting.channel?.trim()
+      ) {
+        continue;
+      }
+
+      const ownerRepo = parseOwnerRepoFromRepositoryId(project.repository_id);
+      if (!ownerRepo) {
+        continue;
+      }
+      const repoFullName = `${ownerRepo.owner}/${ownerRepo.repo}`;
+      if (options.repoFullNames && !options.repoFullNames.has(repoFullName)) {
+        continue;
+      }
+
+      try {
+        await refreshProjectDigestPrs(db, ownerRepo.owner, ownerRepo.repo);
+      } catch (error) {
+        failedRefreshRepoFullNames.add(repoFullName);
+        console.error(
+          `[daily_digest] Failed to refresh PR status for ${repoFullName}; skipping its digest`,
+          error
+        );
+      }
+    }
+  }
+
   const digestDate = getWorkspaceDigestDate(config, workspaceName, nowMs);
 
   const collected = collectDailyDigestsForWorkspace(db, config, workspaceName, {
@@ -501,6 +547,9 @@ export async function runDailyDigestForWorkspace(
   for (const projectDigest of collected) {
     try {
       if (options.repoFullNames && !options.repoFullNames.has(projectDigest.repoFullName)) {
+        continue;
+      }
+      if (failedRefreshRepoFullNames.has(projectDigest.repoFullName)) {
         continue;
       }
 

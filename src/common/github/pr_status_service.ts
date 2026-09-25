@@ -3,6 +3,7 @@ import { canonicalizePrUrl, parsePrOrIssueNumber } from './identifiers.js';
 import { ensureBranchMergeRequirementsFresh } from './branch_merge_requirements_service.js';
 import {
   fetchPrCheckStatus,
+  fetchPrDigestTimeline,
   fetchPrFullStatus,
   fetchPrMergeableAndReviewDecision,
   fetchPrReviewThread,
@@ -14,6 +15,7 @@ import {
   updatePrMergeableAndReviewDecision,
   updatePrCheckRuns,
   upsertPrReviewThread,
+  upsertPrReviewRequestByReviewer,
   upsertPrStatus,
   type PrStatusDetail,
   type UpsertPrStatusInput,
@@ -23,6 +25,8 @@ const BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS = 30 * 60 * 1000;
 
 export interface RefreshPrStatusOptions {
   authToken?: string;
+  /** Refresh reviewer request history and the ready-for-review timestamp from PR timeline events. */
+  refreshDigestMetadata?: boolean;
 }
 
 function githubFetchOptions(options: RefreshPrStatusOptions): RefreshPrStatusOptions | undefined {
@@ -76,6 +80,16 @@ export async function refreshPrStatus(
   }
 
   const fullStatus = fullStatusResult.value;
+  const digestTimeline = options.refreshDigestMetadata
+    ? await fetchPrDigestTimeline(
+        parsed.owner,
+        parsed.repo,
+        parsed.number,
+        fullStatus.isDraft,
+        fullStatus.createdAt ?? null,
+        ...(fetchOptions ? [fetchOptions] : [])
+      )
+    : null;
   if (fullStatus.baseRefName) {
     await ensureBranchMergeRequirementsFresh(
       db,
@@ -87,7 +101,7 @@ export async function refreshPrStatus(
     );
   }
 
-  return upsertPrStatus(db, {
+  const detail = upsertPrStatus(db, {
     prUrl: canonicalPrUrl,
     owner: parsed.owner,
     repo: parsed.repo,
@@ -101,6 +115,7 @@ export async function refreshPrStatus(
     baseSha: fullStatus.baseSha,
     baseBranch: fullStatus.baseRefName,
     headBranch: fullStatus.headRefName,
+    requestedReviewers: fullStatus.requestedReviewers,
     reviewDecision: fullStatus.reviewDecision,
     checkRollupState: fullStatus.checkRollupState,
     mergedAt: fullStatus.mergedAt,
@@ -108,6 +123,7 @@ export async function refreshPrStatus(
     deletions: fullStatus.deletions,
     changedFiles: fullStatus.changedFiles,
     lastFetchedAt: getNowIsoString(),
+    ...(digestTimeline ? { readyAt: digestTimeline.readyAt } : {}),
     checks: fullStatus.checks.map((check) => ({
       name: check.name,
       source: check.source,
@@ -130,6 +146,43 @@ export async function refreshPrStatus(
     reviewThreads:
       reviewThreadsResult.status === 'fulfilled' ? reviewThreadsResult.value : undefined,
   });
+
+  if (digestTimeline) {
+    const latestEventByReviewer = new Map<
+      string,
+      (typeof digestTimeline.reviewRequestEvents)[number]
+    >();
+    for (const event of digestTimeline.reviewRequestEvents) {
+      const previous = latestEventByReviewer.get(event.reviewer);
+      if (!previous || Date.parse(event.eventAt) > Date.parse(previous.eventAt)) {
+        latestEventByReviewer.set(event.reviewer, event);
+      }
+    }
+
+    const lastEventAtByReviewer = new Map(
+      detail.reviewRequests.map((request) => [request.reviewer, request.last_event_at])
+    );
+    for (const event of latestEventByReviewer.values()) {
+      const lastEventAt = lastEventAtByReviewer.get(event.reviewer);
+      if (!lastEventAt || Date.parse(event.eventAt) > Date.parse(lastEventAt)) {
+        upsertPrReviewRequestByReviewer(db, detail.status.id, {
+          reviewer: event.reviewer,
+          action: event.action,
+          eventAt: event.eventAt,
+        });
+      }
+    }
+
+    const refreshedDetail = getPrStatusByUrl(db, canonicalPrUrl);
+    if (!refreshedDetail) {
+      throw new Error(
+        `Failed to reload PR status after refreshing review requests: ${canonicalPrUrl}`
+      );
+    }
+    return refreshedDetail;
+  }
+
+  return detail;
 }
 
 /** Lightweight refresh that only updates check runs and rollup state, not PR lifecycle fields.

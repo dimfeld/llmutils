@@ -30,7 +30,13 @@ vi.mock('../configLoader.js', () => ({
   loadEffectiveConfig: vi.fn(),
 }));
 
+vi.mock('../../common/github/pr_status_service.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../common/github/pr_status_service.js')>()),
+  refreshPrStatus: vi.fn(),
+}));
+
 import { constructGitHubRepositoryId } from '../../common/github/pull_requests.js';
+import { refreshPrStatus } from '../../common/github/pr_status_service.js';
 import { getGitRepository } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
@@ -40,6 +46,7 @@ import {
   upsertPrReviewByAuthor,
   upsertPrReviewRequestByReviewer,
   upsertPrStatus,
+  getPrStatusByUrl,
 } from '../db/pr_status.js';
 import { upsertSlackDailyDigestMessage } from '../db/slack_daily_digest_message.js';
 import { getUserMapping, upsertUserMapping } from '../db/slack_user_map.js';
@@ -654,6 +661,13 @@ describe('tim slack CLI handlers', () => {
         reviewDecision: 'APPROVED',
         lastFetchedAt: '2026-01-01T00:00:00.000Z',
       });
+      vi.mocked(refreshPrStatus).mockImplementationOnce(async (database, prUrl) => {
+        const detail = getPrStatusByUrl(database, prUrl);
+        if (!detail) {
+          throw new Error(`Missing test PR ${prUrl}`);
+        }
+        return detail;
+      });
 
       const calls: SlackPostSenderArgs[] = [];
       const fakeSender = async (args: SlackPostSenderArgs): Promise<SlackPostResult> => {
@@ -663,6 +677,11 @@ describe('tim slack CLI handlers', () => {
 
       await handleSlackDigestRunCommand({ dryRun: false }, fakeCommand, fakeSender);
 
+      expect(refreshPrStatus).toHaveBeenCalledWith(
+        db,
+        `https://github.com/${OWNER}/${REPO}/pull/3`,
+        { refreshDigestMetadata: true }
+      );
       expect(calls).toHaveLength(1);
       expect(calls[0].token).toBe('xoxb-test-token');
       expect(calls[0].payload.channel).toBe('#reviews');

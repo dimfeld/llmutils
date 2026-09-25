@@ -298,7 +298,7 @@ The digest requires, in order:
 2. The workspace opted into daily digest runs (`dailyDigest.enabled: true`).
 3. The repo enabled for Slack (`tim slack enable --workspace <w> --channel <#c>`).
 4. The digest opted in for the repo (`tim slack digest enable`).
-5. **Webhook polling enabled** — the digest reads PR data exclusively from the local database, which is kept fresh by GitHub webhook ingestion. It does not fetch from GitHub. (Open PR status is retained until the PR closes so the digest has a durable, complete source.)
+5. **Webhook polling enabled** — the digest uses the local database as its source, then refreshes every cached open PR in each repo from GitHub before it posts or updates the Slack message. The refresh updates PR status, reviews, labels, merge state, current requested reviewers, review-request history, and ready-for-review timestamps. If a refresh fails, tim skips that repo's digest so it does not post stale data. Open PR status is retained until the PR closes so the digest has a durable source.
 
 ### Schedule and Scheduler
 
