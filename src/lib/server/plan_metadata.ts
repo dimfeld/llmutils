@@ -8,6 +8,7 @@ import {
   getPlanTagsByUuid,
   type PlanRow,
 } from '$tim/db/plan.js';
+import { getProjectSetting } from '$tim/db/project_settings.js';
 import { removeAssignment } from '$tim/db/assignment.js';
 import {
   getProjectById,
@@ -16,6 +17,8 @@ import {
   type Project,
 } from '$tim/db/project.js';
 import { prioritySchema, statusSchema, type Priority } from '$tim/planSchema.js';
+import { isWorkCompleteStatus } from '$tim/plans/plan_state_utils.js';
+import { AUTO_RUN_SETTING_KEY, parseAutoRunSetting } from '$tim/auto_run/settings.js';
 import {
   getMaterializedPlanPath,
   materializePlan,
@@ -96,6 +99,11 @@ export interface CreatePlanFromWebResult {
 }
 
 export interface UpdatePlanMetadataFromWebResult {
+  planUuid: string;
+}
+
+export interface QueuePlanForAutoRunInput {
+  projectId: number;
   planUuid: string;
 }
 
@@ -545,11 +553,21 @@ export async function updatePlanMetadataFromWeb(
     projectAlreadyValidated: true,
   });
   if (normalized.status === 'queued') {
-    const taskCount = db
-      .prepare('SELECT COUNT(*) AS count FROM plan_task WHERE plan_uuid = ? AND done = 0')
-      .get(syncedPlan.uuid) as { count: number };
-    if (syncedPlan.epic || taskCount.count === 0) {
-      fail('validation_failed', 'Only a plan with unfinished tasks can be queued', 'status');
+    const taskCounts = db
+      .prepare(
+        'SELECT COUNT(*) AS total, SUM(CASE WHEN done = 0 THEN 1 ELSE 0 END) AS unfinished FROM plan_task WHERE plan_uuid = ?'
+      )
+      .get(syncedPlan.uuid) as { total: number; unfinished: number | null };
+    if (
+      syncedPlan.epic ||
+      ((taskCounts.unfinished ?? 0) === 0 &&
+        !(taskCounts.total === 0 && normalized.simple === true))
+    ) {
+      fail(
+        'validation_failed',
+        'Only a plan with unfinished tasks or a taskless simple plan can be queued',
+        'status'
+      );
     }
   }
   const touchedParentPlanIds =
@@ -745,6 +763,51 @@ export async function updatePlanMetadataFromWeb(
   await rematerializeExistingPrimaryPlans(gitRoot, existingMaterializedPlanIds);
 
   return { planUuid: syncedPlan.uuid };
+}
+
+export async function queuePlanForAutoRun(
+  db: Database,
+  input: QueuePlanForAutoRunInput
+): Promise<UpdatePlanMetadataFromWebResult> {
+  const plan = getUpdateTargetPlan(db, input.planUuid);
+  validateRouteProjectForUpdate(input.projectId, plan);
+  const autoRun = parseAutoRunSetting(getProjectSetting(db, plan.project_id, AUTO_RUN_SETTING_KEY));
+  if (!autoRun?.enabled || autoRun.maxConcurrent === null) {
+    fail('validation_failed', 'Automatic plan execution is not enabled for this project');
+  }
+  if (plan.epic || plan.status !== 'pending') {
+    fail('validation_failed', 'Only pending non-epic plans can be queued', 'status');
+  }
+
+  const dependencyUuids = getPlanDependenciesByUuid(db, plan.uuid).map(
+    (dependency) => dependency.depends_on_uuid
+  );
+  if (plan.base_plan_uuid) dependencyUuids.push(plan.base_plan_uuid);
+  if (
+    dependencyUuids.some((dependencyUuid) => {
+      const dependency = getPlanByUuid(db, dependencyUuid);
+      return !dependency || !isWorkCompleteStatus(dependency.status);
+    })
+  ) {
+    fail('validation_failed', 'This plan has unfinished dependencies', 'status');
+  }
+
+  const taskCounts = db
+    .prepare(
+      'SELECT COUNT(*) AS total, SUM(CASE WHEN done = 0 THEN 1 ELSE 0 END) AS unfinished FROM plan_task WHERE plan_uuid = ?'
+    )
+    .get(plan.uuid) as { total: number; unfinished: number | null };
+  const hasUnfinishedTasks = (taskCounts.unfinished ?? 0) > 0;
+  if (taskCounts.total > 0 && !hasUnfinishedTasks) {
+    fail('validation_failed', 'This plan has no unfinished tasks', 'status');
+  }
+
+  return updatePlanMetadataFromWeb(db, {
+    projectId: input.projectId,
+    planUuid: input.planUuid,
+    status: 'queued',
+    ...(taskCounts.total === 0 ? { simple: true } : {}),
+  });
 }
 
 export async function createPlanFromWeb(

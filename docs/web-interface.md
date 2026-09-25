@@ -352,7 +352,7 @@ The Settings tab (`/projects/[projectId]/settings`) allows configuring per-proje
 - **Abbreviation** (string, max 4 chars): Custom abbreviation for the project avatar in collapsed sidebar mode. Overrides the auto-generated abbreviation from `getProjectAbbreviation()`. Setting to empty string clears the override.
 - **Color** (enum from `PROJECT_COLOR_PALETTE`): Custom avatar background color for collapsed sidebar mode. Overrides the auto-generated color from `getProjectColor()`. Setting to empty string clears the override.
 - **Branch Prefix** (string, max 20 chars): Prefix for auto-generated branch names (e.g. `di/`). Overrides the config file `branchPrefix` value for this project. If the prefix doesn't end with `/`, `-`, or `_`, a `/` is automatically appended.
-- **Automatic Plan Execution** (`autoRun` object): Enables execution of queued plans for this project and stores a required positive `maxConcurrent` limit and the runner node ID. The node that saves the enabled setting runs the queue. Its web service starts plans with unfinished tasks after their dependencies complete and counts live agent session files against the limit.
+- **Automatic Plan Execution** (`autoRun` object): Enables execution of queued plans for this project and stores a required positive `maxConcurrent` limit and the runner node ID. The node that saves the enabled setting runs the queue. Its web service starts plans with unfinished tasks, or taskless simple plans, after their dependencies complete and counts live agent session files against the limit.
 
 ### Sidebar Integration
 
@@ -843,6 +843,7 @@ An "Open Terminal" button (AppWindow icon) appears next to each workspace path i
 - **Agent** (`isPlanEligibleForAgent`): Plan is not `done`, `needs_review`, `reviewed`, or `cancelled`. If the plan has tasks, at least one must be incomplete (not all done). Plans without tasks are also eligible (simple/stub plans).
 - **Chat** (`isPlanEligibleForChat`): Any existing plan is eligible, including plans in terminal statuses (done, cancelled, deferred).
 - **Rebase** (`isPlanEligibleForRebase`): Plan status must be `in_progress`, `needs_review`, `reviewed`, or `done` (states where a branch is expected to exist).
+- **Queue Plan**: When project automatic execution is enabled, pending non-epic plans with complete dependencies can be queued. A taskless plan prompts for confirmation and is marked simple when queued.
 
 ### Executor Selection Dialog
 

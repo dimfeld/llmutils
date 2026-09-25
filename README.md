@@ -70,7 +70,7 @@ Use `--dry-run` to inspect the files before writing them.
 
 In the web interface, open a project's Settings page, enter a **Concurrent Plans** limit, and enable **Automatic Plan Execution**. The web server starts queued plans when their dependencies are complete. The setting applies only to that project.
 
-Queue a plan after generation with `tim generate <id> --queue`, or queue an existing plan with `tim set <id> --status queued`. A queued plan must have unfinished tasks before the scheduler starts it. The scheduler uses separate workspaces and counts live agent sessions against the project limit. The node that saves the enabled setting runs the queue. A run that exits without completing its plan moves the plan to `needs_attention`.
+Queue a plan after generation with `tim generate <id> --queue`, or queue an existing plan with `tim set <id> --status queued`. The scheduler starts queued plans with unfinished tasks, plus taskless plans marked simple. It uses separate workspaces and counts live agent sessions against the project limit. The node that saves the enabled setting runs the queue. A run that exits without completing its plan moves the plan to `needs_attention`.
 
 Set `generate.queueWhenDone: true` in the project config to queue generated plans by default. You can still use `--queue` to queue a plan when this setting is off.
 

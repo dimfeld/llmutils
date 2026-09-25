@@ -7,6 +7,7 @@ export type AgentMultiPlan = {
   planId: number;
   title: string | null;
   epic?: boolean;
+  simple?: boolean;
   status: PlanStatus;
   taskCount: number;
   doneTaskCount: number;

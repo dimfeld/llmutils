@@ -35,7 +35,7 @@ export function selectQueuedPlans(plans: AgentMultiPlan[], active: Set<string>):
       if (
         plan.status !== 'queued' ||
         plan.epic === true ||
-        plan.taskCount <= plan.doneTaskCount ||
+        (plan.taskCount <= plan.doneTaskCount && !(plan.taskCount === 0 && plan.simple === true)) ||
         active.has(plan.uuid)
       ) {
         return false;

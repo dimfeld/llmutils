@@ -25,4 +25,5 @@
   proofConfigured={data.proofConfigured}
   mediaHostConfigured={data.mediaHostConfigured}
   chatExecutorOptions={data.chatExecutorOptions}
+  autoRunEnabled={data.autoRunEnabled}
 />

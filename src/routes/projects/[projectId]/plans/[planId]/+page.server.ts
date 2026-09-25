@@ -1,5 +1,7 @@
 import { error, redirect } from '@sveltejs/kit';
 import { getServerContext } from '$lib/server/init.js';
+import { getProjectSetting } from '$tim/db/project_settings.js';
+import { AUTO_RUN_SETTING_KEY, parseAutoRunSetting } from '$tim/auto_run/settings.js';
 import {
   getPlanDetailRouteData,
   loadMediaHostConfiguredForProject,
@@ -33,6 +35,9 @@ export const load: PageServerLoad = async ({ params, url }) => {
     db,
     result.planDetail.projectId
   );
+  const autoRunSetting = parseAutoRunSetting(
+    getProjectSetting(db, result.planDetail.projectId, AUTO_RUN_SETTING_KEY)
+  );
 
   return {
     planDetail: toPlanDetailView(result.planDetail),
@@ -41,5 +46,6 @@ export const load: PageServerLoad = async ({ params, url }) => {
     proofConfigured,
     mediaHostConfigured,
     chatExecutorOptions,
+    autoRunEnabled: autoRunSetting?.enabled === true && autoRunSetting.maxConcurrent !== null,
   };
 };

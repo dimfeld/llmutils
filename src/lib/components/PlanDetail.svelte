@@ -18,7 +18,7 @@
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { onDestroy, untrack } from 'svelte';
   import { afterNavigate, invalidateAll } from '$app/navigation';
-  import { updatePlanMetadata } from '$lib/remote/plan_metadata.remote.js';
+  import { queuePlanForAutoRun, updatePlanMetadata } from '$lib/remote/plan_metadata.remote.js';
   import { extractPlanMetadataErrorMessage } from './plan_metadata_form_utils.js';
   import {
     startGenerate,
@@ -74,6 +74,7 @@
     proofConfigured = false,
     mediaHostConfigured = false,
     chatExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
+    autoRunEnabled = false,
   }: {
     plan: PlanDetailView;
     reviews?: PlanReviewListItem[];
@@ -84,6 +85,7 @@
     proofConfigured?: boolean;
     mediaHostConfigured?: boolean;
     chatExecutorOptions?: ChatExecutorOption[];
+    autoRunEnabled?: boolean;
   } = $props();
 
   const sessionManager = useSessionManager();
@@ -138,6 +140,13 @@
   let isBlocked = $derived(plan.displayStatus === 'blocked');
   let isSimplePlan = $derived(plan.simple === true);
   let isPending = $derived(plan.displayStatus === 'pending');
+  let canQueuePlan = $derived(
+    autoRunEnabled &&
+      !plan.epic &&
+      plan.status === 'pending' &&
+      (plan.displayStatus === 'ready' || plan.displayStatus === 'pending') &&
+      (plan.taskCounts.total === 0 || plan.taskCounts.done < plan.taskCounts.total)
+  );
 
   function isVisiblePrStatus(status: Pick<PrStatusRow, 'state' | 'merged_at'>): boolean {
     return status.state !== 'closed' || status.merged_at !== null;
@@ -404,6 +413,7 @@
   let artifactDialogOpen = $state(false);
   let startingProof = $state(false);
   let startingUploadArtifacts = $state(false);
+  let queueingPlan = $state(false);
   let activeArtifactCount = $derived(
     (plan.artifacts ?? []).filter((a) => a.deletedAt === null).length
   );
@@ -785,6 +795,27 @@
       applyStartError(actionPlanUuid, err);
     } finally {
       startingGenerate = false;
+    }
+  }
+
+  async function handleQueuePlan(): Promise<void> {
+    const hasNoTasks = plan.taskCounts.total === 0;
+    if (
+      hasNoTasks &&
+      !confirm('This plan has no tasks. Queue it for automatic execution as a simple plan?')
+    ) {
+      return;
+    }
+
+    queueingPlan = true;
+    try {
+      await queuePlanForAutoRun({ projectId: plan.projectId, planUuid: plan.uuid });
+      toast.success('Plan queued for automatic execution');
+      await invalidateAll();
+    } catch (err) {
+      toast.error(`Failed to queue plan: ${(err as Error).message}`);
+    } finally {
+      queueingPlan = false;
     }
   }
 
@@ -1245,6 +1276,16 @@
                 disabled={controlsDisabled}
                 size="xs"
               />
+            {/if}
+            {#if canQueuePlan}
+              <Button
+                onclick={handleQueuePlan}
+                disabled={controlsDisabled || queueingPlan}
+                size="xs"
+                variant="outline"
+              >
+                {queueingPlan ? 'Queueing…' : 'Queue Plan'}
+              </Button>
             {/if}
             {#each fixedActions as action}
               <Button

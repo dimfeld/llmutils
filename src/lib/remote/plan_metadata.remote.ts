@@ -3,7 +3,11 @@ import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { toPlanMetadataRemoteError } from '$lib/server/plan_metadata_errors.js';
-import { createPlanFromWeb, updatePlanMetadataFromWeb } from '$lib/server/plan_metadata.js';
+import {
+  createPlanFromWeb,
+  queuePlanForAutoRun as queuePlanForAutoRunFromWeb,
+  updatePlanMetadataFromWeb,
+} from '$lib/server/plan_metadata.js';
 import { getServerContext } from '$lib/server/init.js';
 
 const planMetadataFieldsSchema = z.object({
@@ -46,6 +50,18 @@ export const updatePlanMetadata = command(updatePlanMetadataSchema, async (input
     throwStructuredPlanMetadataError(caughtError);
   }
 });
+
+export const queuePlanForAutoRun = command(
+  z.object({ projectId: z.number().int().positive(), planUuid: z.string().min(1) }),
+  async (input) => {
+    const { db } = await getServerContext();
+    try {
+      return await queuePlanForAutoRunFromWeb(db, input);
+    } catch (caughtError) {
+      throwStructuredPlanMetadataError(caughtError);
+    }
+  }
+);
 
 function throwStructuredPlanMetadataError(caughtError: unknown): never {
   const remoteError = toPlanMetadataRemoteError(caughtError);
