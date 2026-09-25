@@ -10,9 +10,7 @@ vi.mock('$app/paths', () => ({
   resolve: (path: string) => path,
 }));
 
-vi.mock('$lib/remote/session_actions.remote.js', () => ({
-  activateSessionTerminalPane: vi.fn(),
-}));
+vi.mock('$lib/remote/session_actions.remote.js', () => ({}));
 
 import { initSessionNotifications } from './session_notifications.js';
 import { SessionManager } from './session_state.svelte.js';

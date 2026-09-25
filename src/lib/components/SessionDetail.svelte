@@ -1,6 +1,4 @@
 <script lang="ts">
-  import TerminalIcon from '@lucide/svelte/icons/terminal';
-  import AppWindow from '@lucide/svelte/icons/app-window';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Download from '@lucide/svelte/icons/download';
   import Info from '@lucide/svelte/icons/info';
@@ -158,9 +156,6 @@
   let showInput = $derived(
     !session.pty && session.status === 'active' && session.sessionInfo.interactive
   );
-  let hasTerminalPane = $derived(
-    session.sessionInfo.terminalType === 'wezterm' && Boolean(session.sessionInfo.terminalPaneId)
-  );
   let showEndSession = $derived(session.status === 'active');
 
   let planLink = $derived.by(() => {
@@ -266,24 +261,6 @@
       return show;
     });
   });
-
-  function handleActivateTerminal() {
-    void sessionManager.activateTerminalPane(session);
-  }
-
-  let openingTerminal = $state(false);
-
-  async function handleOpenTerminal() {
-    if (openingTerminal) return;
-    openingTerminal = true;
-    try {
-      await sessionManager.openTerminalInDirectory(session.sessionInfo.workspacePath!);
-    } catch (err) {
-      toast.error(`Failed to open terminal: ${(err as Error).message}`);
-    } finally {
-      openingTerminal = false;
-    }
-  }
 
   async function handleRequestEndSession() {
     confirmingEndSession = true;
@@ -611,51 +588,6 @@
           </PopoverContent>
         </Popover>
 
-        {#if session.sessionInfo.workspacePath}
-          <Tooltip.Root>
-            <Tooltip.Trigger>
-              {#snippet child({ props })}
-                {@const buttonProps = mergeProps(
-                  {
-                    type: 'button',
-                    class:
-                      'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800',
-                    onclick: handleOpenTerminal,
-                    disabled: openingTerminal,
-                    'aria-label': 'Open new terminal',
-                  },
-                  props
-                ) as HTMLButtonAttributes}
-                <button {...buttonProps}>
-                  <AppWindow class="size-4" />
-                </button>
-              {/snippet}
-            </Tooltip.Trigger>
-            <Tooltip.Content sideOffset={8}>Open new terminal</Tooltip.Content>
-          </Tooltip.Root>
-        {/if}
-        {#if hasTerminalPane}
-          <Tooltip.Root>
-            <Tooltip.Trigger>
-              {#snippet child({ props })}
-                {@const buttonProps = mergeProps(
-                  {
-                    type: 'button',
-                    class:
-                      'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800',
-                    onclick: handleActivateTerminal,
-                    'aria-label': 'Activate terminal pane',
-                  },
-                  props
-                ) as HTMLButtonAttributes}
-                <button {...buttonProps}>
-                  <TerminalIcon class="size-4" />
-                </button>
-              {/snippet}
-            </Tooltip.Trigger>
-            <Tooltip.Content sideOffset={8}>Activate terminal pane</Tooltip.Content>
-          </Tooltip.Root>
-        {/if}
         {#if hasLifecycleOutput}
           <Tooltip.Root>
             <Tooltip.Trigger>

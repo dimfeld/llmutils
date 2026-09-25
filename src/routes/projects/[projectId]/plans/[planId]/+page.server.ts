@@ -42,7 +42,6 @@ export const load: PageServerLoad = async ({ params, url }) => {
   return {
     planDetail: toPlanDetailView(result.planDetail),
     reviews: toPlanReviewListItems(result.reviews),
-    openInEditorEnabled: Boolean(process.env.TIM_ENABLE_OPEN_IN_EDITOR),
     proofConfigured,
     mediaHostConfigured,
     chatExecutorOptions,

@@ -1012,10 +1012,6 @@
       "description": "Whether terminal input is enabled during Claude Code execution in tim agent",
       "type": "boolean"
     },
-    "terminalApp": {
-      "description": "Terminal application to use when opening new terminal windows (for example \"WezTerm\", \"Terminal\", or \"iTerm\"). Defaults to \"WezTerm\".",
-      "type": "string"
-    },
     "defaultSubagentExecutor": {
       "description": "Default executor to use for subagents in the agent command (codex-cli, claude-code, or dynamic)",
       "type": "string",

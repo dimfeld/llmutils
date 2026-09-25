@@ -70,7 +70,6 @@ describe('plan_detail remote function', () => {
         uuid: planUuid,
         canUpdateDocs: true,
       },
-      openInEditorEnabled: expect.any(Boolean),
     });
   });
 

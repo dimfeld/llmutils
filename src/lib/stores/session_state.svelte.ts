@@ -1,13 +1,11 @@
 import { projectDisplayName } from '$lib/stores/project.svelte.js';
 import { base } from '$app/paths';
 import {
-  activateSessionTerminalPane,
   dismissInactiveSessions,
   dismissSession,
   endExecutor as endExecutorRemote,
   endSession as endSessionRemote,
   forceEndSession as forceEndSessionRemote,
-  openTerminal,
   sendSessionPromptResponse,
   sendSessionUserInput,
   terminateExecutor as terminateExecutorRemote,
@@ -508,26 +506,6 @@ export class SessionManager {
     } catch {
       return false;
     }
-  }
-
-  async activateTerminalPane(session: SessionData): Promise<boolean> {
-    const terminalType = session.sessionInfo.terminalType;
-    const terminalPaneId = session.sessionInfo.terminalPaneId;
-
-    if (!terminalType || !terminalPaneId) {
-      return false;
-    }
-
-    try {
-      await activateSessionTerminalPane({ terminalPaneId, terminalType });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async openTerminalInDirectory(directory: string): Promise<void> {
-    await openTerminal({ directory });
   }
 }
 

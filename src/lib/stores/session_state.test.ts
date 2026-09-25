@@ -6,26 +6,22 @@ vi.mock('$app/paths', () => ({
 }));
 
 vi.mock('$lib/remote/session_actions.remote.js', () => ({
-  activateSessionTerminalPane: vi.fn(),
   dismissInactiveSessions: vi.fn(),
   dismissSession: vi.fn(),
   endExecutor: vi.fn(),
   endSession: vi.fn(),
   forceEndSession: vi.fn(),
-  openTerminal: vi.fn(),
   sendSessionPromptResponse: vi.fn(),
   sendSessionUserInput: vi.fn(),
   terminateExecutor: vi.fn(),
 }));
 
 import {
-  activateSessionTerminalPane,
   dismissInactiveSessions,
   dismissSession,
   endExecutor,
   endSession,
   forceEndSession,
-  openTerminal,
   sendSessionPromptResponse,
   sendSessionUserInput,
   terminateExecutor,
@@ -423,41 +419,6 @@ describe('SessionManager remote action wrappers', () => {
     vi.mocked(dismissInactiveSessions).mockRejectedValueOnce(new Error('boom'));
 
     await expect(manager.dismissInactiveSessions()).resolves.toBe(false);
-  });
-
-  test('openTerminalInDirectory calls the remote command with the directory', async () => {
-    const manager = new SessionManager();
-
-    await manager.openTerminalInDirectory('/tmp/workspace');
-    expect(vi.mocked(openTerminal)).toHaveBeenCalledWith({ directory: '/tmp/workspace' });
-  });
-
-  test('openTerminalInDirectory propagates errors instead of catching them', async () => {
-    const manager = new SessionManager();
-    vi.mocked(openTerminal).mockRejectedValueOnce(new Error('terminal not found'));
-
-    await expect(manager.openTerminalInDirectory('/tmp/workspace')).rejects.toThrow(
-      'terminal not found'
-    );
-  });
-
-  test('activateTerminalPane returns false when the remote command throws', async () => {
-    const manager = new SessionManager();
-    vi.mocked(activateSessionTerminalPane).mockRejectedValueOnce(new Error('boom'));
-
-    await expect(
-      manager.activateTerminalPane(
-        createSession({
-          sessionInfo: {
-            command: 'agent',
-            interactive: true,
-            workspacePath: '/tmp/ws',
-            terminalPaneId: 'pane-1',
-            terminalType: 'ghostty',
-          },
-        })
-      )
-    ).resolves.toBe(false);
   });
 });
 

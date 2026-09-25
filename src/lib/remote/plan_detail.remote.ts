@@ -25,6 +25,5 @@ export const getPlanDetail = query(planDetailSchema, async ({ planUuid }) => {
   return {
     plan: toPlanDetailView(plan),
     reviews: toPlanReviewListItems(getReviewsByPlanUuid(db, plan.uuid, { linkedPrUrls })),
-    openInEditorEnabled: Boolean(process.env.TIM_ENABLE_OPEN_IN_EDITOR),
   };
 });

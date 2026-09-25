@@ -3,21 +3,10 @@ import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
 import { isProcessId } from '$common/session_process.js';
-import { getServerContext } from '$lib/server/init.js';
 import { getSessionManager } from '$lib/server/session_context.js';
-import { focusTerminalPane, openTerminalInDirectory } from '$lib/server/terminal_control.js';
-
-const terminalPaneSchema = z.object({
-  terminalPaneId: z.string(),
-  terminalType: z.string(),
-});
 
 const sessionTargetSchema = z.object({
   connectionId: z.string(),
-});
-
-const openTerminalSchema = z.object({
-  directory: z.string().min(1),
 });
 
 const promptResponseSchema = sessionTargetSchema.extend({
@@ -35,15 +24,6 @@ const terminateExecutorSchema = sessionTargetSchema.extend({
     .min(1)
     .max(256)
     .refine(isProcessId, 'executorId must be an opaque process ID'),
-});
-
-export const activateSessionTerminalPane = command(terminalPaneSchema, async (target) => {
-  await focusTerminalPane(target);
-});
-
-export const openTerminal = command(openTerminalSchema, async ({ directory }) => {
-  const { config } = await getServerContext();
-  await openTerminalInDirectory(directory, config.terminalApp);
 });
 
 export const sendSessionPromptResponse = command(promptResponseSchema, async (target) => {

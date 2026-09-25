@@ -32,8 +32,6 @@ import { isPlanEligibleForProof, isProofConfigured } from '$lib/utils/proof_elig
 import { hasUploadableArtifacts } from '$lib/utils/artifact_upload_eligibility.js';
 import { isMediaHostConfigured } from '$tim/configSchema.js';
 import { getSessionManager } from '$lib/server/session_context.js';
-import { openTerminalWithCommand } from '$lib/server/terminal_control.js';
-import { resolveConfiguredTimExecutable } from '../../common/tim_executable.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getAgentMultiPlansForProject } from '$tim/commands/agent_multi/plan_loader.js';
 import { removeAssignment } from '$tim/db/assignment.js';
@@ -402,39 +400,6 @@ export const startChat = command(
     );
   }
 );
-
-const openInEditorSchema = z.object({
-  planUuid: z.string().min(1),
-});
-
-export const openInEditor = command(openInEditorSchema, async ({ planUuid }) => {
-  if (!process.env.TIM_ENABLE_OPEN_IN_EDITOR) {
-    error(403, 'Open in editor is not enabled');
-  }
-
-  const { db, config } = await getServerContext();
-  const plan = await getPlanDetail(db, planUuid);
-
-  if (!plan) {
-    error(404, 'Plan not found');
-  }
-
-  const primaryWorkspacePath = getPrimaryWorkspacePath(db, plan.projectId);
-  if (!primaryWorkspacePath) {
-    error(400, 'Project does not have a primary workspace');
-  }
-
-  const projectConfig = await loadEffectiveConfig(undefined, {
-    cwd: primaryWorkspacePath,
-    quiet: true,
-  });
-
-  await openTerminalWithCommand(
-    primaryWorkspacePath,
-    [resolveConfiguredTimExecutable(projectConfig.timPath), 'edit', String(plan.planId)],
-    config.terminalApp
-  );
-});
 
 const REBASE_ELIGIBLE_STATUSES = new Set(['in_progress', 'needs_review', 'reviewed', 'done']);
 

@@ -5,7 +5,6 @@ import type { SessionData } from '$lib/types/session.js';
 
 const sessionManager = {
   dismissSession: vi.fn(),
-  activateTerminalPane: vi.fn(),
   hasSessionAttention: vi.fn(),
 };
 
@@ -43,7 +42,6 @@ describe('SessionRow', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-18T10:05:00.000Z'));
     sessionManager.dismissSession.mockReset();
-    sessionManager.activateTerminalPane.mockReset();
     sessionManager.hasSessionAttention.mockReset();
     sessionManager.hasSessionAttention.mockImplementation(
       (session: SessionData) =>

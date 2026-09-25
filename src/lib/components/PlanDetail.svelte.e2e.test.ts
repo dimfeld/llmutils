@@ -33,7 +33,6 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startProof: vi.fn(),
   startUploadArtifacts: vi.fn(),
   finishPlanQuick: vi.fn(),
-  openInEditor: vi.fn(),
 }));
 
 vi.mock('$lib/remote/review_issue_actions.remote.js', () => ({
@@ -70,7 +69,6 @@ vi.mock('./PlanArtifactUploader.svelte', () => ({
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
   useSessionManager: () => ({
     sessions: new Map(),
-    openTerminalInDirectory: vi.fn(),
     onEvent: vi.fn(() => () => {}),
   }),
 }));

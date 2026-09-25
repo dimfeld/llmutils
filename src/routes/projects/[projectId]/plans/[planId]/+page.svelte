@@ -21,7 +21,6 @@
   reviews={data.reviews}
   {projectId}
   {projectName}
-  openInEditorEnabled={data.openInEditorEnabled}
   proofConfigured={data.proofConfigured}
   mediaHostConfigured={data.mediaHostConfigured}
   chatExecutorOptions={data.chatExecutorOptions}

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import AppWindow from '@lucide/svelte/icons/app-window';
   import Download from '@lucide/svelte/icons/download';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Upload from '@lucide/svelte/icons/upload';
@@ -35,7 +34,6 @@
     startProof,
     startUploadArtifacts,
     finishPlanQuick,
-    openInEditor,
   } from '$lib/remote/plan_actions.remote.js';
   import { isPlanEligibleForProofWithConfigured } from '$lib/utils/proof_eligibility.js';
   import { hasUploadableArtifacts } from '$lib/utils/artifact_upload_eligibility.js';
@@ -70,7 +68,6 @@
     projectId,
     projectName,
     tab = 'plans',
-    openInEditorEnabled = false,
     proofConfigured = false,
     mediaHostConfigured = false,
     chatExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
@@ -81,7 +78,6 @@
     projectId: string;
     projectName?: string;
     tab?: string;
-    openInEditorEnabled?: boolean;
     proofConfigured?: boolean;
     mediaHostConfigured?: boolean;
     chatExecutorOptions?: ChatExecutorOption[];
@@ -94,33 +90,6 @@
   let planSyncQuery = $derived(plan.uuid ? getPlanSyncStatus({ planUuid: plan.uuid }) : null);
   let planSyncStatus = $derived(planSyncQuery?.current ?? null);
   let planSyncBadge = $derived(getEntityBadgeState(planSyncStatus));
-
-  let openingTerminalPath: string | null = $state(null);
-  let openingInEditor = $state(false);
-
-  async function handleOpenInEditor() {
-    if (openingInEditor) return;
-    openingInEditor = true;
-    try {
-      await openInEditor({ planUuid: plan.uuid });
-    } catch (err) {
-      toast.error(`Failed to open in editor: ${(err as Error).message}`);
-    } finally {
-      openingInEditor = false;
-    }
-  }
-
-  async function handleOpenTerminal(wsPath: string) {
-    if (openingTerminalPath) return;
-    openingTerminalPath = wsPath;
-    try {
-      await sessionManager.openTerminalInDirectory(wsPath);
-    } catch (err) {
-      toast.error(`Failed to open terminal: ${(err as Error).message}`);
-    } finally {
-      openingTerminalPath = null;
-    }
-  }
 
   const INELIGIBLE_STATUSES = new Set([
     'done',
@@ -1218,16 +1187,6 @@
             <Pencil class="h-3 w-3" />
             Edit
           </Button>
-          {#if openInEditorEnabled}
-            <Button
-              onclick={handleOpenInEditor}
-              disabled={openingInEditor}
-              size="sm"
-              variant="outline"
-            >
-              {openingInEditor ? 'Opening…' : 'Open in Editor'}
-            </Button>
-          {/if}
           {#if activeSession}
             <a
               href="/projects/{projectId}/sessions/{activeSession.connectionId}"
@@ -1813,16 +1772,6 @@
           {#each plan.assignment.workspacePaths as wsPath (wsPath)}
             <div class="mt-0.5 flex items-center gap-1">
               <div class="min-w-0 truncate">{wsPath}</div>
-              <button
-                type="button"
-                class="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-                onclick={() => handleOpenTerminal(wsPath)}
-                disabled={openingTerminalPath !== null}
-                aria-label="Open new terminal"
-                title="Open new terminal"
-              >
-                <AppWindow class="size-3.5" />
-              </button>
             </div>
           {/each}
           {#if plan.assignment.users.length > 0}

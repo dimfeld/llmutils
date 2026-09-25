@@ -8,8 +8,6 @@ const { sessionManager, uiState } = vi.hoisted(() => ({
     initialized: true,
     sessions: new Map(),
     selectSession: vi.fn(),
-    activateTerminalPane: vi.fn(),
-    openNewTerminal: vi.fn(),
     endSession: vi.fn(),
     forceEndSession: vi.fn(),
     acknowledgeSessionAttention: vi.fn(),

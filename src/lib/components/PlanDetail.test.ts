@@ -27,7 +27,6 @@ vi.mock('$lib/remote/plan_actions.remote.js', () => ({
   startPlanReviewGuide: vi.fn(),
   startProof: vi.fn(),
   finishPlanQuick: vi.fn(),
-  openInEditor: vi.fn(),
 }));
 
 vi.mock('$lib/remote/sync_status.remote.js', () => ({
@@ -93,7 +92,6 @@ vi.mock('./ActionButtonWithDropdown.svelte', () => ({
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
   useSessionManager: () => ({
     sessions: new Map(),
-    openTerminalInDirectory: vi.fn(),
     onEvent: vi.fn(() => () => {}),
   }),
 }));
