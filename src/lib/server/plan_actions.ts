@@ -94,7 +94,7 @@ export function buildProjectChatFinishPrompt(input: {
   const squash =
     input.workflow === 'squash-rebase'
       ? `Squash the chat commits into one commit with a descriptive message and a \`Project-Chat-Id: ${input.chatId}\` trailer. Rebase that commit onto the updated \`${input.trunk}\`.`
-      : `Rebase the chat commits onto the updated \`${input.trunk}\`.`;
+      : `Squash the chat commits into one commit with a descriptive message. Rebase that commit onto the updated \`${input.trunk}\`.`;
   const finishBranch =
     input.workflow === 'squash-rebase'
       ? `After the push succeeds, remove \`${input.branch}\` locally and on origin if it exists. Do not create a pull request.`

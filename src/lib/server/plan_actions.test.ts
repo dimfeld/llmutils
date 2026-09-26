@@ -38,6 +38,7 @@ vi.mock('$common/env.js', () => ({
 }));
 
 import {
+  buildProjectChatFinishPrompt,
   formatLogFileName,
   spawnAgentMultiProcess,
   spawnAgentProcess,
@@ -517,6 +518,20 @@ describe('lib/server/plan_actions', () => {
       '--no-workspace-sync',
       '--no-terminal-input',
     ]);
+  });
+
+  test('trunk-based finish squashes before rebasing and keeps the chat branch', () => {
+    const prompt = buildProjectChatFinishPrompt({
+      chatId: '11111111-1111-4111-8111-111111111111',
+      branch: 'chat/example',
+      trunk: 'main',
+      workflow: 'trunk-based',
+    });
+
+    expect(prompt).toContain(
+      'Squash the chat commits into one commit with a descriptive message. Rebase that commit onto the updated `main`.'
+    );
+    expect(prompt).not.toContain('remove `chat/example`');
   });
 
   test('spawnChatProcess passes a configured model to tim chat', async () => {
