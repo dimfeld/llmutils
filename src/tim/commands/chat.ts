@@ -65,6 +65,7 @@ export interface ChatCommandOptions {
   commit?: boolean;
   plan?: number;
   projectChatId?: string;
+  projectChatFinish?: boolean;
 }
 
 export interface ChatGlobalOptions {
@@ -200,6 +201,9 @@ export async function handleChatCommand(
   if (projectChatId && (!options.autoWorkspace || options.plan !== undefined)) {
     throw new Error('--project-chat-id requires --auto-workspace and no --plan');
   }
+  if (options.projectChatFinish && !projectChatId) {
+    throw new Error('--project-chat-finish requires --project-chat-id');
+  }
   const projectChatBranch = projectChatId ? `chat/${projectChatId}` : undefined;
 
   // Validate that workspace-modifier flags require workspace mode
@@ -286,7 +290,9 @@ export async function handleChatCommand(
           // When --plan is provided, derive branch from plan data.
           let checkoutBranch: string | undefined;
           if (projectChatId) {
-            checkoutBranch = await getRemoteTrunkBranch(configRepoRoot);
+            checkoutBranch = options.projectChatFinish
+              ? projectChatBranch
+              : await getRemoteTrunkBranch(configRepoRoot);
           } else if (currentPlanData) {
             if (currentPlanData.branch) {
               checkoutBranch = currentPlanData.branch;

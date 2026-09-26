@@ -82,6 +82,41 @@ function buildProjectChatPrompt(): string {
   return `${CHAT_WAIT_INSTRUCTION} This chat is about the current project. After the user's first question, use the repository context as needed. Do not change files unless the user explicitly asks you to.`;
 }
 
+export function buildProjectChatFinishPrompt(input: {
+  branch: string;
+  trunk: string;
+  workflow: 'pr-based' | 'trunk-based' | 'squash-rebase';
+  chatId: string;
+}): string {
+  if (input.workflow === 'pr-based') {
+    return `Finish the work on \`${input.branch}\`. Inspect the branch and working copy, fetch the latest \`${input.trunk}\` from origin, and create a pull request from \`${input.branch}\` into \`${input.trunk}\`. Use a descriptive title and body. If a pull request already exists, report its URL. Report the final pull request URL.`;
+  }
+  const squash =
+    input.workflow === 'squash-rebase'
+      ? `Squash the chat commits into one commit with a descriptive message and a \`Project-Chat-Id: ${input.chatId}\` trailer. Rebase that commit onto the updated \`${input.trunk}\`.`
+      : `Rebase the chat commits onto the updated \`${input.trunk}\`.`;
+  const finishBranch =
+    input.workflow === 'squash-rebase'
+      ? `After the push succeeds, remove \`${input.branch}\` locally and on origin if it exists. Do not create a pull request.`
+      : 'Do not create a pull request.';
+  const priorIntegration =
+    input.workflow === 'squash-rebase'
+      ? `Before rewriting the branch, check \`origin/${input.trunk}\` for a commit with the \`Project-Chat-Id: ${input.chatId}\` trailer. If it is present, report that the chat is already integrated and stop.`
+      : '';
+  return `# Finish project chat work
+
+The work is on \`${input.branch}\`. The target is \`${input.trunk}\`. Work in the current workspace. Use Jujutsu (jj) for version control if this is a jj workspace; otherwise use Git.
+
+1. Inspect the branch and working copy. Keep all changes that belong to the chat. Do not rewrite unrelated branches.${priorIntegration ? ` ${priorIntegration}` : ''}
+2. Fetch the latest \`${input.trunk}\` from origin. ${squash}
+3. If the rebase has conflicts, inspect both sides, resolve each conflict according to the current code, continue, and run relevant checks. Do not discard either side without examining it.
+4. Check the remote \`${input.trunk}\` tip immediately before pushing. If it moved, fetch and rebase again, resolve conflicts, and repeat the checks.
+5. Push directly to \`origin/${input.trunk}\` as a fast-forward update. Never force-update it. If the push is rejected because the target moved, fetch, rebase, check, and retry until it succeeds.
+6. ${finishBranch}
+
+If a conflict cannot be resolved from the available evidence, report a line starting with \`FAILED:\` and explain what decision is needed. Report the final \`${input.trunk}\` revision when finished.`;
+}
+
 async function spawnTimProcess(
   targetLabel: string,
   planId: number | null,
@@ -306,6 +341,30 @@ export async function spawnProjectChatProcess(
   if (model !== undefined) args.push('--model', model);
   args.push('--no-terminal-input');
   return spawnTimProcess(`project chat ${chatId}`, null, args, cwd);
+}
+
+export async function spawnProjectChatFinishProcess(
+  input: Parameters<typeof buildProjectChatFinishPrompt>[0] & { cwd: string }
+): Promise<SpawnTargetProcessResult> {
+  return spawnTimProcess(
+    `finish project chat ${input.chatId}`,
+    null,
+    [
+      'chat',
+      buildProjectChatFinishPrompt(input),
+      '--executor',
+      'codex-cli',
+      '--model',
+      'gpt-6-luna',
+      '--auto-workspace',
+      '--project-chat-id',
+      input.chatId,
+      '--project-chat-finish',
+      '--no-workspace-sync',
+      '--no-terminal-input',
+    ],
+    input.cwd
+  );
 }
 
 export async function spawnRebaseProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {

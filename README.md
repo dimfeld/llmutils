@@ -78,7 +78,7 @@ Set `generate.queueWhenDone: true` in the project config to queue generated plan
 
 Open a project's **Sessions** page and select **New project chat** to work without a plan. The chat starts in an auto workspace on a new `chat/<id>` branch based on the remote trunk branch. The branch is pushed to `origin` when the chat ends if it contains changes.
 
-After the chat ends, select **Finish work** in the session. The project `developmentWorkflow` setting controls the action: `pr-based` creates a pull request, `trunk-based` rebases and pushes the commits to trunk, and `squash-rebase` combines the commits before it pushes to trunk. If the rebase has a conflict, the chat branch remains on `origin` for manual resolution. Trunk pushes use fast-forward updates.
+After the chat ends, select **Finish work** in the session. This starts a Codex Luna session on the chat branch. The project `developmentWorkflow` setting controls its task: `pr-based` creates a pull request, `trunk-based` rebases and pushes the commits to trunk, and `squash-rebase` combines the commits before it rebases and pushes to trunk. The agent resolves rebase conflicts and runs relevant checks. Trunk pushes use fast-forward updates.
 
 ## Configure a Project
 

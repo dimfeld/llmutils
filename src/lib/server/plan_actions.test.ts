@@ -47,6 +47,7 @@ import {
   spawnChatProcess,
   spawnChatForPrProcess,
   spawnProjectChatProcess,
+  spawnProjectChatFinishProcess,
   spawnGenerateProcess,
   spawnPlanReviewGuideProcess,
   spawnPrFixForPrProcess,
@@ -483,6 +484,37 @@ describe('lib/server/plan_actions', () => {
       '--auto-workspace',
       '--project-chat-id',
       chatId,
+      '--no-terminal-input',
+    ]);
+  });
+
+  test('starts Codex Luna on the existing chat branch to finish it', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+    const chatId = '11111111-1111-4111-8111-111111111111';
+
+    const resultPromise = spawnProjectChatFinishProcess({
+      chatId,
+      cwd: '/tmp/primary-workspace',
+      branch: `chat/${chatId}`,
+      trunk: 'main',
+      workflow: 'squash-rebase',
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await resultPromise).toEqual({ success: true });
+    expect(daemonPayload(spawnSpy.mock.calls[0][1] as never).workerCommand).toEqual([
+      'tim',
+      'chat',
+      expect.stringMatching(/Squash the chat commits.*Rebase that commit/s),
+      '--executor',
+      'codex-cli',
+      '--model',
+      'gpt-6-luna',
+      '--auto-workspace',
+      '--project-chat-id',
+      chatId,
+      '--project-chat-finish',
+      '--no-workspace-sync',
       '--no-terminal-input',
     ]);
   });

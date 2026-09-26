@@ -1,26 +1,35 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
+import { SvelteMap } from 'svelte/reactivity';
 import type { SessionData } from '$lib/types/session.js';
+import { goto } from '$app/navigation';
 import {
-  finishProjectChat,
   getProjectChatFinishInfo,
+  startProjectChatFinish,
 } from '$lib/remote/project_chat_actions.remote.js';
 import ProjectChatFinish from './ProjectChatFinish.svelte';
 
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/remote/project_chat_actions.remote.js', () => ({
-  finishProjectChat: vi.fn(),
+  startProjectChatFinish: vi.fn(),
   getProjectChatFinishInfo: vi.fn(),
 }));
+const sessions = new SvelteMap<string, SessionData>();
+vi.mock('$lib/stores/session_state.svelte.js', () => ({
+  useSessionManager: () => ({ sessions }),
+}));
 
+const chatId = '11111111-1111-4111-8111-111111111111';
 const session = { connectionId: 'chat-session' } as SessionData;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sessions.clear();
   vi.mocked(getProjectChatFinishInfo).mockReturnValue({
     current: {
-      workflow: 'pr-based',
-      branch: 'chat/one',
+      workflow: 'squash-rebase',
+      branch: `chat/${chatId}`,
       trunk: 'main',
       hasPushedChanges: true,
       sessionEnded: true,
@@ -31,35 +40,29 @@ beforeEach(() => {
 });
 
 describe('ProjectChatFinish', () => {
-  test('requires a summary and creates a PR only after Finish work is selected', async () => {
-    vi.mocked(finishProjectChat).mockResolvedValue({
-      status: 'pr',
-      url: 'https://example.com/pr/1',
-    });
+  test('starts a finish session and opens it after discovery', async () => {
+    vi.mocked(startProjectChatFinish).mockResolvedValue({ status: 'started', chatId });
     render(ProjectChatFinish, { props: { session } });
 
-    expect(finishProjectChat).not.toHaveBeenCalled();
     await page.getByRole('button', { name: 'Finish work' }).click();
-    await expect
-      .element(page.getByText('Create a pull request from chat/one into main.'))
-      .toBeVisible();
-    await page.getByRole('textbox', { name: 'Change summary' }).fill('Add project chat support');
-    await page.getByRole('button', { name: 'Finish work' }).last().click();
-
-    expect(finishProjectChat).toHaveBeenCalledWith({
-      connectionId: 'chat-session',
-      summary: 'Add project chat support',
+    expect(startProjectChatFinish).toHaveBeenCalledWith({ connectionId: 'chat-session' });
+    await expect.element(page.getByRole('status')).toHaveTextContent('Waiting for session');
+    sessions.set('finish-session', {
+      connectionId: 'finish-session',
+      projectId: 7,
+      status: 'active',
+      sessionInfo: { projectChatId: chatId },
+    } as SessionData);
+    await vi.waitFor(() => {
+      expect(goto).toHaveBeenCalledWith('/projects/7/sessions/finish-session');
     });
-    await expect
-      .element(page.getByRole('link', { name: 'View PR' }))
-      .toHaveAttribute('href', 'https://example.com/pr/1');
   });
 
   test('does not offer Finish work when the chat has no pushed changes', async () => {
     vi.mocked(getProjectChatFinishInfo).mockReturnValue({
       current: {
         workflow: 'trunk-based',
-        branch: 'chat/one',
+        branch: `chat/${chatId}`,
         trunk: 'main',
         hasPushedChanges: false,
         sessionEnded: true,

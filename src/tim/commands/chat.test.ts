@@ -520,6 +520,27 @@ describe('handleChatCommand', () => {
     });
   });
 
+  test('opens the existing project chat branch for finish work', async () => {
+    const chatId = '11111111-1111-4111-8111-111111111111';
+    await handleChatCommand(
+      'Finish work',
+      { autoWorkspace: true, projectChatId: chatId, projectChatFinish: true, workspaceSync: false },
+      {}
+    );
+
+    expect(getRemoteTrunkBranch).not.toHaveBeenCalled();
+    expect(vi.mocked(setupWorkspace).mock.calls[0]?.[0]).toMatchObject({
+      autoWorkspace: true,
+      checkoutBranch: `chat/${chatId}`,
+      branchName: `chat/${chatId}`,
+      createBranch: true,
+      requireWorkspace: true,
+    });
+    expect(vi.mocked(prepareWorkspaceRoundTrip).mock.calls[0]?.[0]).toMatchObject({
+      workspaceSyncEnabled: false,
+    });
+  });
+
   test('resolves --plan and uses plan data for workspace setup and headless metadata', async () => {
     await handleChatCommand('hello', { autoWorkspace: true, plan: '123' }, { config: 'tim.json' });
 

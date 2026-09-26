@@ -5,12 +5,14 @@ import * as z from 'zod';
 
 import { getServerContext } from '$lib/server/init.js';
 import { getPrimaryWorkspacePath } from '$tim/db/workspace.js';
-import { spawnProjectChatProcess } from '$lib/server/plan_actions.js';
+import {
+  spawnProjectChatProcess,
+  spawnProjectChatFinishProcess,
+} from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { getRemoteTrunkBranch } from '$common/git.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import {
-  finishProjectChat as finishProjectChatBranch,
   remoteProjectChatBranchExists,
   type ProjectChatWorkflow,
 } from '$lib/server/project_chat_finish.js';
@@ -85,16 +87,14 @@ export const getProjectChatFinishInfo = query(projectChatTargetSchema, async ({ 
   };
 });
 
-export const finishProjectChat = command(
-  projectChatTargetSchema.extend({ summary: z.string().trim().min(1) }),
-  async ({ connectionId, summary }) => {
-    const context = await getProjectChatContext(connectionId);
-    const session = getSessionManager().getSessionTranscript(connectionId);
-    if (session?.status !== 'offline') error(400, 'End this chat before finishing its work');
-    try {
-      return await finishProjectChatBranch({ ...context, summary });
-    } catch (cause) {
-      error(500, cause instanceof Error ? cause.message : String(cause));
-    }
+export const startProjectChatFinish = command(projectChatTargetSchema, async ({ connectionId }) => {
+  const context = await getProjectChatContext(connectionId);
+  const session = getSessionManager().getSessionTranscript(connectionId);
+  if (session?.status !== 'offline') error(400, 'End this chat before finishing its work');
+  if (!(await remoteProjectChatBranchExists(context.cwd, context.branch))) {
+    error(400, 'This chat has no pushed changes to finish');
   }
-);
+  const result = await spawnProjectChatFinishProcess(context);
+  if (!result.success) error(500, result.error);
+  return { status: 'started' as const, chatId: context.chatId };
+});
