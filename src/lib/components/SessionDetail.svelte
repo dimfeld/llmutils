@@ -666,9 +666,16 @@
       </div>
     </div>
     {#if session.sessionInfo.workspacePath || showRunAgent || (planAttentionState && attentionReasons.length > 0)}
-      <div class="mt-1 flex min-w-0 items-center justify-between gap-2">
+      <div
+        class={[
+          'mt-1 min-w-0 items-center justify-between gap-2',
+          showRunAgent || (planAttentionState && attentionReasons.length > 0)
+            ? 'flex'
+            : 'hidden sm:flex',
+        ]}
+      >
         {#if session.sessionInfo.workspacePath}
-          <span class="truncate text-xs text-muted-foreground"
+          <span class="hidden truncate text-xs text-muted-foreground sm:inline"
             >{session.sessionInfo.workspacePath}</span
           >
         {/if}
