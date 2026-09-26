@@ -111,6 +111,31 @@
       chatDialogOpen = false;
     }
   }
+
+  function handleChoiceKeydown(event: KeyboardEvent): void {
+    if (
+      !chatDialogOpen ||
+      startingChat ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.repeat
+    ) {
+      return;
+    }
+    if (!/^[1-9]$/.test(event.key)) return;
+    if (
+      event.target instanceof HTMLElement &&
+      event.target.closest('input, textarea, select, [contenteditable="true"]')
+    ) {
+      return;
+    }
+
+    const option = chatExecutorOptions[Number(event.key) - 1];
+    if (!option) return;
+    event.preventDefault();
+    void start(option);
+  }
 </script>
 
 {#if windows}
@@ -140,23 +165,32 @@
       chatDialogOpen = open;
     }}
   >
-    <Dialog.Content class="sm:max-w-md">
+    <Dialog.Content class="sm:max-w-md" onkeydown={handleChoiceKeydown}>
       <Dialog.Header>
         <Dialog.Title>Start Chat Session</Dialog.Title>
-        <Dialog.Description>Choose an executor and model</Dialog.Description>
+        <Dialog.Description>Choose a model. Press its number to start quickly.</Dialog.Description>
       </Dialog.Header>
       <div class="grid gap-3 py-4">
-        {#each chatExecutorOptions as option (chatOptionKey(option))}
+        {#each chatExecutorOptions as option, index (chatOptionKey(option))}
           {@const optionKey = chatOptionKey(option)}
-          <Button onclick={() => start(option)} class="justify-between" disabled={!!startingChat}>
+          <Button
+            onclick={() => start(option)}
+            class="h-auto justify-between gap-3 py-3 text-left"
+            disabled={!!startingChat}
+          >
+            <span class="flex min-w-0 flex-col gap-0.5">
+              <span class="truncate text-sm font-semibold">{option.model ?? 'Default model'}</span>
+              <span class="text-xs font-normal opacity-75"
+                >{chatExecutorLabel(option.executor)}</span
+              >
+            </span>
             {#if startingChat === optionKey}
-              <span
-                class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
-              ></span>
-              Starting…
-            {:else}
-              <span>{chatExecutorLabel(option.executor)}</span>
-              <span class="text-xs opacity-80">{option.model ?? 'Default model'}</span>
+              <span class="text-xs font-normal">Starting…</span>
+            {:else if index < 9}
+              <kbd
+                class="rounded border border-current/30 px-1.5 py-0.5 text-xs font-normal opacity-75"
+                >{index + 1}</kbd
+              >
             {/if}
           </Button>
         {/each}

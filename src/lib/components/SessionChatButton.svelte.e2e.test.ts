@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import type { SessionData } from '$lib/types/session.js';
@@ -33,6 +33,27 @@ beforeEach(() => {
 });
 
 describe('review guide chat button', () => {
+  test('shows the model first and starts the numbered choice from the keyboard', async () => {
+    vi.mocked(startChat).mockResolvedValue({ status: 'started', planId: 42 });
+    render(SessionChatButton, {
+      props: {
+        target: { planUuid: 'plan-uuid' },
+        chatExecutorOptions: [
+          { executor: 'claude-code', model: 'sonnet-test' },
+          { executor: 'codex-cli', model: 'gpt-test' },
+        ],
+      },
+    });
+    await page.getByRole('button', { name: 'Chat with plan' }).click();
+    await expect.element(page.getByRole('button', { name: /gpt-test Codex CLI 2/ })).toBeVisible();
+    await userEvent.keyboard('2');
+    expect(startChat).toHaveBeenCalledWith({
+      planUuid: 'plan-uuid',
+      executor: 'codex-cli',
+      model: 'gpt-test',
+    });
+  });
+
   test('starts a plan chat with the selected executor and opens it after discovery', async () => {
     vi.mocked(startChat).mockResolvedValue({ status: 'started', planId: 42 });
     render(SessionChatButton, {
