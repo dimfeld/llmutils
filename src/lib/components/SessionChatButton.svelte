@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { startChat } from '$lib/remote/plan_actions.remote.js';
   import { startPrChat } from '$lib/remote/review_thread_actions.remote.js';
@@ -58,10 +59,19 @@
             : sessions.sessionsByPrUrl.get(pendingTarget.prUrl)
           )?.find((candidate) => candidate.status === 'active');
     if (session) {
-      windows?.open(session.connectionId);
+      showSession(session.connectionId);
       pending = null;
     }
   });
+
+  // Project chats open as a full session page; plan and PR chats open in a floating window.
+  function showSession(connectionId: string): void {
+    if ('projectChat' in target) {
+      void goto(`/projects/${target.projectId}/sessions/${encodeURIComponent(connectionId)}`);
+    } else {
+      windows?.open(connectionId);
+    }
+  }
 
   async function start(option: ChatExecutorOption): Promise<void> {
     const optionKey = chatOptionKey(option);
@@ -91,7 +101,7 @@
                 returnTo,
               });
       if (result.status === 'already_running') {
-        if (result.connectionId) windows?.open(result.connectionId);
+        if (result.connectionId) showSession(result.connectionId);
         else error = 'A session is starting. Try again when it is ready.';
       } else {
         pending =
