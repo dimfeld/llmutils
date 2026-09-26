@@ -78,6 +78,10 @@ function buildPrChatPrompt(prUrl: string): string {
   return `${CHAT_WAIT_INSTRUCTION} This chat is about pull request ${prUrl}. After the user's first question, answer it using the repository context as needed. You may use gh to read the pull request's diff and description or read any stored tim review guide for this PR if that additional context would help, but do not assume that either is needed. Do not change files unless the user explicitly asks you to.`;
 }
 
+function buildProjectChatPrompt(): string {
+  return `${CHAT_WAIT_INSTRUCTION} This chat is about the current project. After the user's first question, use the repository context as needed. Do not change files unless the user explicitly asks you to.`;
+}
+
 async function spawnTimProcess(
   targetLabel: string,
   planId: number | null,
@@ -282,6 +286,26 @@ export async function spawnChatForPrProcess(
     [TIM_LINKED_PR_URL_ENV]: prUrl,
     ...sessionEnv,
   });
+}
+
+export async function spawnProjectChatProcess(
+  chatId: string,
+  cwd: string,
+  executor: string,
+  model?: string
+): Promise<SpawnTargetProcessResult> {
+  const args = [
+    'chat',
+    buildProjectChatPrompt(),
+    '--executor',
+    executor,
+    '--auto-workspace',
+    '--project-chat-id',
+    chatId,
+  ];
+  if (model !== undefined) args.push('--model', model);
+  args.push('--no-terminal-input');
+  return spawnTimProcess(`project chat ${chatId}`, null, args, cwd);
 }
 
 export async function spawnRebaseProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {

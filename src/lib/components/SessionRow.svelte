@@ -59,6 +59,7 @@
   });
 
   let displayCommand = $derived.by(() => {
+    if (session.sessionInfo.projectChatId) return 'Project Chat';
     const cmd = session.sessionInfo.command;
     if (cmd === 'unknown') {
       return 'connecting...';

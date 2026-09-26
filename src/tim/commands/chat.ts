@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { getGitRoot } from '../../common/git.js';
+import { getGitRoot, getRemoteTrunkBranch } from '../../common/git.js';
 import { commitAll } from '../../common/process.js';
 import { getLoggerAdapter } from '../../logging/adapter.js';
 import { HeadlessAdapter } from '../../logging/headless_adapter.js';
@@ -10,7 +10,8 @@ import { buildDescriptionFromPlan, getCombinedTitleFromSummary } from '../displa
 import { resolvePlanByNumericId, writePlanToDb } from '../plans.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
-import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
+import * as z from 'zod';
 import { buildReferenceArtifactsSection } from '../prompt_builder.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import { ClaudeCodeExecutorName, CodexCliExecutorName } from '../executors/schemas.js';
@@ -63,6 +64,7 @@ export interface ChatCommandOptions {
   workspaceSync?: boolean;
   commit?: boolean;
   plan?: number;
+  projectChatId?: string;
 }
 
 export interface ChatGlobalOptions {
@@ -192,6 +194,14 @@ export async function handleChatCommand(
     options.newWorkspace === true ||
     options.plan !== undefined;
 
+  const projectChatId = options.projectChatId
+    ? z.string().uuid().parse(options.projectChatId)
+    : undefined;
+  if (projectChatId && (!options.autoWorkspace || options.plan !== undefined)) {
+    throw new Error('--project-chat-id requires --auto-workspace and no --plan');
+  }
+  const projectChatBranch = projectChatId ? `chat/${projectChatId}` : undefined;
+
   // Validate that workspace-modifier flags require workspace mode
   if (!workspaceMode) {
     if (options.commit) {
@@ -262,6 +272,7 @@ export async function handleChatCommand(
           title: currentPlanData.title,
         }
       : undefined,
+    sessionInfo: projectChatId ? { projectChatId, projectChatBranch } : undefined,
     callback: async () => {
       try {
         if (workspaceMode) {
@@ -274,7 +285,9 @@ export async function handleChatCommand(
 
           // When --plan is provided, derive branch from plan data.
           let checkoutBranch: string | undefined;
-          if (currentPlanData) {
+          if (projectChatId) {
+            checkoutBranch = await getRemoteTrunkBranch(configRepoRoot);
+          } else if (currentPlanData) {
             if (currentPlanData.branch) {
               checkoutBranch = currentPlanData.branch;
             } else {
@@ -296,11 +309,12 @@ export async function handleChatCommand(
               autoWorkspace: useAutoWorkspace,
               newWorkspace: options.newWorkspace,
               nonInteractive: options.nonInteractive,
-              requireWorkspace: false,
+              requireWorkspace: !!projectChatId,
               planId: currentPlanData?.id,
               planUuid: currentPlanData?.uuid,
               checkoutBranch,
-              allowPrimaryWorkspaceWhenLocked: true,
+              ...(projectChatBranch ? { branchName: projectChatBranch, createBranch: true } : {}),
+              allowPrimaryWorkspaceWhenLocked: !projectChatId,
             },
             currentBaseDir,
             currentPlanFile || undefined,
@@ -308,6 +322,9 @@ export async function handleChatCommand(
             'tim chat'
           );
           currentBaseDir = workspaceResult.baseDir;
+          if (projectChatId) {
+            updateHeadlessSessionInfo({ workspacePath: currentBaseDir, projectChatBranch });
+          }
           currentPlanFile = workspaceResult.planFile;
           touchedWorkspacePath = currentBaseDir;
 

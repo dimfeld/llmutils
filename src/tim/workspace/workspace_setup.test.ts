@@ -518,6 +518,38 @@ describe('setupWorkspace', () => {
     );
   });
 
+  test('keeps a branch request for a project chat without a plan', async () => {
+    const selectWorkspaceSpy = vi
+      .spyOn(WorkspaceAutoSelector.prototype, 'selectWorkspace')
+      .mockResolvedValue(null);
+
+    await expect(
+      setupWorkspace(
+        {
+          autoWorkspace: true,
+          checkoutBranch: 'main',
+          branchName: 'chat/11111111-1111-4111-8111-111111111111',
+          createBranch: true,
+          requireWorkspace: true,
+        },
+        baseDir,
+        undefined,
+        config,
+        'tim chat'
+      )
+    ).rejects.toThrow('Workspace creation was required but failed. Exiting.');
+
+    expect(selectWorkspaceSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      undefined,
+      expect.objectContaining({
+        createBranch: true,
+        base: 'main',
+        branchName: 'chat/11111111-1111-4111-8111-111111111111',
+      })
+    );
+  });
+
   test('passes plan-derived branch context to the auto-workspace selector', async () => {
     const selectWorkspaceSpy = vi
       .spyOn(WorkspaceAutoSelector.prototype, 'selectWorkspace')

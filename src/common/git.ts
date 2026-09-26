@@ -665,6 +665,26 @@ export async function getTrunkBranch(gitRoot: string): Promise<string> {
   return defaultBranch || 'main';
 }
 
+/** Resolve origin's default branch for work that must start from the remote trunk. */
+export async function getRemoteTrunkBranch(gitRoot: string): Promise<string> {
+  const result = await $`git ls-remote --symref origin HEAD`.cwd(gitRoot).quiet().nothrow();
+  if (result.exitCode !== 0) {
+    throw new Error(`Could not read origin's default branch: ${result.stderr.toString().trim()}`);
+  }
+  const match = result.stdout.toString().match(/^ref:\s+refs\/heads\/([^\s]+)\s+HEAD$/m);
+  if (match?.[1]) return match[1];
+
+  const fallback = await getTrunkBranch(gitRoot);
+  const branch = await $`git ls-remote --exit-code --heads origin ${fallback}`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  if (branch.exitCode !== 0) {
+    throw new Error("Could not find origin's trunk branch");
+  }
+  return fallback;
+}
+
 export async function fetchRemoteBranch(gitRoot: string, branchName: string): Promise<boolean> {
   if (await getUsingJj(gitRoot)) {
     const result = await $`jj git fetch --branch ${branchName}`.cwd(gitRoot).quiet().nothrow();

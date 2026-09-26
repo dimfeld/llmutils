@@ -35,6 +35,7 @@
     type NarrowScreenPane,
   } from './session_detail_state.js';
   import ProcessTree from './ProcessTree.svelte';
+  import ProjectChatFinish from './ProjectChatFinish.svelte';
   import { isLiveProcess } from './process_tree.js';
   import CopyButton from './CopyButton.svelte';
   import { afterNavigate, invalidateAll } from '$app/navigation';
@@ -410,7 +411,7 @@
           role="img"
         ></span>
         <h2 class="truncate text-lg font-semibold text-foreground">
-          {session.sessionInfo.command}
+          {session.sessionInfo.projectChatId ? 'Project Chat' : session.sessionInfo.command}
         </h2>
         {#if displayPlan.title || displayPlan.id != null}
           {#snippet planText()}
@@ -471,6 +472,9 @@
       </div>
 
       <div class="ml-auto flex shrink-0 items-center gap-2">
+        {#if session.status === 'offline' && session.sessionInfo.projectChatId}
+          <ProjectChatFinish {session} />
+        {/if}
         {#if showEndSession}
           {#if confirmingEndSession}
             <!-- svelte-ignore a11y_no_noninteractive_tabindex -->

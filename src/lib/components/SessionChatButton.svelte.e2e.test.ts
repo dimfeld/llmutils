@@ -5,10 +5,12 @@ import { SvelteMap } from 'svelte/reactivity';
 import type { SessionData } from '$lib/types/session.js';
 import { startChat } from '$lib/remote/plan_actions.remote.js';
 import { startPrChat } from '$lib/remote/review_thread_actions.remote.js';
+import { startProjectChat } from '$lib/remote/project_chat_actions.remote.js';
 import SessionChatButton from './SessionChatButton.svelte';
 
 vi.mock('$lib/remote/plan_actions.remote.js', () => ({ startChat: vi.fn() }));
 vi.mock('$lib/remote/review_thread_actions.remote.js', () => ({ startPrChat: vi.fn() }));
+vi.mock('$lib/remote/project_chat_actions.remote.js', () => ({ startProjectChat: vi.fn() }));
 vi.mock('$lib/stores/session_windows.svelte.js', () => ({
   useSessionWindows: () => ({ open }),
 }));
@@ -18,6 +20,7 @@ vi.mock('$lib/stores/session_state.svelte.js', () => ({
 
 const open = vi.fn();
 const sessions = {
+  sessions: new SvelteMap<string, Partial<SessionData>>(),
   sessionsByPlanUuid: new SvelteMap<string, Partial<SessionData>[]>(),
   sessionsByPrUrl: new SvelteMap<string, Partial<SessionData>[]>(),
 };
@@ -26,6 +29,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   sessions.sessionsByPlanUuid.clear();
   sessions.sessionsByPrUrl.clear();
+  sessions.sessions.clear();
 });
 
 describe('review guide chat button', () => {
@@ -90,5 +94,28 @@ describe('review guide chat button', () => {
     sessions.sessionsByPrUrl.set(prUrl, [{ connectionId: 'pr-session', status: 'active' }]);
     await expect.poll(() => open.mock.calls).toEqual([['pr-session']]);
     expect(startChat).not.toHaveBeenCalled();
+  });
+
+  test('opens the project chat that was just started', async () => {
+    const chatId = '11111111-1111-4111-8111-111111111111';
+    vi.mocked(startProjectChat).mockResolvedValue({ status: 'started', chatId });
+    render(SessionChatButton, { props: { target: { projectId: '7', projectChat: true } } });
+    await page.getByRole('button', { name: 'Chat with project' }).click();
+    await page.getByRole('button', { name: /Claude Code/ }).click();
+    expect(startProjectChat).toHaveBeenCalledWith({
+      projectId: 7,
+      executor: 'claude-code',
+      model: undefined,
+    });
+    sessions.sessions.set('other', {
+      connectionId: 'other',
+      sessionInfo: { projectChatId: '22222222-2222-4222-8222-222222222222' },
+    });
+    expect(open).not.toHaveBeenCalled();
+    sessions.sessions.set('new', {
+      connectionId: 'new',
+      sessionInfo: { projectChatId: chatId },
+    });
+    await expect.poll(() => open.mock.calls).toEqual([['new']]);
   });
 });

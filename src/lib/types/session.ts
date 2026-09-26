@@ -155,6 +155,8 @@ export interface HeadlessSessionInfo {
   linkedPrUrl?: string;
   linkedPrNumber?: number;
   linkedPrTitle?: string;
+  projectChatId?: string;
+  projectChatBranch?: string;
   returnTo?: string;
   workspacePath?: string;
   gitRemote?: string;

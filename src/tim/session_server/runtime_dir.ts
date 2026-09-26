@@ -20,6 +20,8 @@ export interface SessionInfoFile {
   linkedPrUrl?: string;
   linkedPrNumber?: number;
   linkedPrTitle?: string;
+  projectChatId?: string;
+  projectChatBranch?: string;
   returnTo?: string;
   gitRemote?: string;
   startedAt: string;
@@ -101,6 +103,12 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
   if (data.linkedPrTitle != null && typeof data.linkedPrTitle !== 'string') {
     throw new Error('Session info file has invalid linkedPrTitle');
   }
+  if (data.projectChatId != null && typeof data.projectChatId !== 'string') {
+    throw new Error('Session info file has invalid projectChatId');
+  }
+  if (data.projectChatBranch != null && typeof data.projectChatBranch !== 'string') {
+    throw new Error('Session info file has invalid projectChatBranch');
+  }
   if (data.returnTo != null && typeof data.returnTo !== 'string') {
     throw new Error('Session info file has invalid returnTo');
   }
@@ -128,6 +136,8 @@ function parseSessionInfoFile(value: unknown): SessionInfoFile {
     linkedPrUrl: data.linkedPrUrl as string | undefined,
     linkedPrNumber: data.linkedPrNumber as number | undefined,
     linkedPrTitle: data.linkedPrTitle as string | undefined,
+    projectChatId: data.projectChatId as string | undefined,
+    projectChatBranch: data.projectChatBranch as string | undefined,
     returnTo: data.returnTo as string | undefined,
     gitRemote: data.gitRemote as string | undefined,
     startedAt: data.startedAt,

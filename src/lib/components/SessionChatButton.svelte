@@ -2,6 +2,7 @@
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { startChat } from '$lib/remote/plan_actions.remote.js';
   import { startPrChat } from '$lib/remote/review_thread_actions.remote.js';
+  import { startProjectChat } from '$lib/remote/project_chat_actions.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { useSessionWindows } from '$lib/stores/session_windows.svelte.js';
   import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
@@ -13,7 +14,10 @@
   import { Button, type ButtonVariant } from '$lib/components/ui/button/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
 
-  export type ChatTarget = { planUuid: string } | { projectId: string; prNumber: number };
+  export type ChatTarget =
+    | { planUuid: string }
+    | { projectId: string; prNumber: number }
+    | { projectId: string; projectChat: true };
 
   let {
     target,
@@ -29,21 +33,30 @@
     buttonClass?: string;
   } = $props();
 
-  let subject = $derived('planUuid' in target ? 'plan' : 'PR');
+  let subject = $derived(
+    'planUuid' in target ? 'plan' : 'projectChat' in target ? 'project' : 'PR'
+  );
   const sessions = useSessionManager();
   const windows = useSessionWindows();
   let chatDialogOpen = $state(false);
   let startingChat = $state<string | false>(false);
-  let pending = $state<{ planUuid: string } | { prUrl: string } | null>(null);
+  let pending = $state<{ planUuid: string } | { prUrl: string } | { projectChatId: string } | null>(
+    null
+  );
   let error = $state<string | null>(null);
 
   $effect(() => {
-    if (!pending) return;
-    const candidates =
-      'planUuid' in pending
-        ? sessions.sessionsByPlanUuid.get(pending.planUuid)
-        : sessions.sessionsByPrUrl.get(pending.prUrl);
-    const session = candidates?.find((session) => session.status === 'active');
+    const pendingTarget = pending;
+    if (!pendingTarget) return;
+    const session =
+      'projectChatId' in pendingTarget
+        ? [...sessions.sessions.values()].find(
+            (candidate) => candidate.sessionInfo.projectChatId === pendingTarget.projectChatId
+          )
+        : ('planUuid' in pendingTarget
+            ? sessions.sessionsByPlanUuid.get(pendingTarget.planUuid)
+            : sessions.sessionsByPrUrl.get(pendingTarget.prUrl)
+          )?.find((candidate) => candidate.status === 'active');
     if (session) {
       windows?.open(session.connectionId);
       pending = null;
@@ -57,30 +70,38 @@
     try {
       const launchTarget = target;
       const result =
-        'planUuid' in launchTarget
-          ? await startChat({
-              planUuid: launchTarget.planUuid,
-              executor: option.executor,
-              model: option.model,
-              returnTo,
-            })
-          : await startPrChat({
+        'projectChat' in launchTarget
+          ? await startProjectChat({
               projectId: Number(launchTarget.projectId),
-              prNumber: launchTarget.prNumber,
               executor: option.executor,
               model: option.model,
-              returnTo,
-            });
+            })
+          : 'planUuid' in launchTarget
+            ? await startChat({
+                planUuid: launchTarget.planUuid,
+                executor: option.executor,
+                model: option.model,
+                returnTo,
+              })
+            : await startPrChat({
+                projectId: Number(launchTarget.projectId),
+                prNumber: launchTarget.prNumber,
+                executor: option.executor,
+                model: option.model,
+                returnTo,
+              });
       if (result.status === 'already_running') {
         if (result.connectionId) windows?.open(result.connectionId);
         else error = 'A session is starting. Try again when it is ready.';
       } else {
         pending =
-          'planUuid' in launchTarget
-            ? { planUuid: launchTarget.planUuid }
-            : 'prUrl' in result
-              ? { prUrl: result.prUrl }
-              : null;
+          'projectChat' in launchTarget && 'chatId' in result
+            ? { projectChatId: result.chatId }
+            : 'planUuid' in launchTarget
+              ? { planUuid: launchTarget.planUuid }
+              : 'prUrl' in result
+                ? { prUrl: result.prUrl }
+                : null;
         chatDialogOpen = false;
       }
     } catch (err) {
@@ -103,7 +124,8 @@
         chatDialogOpen = true;
       }}
       disabled={!!startingChat}
-      aria-label={`Chat with ${subject}`}>Chat</Button
+      aria-label={`Chat with ${subject}`}
+      >{subject === 'project' ? 'New project chat' : 'Chat'}</Button
     >
     {#if pending}
       <span role="status" class="text-sm text-muted-foreground">Waiting for session…</span>

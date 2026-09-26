@@ -46,6 +46,7 @@ import {
   spawnCiFixProcess,
   spawnChatProcess,
   spawnChatForPrProcess,
+  spawnProjectChatProcess,
   spawnGenerateProcess,
   spawnPlanReviewGuideProcess,
   spawnPrFixForPrProcess,
@@ -463,6 +464,27 @@ describe('lib/server/plan_actions', () => {
     expect(options.stdout).toEqual(expect.any(Number));
     expect(options.stderr).toEqual(expect.any(Number));
     expect(result).toEqual({ success: true, planId: 189 });
+  });
+
+  test('spawnProjectChatProcess launches planless chat in an auto workspace', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+    const chatId = '11111111-1111-4111-8111-111111111111';
+
+    const resultPromise = spawnProjectChatProcess(chatId, '/tmp/primary-workspace', 'codex');
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await resultPromise).toEqual({ success: true });
+    expect(daemonPayload(spawnSpy.mock.calls[0][1] as never).workerCommand).toEqual([
+      'tim',
+      'chat',
+      expect.stringContaining('current project'),
+      '--executor',
+      'codex',
+      '--auto-workspace',
+      '--project-chat-id',
+      chatId,
+      '--no-terminal-input',
+    ]);
   });
 
   test('spawnChatProcess passes a configured model to tim chat', async () => {

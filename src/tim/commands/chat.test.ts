@@ -16,6 +16,7 @@ vi.mock('../plan_repo_root.js', () => ({
 
 vi.mock('../../common/git.js', () => ({
   getGitRoot: vi.fn(),
+  getRemoteTrunkBranch: vi.fn(),
 }));
 
 vi.mock('../../common/process.js', () => ({
@@ -96,7 +97,7 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
-import { getGitRoot } from '../../common/git.js';
+import { getGitRoot, getRemoteTrunkBranch } from '../../common/git.js';
 import { resolveRepoRoot } from '../plan_repo_root.js';
 import { commitAll } from '../../common/process.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
@@ -143,6 +144,7 @@ describe('handleChatCommand', () => {
       options.callback()
     );
     vi.mocked(getGitRoot).mockResolvedValue('/repo-root');
+    vi.mocked(getRemoteTrunkBranch).mockResolvedValue('main');
     vi.mocked(resolveRepoRoot).mockResolvedValue('/repo-root');
     vi.mocked(commitAll).mockResolvedValue(0);
     vi.mocked(setupWorkspace).mockImplementation(
@@ -496,6 +498,25 @@ describe('handleChatCommand', () => {
     expect(vi.mocked(buildExecutorAndLog).mock.calls[0][1]).toMatchObject({
       baseDir: '/repo-root/workspaces/task-123',
       noninteractive: true,
+    });
+  });
+
+  test('starts project chat on its own branch from origin trunk', async () => {
+    const chatId = '11111111-1111-4111-8111-111111111111';
+    await handleChatCommand('hello', { autoWorkspace: true, projectChatId: chatId }, {});
+
+    expect(getRemoteTrunkBranch).toHaveBeenCalledWith('/repo-root');
+    expect(vi.mocked(setupWorkspace).mock.calls[0]?.[0]).toMatchObject({
+      autoWorkspace: true,
+      checkoutBranch: 'main',
+      branchName: `chat/${chatId}`,
+      createBranch: true,
+      planId: undefined,
+      requireWorkspace: true,
+      allowPrimaryWorkspaceWhenLocked: false,
+    });
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0]?.[0]).toMatchObject({
+      sessionInfo: { projectChatId: chatId, projectChatBranch: `chat/${chatId}` },
     });
   });
 

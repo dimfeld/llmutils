@@ -9,6 +9,7 @@ type SessionWindowTitleInfo = Pick<
   | 'linkedPlanTitle'
   | 'linkedPrNumber'
   | 'linkedPrTitle'
+  | 'projectChatId'
 >;
 
 /** Format the title used by a floating session window and its minimized button. */
@@ -29,5 +30,9 @@ export function formatSessionWindowTitle(sessionInfo: SessionWindowTitleInfo): s
           .join(': ')
       : null;
 
-  return [plan, pr].filter(Boolean).join(' · ') || sessionInfo.command || 'Session';
+  return (
+    [plan, pr].filter(Boolean).join(' · ') ||
+    (sessionInfo.projectChatId ? 'Project Chat' : sessionInfo.command) ||
+    'Session'
+  );
 }

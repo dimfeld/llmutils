@@ -1098,6 +1098,7 @@ program
   .option('--no-workspace-sync', 'Disable automatic workspace round-trip sync')
   .option('--commit', 'Commit changes to jj/git after successful chat execution')
   .option('--plan <planId>', 'Associate chat with a plan for branch/workspace assignment')
+  .option('--project-chat-id <id>', 'Start a project chat on a new branch from trunk')
   .option('--non-interactive', 'Disable interactive terminal input')
   .option('--no-terminal-input', 'Disable terminal input forwarding')
   .option(

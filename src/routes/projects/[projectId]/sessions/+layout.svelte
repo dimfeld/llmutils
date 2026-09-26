@@ -4,8 +4,10 @@
   import CollapsibleItemSidebar from '$lib/components/CollapsibleItemSidebar.svelte';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import type { Snippet } from 'svelte';
+  import type { LayoutData } from './$types';
+  import SessionChatButton from '$lib/components/SessionChatButton.svelte';
 
-  let { children }: { children: Snippet } = $props();
+  let { children, data }: { children: Snippet; data: LayoutData } = $props();
 
   const sessionManager = useSessionManager();
   let status = $derived(sessionManager.connectionStatus);
@@ -40,6 +42,12 @@
       <span class="text-xs text-amber-500">Reconnecting...</span>
     {:else if status === 'disconnected'}
       <span class="text-xs text-red-500">Disconnected</span>
+    {/if}
+    {#if projectId && projectId !== 'all' && data.hasPrimaryWorkspace}
+      <SessionChatButton
+        target={{ projectId, projectChat: true }}
+        chatExecutorOptions={data.chatExecutorOptions}
+      />
     {/if}
   </div>
   <SessionList
