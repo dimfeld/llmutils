@@ -203,6 +203,7 @@ export interface SessionData {
   planTasks: SessionPlanTask[];
   processTree: SessionProcessNode[];
   messages: DisplayMessage[];
+  lastMessageAt?: string | null;
   activePrompts: ActivePrompt[];
   isReplaying: boolean;
   groupKey: string;
@@ -237,6 +238,15 @@ export interface SessionDisconnectEvent {
 export interface SessionMessageEvent {
   connectionId: string;
   message: DisplayMessage;
+}
+
+export interface SessionTranscriptEvent {
+  session: SessionData;
+}
+
+export interface SessionActivityEvent {
+  connectionId: string;
+  timestamp: string;
 }
 
 export interface SessionPlanContentEvent {
@@ -302,6 +312,8 @@ export interface SessionClientEventMap {
   'session:update': SessionUpdateEvent;
   'session:disconnect': SessionDisconnectEvent;
   'session:message': SessionMessageEvent;
+  'session:transcript': SessionTranscriptEvent;
+  'session:activity': SessionActivityEvent;
   'session:plan-content': SessionPlanContentEvent;
   'session:process-tree': SessionProcessTreeEvent;
   'session:prompt': SessionPromptEvent;

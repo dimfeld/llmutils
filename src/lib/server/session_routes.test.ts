@@ -8,7 +8,11 @@ import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import type { ProcessId, SessionProcessNode } from '../../common/session_process.js';
 
 import { SessionManager } from './session_manager.js';
-import { createSessionEventsResponse, formatSseEvent } from './session_routes.js';
+import {
+  createSessionEventsResponse,
+  createSessionTranscriptResponse,
+  formatSseEvent,
+} from './session_routes.js';
 
 async function readSseEvent(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -128,6 +132,39 @@ describe('lib/server/session_routes', () => {
     expect(unregisterSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('loads stored messages only in the opened session stream', async () => {
+    manager.handleHttpNotification({
+      gitRemote: 'git@example.com:repo.git',
+      message: 'Stored notification',
+      workspacePath: '/tmp/repo',
+    });
+    const connectionId = 'notification:example.com/repo';
+    const abortController = new AbortController();
+    const listReader = createSessionEventsResponse(
+      manager,
+      abortController.signal
+    ).body!.getReader();
+    const transcriptReader = createSessionTranscriptResponse(
+      manager,
+      connectionId,
+      abortController.signal
+    ).body!.getReader();
+    const decoder = new TextDecoder();
+
+    expect(await readSseEvent(listReader, decoder, { buffer: '' })).toMatchObject({
+      event: 'session:list',
+      data: { sessions: [{ connectionId, messages: [] }] },
+    });
+    expect(await readSseEvent(transcriptReader, decoder, { buffer: '' })).toMatchObject({
+      event: 'session:transcript',
+      data: { session: { connectionId, messages: [{ body: { text: 'Stored notification' } }] } },
+    });
+
+    abortController.abort();
+    await listReader.cancel();
+    await transcriptReader.cancel();
+  });
+
   test('createSessionEventsResponse includes the authoritative process tree in the initial snapshot', async () => {
     manager.handleWebSocketConnect('conn-tree-initial', vi.fn());
     const processTree: SessionProcessNode[] = [
@@ -176,7 +213,7 @@ describe('lib/server/session_routes', () => {
     await reader!.cancel();
   });
 
-  test('createSessionEventsResponse forwards token_usage payloads intact through SSE', async () => {
+  test('transcript stream forwards token_usage payloads while the main stream sends activity', async () => {
     const abortController = new AbortController();
     const response = createSessionEventsResponse(manager, abortController.signal);
     const reader = response.body?.getReader();
@@ -200,6 +237,17 @@ describe('lib/server/session_routes', () => {
     });
 
     manager.handleWebSocketConnect('conn-1', vi.fn());
+    const transcriptResponse = createSessionTranscriptResponse(
+      manager,
+      'conn-1',
+      abortController.signal
+    );
+    const transcriptReader = transcriptResponse.body!.getReader();
+    const transcriptState = { buffer: '' };
+    expect(await readSseEvent(transcriptReader, decoder, transcriptState)).toMatchObject({
+      event: 'session:transcript',
+      data: { session: { connectionId: 'conn-1', messages: [] } },
+    });
     manager.handleWebSocketMessage('conn-1', {
       type: 'output',
       seq: 1,
@@ -252,7 +300,11 @@ describe('lib/server/session_routes', () => {
       },
     });
 
-    const sessionMessage = await readSseEvent(reader!, decoder, streamState);
+    expect(await readSseEvent(reader!, decoder, streamState)).toEqual({
+      event: 'session:activity',
+      data: { connectionId: 'conn-1', timestamp: '2026-03-17T10:00:59.000Z' },
+    });
+    const sessionMessage = await readSseEvent(transcriptReader, decoder, transcriptState);
     expect(sessionMessage).toEqual({
       event: 'session:message',
       data: {
@@ -286,6 +338,7 @@ describe('lib/server/session_routes', () => {
 
     abortController.abort();
     await reader!.cancel();
+    await transcriptReader.cancel();
   });
 
   test('createSessionEventsResponse forwards live process tree events over SSE', async () => {
@@ -424,9 +477,9 @@ describe('lib/server/session_routes', () => {
       'session:new', // 6: WS conn-1 connected
       'session:update', // 7: session_info metadata
       'session:prompt', // 8: prompt_request
-      'session:message', // 9: prompt_request message
+      'session:activity', // 9: prompt_request activity
       'session:prompt-cleared', // 10: prompt_answered clears prompt
-      'session:message', // 11: prompt_answered message
+      'session:activity', // 11: prompt_answered activity
       'session:disconnect', // 12: WS disconnect
       'session:dismissed', // 13: dismiss conn-1
     ]);
@@ -475,12 +528,7 @@ describe('lib/server/session_routes', () => {
       },
     });
     expect(receivedEvents[9]).toMatchObject({
-      data: {
-        connectionId: 'conn-1',
-        message: {
-          rawType: 'prompt_request',
-        },
-      },
+      data: { connectionId: 'conn-1', timestamp: '2026-03-17T10:00:01.000Z' },
     });
     expect(receivedEvents[10]).toEqual({
       event: 'session:prompt-cleared',
@@ -490,13 +538,8 @@ describe('lib/server/session_routes', () => {
       },
     });
     expect(receivedEvents[11]).toMatchObject({
-      event: 'session:message',
-      data: {
-        connectionId: 'conn-1',
-        message: {
-          rawType: 'prompt_answered',
-        },
-      },
+      event: 'session:activity',
+      data: { connectionId: 'conn-1', timestamp: '2026-03-17T10:00:02.000Z' },
     });
     expect(receivedEvents[12]).toMatchObject({
       event: 'session:disconnect',
@@ -568,10 +611,10 @@ describe('lib/server/session_routes', () => {
   });
 
   test('createSessionEventsResponse emits sync-complete after buffered catch-up events', async () => {
-    const originalGetSessionSnapshot = manager.getSessionSnapshot.bind(manager);
+    const originalGetSessionSnapshot = manager.getSessionMetadataSnapshot.bind(manager);
     let injected = false;
 
-    vi.spyOn(manager, 'getSessionSnapshot').mockImplementation(() => {
+    vi.spyOn(manager, 'getSessionMetadataSnapshot').mockImplementation(() => {
       const snapshot = originalGetSessionSnapshot();
 
       if (!injected) {

@@ -18,6 +18,7 @@
   let lastUpdatedAt = $derived.by(() => {
     const candidates = [
       session.messages.at(-1)?.timestamp,
+      session.lastMessageAt,
       session.disconnectedAt,
       session.connectedAt,
     ].filter((timestamp): timestamp is string => Boolean(timestamp));

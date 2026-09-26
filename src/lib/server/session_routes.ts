@@ -19,7 +19,7 @@ export function createSessionEventsResponse(
   let cleanup: ((skipControllerClose?: boolean) => void) | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
+    start(controller: ReadableStreamDefaultController<Uint8Array>): void {
       let closed = false;
       let sseRegistered = false;
 
@@ -65,10 +65,28 @@ export function createSessionEventsResponse(
       let snapshotSent = false;
 
       const unsubscribe = subscribeToAllSessionEvents(manager, (eventName, payload) => {
+        const outgoingEvent =
+          'message' in payload && !payload.message.triggersNotification
+            ? 'session:activity'
+            : eventName;
+        const outgoingPayload: unknown =
+          outgoingEvent === 'session:activity' && 'message' in payload
+            ? { connectionId: payload.connectionId, timestamp: payload.message.timestamp }
+            : eventName === 'session:update' &&
+                'session' in payload &&
+                payload.session.messages.length > 0
+              ? {
+                  session: {
+                    ...payload.session,
+                    lastMessageAt: payload.session.messages.at(-1)?.timestamp ?? null,
+                    messages: [],
+                  },
+                }
+              : payload;
         if (snapshotSent) {
-          send(eventName, payload);
+          send(outgoingEvent, outgoingPayload);
         } else {
-          buffered.push({ event: eventName, data: payload });
+          buffered.push({ event: outgoingEvent, data: outgoingPayload });
         }
       });
       // Handle already-aborted requests immediately
@@ -80,7 +98,7 @@ export function createSessionEventsResponse(
       manager.registerSSESubscriber();
       sseRegistered = true;
 
-      const snapshot: SessionSnapshot = manager.getSessionSnapshot();
+      const snapshot: SessionSnapshot = manager.getSessionMetadataSnapshot();
       send('session:list', snapshot);
 
       const rateLimitState = manager.getRateLimitState();
@@ -96,7 +114,7 @@ export function createSessionEventsResponse(
 
       signal?.addEventListener('abort', onAbort, { once: true });
     },
-    cancel() {
+    cancel(): void {
       // Stream is already being torn down by the consumer, so skip controller.close()
       cleanup?.(true);
     },
@@ -105,4 +123,70 @@ export function createSessionEventsResponse(
   return new Response(stream, {
     headers: SSE_HEADERS,
   });
+}
+
+export function createSessionTranscriptResponse(
+  manager: SessionManager,
+  connectionId: string,
+  signal?: AbortSignal
+): Response {
+  if (!manager.hasSession(connectionId)) {
+    return new Response('Session not found', { status: 404 });
+  }
+
+  const encoder = new TextEncoder();
+  let cleanup: (() => void) | null = null;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller: ReadableStreamDefaultController<Uint8Array>): void {
+      let closed = false;
+      const buffered: Array<{ event: string; data: unknown }> = [];
+      let snapshotSent = false;
+      const send = (event: string, data: unknown): void => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(formatSseEvent(event, data)));
+        } catch {
+          close();
+        }
+      };
+      const deliver = (event: string, data: unknown): void => {
+        if (snapshotSent) send(event, data);
+        else buffered.push({ event, data });
+      };
+      const unsubscribeMessage = manager.subscribe('session:message', (payload) => {
+        if (payload.connectionId === connectionId) deliver('session:message', payload);
+      });
+      const unsubscribeUpdate = manager.subscribe('session:update', (payload) => {
+        if (payload.session.connectionId === connectionId && payload.session.messages.length > 0) {
+          deliver('session:transcript', payload);
+        }
+      });
+      const close = (): void => {
+        if (closed) return;
+        closed = true;
+        unsubscribeMessage();
+        unsubscribeUpdate();
+        signal?.removeEventListener('abort', close);
+        try {
+          controller.close();
+        } catch {
+          /* Stream was canceled. */
+        }
+      };
+      cleanup = close;
+      if (signal?.aborted) {
+        close();
+        return;
+      }
+      const session = manager.getSessionTranscript(connectionId);
+      if (session) send('session:transcript', { session });
+      snapshotSent = true;
+      for (const item of buffered) deliver(item.event, item.data);
+      signal?.addEventListener('abort', close, { once: true });
+    },
+    cancel(): void {
+      cleanup?.();
+    },
+  });
+  return new Response(stream, { headers: SSE_HEADERS });
 }

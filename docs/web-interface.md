@@ -1195,6 +1195,8 @@ When installed as a PWA, the app icon displays a badge dot whenever any session 
 
 ## Floating session windows
 
+The shared session SSE stream loads session metadata and sends activity timestamps for ordinary messages. It sends notification message bodies so browser notifications can show their text. When a session detail opens, the client starts a separate SSE stream for that session's transcript. The transcript stream stays open until the client disconnects or the session is dismissed. The initial transcript snapshot and later messages use the same session store, so route details and floating windows share one subscription per session.
+
 The root layout owns `SessionWindows` through Svelte context. It uses the shared session store and renders `SessionDetail` in `FloatingWindow`, which handles pointer and keyboard movement, resizing, and bounds. Each connection ID has one window. Window order controls which window is in front. Minimized windows stay mounted to preserve local content state. Closing a window removes only its view.
 
 The window host stays mounted across routes and has its own stacking context below modal dialogs. Floating session links use the session's project ID. Floating views hide the plan pane so that the message area has more space.

@@ -53,6 +53,9 @@
   const windows = useSessionWindows();
   let { session, floating = false }: { session: SessionData; floating?: boolean } = $props();
   const sessionManager = useSessionManager();
+  $effect(() => {
+    sessionManager.openSession(session.connectionId);
+  });
   const uiState = useUIState();
 
   let scrollContainer: HTMLDivElement | undefined = $state();

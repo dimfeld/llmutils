@@ -145,6 +145,7 @@ export interface SessionData {
   planTasks: SessionPlanTask[];
   processTree: SessionProcessNode[];
   messages: DisplayMessage[];
+  lastMessageAt?: string | null;
   activePrompts: ActivePrompt[];
   isReplaying: boolean;
   groupKey: string;
@@ -1155,6 +1156,24 @@ export class SessionManager {
     };
   }
 
+  getSessionMetadataSnapshot(): SessionSnapshot {
+    this.pruneSessions();
+    return {
+      sessions: [...this.sessions.values()]
+        .map((session) => this.cloneSessionMetadata(session))
+        .toSorted((a, b) => a.connectedAt.localeCompare(b.connectedAt)),
+    };
+  }
+
+  getSessionTranscript(connectionId: string): SessionData | null {
+    const session = this.sessions.get(connectionId);
+    return session ? this.cloneSession(session, MAX_SNAPSHOT_MESSAGES) : null;
+  }
+
+  hasSession(connectionId: string): boolean {
+    return this.sessions.has(connectionId);
+  }
+
   pruneSessions(nowMs: number = this.now()): { removed: number; compacted: number } {
     let removed = 0;
     let compacted = 0;
@@ -1602,6 +1621,7 @@ export class SessionManager {
   private cloneSessionMetadata(session: SessionData): SessionData {
     return {
       ...session,
+      lastMessageAt: session.messages.at(-1)?.timestamp ?? null,
       sessionInfo: { ...session.sessionInfo },
       planTasks: session.planTasks.map((task) => ({ ...task })),
       processTree: session.processTree.map((process) => ({ ...process })),

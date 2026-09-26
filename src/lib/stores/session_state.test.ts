@@ -148,6 +148,51 @@ describe('SessionManager.sessionGroups', () => {
   });
 });
 
+describe('SessionManager.openSession', () => {
+  test('subscribes once and applies the opened session transcript', () => {
+    const listeners = new Map<string, (event: MessageEvent) => void>();
+    const close = vi.fn();
+    const eventSource = vi.fn().mockImplementation(function (url: string): EventSource {
+      return {
+        url,
+        addEventListener: (name: string, listener: (event: MessageEvent) => void): void => {
+          listeners.set(name, listener);
+        },
+        close,
+      } as unknown as EventSource;
+    });
+    vi.stubGlobal('EventSource', eventSource);
+    try {
+      const manager = new SessionManager();
+      manager.sessions.set('conn-1', createSession());
+      manager.openSession('conn-1');
+      manager.openSession('conn-1');
+      expect(eventSource).toHaveBeenCalledTimes(1);
+      expect(eventSource).toHaveBeenCalledWith('/api/sessions/events?connectionId=conn-1');
+
+      const message = {
+        id: 'message-1',
+        seq: 1,
+        timestamp: '2026-03-18T10:01:00.000Z',
+        category: 'log',
+        bodyType: 'text',
+        body: { type: 'text', text: 'hello' },
+        rawType: 'log',
+      };
+      listeners.get('session:transcript')?.({
+        data: JSON.stringify({
+          session: createSession({ messages: [message] as SessionData['messages'] }),
+        }),
+      } as MessageEvent);
+      expect(manager.sessions.get('conn-1')?.messages).toEqual([message]);
+      manager.disconnect();
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('SessionManager.needsAttention', () => {
   test('returns false when there are no sessions', () => {
     const manager = new SessionManager();

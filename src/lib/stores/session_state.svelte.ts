@@ -63,6 +63,7 @@ export class SessionManager {
   sessionsByPrUrl = new SvelteMap<string, SessionData[]>();
 
   eventSource: EventSource | null = null;
+  private transcriptSources = new Map<string, EventSource>();
   reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   reconnectDelay = 1000;
   readonly MAX_RECONNECT_DELAY = 30000;
@@ -246,7 +247,8 @@ export class SessionManager {
       },
     };
 
-    applySessionEvent(eventName, parsed, state);
+    // The main stream carries notification messages only. Transcript streams own message state.
+    if (eventName !== 'session:message') applySessionEvent(eventName, parsed, state);
     this.reconcileAcknowledgedNotifications(eventName, parsed);
 
     for (const callback of this.eventCallbacks) {
@@ -271,6 +273,10 @@ export class SessionManager {
       case 'session:list': {
         const sessions = event.payload.sessions;
         const activeSessionIds = new Set(sessions.map((session) => session.connectionId));
+
+        for (const connectionId of this.transcriptSources.keys()) {
+          if (!activeSessionIds.has(connectionId)) this.closeTranscript(connectionId);
+        }
 
         for (const connectionId of this.unreadNotifications.keys()) {
           if (!activeSessionIds.has(connectionId)) {
@@ -312,6 +318,7 @@ export class SessionManager {
       }
       case 'session:dismissed': {
         const { connectionId } = event.payload;
+        this.closeTranscript(connectionId);
         this.unreadNotifications.delete(connectionId);
         const affectedProjectIds: string[] = [];
         for (const [projectId, lastId] of this.lastSelectedSessionIds) {
@@ -376,6 +383,7 @@ export class SessionManager {
       'session:update',
       'session:disconnect',
       'session:message',
+      'session:activity',
       'session:plan-content',
       'session:process-tree',
       'session:prompt',
@@ -398,7 +406,52 @@ export class SessionManager {
     this.connectSse();
   }
 
+  openSession(connectionId: string): void {
+    if (this.transcriptSources.has(connectionId)) return;
+    const source = new EventSource(
+      `${base}/api/sessions/events?connectionId=${encodeURIComponent(connectionId)}`
+    );
+    this.transcriptSources.set(connectionId, source);
+    source.addEventListener('session:transcript', (event: MessageEvent) => {
+      const payload = parseSessionEventPayload<SessionClientEventMap['session:transcript']>(
+        event.data
+      );
+      if (payload) this.applyTranscriptEvent('session:transcript', payload);
+    });
+    source.addEventListener('session:message', (event: MessageEvent) => {
+      const payload = parseSessionEventPayload<SessionClientEventMap['session:message']>(
+        event.data
+      );
+      if (payload) this.applyTranscriptEvent('session:message', payload);
+    });
+  }
+
+  private closeTranscript(connectionId: string): void {
+    this.transcriptSources.get(connectionId)?.close();
+    this.transcriptSources.delete(connectionId);
+  }
+
+  private applyTranscriptEvent<TEventName extends 'session:transcript' | 'session:message'>(
+    eventName: TEventName,
+    payload: SessionClientEventMap[TEventName]
+  ): void {
+    applySessionEvent(eventName, payload, {
+      sessions: this.sessions,
+      sessionsByPlanUuid: this.sessionsByPlanUuid,
+      sessionsByPrUrl: this.sessionsByPrUrl,
+      setInitialized: (value) => {
+        this.initialized = value;
+      },
+      getSelectedSessionId: () => this.selectedSessionId,
+      setSelectedSessionId: (value) => {
+        this.selectedSessionId = value;
+      },
+    });
+  }
+
   disconnect(): void {
+    for (const source of this.transcriptSources.values()) source.close();
+    this.transcriptSources.clear();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

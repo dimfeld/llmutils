@@ -125,11 +125,12 @@ function syncSessionPrIndex(
 function setSession(
   state: SessionStoreMutableState,
   incoming: SessionData,
-  existing = state.sessions.get(incoming.connectionId)
+  existing = state.sessions.get(incoming.connectionId),
+  preserveMessages = true
 ): void {
   state.sessions.set(
     incoming.connectionId,
-    existing ? mergeSessionPreservingMessages(existing, incoming) : incoming
+    existing && preserveMessages ? mergeSessionPreservingMessages(existing, incoming) : incoming
   );
   syncSessionPlanIndex(state, existing, state.sessions.get(incoming.connectionId));
   syncSessionPrIndex(state, existing, state.sessions.get(incoming.connectionId));
@@ -159,11 +160,16 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
 
   switch (event.eventName) {
     case 'session:list': {
+      const previous = new Map<string, SessionData>();
+      for (const session of event.payload.sessions) {
+        const existing = state.sessions.get(session.connectionId);
+        if (existing) previous.set(session.connectionId, existing);
+      }
       state.sessions.clear();
       state.sessionsByPlanUuid.clear();
       state.sessionsByPrUrl.clear();
       for (const session of event.payload.sessions) {
-        setSession(state, session);
+        setSession(state, session, previous.get(session.connectionId));
       }
       break;
     }
@@ -185,7 +191,7 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
     }
     case 'session:message': {
       const session = state.sessions.get(event.payload.connectionId);
-      if (session) {
+      if (session && !session.messages.some((message) => message.id === event.payload.message.id)) {
         session.messages.push(event.payload.message);
         if (session.messages.length > MAX_CLIENT_MESSAGES) {
           session.messages = session.messages.slice(-MAX_CLIENT_MESSAGES);
@@ -193,6 +199,23 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
         // Re-set to trigger SvelteMap reactivity
         setSession(state, { ...session });
       }
+      break;
+    }
+    case 'session:transcript': {
+      const existing = state.sessions.get(event.payload.session.connectionId);
+      if (existing) {
+        setSession(
+          state,
+          { ...existing, messages: event.payload.session.messages },
+          existing,
+          false
+        );
+      }
+      break;
+    }
+    case 'session:activity': {
+      const session = state.sessions.get(event.payload.connectionId);
+      if (session) setSession(state, { ...session, lastMessageAt: event.payload.timestamp });
       break;
     }
     case 'session:plan-content': {

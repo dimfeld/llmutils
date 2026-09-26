@@ -749,16 +749,10 @@ describe('session integration', () => {
       },
     });
     expect(sessionMessageEvent).toMatchObject({
-      event: 'session:message',
+      event: 'session:activity',
       data: {
         connectionId: 'conn-sse',
-        message: {
-          body: {
-            type: 'structured',
-            message: { type: 'llm_response', text: 'Live update' },
-          },
-          rawType: 'llm_response',
-        },
+        timestamp: '2026-03-17T10:00:01.000Z',
       },
     });
 
@@ -834,15 +828,7 @@ describe('session integration', () => {
           connectionId: 'conn-replay',
           isReplaying: false,
           activePrompts: [],
-          messages: [
-            {
-              seq: 1,
-              body: {
-                type: 'structured',
-                message: { type: 'llm_response', text: 'Replayed message' },
-              },
-            },
-          ],
+          messages: [],
         },
       },
     });
@@ -861,16 +847,10 @@ describe('session integration', () => {
     });
 
     expect(await sseReader.readEvent()).toMatchObject({
-      event: 'session:message',
+      event: 'session:activity',
       data: {
         connectionId: 'conn-replay',
-        message: {
-          seq: 2,
-          body: {
-            type: 'structured',
-            message: { type: 'llm_response', text: 'Live message' },
-          },
-        },
+        timestamp: '2026-03-17T10:00:02.000Z',
       },
     });
 
