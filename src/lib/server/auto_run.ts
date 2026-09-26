@@ -28,7 +28,11 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-export function selectQueuedPlans(plans: AgentMultiPlan[], active: Set<string>): AgentMultiPlan[] {
+export function selectQueuedPlans(
+  plans: AgentMultiPlan[],
+  active: Set<string>,
+  activeSessionUuids: Set<string>
+): AgentMultiPlan[] {
   const byUuid = new Map(plans.map((plan) => [plan.uuid, plan]));
   return plans
     .filter((plan) => {
@@ -41,7 +45,7 @@ export function selectQueuedPlans(plans: AgentMultiPlan[], active: Set<string>):
         return false;
       }
       return [...plan.dependencies, ...(plan.basePlanUuid ? [plan.basePlanUuid] : [])].every(
-        (uuid) => isWorkCompleteStatus(byUuid.get(uuid)?.status)
+        (uuid) => isWorkCompleteStatus(byUuid.get(uuid)?.status) && !activeSessionUuids.has(uuid)
       );
     })
     .sort((a, b) => a.planId - b.planId);
@@ -49,19 +53,24 @@ export function selectQueuedPlans(plans: AgentMultiPlan[], active: Set<string>):
 
 export function selectPlansForAvailableSlots(
   plans: AgentMultiPlan[],
+  activeAgentSessionUuids: string[],
   activeSessionUuids: string[],
   launching: Set<string>,
   maxConcurrent: number
 ): AgentMultiPlan[] {
   const planUuids = new Set(plans.map((plan) => plan.uuid));
-  const active = new Set(activeSessionUuids);
-  const sessionCount = activeSessionUuids.filter((uuid) => planUuids.has(uuid)).length;
+  const active = new Set(activeAgentSessionUuids);
+  const sessionCount = activeAgentSessionUuids.filter((uuid) => planUuids.has(uuid)).length;
   const launchCount = [...launching].filter(
     (uuid) => planUuids.has(uuid) && !active.has(uuid)
   ).length;
   const slots = maxConcurrent - sessionCount - launchCount;
   if (slots <= 0) return [];
-  return selectQueuedPlans(plans, new Set([...active, ...launching])).slice(0, slots);
+  return selectQueuedPlans(
+    plans,
+    new Set([...active, ...launching]),
+    new Set(activeSessionUuids)
+  ).slice(0, slots);
 }
 
 export class AutoRunScheduler {
@@ -96,8 +105,12 @@ export class AutoRunScheduler {
         .prepare('SELECT project_id FROM project_setting WHERE setting = ?')
         .all(AUTO_RUN_SETTING_KEY) as Array<{ project_id: number }>;
       const sessions = listSessionInfoFiles().filter(
-        (session) => session.command === 'agent' && session.planUuid && isProcessAlive(session.pid)
+        (session) => session.planUuid && isProcessAlive(session.pid)
       );
+      const activeSessionUuids = sessions.map((session) => session.planUuid!);
+      const activeAgentSessionUuids = sessions
+        .filter((session) => session.command === 'agent')
+        .map((session) => session.planUuid!);
       for (const { project_id: projectId } of settings) {
         const setting = parseAutoRunSetting(
           getProjectSetting(this.db, projectId, AUTO_RUN_SETTING_KEY)
@@ -111,7 +124,8 @@ export class AutoRunScheduler {
         const plans = getAgentMultiPlansForProject(this.db, projectId);
         const candidates = selectPlansForAvailableSlots(
           plans,
-          sessions.map((session) => session.planUuid!),
+          activeAgentSessionUuids,
+          activeSessionUuids,
           this.launching,
           setting.maxConcurrent
         );

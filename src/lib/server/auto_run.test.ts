@@ -30,9 +30,25 @@ describe('automatic plan selection', () => {
       plan(8, { epic: true }),
     ];
 
-    expect(selectQueuedPlans(plans, new Set(['6'])).map((candidate) => candidate.planId)).toEqual([
-      2,
-    ]);
+    expect(
+      selectQueuedPlans(plans, new Set(['6']), new Set()).map((candidate) => candidate.planId)
+    ).toEqual([2]);
+  });
+
+  test('waits for dependency and base plan sessions to close', () => {
+    const plans = [
+      plan(1, { status: 'needs_review' }),
+      plan(2, { status: 'done' }),
+      plan(3, { dependencies: ['1', '2'] }),
+      plan(4, { basePlanUuid: '1' }),
+    ];
+
+    expect(
+      selectQueuedPlans(plans, new Set(), new Set(['1'])).map((candidate) => candidate.planId)
+    ).toEqual([]);
+    expect(
+      selectQueuedPlans(plans, new Set(), new Set()).map((candidate) => candidate.planId)
+    ).toEqual([3, 4]);
   });
 
   test('requires an explicit positive limit when enabled', () => {
@@ -48,11 +64,26 @@ describe('automatic plan selection', () => {
   test('counts live sessions and launches against the project limit', () => {
     const plans = [plan(1), plan(2), plan(3), plan(4)];
     expect(
-      selectPlansForAvailableSlots(plans, ['1'], new Set(['2']), 3).map((p) => p.planId)
+      selectPlansForAvailableSlots(plans, ['1'], ['1'], new Set(['2']), 3).map((p) => p.planId)
     ).toEqual([3]);
-    expect(selectPlansForAvailableSlots(plans, ['1', '1'], new Set(['2']), 3)).toEqual([]);
-    expect(selectPlansForAvailableSlots(plans, [], new Set(), 2).map((p) => p.planId)).toEqual([
+    expect(selectPlansForAvailableSlots(plans, ['1', '1'], ['1', '1'], new Set(['2']), 3)).toEqual(
+      []
+    );
+    expect(selectPlansForAvailableSlots(plans, [], [], new Set(), 2).map((p) => p.planId)).toEqual([
       1, 2,
     ]);
+  });
+
+  test('holds a dependent plan for any session command without using a runner slot', () => {
+    const plans = [plan(1, { status: 'done' }), plan(2, { dependencies: ['1'] }), plan(3)];
+
+    expect(
+      selectPlansForAvailableSlots(plans, [], ['1'], new Set(), 2).map(
+        (candidate) => candidate.planId
+      )
+    ).toEqual([3]);
+    expect(
+      selectPlansForAvailableSlots(plans, [], [], new Set(), 2).map((candidate) => candidate.planId)
+    ).toEqual([2, 3]);
   });
 });
