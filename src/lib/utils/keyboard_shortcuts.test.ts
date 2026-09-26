@@ -357,10 +357,10 @@ describe('handleGlobalShortcuts', () => {
     expect(event.preventDefault).not.toHaveBeenCalled();
   });
 
-  describe('integration with tab_navigation (regression for the 5->6 tab shift)', () => {
-    test('Ctrl+6 reaches the Plans tab end-to-end via resolveTabSlugForIndex', () => {
+  describe('integration with tab_navigation', () => {
+    test('Ctrl+3 reaches the Plans tab end-to-end via resolveTabSlugForIndex', () => {
       let resolvedSlug: string | undefined;
-      const event = makeKeyEvent('Digit6', { ctrlKey: true });
+      const event = makeKeyEvent('Digit3', { ctrlKey: true });
       handleGlobalShortcuts(event, {
         navigateTab(tabIndex) {
           resolvedSlug = resolveTabSlugForIndex('1', tabIndex);
@@ -371,9 +371,9 @@ describe('handleGlobalShortcuts', () => {
       expect(event.preventDefault).toHaveBeenCalledOnce();
     });
 
-    test('Ctrl+5 reaches the Inbox tab end-to-end via resolveTabSlugForIndex', () => {
+    test('Ctrl+6 reaches the Inbox tab end-to-end via resolveTabSlugForIndex', () => {
       let resolvedSlug: string | undefined;
-      const event = makeKeyEvent('Digit5', { ctrlKey: true });
+      const event = makeKeyEvent('Digit6', { ctrlKey: true });
       handleGlobalShortcuts(event, {
         navigateTab(tabIndex) {
           resolvedSlug = resolveTabSlugForIndex('1', tabIndex);

@@ -9,14 +9,14 @@ import {
 } from './tab_navigation.js';
 
 describe('tab_navigation', () => {
-  test('BASE_TABS has Inbox between Activity and Plans', () => {
+  test('BASE_TABS has Plans after Active Work', () => {
     expect(BASE_TABS.map((t) => t.slug)).toEqual([
       'sessions',
       'active',
+      'plans',
       'prs',
       'activity',
       'inbox',
-      'plans',
     ]);
   });
 
@@ -33,16 +33,16 @@ describe('tab_navigation', () => {
   });
 
   describe('resolveTabSlugForIndex', () => {
-    test('Ctrl+6 (last base tab) resolves to plans for a specific project', () => {
-      expect(resolveTabSlugForIndex('1', 6)).toBe('plans');
+    test('Ctrl+3 resolves to plans for a specific project', () => {
+      expect(resolveTabSlugForIndex('1', 3)).toBe('plans');
     });
 
-    test('Ctrl+6 resolves to plans for the all-projects context', () => {
-      expect(resolveTabSlugForIndex('all', 6)).toBe('plans');
+    test('Ctrl+3 resolves to plans for the all-projects context', () => {
+      expect(resolveTabSlugForIndex('all', 3)).toBe('plans');
     });
 
-    test('Ctrl+5 resolves to the Inbox tab', () => {
-      expect(resolveTabSlugForIndex('1', 5)).toBe('inbox');
+    test('Ctrl+6 resolves to the Inbox tab', () => {
+      expect(resolveTabSlugForIndex('1', 6)).toBe('inbox');
     });
 
     test('Ctrl+7 resolves to settings for a specific project', () => {
