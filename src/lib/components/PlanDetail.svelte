@@ -1,4 +1,5 @@
 <script lang="ts">
+  import AppWindow from '@lucide/svelte/icons/app-window';
   import Download from '@lucide/svelte/icons/download';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Upload from '@lucide/svelte/icons/upload';
