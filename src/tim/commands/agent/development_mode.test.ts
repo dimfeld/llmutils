@@ -21,7 +21,7 @@ describe('squash-rebase development mode', () => {
   test.each([false, true])('builds %s VCS instructions with a moving-main retry', (useJj) => {
     const executor = { execute: vi.fn() } as unknown as Executor;
     const prompt = buildSquashRebasePrompt(options(executor, useJj));
-    expect(prompt).toContain('Pull the latest `main` state from `origin` before rewriting');
+    expect(prompt).toContain('Fetch the latest `main` state from `origin` before rewriting');
     expect(prompt).toContain("Squash the plan's commits into one commit");
     expect(prompt).toContain('resolve each conflict');
     expect(prompt).toContain('Push the rebased commit directly to `origin/main` as a fast-forward');

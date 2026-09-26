@@ -1658,7 +1658,8 @@ describe('startFixPrThreads', () => {
     expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
     expect(spawnAutoreviewForPrProcessMock).toHaveBeenCalledWith(
       CANONICAL_PR_URL,
-      '/tmp/pr-primary-workspace'
+      '/tmp/pr-primary-workspace',
+      expect.objectContaining({ status: expect.objectContaining({ pr_url: CANONICAL_PR_URL }) })
     );
     expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
   });
@@ -1678,7 +1679,8 @@ describe('startFixPrThreads', () => {
     expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
     expect(spawnShellForPrProcessMock).toHaveBeenCalledWith(
       CANONICAL_PR_URL,
-      '/tmp/pr-primary-workspace'
+      '/tmp/pr-primary-workspace',
+      expect.objectContaining({ status: expect.objectContaining({ pr_url: CANONICAL_PR_URL }) })
     );
     expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
   });
@@ -2110,7 +2112,11 @@ describe('ci-fix launch commands', () => {
     const result = await invokeCommand(startPrCiFix, { projectId, prNumber: 42 });
 
     expect(result).toEqual({ status: 'started', prUrl: PR_URL });
-    expect(spawnCiFixForPrProcessMock).toHaveBeenCalledWith(PR_URL, '/tmp/ci-fix-pr-workspace');
+    expect(spawnCiFixForPrProcessMock).toHaveBeenCalledWith(
+      PR_URL,
+      '/tmp/ci-fix-pr-workspace',
+      expect.objectContaining({ status: expect.objectContaining({ pr_url: PR_URL }) })
+    );
     expect(isPrLaunching(PR_URL)).toBe(true);
   });
 
@@ -2146,7 +2152,8 @@ describe('ci-fix launch commands', () => {
     expect(result).toEqual({ status: 'started', prUrl: PR_URL });
     expect(spawnCiFixForPrProcessMock).toHaveBeenCalledWith(
       PR_URL,
-      '/tmp/ci-fix-effective-rollup-workspace'
+      '/tmp/ci-fix-effective-rollup-workspace',
+      expect.objectContaining({ status: expect.objectContaining({ pr_url: PR_URL }) })
     );
   });
 

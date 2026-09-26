@@ -2194,7 +2194,7 @@ describe('timAgent - Batch Tasks Mode', () => {
       expect.objectContaining({ executionMode: 'bare', planId: '200' })
     );
     expect(execute.mock.calls[1]?.[0]).toContain(
-      'Pull the latest `main` state from `origin` before rewriting'
+      'Fetch the latest `main` state from `origin` before rewriting'
     );
   });
 

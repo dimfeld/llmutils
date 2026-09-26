@@ -41,7 +41,6 @@ describe('session remote actions', () => {
   });
 
   afterEach(() => {
-    mockOpenTerminalInDirectory.mockReset();
     db.close(false);
   });
 

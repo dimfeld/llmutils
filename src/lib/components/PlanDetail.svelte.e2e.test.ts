@@ -48,6 +48,7 @@ vi.mock('$lib/remote/sync_status.remote.js', () => ({
 
 vi.mock('$lib/remote/plan_metadata.remote.js', () => ({
   updatePlanMetadata: vi.fn(),
+  queuePlanForAutoRun: vi.fn(),
 }));
 
 vi.mock('./PrStatusSection.svelte', () => ({

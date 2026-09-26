@@ -66,7 +66,7 @@ describe('tim init command', () => {
     await fs.rm(tempDir, { recursive: true, force: true });
 
     // Clear module mocks
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   test('creates configuration file in new repository with --yes flag', async () => {
