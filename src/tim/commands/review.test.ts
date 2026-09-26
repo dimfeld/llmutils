@@ -4879,66 +4879,7 @@ describe('Security fixes', () => {
     });
   });
 
-  describe('Large diff protection', () => {
-    test('has correct size limit constant', async () => {
-      // Test that the MAX_DIFF_SIZE constant is properly set to 10MB
-      const reviewModule = await import('./review.js');
-      // We can't directly access the constant, but we can test the logic indirectly
-
-      // Create a string that exceeds 10MB (10 * 1024 * 1024 bytes)
-      const largeDiff = 'a'.repeat(11 * 1024 * 1024); // 11MB
-      const largeDiffSizeInBytes = Buffer.byteLength(largeDiff, 'utf8');
-
-      expect(largeDiffSizeInBytes).toBeGreaterThan(10 * 1024 * 1024);
-
-      // The protection logic uses Buffer.byteLength to check size, which is the right approach
-      // for UTF-8 string length checking
-    });
-
-    test('diff size calculation works correctly', () => {
-      // Test that byte length calculation works correctly for different string types
-      const smallString = 'hello';
-      const mediumString = 'a'.repeat(1024); // 1KB
-      const unicodeString = '🔒'.repeat(100); // Unicode characters take more bytes
-
-      expect(Buffer.byteLength(smallString, 'utf8')).toBe(5);
-      expect(Buffer.byteLength(mediumString, 'utf8')).toBe(1024);
-      expect(Buffer.byteLength(unicodeString, 'utf8')).toBeGreaterThan(100); // Unicode takes more bytes
-    });
-  });
-
   describe('Error handling improvements', () => {
-    test('error message format includes exit codes and stderr', () => {
-      // Test that our error message format includes the expected information
-      const exitCode = 128;
-      const stderr = 'fatal: not a git repository';
-      const expectedMessage = `git diff --name-only command failed (exit code ${exitCode}): ${stderr}`;
-
-      expect(expectedMessage).toContain('git diff --name-only command failed');
-      expect(expectedMessage).toContain('exit code 128');
-      expect(expectedMessage).toContain('fatal: not a git repository');
-    });
-
-    test('jj error message format includes exit codes and stderr', () => {
-      // Test that our jj error message format includes the expected information
-      const exitCode = 1;
-      const stderr = 'Error: No jj repo in current directory';
-      const expectedMessage = `jj diff --summary command failed (exit code ${exitCode}): ${stderr}`;
-
-      expect(expectedMessage).toContain('jj diff --summary command failed');
-      expect(expectedMessage).toContain('exit code 1');
-      expect(expectedMessage).toContain('Error: No jj repo in current directory');
-    });
-
-    test('error context wrapping format', () => {
-      // Test that error wrapping preserves the original error message
-      const originalError = 'Unexpected error';
-      const wrappedMessage = `Failed to generate git diff: ${originalError}`;
-
-      expect(wrappedMessage).toContain('Failed to generate git diff');
-      expect(wrappedMessage).toContain('Unexpected error');
-    });
-
     test('handles executor errors properly in review command', async () => {
       await writePlanToDb(
         {

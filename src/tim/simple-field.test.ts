@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -192,46 +192,6 @@ describe('simple field logic in commands', () => {
     }
   });
 
-  test('add command creates plan object with simple field from options', () => {
-    // This tests the logic without file I/O
-    const options = { simple: true };
-    const simple = options.simple || false;
-    expect(simple).toBe(true);
-  });
-
-  test('add command defaults simple to false when not provided', () => {
-    const options = {};
-    const simple = (options as any).simple || false;
-    expect(simple).toBe(false);
-  });
-
-  test('generate command respects plan simple field when no CLI flag provided', () => {
-    // Test the logic from generate.ts
-    const parsedPlan = { simple: true };
-    const options: any = {};
-
-    const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && parsedPlan.simple) {
-      options.simple = true;
-    }
-
-    expect(options.simple).toBe(true);
-  });
-
-  test('generate command respects CLI flag over plan field', () => {
-    // Test precedence: explicit CLI flag wins
-    const parsedPlan = { simple: true };
-    const options: any = { simple: false };
-
-    const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && parsedPlan.simple) {
-      options.simple = true;
-    }
-
-    // Should stay false because CLI flag takes precedence
-    expect(options.simple).toBe(false);
-  });
-
   test('MCP loadResearchPrompt redirects to loadGeneratePrompt for simple plans', async () => {
     // Create a temporary plan file with simple: true
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-test-'));
@@ -336,88 +296,5 @@ describe('simple field logic in commands', () => {
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
-  });
-
-  test('generate command handles explicit --no-simple overriding plan.simple: true', () => {
-    // Test that explicit false flag overrides plan field
-    const parsedPlan = { simple: true };
-    const options: any = { simple: false };
-
-    const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && parsedPlan.simple) {
-      options.simple = true;
-    }
-
-    // Should remain false because CLI has explicit false
-    expect(options.simple).toBe(false);
-  });
-
-  test('generate command ignores plan.simple when CLI has explicit true', () => {
-    // Test that explicit true flag is preserved regardless of plan field
-    const parsedPlan = { simple: false };
-    const options: any = { simple: true };
-
-    const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && parsedPlan.simple) {
-      options.simple = true;
-    }
-
-    // Should remain true because CLI has explicit true
-    expect(options.simple).toBe(true);
-  });
-
-  test('agent command respects plan.simple field when no CLI flag provided', () => {
-    // Test the logic from agent.ts
-    const planData = { simple: true };
-    const options: any = {};
-
-    const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && planData.simple) {
-      options.simple = true;
-    }
-
-    expect(options.simple).toBe(true);
-  });
-
-  test('agent command respects CLI flag over plan field', () => {
-    // Test precedence: explicit CLI flag wins
-    const planData = { simple: true };
-    const options: any = { simple: false };
-
-    const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && planData.simple) {
-      options.simple = true;
-    }
-
-    // Should stay false because CLI flag takes precedence
-    expect(options.simple).toBe(false);
-  });
-
-  test('agent command handles explicit --no-simple overriding plan.simple: true', () => {
-    // Test that explicit false flag overrides plan field
-    const planData = { simple: true };
-    const options: any = { simple: false };
-
-    const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && planData.simple) {
-      options.simple = true;
-    }
-
-    // Should remain false because CLI has explicit false
-    expect(options.simple).toBe(false);
-  });
-
-  test('agent command ignores plan.simple when CLI has explicit true', () => {
-    // Test that explicit true flag is preserved regardless of plan field
-    const planData = { simple: false };
-    const options: any = { simple: true };
-
-    const hasExplicitSimpleFlag = 'simple' in options && options.simple !== undefined;
-    if (!hasExplicitSimpleFlag && planData.simple) {
-      options.simple = true;
-    }
-
-    // Should remain true because CLI has explicit true
-    expect(options.simple).toBe(true);
   });
 });

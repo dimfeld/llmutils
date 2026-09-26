@@ -315,20 +315,6 @@ describe('--next-ready CLI flag integration tests', () => {
   });
 
   describe('CLI argument parsing', () => {
-    test('--next-ready flag should be parsed correctly in generate command', async () => {
-      // This test verifies that the CLI parser correctly extracts the --next-ready value
-      // We'll simulate how Commander.js would parse the options
-
-      const mockOptions = {
-        nextReady: 123,
-        extract: false,
-        parent: { opts: () => ({}) },
-      };
-
-      // Verify the option is accessible
-      expect(mockOptions.nextReady).toBe(123);
-    });
-
     test('--next-ready should reject file-path values before handlers run', async () => {
       expect(parsePlanIdFromCliArg('42')).toBe(42);
       expect(() => parsePlanIdFromCliArg('my-plan.yml')).toThrow('Expected a numeric plan ID');

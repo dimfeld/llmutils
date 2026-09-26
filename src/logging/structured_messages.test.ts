@@ -1,10 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-  structuredMessageTypeList,
-  type ReviewVerdict,
-  type StructuredMessage,
-  type UserTerminalInputMessage,
-} from './structured_messages.ts';
+import { describe, expect, it } from 'vitest';
+import { structuredMessageTypeList, type StructuredMessage } from './structured_messages.ts';
 
 const summaryFixture = {
   planId: '168',
@@ -94,63 +89,11 @@ describe('structured_messages', () => {
     );
   });
 
-  it('round-trips as JSON', () => {
-    const message: StructuredMessage = {
-      type: 'command_result',
-      timestamp: '2026-02-08T00:00:00.000Z',
-      command: 'bun run test',
-      exitCode: 0,
-      stdout: 'ok',
-    };
-
-    const parsed = JSON.parse(JSON.stringify(message)) as StructuredMessage;
-    expect(parsed).toEqual(message);
-  });
-
-  it('round-trips nested execution summary payloads as JSON', () => {
-    const message: StructuredMessage = {
-      type: 'execution_summary',
-      timestamp: '2026-02-08T00:00:00.000Z',
-      summary: summaryFixture,
-    };
-
-    const parsed = JSON.parse(JSON.stringify(message)) as StructuredMessage;
-    expect(parsed).toEqual(message);
-  });
-
   it('includes user_terminal_input in the public message type list', () => {
     expect(structuredMessageTypeList).toContain('user_terminal_input');
   });
 
   it('does not include legacy review_verdict in the public message type list', () => {
     expect(structuredMessageTypeList).not.toContain('review_verdict');
-  });
-
-  it('exposes ReviewVerdict and requires verdict on review_result messages', () => {
-    const verdict: ReviewVerdict = 'ACCEPTABLE';
-    const message: Extract<StructuredMessage, { type: 'review_result' }> = {
-      type: 'review_result',
-      timestamp: '2026-02-08T00:00:00.000Z',
-      verdict,
-      issues: [],
-      recommendations: [],
-      actionItems: [],
-    };
-
-    expect(message.verdict).toBe('ACCEPTABLE');
-  });
-
-  it('supports user_terminal_input message shape', () => {
-    const message: UserTerminalInputMessage = {
-      type: 'user_terminal_input',
-      timestamp: '2026-02-08T00:00:00.000Z',
-      content: 'Also fix the type error',
-      source: 'gui',
-    };
-
-    const asStructured: StructuredMessage = message;
-    expect(asStructured.type).toBe('user_terminal_input');
-    expect(asStructured.content).toBe('Also fix the type error');
-    expect(asStructured.source).toBe('gui');
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { inspect } from 'node:util';
 import {
   TIM_OUTPUT_SOCKET,
@@ -6,10 +6,7 @@ import {
   serializeArg,
   serializeArgs,
   type TunnelMessage,
-  type TunnelArgsMessage,
-  type TunnelDataMessage,
   type StructuredTunnelMessage,
-  type ServerTunnelMessage,
 } from './tunnel_protocol.ts';
 
 describe('tunnel_protocol', () => {
@@ -80,70 +77,6 @@ describe('tunnel_protocol', () => {
   });
 
   describe('TunnelMessage serialization/deserialization', () => {
-    it('should roundtrip an args message through JSON', () => {
-      const message: TunnelArgsMessage = {
-        type: 'log',
-        args: ['hello', 'world'],
-        agentName: 'worker-a',
-      };
-      const json = JSON.stringify(message);
-      const parsed = JSON.parse(json) as TunnelMessage;
-      expect(parsed).toEqual(message);
-    });
-
-    it('should roundtrip a data message through JSON', () => {
-      const message: TunnelDataMessage = {
-        type: 'stdout',
-        data: 'output data\n',
-        agentName: 'worker-a',
-      };
-      const json = JSON.stringify(message);
-      const parsed = JSON.parse(json) as TunnelMessage;
-      expect(parsed).toEqual(message);
-    });
-
-    it('should roundtrip all args message types', () => {
-      const types = ['log', 'error', 'warn', 'debug'] as const;
-      for (const type of types) {
-        const message: TunnelArgsMessage = { type, args: ['test', 'args'] };
-        const parsed = JSON.parse(JSON.stringify(message)) as TunnelMessage;
-        expect(parsed).toEqual(message);
-      }
-    });
-
-    it('should roundtrip all data message types', () => {
-      const types = ['stdout', 'stderr'] as const;
-      for (const type of types) {
-        const message: TunnelDataMessage = { type, data: 'some data' };
-        const parsed = JSON.parse(JSON.stringify(message)) as TunnelMessage;
-        expect(parsed).toEqual(message);
-      }
-    });
-
-    it('should handle args containing special characters', () => {
-      const message: TunnelArgsMessage = {
-        type: 'log',
-        args: ['line1\nline2', 'tab\there', 'quote"s', 'backslash\\'],
-      };
-      const json = JSON.stringify(message);
-      const parsed = JSON.parse(json) as TunnelMessage;
-      expect(parsed).toEqual(message);
-    });
-
-    it('should handle empty args array', () => {
-      const message: TunnelArgsMessage = { type: 'log', args: [] };
-      const json = JSON.stringify(message);
-      const parsed = JSON.parse(json) as TunnelMessage;
-      expect(parsed).toEqual(message);
-    });
-
-    it('should handle empty data string', () => {
-      const message: TunnelDataMessage = { type: 'stdout', data: '' };
-      const json = JSON.stringify(message);
-      const parsed = JSON.parse(json) as TunnelMessage;
-      expect(parsed).toEqual(message);
-    });
-
     it('should roundtrip a structured message through JSON', () => {
       const message: StructuredTunnelMessage = {
         type: 'structured',
@@ -163,15 +96,6 @@ describe('tunnel_protocol', () => {
     it('isStructuredTunnelMessage returns false for non-structured messages', () => {
       const logMessage: TunnelMessage = { type: 'log', args: ['hello'] };
       expect(isStructuredTunnelMessage(logMessage)).toBe(false);
-    });
-
-    it('should roundtrip server user_input message through JSON', () => {
-      const message: ServerTunnelMessage = {
-        type: 'user_input',
-        content: 'follow up',
-      };
-      const parsed = JSON.parse(JSON.stringify(message)) as ServerTunnelMessage;
-      expect(parsed).toEqual(message);
     });
   });
 });
