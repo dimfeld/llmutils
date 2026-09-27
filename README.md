@@ -76,6 +76,8 @@ Set `generate.queueWhenDone: true` in the project config to queue generated plan
 
 ### Project chats
 
+Session windows hide lifecycle command output and tool calls by default. Use the wrench button to open the message visibility pop-up and change either option. Tim agent tool calls and results always stay visible.
+
 Open a project's **Sessions** page and select **New project chat** to work without a plan. The chat starts in an auto workspace on a new `chat/<id>` branch based on the remote trunk branch. The branch is pushed to `origin` when the chat ends if it contains changes.
 
 After the chat ends, select **Finish work** in the session. This starts a Codex Luna session on the chat branch. The project `developmentWorkflow` setting controls its task: `pr-based` creates a pull request, while `trunk-based` and `squash-rebase` squash the chat commits, rebase the new commit, and push it to trunk. The `squash-rebase` workflow also removes the chat branch after the push. The agent resolves rebase conflicts and runs relevant checks. Trunk pushes use fast-forward updates.

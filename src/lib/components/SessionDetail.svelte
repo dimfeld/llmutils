@@ -16,6 +16,7 @@
   import { useUIState } from '$lib/stores/ui_state.svelte.js';
   import SessionMessage from './SessionMessage.svelte';
   import { formatMessageTimestamp } from '$lib/utils/message_formatting.js';
+  import { filterSessionMessages } from '$lib/utils/session_message_visibility.js';
   import { mergeConsecutiveOutputMessages } from '$lib/utils/merge_output_messages.js';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
@@ -236,13 +237,12 @@
     session.messages.reduce((count, message) => count + (message.origin === 'lifecycle' ? 1 : 0), 0)
   );
   let hasLifecycleOutput = $derived(lifecycleMessageCount > 0);
-  // Lifecycle command output is noisy, so hide it by default. The toolbar toggle
-  // re-includes it in the rendered message list.
+  let showToolCalls = $derived(
+    uiState.getSessionState(session.connectionId).showToolCalls ?? false
+  );
   let visibleMessages = $derived(
     mergeConsecutiveOutputMessages(
-      showLifecycleOutput
-        ? session.messages
-        : session.messages.filter((message) => message.origin !== 'lifecycle')
+      filterSessionMessages(session.messages, showLifecycleOutput, showToolCalls)
     )
   );
 
@@ -601,39 +601,35 @@
           </button>
         {/if}
 
-        {#if hasLifecycleOutput}
-          <Tooltip.Root>
-            <Tooltip.Trigger>
-              {#snippet child({ props })}
-                {@const lifecycleLabel = showLifecycleOutput
-                  ? 'Hide lifecycle command output'
-                  : `Show lifecycle command output (${lifecycleMessageCount})`}
-                {@const buttonProps = mergeProps(
-                  {
-                    type: 'button',
-                    class: `rounded p-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 ${
-                      showLifecycleOutput
-                        ? 'text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`,
-                    onclick: handleToggleLifecycleOutput,
-                    'aria-label': lifecycleLabel,
-                    'aria-pressed': showLifecycleOutput,
-                  },
-                  props
-                ) as HTMLButtonAttributes}
-                <button {...buttonProps}>
-                  <Wrench class="size-4" />
-                </button>
-              {/snippet}
-            </Tooltip.Trigger>
-            <Tooltip.Content sideOffset={8}>
-              {showLifecycleOutput
-                ? 'Hide lifecycle command output'
-                : `Show lifecycle command output (${lifecycleMessageCount})`}
-            </Tooltip.Content>
-          </Tooltip.Root>
-        {/if}
+        <Popover>
+          <PopoverTrigger
+            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            aria-label="Message visibility"
+            title="Message visibility"
+          >
+            <Wrench class="size-4" />
+          </PopoverTrigger>
+          <PopoverContent align="end" class="w-64 space-y-3 text-sm">
+            <label class="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!showLifecycleOutput}
+                onchange={handleToggleLifecycleOutput}
+              />
+              Hide lifecycle commands
+            </label>
+            <label class="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={!showToolCalls}
+                onchange={() =>
+                  uiState.setSessionState(session.connectionId, { showToolCalls: !showToolCalls })}
+              />
+              Hide tool calls
+            </label>
+            <p class="text-xs text-muted-foreground">Tim agent tool calls stay visible.</p>
+          </PopoverContent>
+        </Popover>
         {#if showPlanPane && !floating}
           <Tooltip.Root>
             <Tooltip.Trigger>

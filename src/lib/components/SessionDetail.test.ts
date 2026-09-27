@@ -310,7 +310,7 @@ describe('SessionDetail', () => {
     };
   }
 
-  test('hides lifecycle command output by default and shows a toggle', async () => {
+  test('hides lifecycle command output by default and shows visibility options', async () => {
     const session = createSession({
       messages: [
         plainMessage(1, 'agent-visible-output'),
@@ -321,7 +321,7 @@ describe('SessionDetail', () => {
 
     expect(body).toContain('agent-visible-output');
     expect(body).not.toContain('lifecycle-hidden-output');
-    expect(body).toContain('Show lifecycle command output');
+    expect(body).toContain('Message visibility');
   });
 
   test('renders lifecycle command output when the toggle is enabled', async () => {
@@ -340,14 +340,42 @@ describe('SessionDetail', () => {
 
     expect(body).toContain('agent-visible-output');
     expect(body).toContain('lifecycle-shown-output');
-    expect(body).toContain('Hide lifecycle command output');
+    expect(body).toContain('Message visibility');
   });
 
-  test('does not show the lifecycle toggle when there is no lifecycle output', async () => {
+  test('shows visibility options when there is no lifecycle output', async () => {
     const session = createSession({ messages: [plainMessage(1, 'agent-visible-output')] });
     const { body } = await render(SessionDetail, { props: { session } });
 
-    expect(body).not.toContain('lifecycle command output');
+    expect(body).toContain('Message visibility');
+  });
+
+  test('hides tool calls by default and keeps Tim agent calls visible', async () => {
+    const session = createSession({
+      messages: ['Bash', 'mcp__tim__SendTimAgentMessage'].map((toolName, seq) => ({
+        id: `tool-${seq}`,
+        seq,
+        timestamp: '2026-03-25T10:00:00.000Z',
+        category: 'structured' as const,
+        bodyType: 'structured' as const,
+        body: {
+          type: 'structured' as const,
+          message: { type: 'llm_tool_use' as const, toolName, inputSummary: 'tool details' },
+        },
+        rawType: 'llm_tool_use',
+      })),
+    });
+    const hidden = await render(SessionDetail, { props: { session } });
+    expect(hidden.body).not.toContain('Bash');
+    expect(hidden.body).toContain('Send agent message');
+    uiState.getSessionState.mockReturnValue({
+      planPaneCollapsed: false,
+      messageDraft: '',
+      showToolCalls: true,
+    });
+    const shown = await render(SessionDetail, { props: { session } });
+    expect(shown.body).toContain('Bash');
+    expect(shown.body).toContain('Send agent message');
   });
 
   test('renders a Run Agent button for offline ready plans with incomplete tasks', async () => {

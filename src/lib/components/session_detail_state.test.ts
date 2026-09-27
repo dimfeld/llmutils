@@ -15,6 +15,15 @@ import {
 import { UIStateStore } from '$lib/stores/ui_state.svelte.js';
 
 describe('session_detail_state', () => {
+  test('hides tool calls by default and stores visibility per session', () => {
+    const uiState = new UIStateStore();
+    expect(uiState.getSessionState('conn-1').showToolCalls).toBe(false);
+    uiState.setSessionState('conn-1', { showToolCalls: true });
+    expect(uiState.getSessionState('conn-1').showToolCalls).toBe(true);
+    expect(uiState.getSessionState('conn-2').showToolCalls).toBe(false);
+    expect(uiState.getSessionState('conn-1').showLifecycleOutput).toBe(false);
+  });
+
   test('reads plan pane collapse state for a session', () => {
     const uiState = {
       getSessionState: vi.fn(() => ({

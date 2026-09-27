@@ -11,6 +11,7 @@ describe('UIStateStore', () => {
         planPaneCollapsed: false,
         messageDraft: '',
         showLifecycleOutput: false,
+        showToolCalls: false,
         processListExpanded: false,
         narrowScreenPane: 'transcript',
       });
@@ -23,6 +24,7 @@ describe('UIStateStore', () => {
         planPaneCollapsed: true,
         messageDraft: '',
         showLifecycleOutput: false,
+        showToolCalls: false,
         processListExpanded: false,
         narrowScreenPane: 'transcript',
       });
@@ -36,6 +38,7 @@ describe('UIStateStore', () => {
         planPaneCollapsed: true,
         messageDraft: 'hello',
         showLifecycleOutput: false,
+        showToolCalls: false,
         processListExpanded: false,
         narrowScreenPane: 'transcript',
       });
@@ -49,6 +52,7 @@ describe('UIStateStore', () => {
         planPaneCollapsed: false,
         messageDraft: '',
         showLifecycleOutput: false,
+        showToolCalls: false,
         processListExpanded: false,
         narrowScreenPane: 'transcript',
       });
@@ -68,6 +72,7 @@ describe('UIStateStore', () => {
         planPaneCollapsed: true,
         messageDraft: 'first',
         showLifecycleOutput: false,
+        showToolCalls: false,
         processListExpanded: false,
         narrowScreenPane: 'transcript',
       });
@@ -75,6 +80,7 @@ describe('UIStateStore', () => {
         planPaneCollapsed: false,
         messageDraft: 'second',
         showLifecycleOutput: false,
+        showToolCalls: false,
         processListExpanded: false,
         narrowScreenPane: 'transcript',
       });
