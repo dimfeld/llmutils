@@ -553,7 +553,12 @@ export async function setupWorkspace(
             createBranch: shouldCreateBranch,
           });
 
-          if (!prepareResult.success && canRetryWithoutBaseBranch) {
+          const baseBranchIsMissing =
+            prepareResult.error?.includes('Failed to checkout base branch') &&
+            /No such bookmark|Revision .* doesn't exist|unknown revision|pathspec .* did not match/i.test(
+              prepareResult.error
+            );
+          if (!prepareResult.success && canRetryWithoutBaseBranch && baseBranchIsMissing) {
             baseBranch = undefined;
             effectiveCheckoutBranch = undefined;
             prepareResult = await prepareExistingWorkspace(workspace.path, {
