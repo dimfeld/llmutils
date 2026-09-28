@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { DisplayMessage } from '$lib/types/session.js';
+import type { DisplayMessage, StructuredMessagePayload } from '$lib/types/session.js';
 import { filterSessionMessages } from './session_message_visibility.js';
 
 function toolMessage(toolName: string, type: 'llm_tool_use' | 'llm_tool_result'): DisplayMessage {
@@ -11,6 +11,18 @@ function toolMessage(toolName: string, type: 'llm_tool_use' | 'llm_tool_result')
     bodyType: 'structured',
     body: { type: 'structured', message: { type, toolName } },
     rawType: type,
+  };
+}
+
+function structuredMessage(message: StructuredMessagePayload): DisplayMessage {
+  return {
+    id: message.type,
+    seq: 1,
+    timestamp: '2026-03-25T10:00:00.000Z',
+    category: 'structured',
+    bodyType: 'structured',
+    body: { type: 'structured', message },
+    rawType: message.type,
   };
 }
 
@@ -34,6 +46,25 @@ describe('filterSessionMessages', () => {
     expect(filterSessionMessages(messages, true, false)).toEqual([output, lifecycle]);
     expect(filterSessionMessages(messages, false, true)).toEqual([output, call, result]);
     expect(filterSessionMessages(messages, true, true)).toEqual(messages);
+  });
+
+  test('hides specially formatted command and file tool messages', () => {
+    const messages = [
+      structuredMessage({ type: 'command_exec', command: 'pwd' }),
+      structuredMessage({ type: 'command_result', command: 'pwd', exitCode: 0 }),
+      structuredMessage({ type: 'file_write', path: 'a.ts', lineCount: 1 }),
+      structuredMessage({ type: 'file_edit', path: 'a.ts', diff: '+change' }),
+      structuredMessage({
+        type: 'file_change_summary',
+        changes: [{ path: 'a.ts', kind: 'updated' }],
+      }),
+      toolMessage('Read', 'llm_tool_use'),
+      toolMessage('Read', 'llm_tool_result'),
+      output,
+    ];
+
+    expect(filterSessionMessages(messages, false, false)).toEqual([output]);
+    expect(filterSessionMessages(messages, false, true)).toEqual(messages);
   });
 
   for (const name of [
