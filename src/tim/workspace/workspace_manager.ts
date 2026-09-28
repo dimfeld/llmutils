@@ -1320,7 +1320,15 @@ export async function createWorkspace(
             };
           } else {
             const setResult = await spawnAndLogOutput(
-              ['jj', 'bookmark', 'set', branchName, '-r', `${branchName}@origin`],
+              [
+                'jj',
+                'bookmark',
+                'set',
+                '--allow-backwards',
+                branchName,
+                '-r',
+                `${branchName}@origin`,
+              ],
               { cwd: targetClonePath, quiet: true }
             );
             if (setResult.exitCode !== 0) {
@@ -1874,7 +1882,7 @@ async function checkoutAndUpdateBaseBranch(
         // when the local bookmark has diverged (e.g. after fetch advanced the
         // remote while the local copy was stale).
         const setResult = await spawnAndLogOutput(
-          ['jj', 'bookmark', 'set', baseBranch, '-r', `${baseBranch}@origin`],
+          ['jj', 'bookmark', 'set', '--allow-backwards', baseBranch, '-r', `${baseBranch}@origin`],
           { cwd: workspacePath, quiet: true }
         );
         if (setResult.exitCode !== 0) {
@@ -2078,7 +2086,15 @@ export async function prepareExistingWorkspace(
         };
       }
       const setResult = await spawnAndLogOutput(
-        ['jj', 'bookmark', 'set', actualBranchName, '-r', `${actualBranchName}@origin`],
+        [
+          'jj',
+          'bookmark',
+          'set',
+          '--allow-backwards',
+          actualBranchName,
+          '-r',
+          `${actualBranchName}@origin`,
+        ],
         { cwd: workspacePath, quiet: true }
       );
       if (setResult.exitCode !== 0) {

@@ -142,9 +142,7 @@ export async function runPostExecutionWorkspaceSync(
     ? compareRepositoryStates(context.preExecutionState, postExecutionState).hasDifferences
     : true;
   const hasContentChanges =
-    repositoryStateChanged &&
-    context.preExecutionState?.commitHash &&
-    postExecutionState.commitHash
+    repositoryStateChanged && context.preExecutionState?.commitHash && postExecutionState.commitHash
       ? await hasNonEmptyCommitsSince(
           context.executionWorkspacePath,
           context.preExecutionState.commitHash,
