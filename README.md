@@ -479,7 +479,7 @@ For the regular `tim review` command, configure its structural pass with `review
 ```yaml
 reviewGuide:
   guideModel:
-    codex: gpt-6-sol:high
+    codex: gpt-6.1-sol:high
   issuesModel:
     codex: gpt-6-terra:medium
 ```
@@ -1111,7 +1111,7 @@ Set `minChangedLines` to enable the phase. Tim measures additions plus deletions
 prStacking:
   minChangedLines: 500
   executor: codex-cli # optional; falls back to defaultExecutor
-  model: gpt-6-sol # optional; falls back to models.execution
+  model: gpt-6.1-sol # optional; falls back to models.execution
 ```
 
 The executor can decide that the change has no useful vertical split. In that case, it must leave the history and PR unchanged. When it creates a stack, each PR body contains a marked Stack section that lists the PRs in merge order and explains the scope of each slice. Tim associates every PR in the stack with the original plan without changing the plan file. New lower PRs are drafts. The original PR keeps its existing draft or ready state. Lower-slice branch names preserve a leading plan number from the original branch but do not repeat external issue-tracker IDs, such as a trailing Linear issue tag, and lower-slice PR descriptions use non-closing issue references such as `Related to ENG-123`. A stacking failure produces a warning and does not change the successful agent result.

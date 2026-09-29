@@ -632,7 +632,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
       paths: { tasks: tasksDir },
       models: {},
       executors: {},
-      subagents: { implementer: { model: { codex: 'gpt-6-sol:high' } } },
+      subagents: { implementer: { model: { codex: 'gpt-6.1-sol:high' } } },
       agents: {},
     };
 
@@ -640,7 +640,7 @@ describe('subagent command - prompt construction and executor delegation', () =>
 
     expect(capturedCodexOptions).toEqual(
       expect.objectContaining({
-        model: 'gpt-6-sol',
+        model: 'gpt-6.1-sol',
         reasoningLevel: 'high',
       })
     );
