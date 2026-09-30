@@ -280,6 +280,23 @@ async function promptForConfig(gitRoot: string): Promise<TimConfigInput> {
   });
   config.generate = { queueWhenDone };
 
+  config.planAutocompleteStatus = await select({
+    message: 'What status should parent plans use when all child plans are complete?',
+    choices: [
+      {
+        name: 'needs_review',
+        value: 'needs_review',
+        description: 'Mark the parent as complete and ready for review',
+      },
+      {
+        name: 'done',
+        value: 'done',
+        description: 'Mark the parent as done',
+      },
+    ],
+    default: 'needs_review',
+  });
+
   config.quality = await select({
     message: 'What code quality level should agents use?',
     choices: [
