@@ -105,7 +105,7 @@ function config(minChangedLines = 400): TimConfig {
     postApplyCommands: [],
     prCreation: { draft: true },
     assignments: { staleTimeout: 7 },
-    prStacking: { minChangedLines, model: 'stack-model' },
+    prStacking: { autoStack: true, minChangedLines, model: 'stack-model' },
   };
 }
 
@@ -143,13 +143,29 @@ describe('runPrStacking', () => {
       planFilePath: '/repo/.tim/plans/12.yml',
       mainPrUrl: 'https://github.com/acme/repo/pull/20',
       baseDir: '/repo',
-      config: { ...config(), prStacking: { executor: 'codex-cli' } },
+      config: { ...config(), prStacking: { autoStack: true, executor: 'codex-cli' } },
     });
 
     expect(result).toEqual({ ran: false, changedLines: 0, reason: 'not-configured' });
     expect(resolveEffectivePrBaseSpy).not.toHaveBeenCalled();
     expect(executeSpy).not.toHaveBeenCalled();
   });
+
+  test.each([undefined, false])(
+    'skips automatic stacking when autoStack is %s',
+    async (autoStack: boolean | undefined): Promise<void> => {
+      const result = await runPrStacking({
+        plan,
+        planFilePath: '/repo/.tim/plans/12.yml',
+        mainPrUrl: 'https://github.com/acme/repo/pull/20',
+        baseDir: '/repo',
+        config: { ...config(), prStacking: { autoStack, minChangedLines: 400 } },
+      });
+      expect(result).toEqual({ ran: false, changedLines: 0, reason: 'not-configured' });
+      expect(resolveEffectivePrBaseSpy).not.toHaveBeenCalled();
+      expect(executeSpy).not.toHaveBeenCalled();
+    }
+  );
 
   test('skips when the measured diff is below the configured threshold', async () => {
     countChangedLinesSpy.mockResolvedValue(399);
@@ -165,6 +181,26 @@ describe('runPrStacking', () => {
     expect(result).toEqual({ ran: false, changedLines: 399, reason: 'below-threshold' });
     expect(executeSpy).not.toHaveBeenCalled();
   });
+
+  test.each([undefined, false])(
+    'runs manually with the threshold when autoStack is %s',
+    async (autoStack: boolean | undefined): Promise<void> => {
+      countChangedLinesSpy.mockResolvedValue(20);
+      const result = await runPrStacking({
+        plan,
+        planFilePath: '/repo/.tim/plans/12.yml',
+        mainPrUrl: 'https://github.com/acme/repo/pull/20',
+        baseDir: '/repo',
+        config: { ...config(), prStacking: { autoStack, minChangedLines: 400 } },
+        manual: true,
+      });
+      expect(result).toEqual({ ran: true, changedLines: 20 });
+      expect(executeSpy).toHaveBeenCalledWith(
+        expect.stringContaining('keep each slice below 400 changed lines'),
+        expect.anything()
+      );
+    }
+  );
 
   test('runs manually without the automatic threshold configuration', async () => {
     countChangedLinesSpy.mockResolvedValue(20);
@@ -305,6 +341,12 @@ describe('runPrStacking', () => {
     });
 
     expect(prompt).toContain('vertical slices');
+    expect(prompt).toContain('from abc1234 (exclusive) through feature/stack-review (inclusive)');
+    expect(prompt).toContain('do not use it as the range endpoint');
+    expect(prompt).toContain('Preserve their exact commit identifiers');
+    expect(prompt).toContain('avoiding automatic descendant rebases in jj');
+    expect(prompt).toContain('verify that their commit identifiers and targets are unchanged');
+    expect(prompt).toContain('Existing work stacked above that branch remains outside this split');
     expect(prompt).toContain('one commit per vertical slice');
     expect(prompt).toContain('keep each slice below 400 changed lines');
     expect(prompt).toContain('inspect every large candidate slice for further coherent splits');

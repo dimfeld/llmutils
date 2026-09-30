@@ -1105,10 +1105,11 @@ See [`docs/proof-generation.md`](docs/proof-generation.md) for more detail.
 
 The optional `prStacking` block adds a final `tim agent` phase for large changes. The phase runs after the main PR exists and after automatic proof upload. It asks the configured Claude Code or Codex CLI executor to rewrite the branch into one commit per vertical slice, create a branch and draft PR for each lower slice, and keep the original branch and PR at the top of the stack.
 
-Set `minChangedLines` to enable the phase. Tim measures additions plus deletions against the effective base of the main PR. It skips the phase when the measured value is lower than the configured value. If `minChangedLines` is absent, Tim skips the complete phase, including the GitHub PR lookup. No default threshold is applied.
+Set `autoStack: true` and `minChangedLines` to enable the automatic phase. Automatic stacking is disabled when `autoStack` is absent or false. You can keep `minChangedLines` configured as the target size for manual stacking. Tim measures additions plus deletions against the effective base of the main PR. It skips the phase when the measured value is lower than the configured value. If `minChangedLines` is absent, Tim skips the complete phase, including the GitHub PR lookup. No default threshold is applied.
 
 ```yaml
 prStacking:
+  autoStack: true # optional; disabled when absent
   minChangedLines: 500
   executor: codex-cli # optional; falls back to defaultExecutor
   model: gpt-6.1-sol # optional; falls back to models.execution

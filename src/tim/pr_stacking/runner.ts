@@ -106,6 +106,9 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     '',
     '## Required outcome',
     '',
+    `- Only split the commits in the original range from ${options.comparisonRef} (exclusive) through ${options.mainBranch} (inclusive). Resolve and record that range before editing history. The current working copy may be above the plan branch; do not use it as the range endpoint.`,
+    '- Commits stacked above the original branch belong to other work. Do not edit, squash, rebase, reorder, drop, or include them in the split. Preserve their exact commit identifiers and all existing local and remote branch or bookmark targets for that work. Do not change their pull requests.',
+    '- Before editing history, record the commits and branch or bookmark targets stacked above the original branch. Choose history operations that preserve them, including avoiding automatic descendant rebases in jj. After the split, verify that their commit identifiers and targets are unchanged. If you cannot preserve them, leave the history and pull requests unchanged and report the reason.',
     `- Preserve the exact final file tree currently at ${options.mainBranch}. Apart from the minor CI-enabling changes to intermediate PRs described below, do not change source, test, documentation, generated, or plan file content.`,
     '- First record the final tree identifier. After all history edits, verify that the original branch has the same final tree. If it differs, repair the stack before you finish.',
     '- A single changed file may have its hunks distributed across several slices and branches. Do not require each slice to contain all changes to a file or to change a separate set of files.',
@@ -116,7 +119,7 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     "- After creating or updating each slice branch, run the repository's relevant validation commands on that branch, including linting, type checking, tests, builds, and other required checks as applicable. Do not validate only the combined stack. If a lower slice fails because it depends on changes that remain in a higher slice, move the required changes into the lower slice or revise the split until the lower PR passes on its own.",
     '- You may make minor implementation changes in an intermediate PR when needed to make that PR pass CI. The PRs higher in the stack must account for those changes, and the complete stack must converge to exactly the original final file tree. Verify both conditions before you finish.',
     '- Use one commit per vertical slice. Order dependent slices from the stack base upward.',
-    `- Keep ${options.mainBranch} and ${options.mainPrUrl} as the top and final slice of the stack. Never close or replace the original pull request.`,
+    `- Keep ${options.mainBranch} and ${options.mainPrUrl} as the top and final slice of this plan's split stack. Existing work stacked above that branch remains outside this split. Never close or replace the original pull request.`,
     `- Create a unique, descriptive branch for every lower slice. Do not reuse or overwrite an unrelated local or remote branch.${branchPrefixGuidance} If the branch being split starts with the plan number, every new lower-slice branch name should also start with that plan number. Do not copy external issue-tracker IDs, such as a trailing Linear issue tag, into new lower-slice branch names. The existing top branch may retain those external IDs.`,
     `- The bottom slice must target ${options.baseBranch}. Each later slice must target the branch immediately below it. Change the base of ${options.mainPrUrl} to the branch immediately below ${options.mainBranch}.`,
     '- Push every slice branch. A history rewrite of the original branch can use a force-with-lease equivalent, but do not use an unguarded force push when a guarded form is available.',
@@ -222,7 +225,10 @@ async function linkStackPullRequests(options: {
 export async function runPrStacking(options: RunPrStackingOptions): Promise<PrStackingResult> {
   const stackingConfig = options.config.prStacking;
   const minChangedLines = stackingConfig?.minChangedLines;
-  if (minChangedLines === undefined && options.manual !== true) {
+  if (
+    options.manual !== true &&
+    (stackingConfig?.autoStack !== true || minChangedLines === undefined)
+  ) {
     return { ran: false, changedLines: 0, reason: 'not-configured' };
   }
   if (!options.plan.branch) {

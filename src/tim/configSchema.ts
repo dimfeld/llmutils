@@ -421,6 +421,10 @@ export const proofGenerationSchema = z
 
 export const prStackingSchema = z
   .object({
+    autoStack: z
+      .boolean()
+      .optional()
+      .describe('Enable automatic post-completion PR stacking; disabled when absent'),
     minChangedLines: z
       .number()
       .int()

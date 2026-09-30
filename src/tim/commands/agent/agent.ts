@@ -1745,7 +1745,11 @@ export async function timAgent(
         }
       }
 
-      if (config.prStacking?.minChangedLines !== undefined && lastKnownPlan.branch) {
+      if (
+        config.prStacking?.autoStack === true &&
+        config.prStacking.minChangedLines !== undefined &&
+        lastKnownPlan.branch
+      ) {
         try {
           mainPrUrl ??= await detectExistingPrUrl(lastKnownPlan.branch, currentBaseDir);
           if (!mainPrUrl) {

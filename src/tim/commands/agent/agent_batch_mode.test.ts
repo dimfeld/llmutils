@@ -2908,7 +2908,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
           mode: 'after-completion',
           instructions: 'Capture proof artifacts.',
         },
-        prStacking: { minChangedLines: 400 },
+        prStacking: { autoStack: true, minChangedLines: 400 },
       });
       autoCreatePrForPlanSpy.mockResolvedValue('https://github.com/acme/repo/pull/20');
       executorExecuteSpy.mockImplementationOnce(async () => {
@@ -2947,7 +2947,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
         postApplyCommands: [],
         planAutocompleteStatus: 'done',
         prCreation: { autoCreatePr: 'done' },
-        prStacking: { executor: 'codex-cli' },
+        prStacking: { autoStack: true, executor: 'codex-cli' },
       });
       autoCreatePrForPlanSpy.mockResolvedValue('https://github.com/acme/repo/pull/20');
       mockExecutorCompletingTasks('feature/my-branch');
@@ -2958,6 +2958,25 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       expect(runPrStackingSpy).not.toHaveBeenCalled();
     });
 
+    test.each([undefined, false])(
+      'does not inspect or stack a PR when autoStack is %s',
+      async (autoStack: boolean | undefined): Promise<void> => {
+        await createPlanFile({
+          status: 'needs_review',
+          branch: 'feature/my-branch',
+          tasks: [donePlanTask],
+        });
+        loadEffectiveConfigSpy.mockResolvedValue({
+          models: { execution: 'test-model' },
+          postApplyCommands: [],
+          prStacking: { autoStack, minChangedLines: 400 },
+        });
+        await timAgent(1, { log: false, nonInteractive: true, finalReview: false } as any, {});
+        expect(detectExistingPrUrlSpy).not.toHaveBeenCalled();
+        expect(runPrStackingSpy).not.toHaveBeenCalled();
+      }
+    );
+
     test('detects an existing main PR before stacking when auto-create is disabled', async () => {
       await createPlanFile({
         status: 'needs_review',
@@ -2967,7 +2986,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       loadEffectiveConfigSpy.mockResolvedValue({
         models: { execution: 'test-model' },
         postApplyCommands: [],
-        prStacking: { minChangedLines: 400 },
+        prStacking: { autoStack: true, minChangedLines: 400 },
       });
       detectExistingPrUrlSpy.mockResolvedValue('https://github.com/acme/repo/pull/20');
 
@@ -2986,7 +3005,7 @@ describe('timAgent - Batch Mode Execution Loop', () => {
       loadEffectiveConfigSpy.mockResolvedValue({
         models: { execution: 'test-model' },
         postApplyCommands: [],
-        prStacking: { minChangedLines: 400 },
+        prStacking: { autoStack: true, minChangedLines: 400 },
       });
       detectExistingPrUrlSpy.mockResolvedValue('https://github.com/acme/repo/pull/20');
       runPrStackingSpy.mockRejectedValueOnce(new Error('force push failed'));

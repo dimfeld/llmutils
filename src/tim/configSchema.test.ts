@@ -56,6 +56,12 @@ describe('configSchema', () => {
   });
 
   describe('prStacking', () => {
+    test.each([true, false])('accepts autoStack=%s', (autoStack: boolean): void => {
+      expect(timConfigSchema.parse({ prStacking: { autoStack } }).prStacking).toEqual({
+        autoStack,
+      });
+    });
+
     test('accepts executor and model without enabling the phase', () => {
       expect(
         timConfigSchema.parse({
