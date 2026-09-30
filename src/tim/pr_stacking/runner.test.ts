@@ -343,9 +343,12 @@ describe('runPrStacking', () => {
     expect(prompt).toContain('vertical slices');
     expect(prompt).toContain('from abc1234 (exclusive) through feature/stack-review (inclusive)');
     expect(prompt).toContain('do not use it as the range endpoint');
-    expect(prompt).toContain('Preserve their exact commit identifiers');
-    expect(prompt).toContain('avoiding automatic descendant rebases in jj');
-    expect(prompt).toContain('verify that their commit identifiers and targets are unchanged');
+    expect(prompt).toContain('Do not change their content, squash, reorder, drop');
+    expect(prompt).toContain('including automatic descendant rebases in jj, are allowed');
+    expect(prompt).toContain('commit identifiers and branch or bookmark targets may change');
+    expect(prompt).toContain(
+      'each of those commits introduces the same changes and has the same final file tree as before'
+    );
     expect(prompt).toContain('Existing work stacked above that branch remains outside this split');
     expect(prompt).toContain('one commit per vertical slice');
     expect(prompt).toContain('keep each slice below 400 changed lines');
