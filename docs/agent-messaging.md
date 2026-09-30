@@ -136,8 +136,10 @@ Every subagent must make a result-bearing tim tool call before it ends its work.
 It can send its final response to `orchestrator` with `SendTimAgentMessage`, or
 it can put its final status in the `FinishTimAgent` message. A normal assistant
 response without either tool call is not the result-delivery contract. A
-terminal notification confirms lifecycle completion and can carry the explicit
-`FinishTimAgent` status.
+nonblank `FinishTimAgent` message reaches the orchestrator before that call
+returns, so the orchestrator can use the result while the subagent closes. The
+later terminal notification confirms lifecycle completion without repeating
+the delivered result.
 
 Messages carry **trusted sender attribution** set by the runtime. No model
 argument supplies or replaces the source identity. Recipients see the sender's
@@ -163,8 +165,10 @@ clear error without truncation or eviction.
 
 Natural agent exit and graceful requested exit each produce exactly one terminal
 notification to the orchestrator. Forced-stop notifications are never suppressed
-and include the last completed assistant message (if available) with a staleness
-warning.
+and report the forced shutdown. If no finish result was delivered, they include
+the last completed assistant message (if available) with a staleness warning.
+Finish requests and the Claude process End control use the existing two-minute
+provider-output inactivity deadline to force stalled shutdowns.
 
 ### Shared-workspace coordination
 

@@ -422,6 +422,12 @@ describe('CollaborativeAgentSession root activation', () => {
           { message: 'Implementation handoff is complete.' }
         )
       ).resolves.toEqual({ state: 'finishing' });
+      expect(rootInput.input.deliver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.stringContaining('Implementation handoff is complete.'),
+          source: expect.objectContaining({ name: 'claude-impl' }),
+        })
+      );
 
       const stoppedResponse = await session.claudeAgentToolContext.dispatcher.stopAgent(
         rootCaller,
@@ -441,7 +447,7 @@ describe('CollaborativeAgentSession root activation', () => {
       expect(session.hasActiveSubagents()).toBe(false);
       expect(rootInput.input.deliver).toHaveBeenCalledWith(
         expect.objectContaining({
-          content: expect.stringContaining('Agent claude-impl completed'),
+          content: 'Agent claude-impl exited after reporting its final result.',
           source: expect.objectContaining({ name: 'claude-impl' }),
         })
       );

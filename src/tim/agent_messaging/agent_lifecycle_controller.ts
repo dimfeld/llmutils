@@ -147,6 +147,8 @@ export class AgentLifecycleController {
   private lastCompletedAssistantMessage: string | undefined;
   private lastSuccessfulOutbound: SuccessfulOutboundSnapshot | undefined;
   private disposed = false;
+  private finishResultDelivery: Promise<void> | undefined;
+  private finishResultDelivered = false;
 
   public constructor(private readonly options: AgentLifecycleControllerOptions) {}
 
@@ -194,6 +196,7 @@ export class AgentLifecycleController {
       completedAssistantMessage: (message: string): void =>
         this.handleCompletedAssistantMessage(message),
       turnComplete: (): void => this.handleTurnComplete(),
+      shutdownRequested: (): void => this.handleProviderShutdownRequest(),
       exit: (classification, error): void => this.handleProviderExit(classification, error),
     };
   }
@@ -239,6 +242,7 @@ export class AgentLifecycleController {
     this.options.record.state = 'finishing';
     this.terminal.finishRequested = true;
     this.saveFinishFallback(message);
+    this.startShutdownDeadline();
     return Object.freeze({ state: 'finishing' });
   }
 
@@ -263,15 +267,30 @@ export class AgentLifecycleController {
     );
   }
 
+  public async deliverFinishResult(): Promise<void> {
+    const message = this.terminal.finishFallbackMessage;
+    if (message === undefined || this.finishResultDelivered) return;
+    if (this.finishResultDelivery === undefined) {
+      this.finishResultDelivery = this.sendNotification(
+        `Agent ${this.options.record.name} finished its assignment. Shutdown is pending.\n\nFinal result:\n${message}`
+      ).then((): void => {
+        this.finishResultDelivered = true;
+      });
+    }
+    try {
+      await this.finishResultDelivery;
+    } catch (error) {
+      this.finishResultDelivery = undefined;
+      throw error;
+    }
+  }
+
   /** Start or join graceful shutdown as part of the manager's root fan-out. */
   public requestRootTeardown(): Promise<void> {
     if (this.terminal.terminalClaimed) return this.terminal.terminalPromise;
 
     if (this.options.record.state === 'finishing') {
-      if (this.phase.kind === 'none') {
-        this.phase = this.createGracefulActivePhase('');
-        this.armStopInactivityTimer(this.phase);
-      }
+      this.startShutdownDeadline();
     } else if (this.phase.kind === 'none') {
       this.options.record.state = 'stopping';
       this.phase = this.createGracefulPendingPhase(STANDARD_GRACEFUL_STOP_INSTRUCTION);
@@ -315,6 +334,19 @@ export class AgentLifecycleController {
     ) {
       this.terminal.finishFallbackMessage = message;
     }
+  }
+
+  private startShutdownDeadline(): void {
+    if (this.phase.kind !== 'none') return;
+    this.phase = this.createGracefulActivePhase('');
+    this.armStopInactivityTimer(this.phase);
+  }
+
+  private handleProviderShutdownRequest(): void {
+    if (!this.isCurrent() || this.providerExit !== undefined || this.terminal.terminalClaimed)
+      return;
+    if (this.options.record.state !== 'finishing') this.options.record.state = 'stopping';
+    this.startShutdownDeadline();
   }
 
   private createGracefulPendingPhase(instruction: string): GracefulStopPhase {
@@ -672,9 +704,14 @@ export class AgentLifecycleController {
     this.unsubscribeProvider?.();
     this.unsubscribeProvider = undefined;
 
+    // Finish result delivery can race provider exit. Settle it before deciding
+    // whether the terminal notification needs to include the result.
+    await this.finishResultDelivery?.catch(() => undefined);
+
     const notificationInput: TerminalNotificationInput = Object.freeze({
       agentName: this.options.record.name,
       cause,
+      finishResultDelivered: this.finishResultDelivered,
       ...(this.lastCompletedAssistantMessage === undefined
         ? {}
         : { lastCompletedAssistantMessage: this.lastCompletedAssistantMessage }),
@@ -701,25 +738,26 @@ export class AgentLifecycleController {
 
   private async deliverTerminalNotification(content: string): Promise<void> {
     try {
-      const acknowledgement = await this.options.sessionRuntime.sendMessage(
-        { id: this.options.record.id, name: this.options.record.name },
-        {
-          id: this.options.rootRegistration.registration.id,
-          name: this.options.rootRegistration.registration.name,
-        },
-        { requestId: randomUUID(), content }
-      );
-      if (!acknowledgement.success) {
-        this.logDiagnostic(
-          'terminal notification delivery',
-          new AgentManagerError(
-            'transport_error',
-            `Terminal notification delivery failed (${acknowledgement.error.code}): ${acknowledgement.error.message}`
-          )
-        );
-      }
+      await this.sendNotification(content);
     } catch (error) {
       this.logDiagnostic('terminal notification delivery', error);
+    }
+  }
+
+  private async sendNotification(content: string): Promise<void> {
+    const acknowledgement = await this.options.sessionRuntime.sendMessage(
+      { id: this.options.record.id, name: this.options.record.name },
+      {
+        id: this.options.rootRegistration.registration.id,
+        name: this.options.rootRegistration.registration.name,
+      },
+      { requestId: randomUUID(), content }
+    );
+    if (!acknowledgement.success) {
+      throw new AgentManagerError(
+        'transport_error',
+        `Terminal notification delivery failed (${acknowledgement.error.code}): ${acknowledgement.error.message}`
+      );
     }
   }
 

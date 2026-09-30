@@ -427,13 +427,18 @@ describe('Codex AgentManager lifecycle integration', () => {
     expect(toolResult).toMatchObject({ success: true });
     expect(connection.close).not.toHaveBeenCalled();
     expect(manager.getAgentSnapshot(started.id)).toMatchObject({ state: 'finishing' });
+    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages[0]?.content).toContain('Finished the implementation.');
 
     completeTurn(connection, 'thread-finish-turn-1', 'Finished the implementation.');
     await manager.waitForAgentTerminal(started.id);
 
     expect(connection.close).toHaveBeenCalledTimes(1);
-    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages).toHaveLength(2);
     expect(rootInput.receivedMessages[0]?.content).toContain('Finished the implementation.');
+    expect(rootInput.receivedMessages[1]?.content).toBe(
+      'Agent finish-worker exited after reporting its final result.'
+    );
     expect(manager.getAgentSnapshot(started.id)).toBeUndefined();
   });
 

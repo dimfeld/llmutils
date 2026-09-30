@@ -131,7 +131,10 @@ export class PersistentClaudeSessionRuntime {
   /** Capture the safe process capability and bind the graceful end hook. */
   public attachProcessLifecycle(lifecycle: SessionExecutorLifecycle): void {
     this.sessionProcessLifecycle = lifecycle;
-    lifecycle.setGracefulEndHandler(() => this.terminalInputResult?.endSession());
+    lifecycle.setGracefulEndHandler((): void => {
+      this.notifyObservers((observer) => observer.shutdownRequested?.());
+      this.terminalInputResult?.endSession();
+    });
   }
 
   public clearProcessLifecycleHandler(): void {

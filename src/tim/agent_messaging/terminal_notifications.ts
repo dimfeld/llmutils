@@ -17,6 +17,7 @@ export interface TerminalNotificationInput {
   readonly cause: TerminalNotificationCause;
   readonly lastCompletedAssistantMessage?: string;
   readonly finishFallbackMessage?: string;
+  readonly finishResultDelivered?: boolean;
   readonly lastSuccessfulOutbound?: TerminalOutboundSnapshot;
 }
 
@@ -63,6 +64,18 @@ export function shouldSuppressTerminalNotification(input: TerminalNotificationIn
 export function formatTerminalNotification(
   input: TerminalNotificationInput
 ): TerminalNotificationDecision {
+  if (input.finishResultDelivered) {
+    const status =
+      input.cause === 'forced-stop'
+        ? 'was force-stopped'
+        : input.cause === 'provider-failure'
+          ? 'failed during shutdown'
+          : 'exited';
+    return Object.freeze({
+      suppressed: false,
+      content: `Agent ${input.agentName} ${status} after reporting its final result.`,
+    });
+  }
   if (shouldSuppressTerminalNotification(input)) {
     return Object.freeze({ suppressed: true });
   }

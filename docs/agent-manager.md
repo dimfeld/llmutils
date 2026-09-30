@@ -287,30 +287,38 @@ way `validateAgentInputAdapter()` checks the input boundary.
    FinishTimAgent in response to the stop instruction. Any other case fails with
    `finish_not_available`.
 2. For a `running-active` agent, the record moves to `finishing`. For the
-   graceful-stop exception, it remains `stopping`. In both cases, the nonblank
-   optional message is stored as a final-status fallback, and
-   `{ state: 'finishing' }` returns immediately.
+   graceful-stop exception, it remains `stopping`. In both cases, the first
+   nonblank optional message is stored and delivered to the
+   orchestrator before `{ state: 'finishing' }` returns. This handoff does not
+   wait for turn completion or process exit. Delivery errors reach the tool
+   caller; a repeat call retries the original result without replacing it.
 3. The handler never closes, interrupts, or ends the provider. The current turn
    continues and its completed assistant message is still captured.
 4. When the provider reports `turnComplete()`, the controller calls
    `requestCloseAfterCurrentTurn()` exactly once. The claim is taken before the
    provider call, because a provider can report an exit synchronously from
    inside it.
-5. Terminal notification and cleanup start only when a provider exit is
-   observed. The FinishTimAgent acknowledgement is not an exit.
+5. A finish request starts the existing two-minute provider-output inactivity
+   deadline. If the turn or process does not end, the manager forces shutdown.
+   Provider output resets the deadline; repeated finish calls do not.
+6. Terminal notification and cleanup start only when a provider exit is
+   observed. The FinishTimAgent acknowledgement is not an exit. If the finish
+   result was delivered, the terminal notification reports shutdown status
+   without repeating the result, including forced stops and provider failures.
 
-Repeat calls are idempotent and return `finishing`. The first accepted fallback
-is never replaced. A `finishing` agent that reached that state some other way
+Repeat calls are idempotent and return `finishing`. The first accepted result
+is never replaced or sent twice after successful delivery. A `finishing` agent
+that reached that state some other way
 (root teardown, for example) rejects FinishTimAgent rather than adopting it. A
 FinishTimAgent call during an in-progress graceful stop is accepted as a redundant
-completion acknowledgement: its nonblank message becomes the final-result
-fallback, while the agent remains `stopping` and the original graceful-stop
+completion acknowledgement: its nonblank message is delivered immediately,
+while the agent remains `stopping` and the original graceful-stop
 cause is preserved. Force can still upgrade a finishing agent.
 
-The completed assistant message of the finishing turn is the authoritative final
-result. The fallback is used only when no nonblank completed message exists,
-including for a FinishTimAgent call accepted during graceful stop, and it never
-enables duplicate suppression.
+The supplied FinishTimAgent message is the immediate assignment result.
+After successful delivery, later assistant text does not replace or repeat it
+in the terminal notification. With no nonblank finish message, the existing
+completed-assistant result policy applies at exit.
 
 ## StopTimAgent
 
@@ -383,6 +391,10 @@ the directory record, and releases the name and slot — each step guarded, and
 the shared terminal promise always resolves in `finally`. Notification and
 cleanup failures are logged as diagnostics; they never produce a second
 notification and never leave a permanently pending entry.
+
+When FinishTimAgent already delivered its result, all exit causes produce a
+status-only terminal notification. The table below applies when no finish result
+was delivered.
 
 `terminal_notifications.ts` holds the policy as pure functions, so it is proven
 by table-driven tests rather than by a live provider.

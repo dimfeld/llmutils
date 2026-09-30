@@ -17,6 +17,8 @@ import {
 } from '../../../common/session_process.js';
 import { closeDatabaseForTesting } from '../../db/database.js';
 import { AgentManager } from '../../agent_messaging/agent_manager.js';
+import { FakeAgentManagerScheduler } from '../../agent_messaging/fake_provider.js';
+import { STOP_AGENT_INACTIVITY_TIMEOUT_MS } from '../../agent_messaging/contracts.js';
 import type {
   AgentCallerIdentity,
   AgentLaunchHandle,
@@ -125,7 +127,7 @@ function agentCaller(name: string): AgentCallerIdentity {
   return { id: identity.id, role: identity.role };
 }
 
-async function createManager(): Promise<{
+async function createManager(scheduler?: FakeAgentManagerScheduler): Promise<{
   readonly rootCaller: AgentCallerIdentity;
   readonly registry: SessionProcessRegistry;
 }> {
@@ -184,6 +186,7 @@ async function createManager(): Promise<{
   };
 
   const options: AgentManagerOptions = {
+    scheduler,
     orchestratorExecutor: 'claude-code',
     agentPreparer: {
       prepare: async ({ identity, initialMessage }): Promise<PreparedAgentExecution> =>
@@ -205,6 +208,39 @@ function assistantTexts(name: string): string[] {
 }
 
 describeUnix('persistent Claude real-process integration', () => {
+  test.each(['finish', 'end', 'finish-then-end'] as const)(
+    'terminates Claude when it ignores stdin closure: %s',
+    async (mode: 'finish' | 'end' | 'finish-then-end'): Promise<void> => {
+      const scheduler = new FakeAgentManagerScheduler();
+      const { rootCaller } = await createManager(scheduler);
+      const agent = await manager!.startAgent(rootCaller, {
+        name: 'claude-ignore-eof',
+        type: 'implementer',
+        executor: 'claude-code',
+        initialMessage: mode === 'finish' ? 'ignore-eof-finish' : 'ignore-eof-hold',
+      });
+      await waitFor(() => assistantTexts(agent.name).length > 0, 'the held turn');
+      if (mode !== 'end') {
+        await manager!.finishAgent(agentCaller(agent.name), { message: 'done' });
+      }
+      if (mode === 'finish') {
+        await waitFor(
+          () => records.get(agent.name)?.handle?.providerState === 'closing',
+          'stdin closure after the completed result'
+        );
+      } else {
+        const controlId = records.get(agent.name)?.handle?.processControlId;
+        expect(controlId).toBeDefined();
+        expect(owner!.endExecutor(processId(controlId!))).toBe('ended');
+      }
+      scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS);
+      await manager!.waitForAgentTerminal(agent.id);
+      expect(await records.get(agent.name)?.handle?.completion).toMatchObject({
+        signal: 'SIGTERM',
+      });
+      expect(manager!.getAgentSnapshot(agent.id)).toBeUndefined();
+    }
+  );
   test('rejects launch when the real child exits during the initial prompt write', async () => {
     await createManager();
     const oversizedPrompt = 'startup-write-pending\n'.repeat(1024 * 1024);

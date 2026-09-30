@@ -2903,6 +2903,87 @@ describe('provider-neutral lifecycle controls and result tracking', () => {
 });
 
 describe('AgentManager FinishTimAgent lifecycle', () => {
+  test.each(['natural', 'forced', 'failed'] as const)(
+    'delivers the result before a %s exit',
+    async (classification: 'natural' | 'forced' | 'failed'): Promise<void> => {
+      const launcher = new FakeAgentLauncher();
+      const rootInput = new FakeAgentInputAdapter();
+      rootInput.markReady();
+      rootInput.setActiveAccepting();
+      const manager = await createManager({
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+        orchestratorInputAdapter: rootInput,
+      });
+      const launch = await startActiveFakeAgent(manager, launcher, 'early-result');
+      await manager.finishAgent(launch.request.identity, { message: 'assignment output' });
+      expect(rootInput.receivedMessages).toHaveLength(1);
+      expect(rootInput.receivedMessages[0]?.content).toContain('assignment output');
+      expect(manager.getAgentSnapshot(launch.request.identity.id)?.state).toBe('finishing');
+      expect(launch.handle.lifecycle.closeAfterCurrentTurnCalls).toBe(0);
+      await manager.finishAgent(launch.request.identity, { message: 'duplicate output' });
+      expect(rootInput.receivedMessages).toHaveLength(1);
+      launch.handle.lifecycle.emitExit(classification);
+      await manager.waitForAgentTerminal(launch.request.identity.id);
+      expect(rootInput.receivedMessages).toHaveLength(2);
+      expect(rootInput.receivedMessages[1]?.content).toContain('after reporting its final result');
+      expect(rootInput.receivedMessages[1]?.content).not.toContain('assignment output');
+    }
+  );
+
+  test('settles a pending finish handoff before terminal notification and cleanup', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'finish-exit-race');
+    const deliveryStarted = rootInput.deferNextDelivery();
+    const first = manager.finishAgent(launch.request.identity, { message: 'original result' });
+    await deliveryStarted;
+    const duplicate = manager.finishAgent(launch.request.identity, {
+      message: 'replacement result',
+    });
+    launch.handle.lifecycle.emitExit('forced');
+    await flushLifecyclePromises();
+    expect(launch.handle.releaseCount).toBe(0);
+    rootInput.resolveNextDelivery();
+    await Promise.all([first, duplicate]);
+    await manager.waitForAgentTerminal(launch.request.identity.id);
+    expect(rootInput.receivedMessages).toHaveLength(2);
+    expect(rootInput.receivedMessages[0]?.content).toContain('original result');
+    expect(rootInput.receivedMessages[1]?.content).toBe(
+      'Agent finish-exit-race was force-stopped after reporting its final result.'
+    );
+  });
+
+  test('reports finish delivery failure and retries the original result', async () => {
+    const launcher = new FakeAgentLauncher();
+    const rootInput = new FakeAgentInputAdapter();
+    rootInput.markReady();
+    rootInput.setActiveAccepting();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      orchestratorInputAdapter: rootInput,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'retry-result');
+    rootInput.rejectNextDelivery(new Error('delivery failed'));
+    await expect(
+      manager.finishAgent(launch.request.identity, { message: 'original result' })
+    ).rejects.toThrow();
+    await manager.finishAgent(launch.request.identity, { message: 'replacement result' });
+    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages[0]?.content).toContain('original result');
+    expect(rootInput.receivedMessages[0]?.content).not.toContain('replacement result');
+    launch.handle.lifecycle.emitExit('natural');
+    await manager.waitForAgentTerminal(launch.request.identity.id);
+  });
+
   test('is self-only, target-free, and available only during an active turn', async () => {
     const launcher = new FakeAgentLauncher();
     const manager = await createManager({
@@ -3063,10 +3144,13 @@ describe('AgentManager FinishTimAgent lifecycle', () => {
       expect.objectContaining({
         content: expect.stringContaining('Work completed after the stop.'),
       }),
+      expect.objectContaining({
+        content: expect.stringContaining('exited after reporting its final result'),
+      }),
     ]);
   });
 
-  test('uses fallback state only when no completed assistant result exists', async () => {
+  test('delivers the finish result once and reports exit separately', async () => {
     const launcher = new FakeAgentLauncher();
     const rootInput = new FakeAgentInputAdapter();
     rootInput.markReady();
@@ -3085,7 +3169,10 @@ describe('AgentManager FinishTimAgent lifecycle', () => {
     lifecycle.emitExit('natural');
 
     await manager.waitForAgentTerminal(launch.request.identity.id);
-    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages).toHaveLength(2);
+    expect(rootInput.receivedMessages[1]?.content).toContain(
+      'exited after reporting its final result'
+    );
     expect(rootInput.receivedMessages[0]?.content).toContain('final fallback');
     expect(rootInput.receivedMessages[0]?.content).not.toContain('late fallback');
     await expect(
@@ -3260,7 +3347,10 @@ describe('AgentManager FinishTimAgent lifecycle', () => {
     lifecycle.emitTurnComplete();
     lifecycle.emitExit('natural');
     await manager.waitForAgentTerminal(launch.request.identity.id);
-    expect(rootInput.receivedMessages).toHaveLength(1);
+    expect(rootInput.receivedMessages).toHaveLength(2);
+    expect(rootInput.receivedMessages[1]?.content).toContain(
+      'exited after reporting its final result'
+    );
     expect(rootInput.receivedMessages[0]?.content).toContain('useful fallback');
     expect(rootInput.receivedMessages[0]?.content).not.toContain('replacement fallback');
   });
@@ -4315,7 +4405,9 @@ describe('AgentManager terminal convergence', () => {
 
       const delivered = rootInput.receivedMessages.slice(beforeMessages);
       const expectedOutboundToRoot = outboundTarget === 'orchestrator' ? 1 : 0;
-      expect(delivered).toHaveLength(expectedOutboundToRoot + (expectedTerminal ? 1 : 0));
+      expect(delivered).toHaveLength(
+        expectedOutboundToRoot + (expectedTerminal ? 1 : 0) + (fallback?.trim() ? 1 : 0)
+      );
       if (expectedTerminal) {
         expect(delivered.at(-1)?.source).toMatchObject({ id: launch.request.identity.id, name });
       }
@@ -4389,7 +4481,7 @@ describe('AgentManager terminal convergence', () => {
     }
   });
 
-  test('self-finish prefers the completed result and uses fallback only when needed', async () => {
+  test('self-finish sends the supplied result before exit and does not repeat it at exit', async () => {
     const launcher = new FakeAgentLauncher();
     const rootInput = new FakeAgentInputAdapter();
     rootInput.markReady();
@@ -4412,10 +4504,15 @@ describe('AgentManager terminal convergence', () => {
     fallback.handle.lifecycle.emitExit('natural');
     await manager.waitForAgentTerminal(fallback.request.identity.id);
 
-    expect(rootInput.receivedMessages).toHaveLength(2);
-    expect(rootInput.receivedMessages[0]?.content).toContain('completed result');
-    expect(rootInput.receivedMessages[0]?.content).not.toContain('fallback');
-    expect(rootInput.receivedMessages[1]?.content).toContain('fallback result');
+    expect(rootInput.receivedMessages).toHaveLength(4);
+    expect(rootInput.receivedMessages[0]?.content).toContain('fallback');
+    expect(rootInput.receivedMessages[1]?.content).toBe(
+      'Agent terminal-self-finish exited after reporting its final result.'
+    );
+    expect(rootInput.receivedMessages[2]?.content).toContain('fallback result');
+    expect(rootInput.receivedMessages[3]?.content).toBe(
+      'Agent terminal-fallback exited after reporting its final result.'
+    );
   });
 
   test('forced completion always sends only the completed result and warning', async () => {
@@ -4782,6 +4879,85 @@ describe('AgentManager terminal convergence', () => {
       await manager?.close().catch(() => undefined);
       await session.close().catch(() => undefined);
     }
+  });
+
+  test.each(['missing-result', 'close-rejected', 'close-pending'] as const)(
+    'forces a stalled finish without root teardown: %s',
+    async (failure: 'missing-result' | 'close-rejected' | 'close-pending'): Promise<void> => {
+      const launcher = new FakeAgentLauncher();
+      const scheduler = new FakeAgentManagerScheduler();
+      const manager = await createManager({
+        agentPreparer: createPreparer(),
+        agentLauncher: launcher,
+        scheduler,
+      });
+      const launch = await startActiveFakeAgent(manager, launcher, 'stalled-finish');
+      const lifecycle = launch.handle.lifecycle;
+      if (failure === 'close-rejected') {
+        lifecycle.failNextCloseAfterCurrentTurn(new Error('close failed'));
+      } else if (failure === 'close-pending') {
+        void lifecycle.deferNextCloseAfterCurrentTurn();
+      }
+      await manager.finishAgent(launch.request.identity, { message: 'done' });
+      lifecycle.emitCompletedAssistantMessage('final response');
+      if (failure !== 'missing-result') lifecycle.emitTurnComplete();
+      await flushLifecyclePromises();
+
+      scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+      expect(lifecycle.forcedShutdownCalls).toBe(0);
+      scheduler.advanceBy(1);
+      await flushLifecyclePromises();
+      expect(lifecycle.forcedShutdownCalls).toBe(1);
+      expect(lifecycle.gracefulShutdownCalls).toBe(0);
+      lifecycle.emitExit('forced');
+      await manager.waitForAgentTerminal(launch.request.identity.id);
+      expect(scheduler.pendingTimerCount).toBe(0);
+    }
+  );
+
+  test('finish activity resets the deadline and natural exit cancels escalation', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'finish-progress');
+    await manager.finishAgent(launch.request.identity, {});
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+    launch.handle.lifecycle.emitOutputActivity();
+    // A repeated finish must not extend the deadline without provider activity.
+    await manager.finishAgent(launch.request.identity, {});
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(0);
+    launch.handle.lifecycle.emitTurnComplete();
+    launch.handle.lifecycle.emitExit('natural');
+    await manager.waitForAgentTerminal(launch.request.identity.id);
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS);
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(0);
+    expect(scheduler.pendingTimerCount).toBe(0);
+  });
+
+  test('provider End starts the manager deadline without another shutdown instruction', async () => {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    const launch = await startActiveFakeAgent(manager, launcher, 'provider-end');
+    launch.handle.lifecycle.emitShutdownRequested();
+    expect(manager.getAgentSnapshot(launch.request.identity.id)?.state).toBe('stopping');
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+    launch.handle.lifecycle.emitShutdownRequested();
+    scheduler.advanceBy(1);
+    await flushLifecyclePromises();
+    expect(launch.handle.lifecycle.forcedShutdownCalls).toBe(1);
+    expect(launch.handle.lifecycle.gracefulShutdownCalls).toBe(0);
+    launch.handle.lifecycle.emitExit('forced');
+    await manager.waitForAgentTerminal(launch.request.identity.id);
   });
 
   test('gives a finishing agent its own teardown deadline without a second graceful request', async () => {

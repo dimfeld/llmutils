@@ -116,6 +116,10 @@ handle, and the PID never cross this boundary.
   [os-process-interaction.md](os-process-interaction.md)). It never signals a
   caller-supplied PID and never selects a process by display label. Repeated
   calls and a graceful-to-force upgrade are harmless.
+- The process **End** control reports `shutdownRequested()` to the manager,
+  then closes stdin. The manager starts its existing two-minute output
+  inactivity deadline and forces shutdown if Claude remains alive. Repeated End
+  requests do not extend the deadline.
 - `subscribe(observer)` reports `outputActivity()`, `completedAssistantMessage()`,
   `turnComplete()`, and one `exit()`. The two-minute inactivity policy,
   escalation, terminal notification, and deduplication belong to the manager, not

@@ -480,7 +480,9 @@ export class AgentManager {
         'The provider lifecycle is not ready for FinishTimAgent'
       );
     }
-    return controller.finish(parsed.data.message);
+    const result = controller.finish(parsed.data.message);
+    await controller.deliverFinishResult();
+    return result;
   }
 
   /**

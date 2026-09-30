@@ -292,6 +292,10 @@ export class FakeAgentProviderLifecycleControls implements AgentProviderLifecycl
     for (const observer of this.observers) observer.turnComplete();
   }
 
+  public emitShutdownRequested(): void {
+    for (const observer of this.observers) observer.shutdownRequested?.();
+  }
+
   public emitExit(
     classification: AgentProviderExitClassification = 'natural',
     error?: Error

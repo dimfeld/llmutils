@@ -53,6 +53,8 @@ export interface AgentProviderLifecycleObserver {
   /** The exact complete assistant message, including boundary whitespace. */
   completedAssistantMessage(message: string): void;
   turnComplete(): void;
+  /** A provider-owned End control has requested shutdown. */
+  shutdownRequested?(): void;
   exit(classification: AgentProviderExitClassification, error?: Error): void;
 }
 

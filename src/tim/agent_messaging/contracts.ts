@@ -46,7 +46,7 @@ export const AGENT_TOOL_DESCRIPTIONS = {
   StopTimAgent:
     'Stop an active subagent by name. By default the stop is graceful: the agent gets `message` as shutdown context and is forced to stop if it produces no output for 2 minutes. Set `force` to stop it immediately. Returns `graceful-requested`, `forced`, or `already-stopping` and the resulting lifecycle state. Wait for the terminal notification before treating the agent as finished.',
   FinishTimAgent:
-    'Finish your own subagent assignment. It cannot finish another agent. `message` is an optional final status that the orchestrator receives in the terminal notification. Returns the `finishing` state.',
+    'Finish your own subagent assignment. It cannot finish another agent. `message` is an optional final result delivered to the orchestrator before this call returns. The orchestrator can use the result while the agent closes. A later terminal notification reports shutdown status. Returns the `finishing` state.',
 } as const satisfies Readonly<Record<AgentToolName, string>>;
 
 export function getAgentToolNames(role: AgentRuntimeRole): readonly AgentToolName[] {
@@ -114,7 +114,7 @@ export const MAX_AGENT_NAME_LENGTH = 48;
 export const MAX_SUBAGENTS_PER_SESSION = 8;
 export const MAX_AGENT_MESSAGE_BYTES = 65_536;
 export const MAX_PENDING_MESSAGES_PER_RECIPIENT = 100;
-/** Graceful StopTimAgent escalates after this much provider-output inactivity. */
+/** Finish, graceful stop, and provider End escalate after this much output inactivity. */
 export const STOP_AGENT_INACTIVITY_TIMEOUT_MS = 120_000;
 
 const AGENT_ADDRESS_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;

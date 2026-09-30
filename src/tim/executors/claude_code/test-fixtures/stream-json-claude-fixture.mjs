@@ -3,6 +3,7 @@
 const sessionId = `fixture-${process.env.TIM_PROCESS_ID ?? process.pid}`;
 let inputBuffer = '';
 let backgroundPending = false;
+let ignoreEof = false;
 
 function emit(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
@@ -53,6 +54,16 @@ async function handleUserRecord(record) {
     /^Agent message from [a-z0-9-]+(?: \[id: [a-z0-9-]+\])?:\n([\s\S]*)$/.exec(rawContent);
   const content = attributedMessage?.[1] ?? rawContent;
   process.stderr.write(`fixture:${sessionId}:${content}\n`);
+
+  if (content === 'ignore-eof-hold' || content === 'ignore-eof-finish') {
+    ignoreEof = true;
+    emitAssistant(`${sessionId}:held`);
+    if (content === 'ignore-eof-finish') {
+      await delay(300);
+      emitResult(`${sessionId}:done`);
+    }
+    return;
+  }
 
   if (content.includes('graceful shutdown')) {
     backgroundPending = false;
@@ -136,3 +147,6 @@ for await (const chunk of process.stdin) {
     }
   }
 }
+
+// Keep the process alive after stdin closes to exercise forced shutdown.
+if (ignoreEof) setInterval(() => {}, 1000);
