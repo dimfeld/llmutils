@@ -252,6 +252,7 @@ describe('tim init command', () => {
     const inputSpy = vi.mocked(input).mockResolvedValue('npm run format');
     vi.mocked(select)
       .mockResolvedValueOnce('claude-code')
+      .mockResolvedValueOnce('needs_review')
       .mockResolvedValueOnce('production')
       .mockResolvedValueOnce('pr-based')
       .mockResolvedValueOnce('never');
@@ -274,6 +275,7 @@ describe('tim init command', () => {
   test('interactive init asks whether to queue plans after generation', async () => {
     vi.mocked(select)
       .mockResolvedValueOnce('claude-code')
+      .mockResolvedValueOnce('needs_review')
       .mockResolvedValueOnce('production')
       .mockResolvedValueOnce('pr-based')
       .mockResolvedValueOnce('never');
@@ -295,6 +297,7 @@ describe('tim init command', () => {
     await fs.writeFile(path.join(tempDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9.0');
     vi.mocked(select)
       .mockResolvedValueOnce('codex-cli')
+      .mockResolvedValueOnce('done')
       .mockResolvedValueOnce('hobby')
       .mockResolvedValueOnce('squash-rebase')
       .mockResolvedValueOnce('never');
@@ -306,6 +309,7 @@ describe('tim init command', () => {
     const config = yaml.parse(
       await fs.readFile(path.join(tempDir, '.tim/config/tim.yml'), 'utf-8')
     );
+    expect(config.planAutocompleteStatus).toBe('done');
     expect(config.quality).toBe('hobby');
     expect(config.developmentWorkflow).toBe('squash-rebase');
     expect(config.lifecycle.commands).toEqual([
@@ -317,6 +321,7 @@ describe('tim init command', () => {
   test('does not add an install command when the answer is blank', async () => {
     vi.mocked(select)
       .mockResolvedValueOnce('claude-code')
+      .mockResolvedValueOnce('needs_review')
       .mockResolvedValueOnce('production')
       .mockResolvedValueOnce('pr-based')
       .mockResolvedValueOnce('never');
@@ -339,6 +344,7 @@ describe('tim init command', () => {
     await fs.writeFile(path.join(tempDir, 'package-lock.json'), '{}');
     vi.mocked(select)
       .mockResolvedValueOnce('claude-code')
+      .mockResolvedValueOnce('needs_review')
       .mockResolvedValueOnce('production')
       .mockResolvedValueOnce('pr-based')
       .mockResolvedValueOnce('never');

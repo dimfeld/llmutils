@@ -1591,7 +1591,8 @@ describe('setupWorkspace', () => {
       .spyOn(workspaceManager, 'prepareExistingWorkspace')
       .mockResolvedValueOnce({
         success: false,
-        error: 'Failed to checkout base branch "feature/missing-parent"',
+        error:
+          'Failed to checkout base branch "feature/missing-parent": Error: Revision `feature/missing-parent` doesn\'t exist',
       })
       .mockResolvedValueOnce({
         success: true,

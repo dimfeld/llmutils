@@ -2328,8 +2328,9 @@ describe('createWorkspace', () => {
         cmd[0] === 'jj' &&
         cmd[1] === 'bookmark' &&
         cmd[2] === 'set' &&
-        cmd[3] === taskId &&
-        cmd[4] === '-r'
+        cmd[3] === '--allow-backwards' &&
+        cmd[4] === taskId &&
+        cmd[5] === '-r'
       ) {
         return { exitCode: 1, stdout: '', stderr: 'set failed' };
       }
@@ -2395,8 +2396,9 @@ describe('createWorkspace', () => {
         cmd[0] === 'jj' &&
         cmd[1] === 'bookmark' &&
         cmd[2] === 'set' &&
-        cmd[3] === taskId &&
-        cmd[4] === '-r'
+        cmd[3] === '--allow-backwards' &&
+        cmd[4] === taskId &&
+        cmd[5] === '-r'
       ) {
         return { exitCode: 0, stdout: '', stderr: '' };
       }
