@@ -294,6 +294,9 @@ Open the Vite URL printed by the command. The app groups data by project and pro
 
 The web UI discovers running agent processes through session files in `~/.cache/tim/sessions/` and connects to each process over its embedded local WebSocket server. It also uses SSE to update the browser as sessions and PR status change.
 
+When tool calls are hidden, Session Detail shows a count in place of each consecutive group.
+Tool results do not add to the call count. Tim agent calls remain visible.
+
 Session Detail also shows the live, ephemeral process tree for a headless session. It includes
 nested `tim` commands and their Claude or Codex executors, with labels, state, elapsed time, and
 PID when available. You can end or terminate one live executor after confirmation. A shared Codex

@@ -380,6 +380,7 @@ describe('SessionDetail', () => {
     });
     const hidden = await render(SessionDetail, { props: { session } });
     expect(hidden.body).not.toContain('Bash');
+    expect(hidden.body).toContain('1 tool call hidden');
     expect(hidden.body).toContain('Send agent message');
     uiState.getSessionState.mockReturnValue({
       planPaneCollapsed: false,
@@ -388,6 +389,7 @@ describe('SessionDetail', () => {
     });
     const shown = await render(SessionDetail, { props: { session } });
     expect(shown.body).toContain('Bash');
+    expect(shown.body).not.toContain('tool call hidden');
     expect(shown.body).toContain('Send agent message');
   });
 

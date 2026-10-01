@@ -16,7 +16,7 @@
   import { useUIState } from '$lib/stores/ui_state.svelte.js';
   import SessionMessage from './SessionMessage.svelte';
   import { formatMessageTimestamp } from '$lib/utils/message_formatting.js';
-  import { filterSessionMessages } from '$lib/utils/session_message_visibility.js';
+  import { summarizeHiddenToolCalls } from '$lib/utils/session_message_visibility.js';
   import { mergeConsecutiveOutputMessages } from '$lib/utils/merge_output_messages.js';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
@@ -242,7 +242,7 @@
   );
   let visibleMessages = $derived(
     mergeConsecutiveOutputMessages(
-      filterSessionMessages(session.messages, showLifecycleOutput, showToolCalls)
+      summarizeHiddenToolCalls(session.messages, showLifecycleOutput, showToolCalls)
     )
   );
 

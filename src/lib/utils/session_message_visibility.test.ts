@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { DisplayMessage, StructuredMessagePayload } from '$lib/types/session.js';
-import { filterSessionMessages } from './session_message_visibility.js';
+import { filterSessionMessages, summarizeHiddenToolCalls } from './session_message_visibility.js';
 
 function toolMessage(toolName: string, type: 'llm_tool_use' | 'llm_tool_result'): DisplayMessage {
   return {
@@ -176,4 +176,56 @@ describe('filterSessionMessages', () => {
       });
     }
   }
+});
+
+describe('summarizeHiddenToolCalls', () => {
+  test('counts calls once and separates groups at visible messages', () => {
+    const call = toolMessage('Bash', 'llm_tool_use');
+    const result = toolMessage('Bash', 'llm_tool_result');
+    const second = toolMessage('Read', 'llm_tool_use');
+    const messages = [call, result, second, output, { ...call, id: 'last' }];
+    const summarized = summarizeHiddenToolCalls(messages, false, false);
+    expect(summarized.map((message) => message.body)).toEqual([
+      { type: 'text', text: '2 tool calls hidden' },
+      output.body,
+      { type: 'text', text: '1 tool call hidden' },
+    ]);
+    expect(summarized[0].id).toBe(`hidden-tools:${call.id}`);
+    expect(summarizeHiddenToolCalls(messages, false, true)).toEqual(messages);
+  });
+
+  test('keeps Tim agent calls visible and omits lifecycle output', () => {
+    const call = toolMessage('Bash', 'llm_tool_use');
+    const agent = toolMessage('StartTimAgent', 'llm_tool_use');
+    const messages = [
+      call,
+      { ...output, origin: 'lifecycle' as const },
+      agent,
+      toolMessage('Read', 'llm_tool_use'),
+    ];
+    const summarized = summarizeHiddenToolCalls(messages, false, false);
+    expect(summarized.map((message) => message.body)).toEqual([
+      { type: 'text', text: '1 tool call hidden' },
+      agent.body,
+      { type: 'text', text: '1 tool call hidden' },
+    ]);
+  });
+
+  test('counts command and file operations in one hidden group', () => {
+    const messages = [
+      structuredMessage({ type: 'command_exec', command: 'pwd' }),
+      structuredMessage({ type: 'command_result', command: 'pwd', exitCode: 0 }),
+      structuredMessage({ type: 'file_edit', path: 'a.ts', diff: '+change' }),
+    ];
+    expect(summarizeHiddenToolCalls(messages, false, false).map((message) => message.body)).toEqual(
+      [{ type: 'text', text: '2 tool calls hidden' }]
+    );
+  });
+
+  test('shows a count for a result without a retained call', () => {
+    expect(
+      summarizeHiddenToolCalls([toolMessage('Bash', 'llm_tool_result')], false, false)[0].body
+    ).toEqual({ type: 'text', text: '1 tool call hidden' });
+    expect(summarizeHiddenToolCalls([], false, false)).toEqual([]);
+  });
 });

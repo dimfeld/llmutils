@@ -43,6 +43,54 @@ export function filterSessionMessages(
   });
 }
 
+/** Replace hidden tool runs with a count without counting results twice. */
+export function summarizeHiddenToolCalls(
+  messages: DisplayMessage[],
+  showLifecycleOutput: boolean,
+  showToolCalls: boolean
+): DisplayMessage[] {
+  const eligible = filterSessionMessages(messages, showLifecycleOutput, true);
+  if (showToolCalls) return eligible;
+
+  const visibleIds = new Set(
+    filterSessionMessages(eligible, true, false).map((message) => message.id)
+  );
+  const summarized: DisplayMessage[] = [];
+  let firstHidden: DisplayMessage | undefined;
+  let calls = 0;
+  let results = 0;
+
+  function flush(): void {
+    if (!firstHidden) return;
+    const count = calls || results;
+    summarized.push({
+      ...firstHidden,
+      id: `hidden-tools:${firstHidden.id}`,
+      category: 'log',
+      bodyType: 'text',
+      rawType: 'hidden_tool_calls',
+      body: { type: 'text', text: `${count} tool ${count === 1 ? 'call' : 'calls'} hidden` },
+    });
+    firstHidden = undefined;
+    calls = 0;
+    results = 0;
+  }
+
+  for (const message of eligible) {
+    if (visibleIds.has(message.id)) {
+      flush();
+      summarized.push(message);
+    } else {
+      firstHidden ??= message;
+      const type = message.body.type === 'structured' ? message.body.message.type : message.rawType;
+      if (type === 'llm_tool_result' || type === 'command_result') results++;
+      else calls++;
+    }
+  }
+  flush();
+  return summarized;
+}
+
 function getRateLimitMessageKey(message: DisplayMessage): string | null {
   if (message.body.type !== 'structured') return null;
 
