@@ -56,9 +56,7 @@ export async function prepareWorkspaceRoundTrip(options: {
 
   const refName = (await getCurrentBranchName(options.workspacePath)) ?? workspaceInfo.branch;
   if (!refName) {
-    throw new Error(
-      `No current branch/bookmark detected for workspace ${options.workspacePath}. Check out or create a branch before syncing.`
-    );
+    return null;
   }
 
   const restoreBranch = await getTrunkBranch(options.workspacePath);

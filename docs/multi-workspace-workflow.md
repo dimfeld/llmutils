@@ -197,6 +197,10 @@ them but the new branch does not.
 
 All workspace sync uses origin as the intermediary — branches are always pushed to and pulled from origin rather than directly between workspaces.
 
+Automatic workspace sync is skipped on trunk or when neither the current branch/bookmark nor
+the stored workspace branch is available. Commands such as `tim chat` can still run in that
+workspace. Changes stay local unless you commit or push them separately.
+
 ### Stale Local-Only Branch Handling
 
 When preparing an existing workspace, if the target branch exists locally but **not** on the remote, it is treated as stale — typically from a prior run that failed before pushing. Instead of reusing such a branch (which may contain broken work on an outdated base):

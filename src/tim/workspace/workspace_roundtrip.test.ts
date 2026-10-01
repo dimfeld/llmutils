@@ -709,6 +709,44 @@ describe('prepareWorkspaceRoundTrip', () => {
     });
   });
 
+  test('skips sync when an auto workspace has no branch or bookmark', async () => {
+    mockGetCurrentBranchName.mockResolvedValue(null);
+    mockGetWorkspaceInfoByPath.mockReturnValue({
+      workspaceType: 'auto',
+      repositoryId: 'repo',
+      branch: '',
+    } as any);
+
+    const { prepareWorkspaceRoundTrip } = await import('./workspace_roundtrip.js');
+
+    await expect(
+      prepareWorkspaceRoundTrip({
+        workspacePath: '/tmp/workspace',
+        workspaceSyncEnabled: true,
+      })
+    ).resolves.toBeNull();
+    expect(mockGetTrunkBranch).not.toHaveBeenCalled();
+    expect(mockFindPrimaryWorkspaceForRepository).not.toHaveBeenCalled();
+  });
+
+  test('uses the stored branch when no current branch or bookmark is detected', async () => {
+    mockGetCurrentBranchName.mockResolvedValue(null);
+    mockGetWorkspaceInfoByPath.mockReturnValue({
+      workspaceType: 'auto',
+      repositoryId: 'repo',
+      branch: 'task-123',
+    } as any);
+
+    const { prepareWorkspaceRoundTrip } = await import('./workspace_roundtrip.js');
+
+    await expect(
+      prepareWorkspaceRoundTrip({
+        workspacePath: '/tmp/workspace',
+        workspaceSyncEnabled: true,
+      })
+    ).resolves.toMatchObject({ refName: 'task-123' });
+  });
+
   test('returns null when the current branch is the trunk branch', async () => {
     mockGetCurrentBranchName.mockResolvedValue('main');
     mockGetWorkspaceInfoByPath.mockReturnValue({
