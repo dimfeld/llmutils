@@ -67,6 +67,98 @@ describe('filterSessionMessages', () => {
     expect(filterSessionMessages(messages, false, true)).toEqual(messages);
   });
 
+  test('keeps only the latest matching rate limit message across hidden messages', () => {
+    const rateLimit = (id: string): DisplayMessage => ({
+      id,
+      seq: Number(id),
+      timestamp: '2026-03-25T10:00:00.000Z',
+      category: 'structured',
+      bodyType: 'structured',
+      body: {
+        type: 'structured',
+        message: {
+          type: 'llm_status',
+          source: 'claude',
+          status: 'Rate limit warning (seven_day)',
+          detail: 'Utilization: 77%',
+          rateLimitInfo: { utilization: 77, rateLimitType: 'seven_day' },
+        },
+      },
+      rawType: 'llm_status',
+    });
+    const hiddenToolCall = toolMessage('Bash', 'llm_tool_use');
+    const earlierRateLimit = rateLimit('1');
+    const laterRateLimit = rateLimit('3');
+
+    expect(
+      filterSessionMessages([earlierRateLimit, hiddenToolCall, laterRateLimit], false, false)
+    ).toEqual([laterRateLimit]);
+  });
+
+  test('keeps rate limit messages when their details differ', () => {
+    const messages: DisplayMessage[] = [
+      {
+        ...structuredMessage({
+          type: 'llm_status',
+          source: 'claude',
+          status: 'Rate limit warning (seven_day)',
+          rateLimitInfo: { utilization: 70, rateLimitType: 'seven_day' },
+        }),
+        id: 'first',
+      },
+      {
+        ...structuredMessage({
+          type: 'llm_status',
+          source: 'claude',
+          status: 'Rate limit warning (seven_day)',
+          rateLimitInfo: { utilization: 80, rateLimitType: 'seven_day' },
+        }),
+        id: 'second',
+      },
+    ];
+
+    expect(filterSessionMessages(messages, false, false)).toEqual(messages);
+  });
+
+  test('keeps only the latest Codex token usage message with matching rate limits', () => {
+    const tokenUsage = (id: string, totalTokens: number): DisplayMessage => ({
+      ...structuredMessage({
+        type: 'token_usage',
+        totalTokens,
+        rateLimits: {
+          codex: {
+            limitId: 'codex',
+            primary: { usedPercent: 20, windowDurationMins: 10080 },
+          },
+        },
+      }),
+      id,
+    });
+    const earlier = tokenUsage('earlier', 100);
+    const later = tokenUsage('later', 200);
+    const hiddenToolCall = toolMessage('Bash', 'llm_tool_use');
+
+    expect(filterSessionMessages([earlier, hiddenToolCall, later], false, false)).toEqual([later]);
+  });
+
+  test('keeps Codex token usage messages when their displayed rate limits differ', () => {
+    const message = (id: string, usedPercent: number): DisplayMessage => ({
+      ...structuredMessage({
+        type: 'token_usage',
+        rateLimits: {
+          codex: {
+            limitId: 'codex',
+            primary: { usedPercent, windowDurationMins: 10080 },
+          },
+        },
+      }),
+      id,
+    });
+    const messages = [message('first', 20), message('second', 21)];
+
+    expect(filterSessionMessages(messages, false, false)).toEqual(messages);
+  });
+
   for (const name of [
     'StartTimAgent',
     'ListTimAgents',
