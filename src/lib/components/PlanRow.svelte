@@ -60,6 +60,7 @@
   <div class="mt-1 flex items-center gap-1.5">
     <StatusBadge
       status={plan.displayStatus}
+      planStatus={plan.status}
       label={plan.displayStatus === 'needs_review' && !plan.depsFullyResolved
         ? 'Stacked'
         : undefined}

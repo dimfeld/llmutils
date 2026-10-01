@@ -1174,7 +1174,7 @@
     <!-- Status badges + actions -->
     <div>
       <div class="flex flex-wrap items-center gap-2">
-        <StatusBadge status={plan.displayStatus} />
+        <StatusBadge status={plan.displayStatus} planStatus={plan.status} />
         <PriorityBadge priority={plan.priority} />
 
         <div class="ml-auto flex flex-wrap items-center gap-2">
@@ -1452,7 +1452,7 @@
                   </span>
                 {/if}
                 {#if dep.displayStatus}
-                  <StatusBadge status={dep.displayStatus} />
+                  <StatusBadge status={dep.displayStatus} planStatus={dep.status ?? undefined} />
                 {/if}
               </a>
             </li>
@@ -1490,7 +1490,7 @@
                   </span>
                 {/if}
                 {#if dep.displayStatus}
-                  <StatusBadge status={dep.displayStatus} />
+                  <StatusBadge status={dep.displayStatus} planStatus={dep.status ?? undefined} />
                 {/if}
               </a>
             </li>
@@ -1518,7 +1518,7 @@
                 {/if}
                 <span class="text-foreground">{dep.title ?? 'Unknown plan'}</span>
                 {#if dep.displayStatus}
-                  <StatusBadge status={dep.displayStatus} />
+                  <StatusBadge status={dep.displayStatus} planStatus={dep.status ?? undefined} />
                 {/if}
               </a>
             </li>
@@ -1582,7 +1582,7 @@
                   </span>
                 {/if}
                 {#if dep.displayStatus}
-                  <StatusBadge status={dep.displayStatus} />
+                  <StatusBadge status={dep.displayStatus} planStatus={dep.status ?? undefined} />
                 {/if}
               </a>
             </li>

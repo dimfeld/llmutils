@@ -1,11 +1,19 @@
 <script lang="ts">
   import type { PlanDisplayStatus } from '$lib/server/db_queries.js';
+  import type { PlanRow } from '$tim/db/plan.js';
 
   let {
     status,
+    planStatus,
     label: labelOverride,
     colorClass: colorClassOverride,
-  }: { status: PlanDisplayStatus; label?: string; colorClass?: string } = $props();
+  }: {
+    status: PlanDisplayStatus;
+    /** The stored plan status. Used to mark queued plans that are blocked by dependencies. */
+    planStatus?: PlanRow['status'];
+    label?: string;
+    colorClass?: string;
+  } = $props();
 
   const colorMap: Record<PlanDisplayStatus, string> = {
     in_progress: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
@@ -44,9 +52,15 @@
       colorMap[status] ??
       'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
   );
-  let label = $derived(labelOverride ?? labelMap[status] ?? status);
+  let queuedBlocked = $derived(status === 'blocked' && planStatus === 'queued');
+  let label = $derived(
+    labelOverride ?? (queuedBlocked ? 'Queued · Blocked' : (labelMap[status] ?? status))
+  );
 </script>
 
-<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {colorClass}">
+<span
+  class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap {colorClass}"
+  title={queuedBlocked ? 'Queued, but waiting on unfinished dependencies' : undefined}
+>
   {label}
 </span>
