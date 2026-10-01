@@ -590,15 +590,26 @@
         </Popover>
 
         {#if windows && !floating}
-          <button
-            type="button"
-            class="rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-            onclick={() => windows.open(session.connectionId)}
-            aria-label="Open in window"
-            title="Open in window"
-          >
-            <AppWindow class="size-4" />
-          </button>
+          <Tooltip.Root>
+            <Tooltip.Trigger>
+              {#snippet child({ props })}
+                {@const buttonProps = mergeProps(
+                  {
+                    type: 'button',
+                    class:
+                      'rounded p-1 text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800',
+                    onclick: () => windows.open(session.connectionId),
+                    'aria-label': 'Pop out into a window',
+                  },
+                  props
+                ) as HTMLButtonAttributes}
+                <button {...buttonProps}>
+                  <AppWindow class="size-4" />
+                </button>
+              {/snippet}
+            </Tooltip.Trigger>
+            <Tooltip.Content sideOffset={8}>Pop out into a window</Tooltip.Content>
+          </Tooltip.Root>
         {/if}
 
         <Popover>

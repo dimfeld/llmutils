@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { SessionData } from '$lib/types/session.js';
 
-const { sessionManager, uiState } = vi.hoisted(() => ({
+const { sessionManager, uiState, sessionWindows } = vi.hoisted(() => ({
   sessionManager: {
     initialized: true,
     sessions: new Map(),
@@ -19,6 +19,7 @@ const { sessionManager, uiState } = vi.hoisted(() => ({
     })),
     setSessionState: vi.fn(),
   },
+  sessionWindows: { open: vi.fn() },
 }));
 
 const { getPlanAttentionState } = vi.hoisted(() => ({
@@ -57,6 +58,10 @@ vi.mock('$lib/stores/session_state.svelte.js', () => ({
 
 vi.mock('$lib/stores/ui_state.svelte.js', () => ({
   useUIState: () => uiState,
+}));
+
+vi.mock('$lib/stores/session_windows.svelte.js', () => ({
+  useSessionWindows: () => sessionWindows,
 }));
 
 vi.mock('$lib/remote/plan_task_counts.remote.js', () => ({
@@ -114,6 +119,14 @@ describe('SessionDetail', () => {
 
     expect(body).toContain('role="img"');
     expect(body).toContain('aria-label="Active"');
+  });
+
+  test('shows a tooltip on the pop out into a window button', async () => {
+    const session = createSession();
+    const { body } = await render(SessionDetail, { props: { session } });
+
+    expect(body).toContain('aria-label="Pop out into a window"');
+    expect(body).toContain('Pop out into a window');
   });
 
   test('renders status dot with aria-label for offline session', async () => {
