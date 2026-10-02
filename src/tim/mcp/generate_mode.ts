@@ -361,6 +361,7 @@ Use your Todo tools to track progress through these steps:
 - [ ] Perform research - explore the codebase and understand patterns
 - [ ] Generate implementation guide - write Research, Implementation Guide, and Manual Testing Runbooks sections to the plan file
 - [ ] Ask questions - collaborate with your human partner to refine the plan
+- [ ] Confirm implementation summary - describe in your own words what will be implemented and iterate until the user approves
 - [ ] Propose plan split - suggest a possible decomposition into sibling child plans and confirm with the user before creating tasks
 - [ ] Add tasks - use the 'tim tools update-plan-tasks' CLI command to add the structured task data
 
@@ -378,7 +379,13 @@ Add your research and implementation guide directly to the plan file at ${writab
 
 When done, collaborate with your human partner to refine this plan. ${questionText}
 
-Once the plan is refined and BEFORE adding the structured tasks, work through the "Plan Split Recommendation" section above: propose a possible split into sibling child plans (using \`--base-plan\` to stack them as PRs where appropriate) and confirm with the user whether to apply that split or keep the work in a single plan. Only skip this check for exceptionally small, self-contained changes.
+# Implementation Summary Approval
+
+After the questions phase is complete, and BEFORE proposing a plan split or adding structured tasks, write a few paragraphs that describe in your own words what is going to be implemented. Do not copy text from the plan file. Explain the intended behavior, the main changes, and any important decisions or boundaries of scope that came out of the research and the questions. Then ask the user to approve this summary or to request changes.
+
+If the user requests changes, update the plan file to match, write a revised summary, and ask for approval again. Continue this cycle until the user approves. Do not continue to the next step until the user explicitly approves the summary.
+
+Once the user approves the implementation summary, work through the "Plan Split Recommendation" section above: propose a possible split into sibling child plans (using \`--base-plan\` to stack them as PRs where appropriate) and confirm with the user whether to apply that split or keep the work in a single plan. Only skip this check for exceptionally small, self-contained changes.
 
 Once the plan is refined and the split decision is made, use 'tim tools update-plan-tasks' on the CLI (as described in the using-tim skill) to add the tasks to the plan file, or if you split, create and wire the child plans yourself and then use subagents as described above to insert details and call \`tim tools update-plan-tasks\` for each child plan. The list of tasks should correspond to the steps in your implementation guide.
 

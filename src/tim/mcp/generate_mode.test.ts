@@ -204,6 +204,27 @@ describe('tim MCP generate mode helpers', () => {
     expect(message?.text).toContain('## Manual Testing Runbooks');
   });
 
+  test('loadResearchPrompt requires an approved implementation summary between questions and plan split', async () => {
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    const questionsIndex = messageText.indexOf(
+      'collaborate with your human partner to refine this plan'
+    );
+    const summaryIndex = messageText.indexOf('# Implementation Summary Approval');
+    const splitIndex = messageText.indexOf(
+      'Once the user approves the implementation summary, work through the "Plan Split Recommendation" section'
+    );
+    expect(questionsIndex).toBeGreaterThan(-1);
+    expect(summaryIndex).toBeGreaterThan(questionsIndex);
+    expect(splitIndex).toBeGreaterThan(summaryIndex);
+    expect(messageText).toContain(
+      'write a few paragraphs that describe in your own words what is going to be implemented'
+    );
+    expect(messageText).toContain('Continue this cycle until the user approves.');
+    expect(messageText).toContain('- [ ] Confirm implementation summary');
+  });
+
   test('loadResearchPrompt keeps child plan creation with main agent and details/tasks with subagents', async () => {
     const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
