@@ -222,6 +222,12 @@ describe('tim MCP generate mode helpers', () => {
       'write a few paragraphs that describe in your own words what is going to be implemented'
     );
     expect(messageText).toContain('Continue this cycle until the user approves.');
+    expect(messageText).toContain(
+      'ask more clarifying questions if the requested changes are unclear'
+    );
+    expect(messageText).toContain(
+      'update the plan file so that its details, research, implementation guide, and manual testing runbooks all agree'
+    );
     expect(messageText).toContain('- [ ] Confirm implementation summary');
   });
 

@@ -383,7 +383,7 @@ When done, collaborate with your human partner to refine this plan. ${questionTe
 
 After the questions phase is complete, and BEFORE proposing a plan split or adding structured tasks, write a few paragraphs that describe in your own words what is going to be implemented. Do not copy text from the plan file. Explain the intended behavior, the main changes, and any important decisions or boundaries of scope that came out of the research and the questions. Then ask the user to approve this summary or to request changes.
 
-If the user requests changes, update the plan file to match, write a revised summary, and ask for approval again. Continue this cycle until the user approves. Do not continue to the next step until the user explicitly approves the summary.
+If the user requests changes, ask more clarifying questions if the requested changes are unclear or raise new decisions. Then update the plan file so that its details, research, implementation guide, and manual testing runbooks all agree with the revised understanding, write a revised summary, and ask for approval again. Continue this cycle until the user approves. Do not continue to the next step until the user explicitly approves the summary.
 
 Once the user approves the implementation summary, work through the "Plan Split Recommendation" section above: propose a possible split into sibling child plans (using \`--base-plan\` to stack them as PRs where appropriate) and confirm with the user whether to apply that split or keep the work in a single plan. Only skip this check for exceptionally small, self-contained changes.
 
