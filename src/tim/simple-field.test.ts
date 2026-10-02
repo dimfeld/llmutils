@@ -258,7 +258,7 @@ describe('simple field logic in commands', () => {
       // Verify it uses the research prompt
       const promptText =
         result.messages[0].content.type === 'text' ? result.messages[0].content.text : '';
-      expect(promptText).toContain('Once your research is complete');
+      expect(promptText).toContain('## Step 2: Implementation Guide');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
@@ -292,7 +292,7 @@ describe('simple field logic in commands', () => {
       // Verify it uses the research prompt (default behavior)
       const promptText =
         result.messages[0].content.type === 'text' ? result.messages[0].content.text : '';
-      expect(promptText).toContain('Once your research is complete');
+      expect(promptText).toContain('## Step 2: Implementation Guide');
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }

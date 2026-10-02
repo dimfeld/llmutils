@@ -105,7 +105,7 @@ function getBlockingSubissueInstructions(options: BlockingSubissueInstructionOpt
   const commandExample = `tim add "Blocking Title" --parent ${planIdLabel} --discovered-from ${planIdLabel} --priority <high|medium|low|urgent> --details "Why this is needed first"`;
 
   return `
-# Blocking Subissues
+### Blocking Subissues
 
 Before producing the main implementation plan, determine whether any prerequisite work must be completed first. For every prerequisite that truly blocks the main plan:
 1. Create a new plan immediately with \
@@ -135,7 +135,7 @@ function getDiscoveredIssueInstructions(options: DiscoveredIssueInstructionOptio
       : 'If the issue should live under a parent/epic, add `--parent <parent-plan-id>`.';
 
   return `
-# Discovered Issues
+### Discovered Issues
 
 If you uncover new, actionable work that is OUTSIDE the current plan scope, create a new plan immediately so it can be tracked:
 1. Use \`${commandExample}\` (see the using-tim skill).
@@ -178,19 +178,19 @@ Implementation Notes
 - **Conflicting, Unclear, or Impossible Requirements, if any** -- you can omit this section if there are none
 `;
 
-export function generateClaudeCodePlanningPrompt(
-  planText: string,
+/** Rules for structured tasks, shared by every phase that creates tasks. */
+export const taskCreationRules = `Do not create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
+
+Integrate testing into the implementation tasks: each task that introduces new functionality includes writing the tests for it, and its description states those testing requirements. Do not create standalone "Write tests" or "Add test coverage" tasks.`;
+
+/** Instructions for the research phase of the generate workflow. */
+export function generateResearchPhaseInstructions(
   options: {
-    includeNextInstructionSentence?: boolean;
     withBlockingSubissues?: boolean;
     parentPlanId?: number;
   } = {}
 ): string {
-  const {
-    includeNextInstructionSentence = true,
-    withBlockingSubissues = false,
-    parentPlanId,
-  } = options;
+  const { withBlockingSubissues = false, parentPlanId } = options;
 
   const blockingSection = getBlockingSubissueInstructions({
     withBlockingSubissues,
@@ -200,59 +200,27 @@ export function generateClaudeCodePlanningPrompt(
     parentPlanId,
   });
 
-  let prompt = `This is a description for an upcoming feature that I want you to analyze and prepare a plan for.
+  return `Analyze the project description and the codebase:
 
-# Project Description
-
-${planText}
-
-# Instructions
-
-Please analyze this project description and the codebase. Your task is to:
-
-1. Use your tools to explore the codebase and understand the existing code structure
-2. Identify which files would need to be created or modified to implement this feature
-3. Think about how to break this down into logical phases, tasks, and whether it should be split into multiple smaller plans. Lean toward smaller, focused plans that each land as a PR of a few hundred lines where feasible — smaller PRs are far easier to review and merge. Once you have an initial split, take a second pass and try to come up with an even more granular plan that makes truly small PRs, if feasible — only stopping when a further split would leave plans that are no longer independently meaningful.
+1. Use your tools to explore the relevant parts of the codebase and understand the existing code structure, patterns, and conventions
+2. Identify which files and components would need to be created or modified to implement this feature
+3. Think about how to break the work down into logical steps and tasks
 4. Consider dependencies between different parts of the implementation
 5. Identify any potential challenges or considerations
 
-For now, please:
-- Explore the relevant parts of the codebase
-- Understand the existing patterns and conventions
-- Identify the key files and components that will be involved
-
 If you are unsure whether something is already implemented in the codebase, look it up using your tools instead of asking the user.
 
-Make sure your plan includes these details:
+When the requirements touch several independent, sizeable parts of the codebase, use parallel subagents to analyze those parts.
+${blockingSection}${discoveredIssueSection}`;
+}
+
+/** Instructions for writing the research and implementation guide sections to the plan file. */
+export function generateResearchOutputInstructions(): string {
+  return `Write your research findings and a detailed implementation guide to the plan file. Add three sections: "## Research", "## Implementation Guide", and "## Manual Testing Runbooks". Across these sections, make sure the plan includes these details:
 
 ${commonGenerateDetails}
 
-Do not create tasks for manual verification, because an AI coding agent executes the plan and verification happens separately. Focus on automated testing and implementation tasks only.
-
-Do not implement the feature or change source files during planning; writing to the plan file is expected.
-
-${blockingSection}
-${discoveredIssueSection}
-
-When the requirements touch several independent, sizeable parts of the codebase, use parallel subagents to analyze those parts.
-Then prepare to synthesize your findings into the final plan.`;
-
-  if (includeNextInstructionSentence) {
-    prompt += `\nWhen you're done with your analysis, let me know and I'll provide the next instruction.`;
-  }
-  return prompt;
-}
-
-export function generateClaudeCodeResearchPrompt(
-  prefix = 'Before you generate the final implementation plan'
-): string {
-  return `${prefix}, capture every insight you've gathered.
-
-Generate structured Markdown that preserves your research findings and provides a detailed implementation guide.
-
-Your output should have three distinct sections:
-
-## Research
+### The "## Research" section
 
 This section preserves all the knowledge you gathered during exploration. The goal is to document your findings
 so that anyone reading this later can understand what you learned without needing to re-explore the codebase.
@@ -269,7 +237,7 @@ Include:
 Be verbose here. The insights you gathered are valuable, so include as much detail as possible from your exploration.
 This section should serve as a standalone reference document for the research phase.
 
-## Implementation Guide
+### The "## Implementation Guide" section
 
 This section provides actionable guidance for implementing the change.
 
@@ -277,10 +245,9 @@ Include:
 - A detailed step-by-step guide on how to implement the change. This does not need to be actual code--the agent that
 implements the code will be smart too--but each step should be very clear on what to do and why.
 - Reference specific patterns, abstractions, APIs, and documentation files that are relevant to each step.
-- Manual testing steps (these are appropriate here even though we don't want them in the structured tasks that you will generate later).
 - Rationale behind why certain approaches are recommended over alternatives.
 
-## Manual Testing Runbooks
+### The "## Manual Testing Runbooks" section
 
 This section provides small, runbook-style walkthroughs that a human or proof-generation agent can follow to
 demonstrate the delivered feature.
@@ -295,18 +262,14 @@ manual walkthrough and should include:
 - The recommended proof artifact to capture, such as a screenshot, video, command transcript, log excerpt, or
   generated file.
 
-If the plan is split into subplans, each subplan must have its own "## Manual Testing Runbooks" section in that
-subplan's details. Make each subplan's runbooks cover only the changes delivered by that subplan.
+### Formatting
 
-### Constraints
-
-Do not wrap the output in code fences and do not repeat previous instructions.
-File paths must be relative to the root of the repository, not absolute.
-`;
+Do not wrap the plan content in code fences.
+File paths must be relative to the root of the repository, not absolute.`;
 }
 
-export function generateClaudeCodeGenerationPrompt(
-  planText: string,
+/** Instructions for writing plan details in the simple generate workflow. */
+export function generatePlanDetailsInstructions(
   options: {
     includeMarkdownFormat?: boolean;
     withBlockingSubissues?: boolean;
@@ -329,12 +292,6 @@ Include all of the sections below in the plan details, along with any other deta
 ${commonGenerateDetails}`;
   }
 
-  let projectReminder = planText
-    ? `Once again, the project being implemented is:
-${planText}
-`
-    : '';
-
   const blockingReminder = withBlockingSubissues
     ? `
 In the plan's Details section, summarize any blocking plans you created under a "## Blocking Subissues" heading using this structure:
@@ -342,29 +299,17 @@ In the plan's Details section, summarize any blocking plans you created under a 
 - Priority: [high|medium|low|urgent]
 - Reason: [Why this must be done first]
 - Tasks: [High-level task list]
-
 `
     : '';
 
-  return `Based on your analysis of the codebase and the project description, please now generate a detailed implementation plan.
-
-${projectReminder}
+  return `Based on your analysis of the codebase and the project description, generate a detailed implementation plan.
 
 The plan should be formatted as follows:
 - Break the project into phases (or a single phase for smaller features)
 - Each phase should have a clear goal, details, and tasks
 - Focus on logical progression and incremental functionality
 - Include acceptance criteria for each phase
-
-Do not create tasks for manual verification. This plan will be executed by an AI coding agent and verified separately after implementation. Focus on automated testing and implementation tasks only.
-
-Integrate testing into the implementation tasks: each task that introduces new functionality includes writing the tests for it, and its description states those testing requirements. Do not create standalone "Write tests" or "Add test coverage" tasks.
-
-${formatInstructions}
-
-${blockingReminder}
-
-Generate the complete plan now.`;
+${formatInstructions}${blockingReminder}`;
 }
 
 /**

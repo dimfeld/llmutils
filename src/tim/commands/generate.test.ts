@@ -108,7 +108,7 @@ vi.mock('./plan_discovery.js', () => ({
 }));
 
 import { handleGenerateCommand } from './generate.js';
-import { generateClaudeCodePlanningPrompt } from '../prompt.js';
+import { generateResearchPhaseInstructions } from '../prompt.js';
 import { readPlanFile, setPlanStatusById, writePlanFile, writePlanToDb } from '../plans.js';
 import type { PlanSchema } from '../planSchema.js';
 import { log, warn } from '../../logging.js';
@@ -1218,17 +1218,17 @@ describe('handleGenerateCommand with --next-ready flag', () => {
 });
 
 describe('blocking subissue prompts', () => {
-  test('generateClaudeCodePlanningPrompt includes blocking instructions when enabled', () => {
-    const prompt = generateClaudeCodePlanningPrompt('Feature overview', {
+  test('generateResearchPhaseInstructions includes blocking instructions when enabled', () => {
+    const prompt = generateResearchPhaseInstructions({
       withBlockingSubissues: true,
       parentPlanId: 42,
     });
 
-    expect(prompt).toContain('# Blocking Subissues');
+    expect(prompt).toContain('### Blocking Subissues');
     expect(prompt).toContain('tim add "Blocking Title" --parent 42 --discovered-from 42');
     expect(prompt).toContain('## Blocking Subissue: [Title]');
     expect(prompt).toContain('- Tasks: [High-level task list]');
-    expect(prompt).toContain('# Discovered Issues');
+    expect(prompt).toContain('### Discovered Issues');
     expect(prompt).toContain('tim add "Discovered Issue Title" --discovered-from 42');
     expect(prompt).toContain('## Discovered Issue: [Title]');
   });

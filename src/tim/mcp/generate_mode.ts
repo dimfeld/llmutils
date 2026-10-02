@@ -4,9 +4,10 @@ import type { SerializableValue } from 'fastmcp';
 import * as fs from 'node:fs';
 import path from 'node:path';
 import {
-  generateClaudeCodePlanningPrompt,
-  generateClaudeCodeResearchPrompt,
-  generateClaudeCodeGenerationPrompt,
+  generatePlanDetailsInstructions,
+  generateResearchOutputInstructions,
+  generateResearchPhaseInstructions,
+  taskCreationRules,
 } from '../prompt.js';
 import type { TimConfig } from '../configSchema.js';
 import { buildPlanContext, resolvePlan } from '../plan_display.js';
@@ -83,20 +84,11 @@ export interface GenerateModeRegistrationContext {
 // Much of this interview guidance is adapted from Matt Pocock's grill-me and grill-with-docs skills.
 const questionText = `Ask concise, high-impact questions that will help you improve the plan's tasks and execution details. When several questions are useful and can be answered independently, ask a batch of about four or five questions at a time and number each question clearly. Use one continuous, monotonically increasing sequence for the entire interview: for example, number the first batch 1–5 and the next batch 6–10, never restarting at 1. Interview your human partner directly and conversationally, waiting for their reply after each batch, until you reach a shared understanding of every important aspect of the plan. Do not use AskUserQuestion, approval-question flows, or similar questionnaire-style tools for this phase; ask the user in natural language and wait for their reply. As you figure things out, update the details in the plan file if necessary. Ask as many questions as you need to figure things out, since it improves the implementation quality.
 
-Challenge against the glossary
-When the user uses a term that conflicts with the existing language in CONTEXT.md or elsewhere, call it out immediately. "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?"
-
-Sharpen fuzzy language
-When the user uses vague or overloaded terms, propose a precise canonical term. "You're saying 'account' — do you mean the Customer or the User? Those are different things."
-
-Discuss concrete scenarios
-When domain relationships are being discussed, stress-test them with specific scenarios. Invent scenarios that probe edge cases and force the user to be precise about the boundaries between concepts.
-
-Cross-reference with code
-When the user states how something works, check whether the code agrees. If you find a contradiction, surface it: "Your code cancels entire Orders, but you just said partial cancellation is possible — which is right?"
-
-Update the plan inline
-When a term is resolved, update the plan right there and any corresponding documentation, if applicable. Don't batch these up — capture them as they happen.
+- **Challenge against the glossary.** When the user uses a term that conflicts with the existing language in CONTEXT.md or elsewhere, call it out immediately. "Your glossary defines 'cancellation' as X, but you seem to mean Y — which is it?"
+- **Sharpen fuzzy language.** When the user uses vague or overloaded terms, propose a precise canonical term. "You're saying 'account' — do you mean the Customer or the User? Those are different things."
+- **Discuss concrete scenarios.** When domain relationships are being discussed, stress-test them with specific scenarios. Invent scenarios that probe edge cases and force the user to be precise about the boundaries between concepts.
+- **Cross-reference with code.** When the user states how something works, check whether the code agrees. If you find a contradiction, surface it: "Your code cancels entire Orders, but you just said partial cancellation is possible — which is right?"
+- **Update the plan inline.** When a term is resolved, update the plan right there and any corresponding documentation, if applicable. Don't batch these up — capture them as they happen.
 
 Walk each branch of the design tree and resolve decision dependencies one-by-one before you finalize tasks. Every time you think you are done asking questions, review the plan file again to see if there are any more questions you might need to ask. If anything is underspecified, make sure you ask about it instead of assuming the answer.`;
 
@@ -148,7 +140,7 @@ async function loadPlanningInstructions(context: GenerateModeRegistrationContext
       return '';
     }
 
-    return `\n# Planning Instructions\n\n${instructions}\n`;
+    return `\n# Planning Instructions\n\nFollow these project-specific planning instructions in every step.\n\n${instructions}\n`;
   } catch (e) {
     console.error(`While reading planning instructions file ${instructionsPath}:`, e);
     return '';
@@ -291,6 +283,98 @@ function buildLinearChildIssueGuidance(
   3. Link the child tim plan to that new issue URL with \`tim set <child-plan-id> --issue "<new-issue-url>"\`.`;
 }
 
+interface WorkflowStep {
+  title: string;
+  summary: string;
+  body: string;
+}
+
+function renderWorkflow(steps: WorkflowStep[]): string {
+  const checklist = steps
+    .map((step, index) => `- [ ] Step ${index + 1}: ${step.title} - ${step.summary}`)
+    .join('\n');
+  const sections = steps
+    .map((step, index) => `## Step ${index + 1}: ${step.title}\n\n${step.body.trim()}`)
+    .join('\n\n');
+
+  return `# Workflow
+
+Work through these steps in order. Do not start a step until the previous step is complete. Use your Todo tools to track progress through the steps:
+
+${checklist}
+
+${sections}`;
+}
+
+function buildPlanSplitStep(
+  parentPlanLabel: string,
+  linearChildIssueGuidance: string
+): WorkflowStep {
+  return {
+    title: 'Plan Split',
+    summary:
+      'propose a decomposition into sibling child plans and confirm it with the user before creating tasks',
+    body: `Before you create the structured tasks for this plan, evaluate whether the work should be split into multiple sibling child plans and check in with your human partner. Propose a concrete split (proposed plan titles, the scope each child owns, and the order they should ship in, using \`--base-plan\` to stack them as PRs where appropriate) and ask the user whether to apply that split or keep everything in a single plan.
+
+Skip this step only for exceptionally small, self-contained changes (e.g. a one-file tweak, a localized bug fix, or a tiny refactor where splitting would clearly add overhead without improving clarity). For anything else, present the split proposal even if your recommendation is to keep it as a single plan, so the user can make the call.
+
+Consider splitting when:
+
+1. The work can be naturally divided into separate phases or parts that can be merged independently
+2. Different aspects of the work could be worked on in parallel by different agents
+3. The plan has distinct areas of functionality that have minimal interdependencies
+4. Breaking it down would reduce cognitive load and make each plan more focused
+5. The changes would otherwise add up to a large PR. Reviewability is important.
+
+Aim small. Each child plan should ideally land as a PR of a few hundred lines of code where that is feasible — smaller, tightly-scoped PRs are far easier to review and merge than large ones. Prefer splitting work into more, smaller plans rather than fewer, larger ones, as long as each plan still delivers a complete, independently testable slice. If a proposed child plan looks like it would grow well past a few hundred lines, look for a further split before settling on it.
+
+Once you have an initial split, take a second pass over it and try to come up with an even more granular plan that makes truly small PRs, if feasible. For each proposed child plan, ask whether it could reasonably be broken into two or more even smaller plans that each still deliver a complete, independently testable slice — and if so, prefer that finer-grained split. Only stop subdividing when a further split would leave plans that are no longer independently meaningful or would add more coordination overhead than the smaller size is worth.
+
+The user may prefer to split vertically by functional areas, or horizontally (e.g. backend foundation followed by UI), or both. Surface the tradeoffs in your proposal. Do not split plans purely by architectural layers (frontend/backend, UI/API, client/server) when those layers must ship together to be useful. Each child plan should deliver a complete, working slice that produces real, testable value. (A backend foundation plan followed by stacked UI plans is fine when the foundation is independently useful or the stacking is explicit.)
+
+Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.
+
+### Applying an approved split
+
+If the user approves the split, the main agent should create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, initial details, and priority. Then:
+- Each new child plan will get its own plan number, returned by \`tim add\`
+- Set \`--parent ${parentPlanLabel}\` on every child plan
+- Set the parent plan as an epic using \`tim set ${parentPlanLabel} --epic\`
+- Use \`--depends-on\` to enforce ordering when one plan must be done before another
+- A child plan may depend on at most one other child plan. Never give a child plan two or more sibling dependencies: if a later plan would otherwise need both of two independent siblings, chain those siblings into a single linear sequence instead (e.g. make the second depend on the first, and the later plan depend only on the second) so every plan has exactly one predecessor branch to base on that already contains everything it needs.
+- For child plans intended to ship as **stacked PRs** on top of an earlier sibling, also pass \`--base-plan <previous-sibling-plan-id>\` so the new plan's branch is based on its predecessor's branch instead of trunk. The first plan in the stack does not need \`--base-plan\` (it branches from trunk). \`--base-plan\` and \`--depends-on\` are independent: the former stacks the branch, the latter orders the work; for stacked PRs you typically want both pointing at the same predecessor.
+- After creating the child plans and wiring relationships, invoke a subagent for each child plan. Each subagent must edit its assigned child plan file to insert the relevant details and implementation guidance from plan ${parentPlanLabel}, then call \`tim tools update-plan-tasks\` for that child plan. The subagent should make those changes directly; it should not merely return plan details or task content for the main agent to apply. Give each subagent the task rules from the Add Tasks step.
+- If the parent plan has a "## Manual Testing Runbooks" section, each child plan must have its own "## Manual Testing Runbooks" section in its details that covers only the changes delivered by that child plan.
+- Document the stacking/dependency relationship in each child plan's details section
+- Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality that works end-to-end${linearChildIssueGuidance}`,
+  };
+}
+
+function buildAddTasksStep(allowMultiplePlans: boolean): WorkflowStep {
+  const splitNote = allowMultiplePlans
+    ? `
+
+If you split the plan in the Plan Split step, the child plan subagents add the tasks to each child plan instead.`
+    : '';
+
+  return {
+    title: 'Add Tasks',
+    summary: "use the 'tim tools update-plan-tasks' CLI command to add the structured tasks",
+    body: `Use 'tim tools update-plan-tasks' on the CLI (as described in the using-tim skill) to add the structured tasks to the plan. The list of tasks should correspond to the steps in your implementation guide.${splitNote}
+
+${taskCreationRules}`,
+  };
+}
+
+const consistencyCheckStep: WorkflowStep = {
+  title: 'Consistency Check',
+  summary: 're-read the plan and reconcile conflicting requirements',
+  body: `After adding the structured tasks, re-read the entire plan file and look for any conflicting requirements between different sections. Earlier steps may have updated some parts of the document but not others, which can lead to inconsistencies between the goal, details, implementation guide, and tasks. If you find any conflicts, either reconcile them by updating the relevant sections to ensure consistency, or ask the user for clarification if the conflict represents a fundamental ambiguity in the requirements.`,
+};
+
+const planOnlyRule =
+  'Do not implement the feature or change source files during planning; writing to the plan file is expected.';
+
 export async function loadResearchPrompt(
   args: { plan?: string | number; allowMultiplePlans?: unknown },
   context: GenerateModeRegistrationContext
@@ -315,81 +399,52 @@ export async function loadResearchPrompt(
     plan,
     context.config.generate?.linearChildIssueLabel
   );
-  const multiplePlansGuidance = allowMultiplePlans
-    ? `
-
-# Plan Split Recommendation
-
-Before you create the structured tasks for this plan, evaluate whether the work should be split into multiple sibling child plans and check in with your human partner. Propose a concrete split (proposed plan titles, the scope each child owns, and the order they should ship in) and ask the user whether to apply that split or keep everything in a single plan.
-
-Skip this step only for exceptionally small, self-contained changes (e.g. a one-file tweak, a localized bug fix, or a tiny refactor where splitting would clearly add overhead without improving clarity). For anything else, present the split proposal even if your recommendation is to keep it as a single plan, so the user can make the call.
-
-Consider splitting when:
-
-1. The work can be naturally divided into separate phases or parts that can be merged independently
-2. Different aspects of the work could be worked on in parallel by different agents
-3. The plan has distinct areas of functionality that have minimal interdependencies
-4. Breaking it down would reduce cognitive load and make each plan more focused
-5. The changes would otherwise add up to a large PR. Reviewability is important.
-
-Aim small. Each child plan should ideally land as a PR of a few hundred lines of code where that is feasible — smaller, tightly-scoped PRs are far easier to review and merge than large ones. Prefer splitting work into more, smaller plans rather than fewer, larger ones, as long as each plan still delivers a complete, independently testable slice. If a proposed child plan looks like it would grow well past a few hundred lines, look for a further split before settling on it.
-
-Once you have an initial split, take a second pass over it and try to come up with an even more granular plan that makes truly small PRs, if feasible. For each proposed child plan, ask whether it could reasonably be broken into two or more even smaller plans that each still deliver a complete, independently testable slice — and if so, prefer that finer-grained split. Only stop subdividing when a further split would leave plans that are no longer independently meaningful or would add more coordination overhead than the smaller size is worth.
-
-The user may prefer to split vertically by functional areas, or horizontally (e.g. backend foundation followed by UI), or both. Surface the tradeoffs in your proposal.
-
-If the user approves the split, the main agent should create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, initial details, and priority. Then:
-- Each new child plan will get its own plan number, returned by \`tim add\`
-- Set \`--parent ${parentPlanLabel}\` on every child plan
-- Set the parent plan as an epic using \`tim set ${parentPlanLabel} --epic\`
-- Use \`--depends-on\` to enforce ordering when one plan must be done before another
-- A child plan may depend on at most one other child plan. Never give a child plan two or more sibling dependencies: if a later plan would otherwise need both of two independent siblings, chain those siblings into a single linear sequence instead (e.g. make the second depend on the first, and the later plan depend only on the second) so every plan has exactly one predecessor branch to base on that already contains everything it needs.
-- For child plans intended to ship as **stacked PRs** on top of an earlier sibling, also pass \`--base-plan <previous-sibling-plan-id>\` so the new plan's branch is based on its predecessor's branch instead of trunk. The first plan in the stack does not need \`--base-plan\` (it branches from trunk). \`--base-plan\` and \`--depends-on\` are independent: the former stacks the branch, the latter orders the work; for stacked PRs you typically want both pointing at the same predecessor.
-- After creating the child plans and wiring relationships, invoke a subagent for each child plan. Each subagent must edit its assigned child plan file to insert the relevant details and implementation guidance from plan ${parentPlanLabel}, then call \`tim tools update-plan-tasks\` for that child plan. The subagent should make those changes directly; it should not merely return plan details or task content for the main agent to apply.
-- Document the stacking/dependency relationship in each child plan's details section
-- Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality.${linearChildIssueGuidance}
-
-Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.`
-    : '';
   const planningInstructions = await loadPlanningInstructions(context);
 
-  const text = `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans.
+  const steps: WorkflowStep[] = [
+    {
+      title: 'Research',
+      summary: 'explore the codebase and understand patterns',
+      body: generateResearchPhaseInstructions({
+        withBlockingSubissues: false,
+        parentPlanId,
+      }),
+    },
+    {
+      title: 'Implementation Guide',
+      summary:
+        'write the Research, Implementation Guide, and Manual Testing Runbooks sections to the plan file',
+      body: generateResearchOutputInstructions(),
+    },
+    {
+      title: 'Questions',
+      summary: 'collaborate with your human partner to refine the plan',
+      body: `Collaborate with your human partner to refine this plan. ${questionText}`,
+    },
+    {
+      title: 'Implementation Summary Approval',
+      summary:
+        'describe in your own words what will be implemented and iterate until the user approves',
+      body: `Write a few paragraphs that describe in your own words what is going to be implemented. Do not copy text from the plan file. Explain the intended behavior, the main changes, and any important decisions or boundaries of scope that came out of the research and the questions. Then ask the user to approve this summary or to request changes.
 
-# Progress Tracking
+If the user requests changes, ask more clarifying questions if the requested changes are unclear or raise new decisions. Then update the plan file so that its details, research, implementation guide, and manual testing runbooks all agree with the revised understanding, write a revised summary, and ask for approval again. Continue this cycle until the user approves. Do not continue to the next step until the user explicitly approves the summary.`,
+    },
+    ...(allowMultiplePlans ? [buildPlanSplitStep(parentPlanLabel, linearChildIssueGuidance)] : []),
+    buildAddTasksStep(allowMultiplePlans),
+    consistencyCheckStep,
+  ];
 
-Use your Todo tools to track progress through these steps:
-- [ ] Perform research - explore the codebase and understand patterns
-- [ ] Generate implementation guide - write Research, Implementation Guide, and Manual Testing Runbooks sections to the plan file
-- [ ] Ask questions - collaborate with your human partner to refine the plan
-- [ ] Confirm implementation summary - describe in your own words what will be implemented and iterate until the user approves
-- [ ] Propose plan split - suggest a possible decomposition into sibling child plans and confirm with the user before creating tasks
-- [ ] Add tasks - use the 'tim tools update-plan-tasks' CLI command to add the structured task data
+  const text = `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans. Below is a description of an upcoming feature that you will analyze and prepare a plan for.
 
-${generateClaudeCodePlanningPrompt(contextBlock, {
-  includeNextInstructionSentence: false,
-  withBlockingSubissues: false,
-  parentPlanId,
-})}${multiplePlansGuidance}${planningInstructions}
+# Project Description
 
-# Output
+${contextBlock}
+${planningInstructions}
+# Plan File
 
-${generateClaudeCodeResearchPrompt(`Once your research is complete`)}
+The plan file is at ${writablePlanPath}. Edit this file directly to add plan content; don't use the tim MCP tools for adding this content. ${planOnlyRule}
 
-Add your research and implementation guide directly to the plan file at ${writablePlanPath}. The output should include "## Research", "## Implementation Guide", and "## Manual Testing Runbooks" sections. You can directly edit this file; don't use the tim MCP tools for adding this content.
-
-When done, collaborate with your human partner to refine this plan. ${questionText}
-
-# Implementation Summary Approval
-
-After the questions phase is complete, and BEFORE proposing a plan split or adding structured tasks, write a few paragraphs that describe in your own words what is going to be implemented. Do not copy text from the plan file. Explain the intended behavior, the main changes, and any important decisions or boundaries of scope that came out of the research and the questions. Then ask the user to approve this summary or to request changes.
-
-If the user requests changes, ask more clarifying questions if the requested changes are unclear or raise new decisions. Then update the plan file so that its details, research, implementation guide, and manual testing runbooks all agree with the revised understanding, write a revised summary, and ask for approval again. Continue this cycle until the user approves. Do not continue to the next step until the user explicitly approves the summary.
-
-Once the user approves the implementation summary, work through the "Plan Split Recommendation" section above: propose a possible split into sibling child plans (using \`--base-plan\` to stack them as PRs where appropriate) and confirm with the user whether to apply that split or keep the work in a single plan. Only skip this check for exceptionally small, self-contained changes.
-
-Once the plan is refined and the split decision is made, use 'tim tools update-plan-tasks' on the CLI (as described in the using-tim skill) to add the tasks to the plan file, or if you split, create and wire the child plans yourself and then use subagents as described above to insert details and call \`tim tools update-plan-tasks\` for each child plan. The list of tasks should correspond to the steps in your implementation guide.
-
-After adding the structured tasks, re-read the entire plan file and look for any conflicting requirements between different sections. During the questions and refinement phase, some parts of the document may have been updated while others were not, which can lead to inconsistencies between the goal, details, implementation guide, and tasks. If you find any conflicts, either reconcile them by updating the relevant sections to ensure consistency, or ask the user for clarification if the conflict represents a fundamental ambiguity in the requirements.`;
+${renderWorkflow(steps)}`;
 
   return {
     messages: [
@@ -519,67 +574,37 @@ export async function loadGeneratePrompt(
   const linearChildIssueGuidance = currentPlan
     ? buildLinearChildIssueGuidance(currentPlan, context.config.generate?.linearChildIssueLabel)
     : '';
-  const multiplePlansGuidance = allowMultiplePlans
-    ? `
-
-# Plan Split Recommendation
-
-Before you create the structured tasks for this plan, evaluate whether the work should be split into multiple sibling child plans and check in with your human partner. Propose a concrete split (proposed plan titles, the scope each child owns, and the order they should ship in) and ask the user whether to apply that split or keep everything in a single plan.
-
-Skip this step only for exceptionally small, self-contained changes (e.g. a one-file tweak, a localized bug fix, or a tiny refactor where splitting would clearly add overhead without improving clarity). For anything else, present the split proposal even if your recommendation is to keep it as a single plan, so the user can make the call.
-
-Consider splitting when:
-
-1. The work can be naturally divided into separate phases or parts that can be merged independently
-2. Different aspects of the work could be worked on in parallel by different agents
-3. The plan has distinct areas of functionality that have minimal interdependencies
-4. Breaking it down would reduce cognitive load and make each plan more focused
-5. The changes would otherwise add up to a large PR. Reviewability is important.
-
-Aim small. Each child plan should ideally land as a PR of a few hundred lines of code where that is feasible — smaller, tightly-scoped PRs are far easier to review and merge than large ones. Prefer splitting work into more, smaller plans rather than fewer, larger ones, as long as each plan still delivers a complete, independently testable slice. If a proposed child plan looks like it would grow well past a few hundred lines, look for a further split before settling on it.
-
-Once you have an initial split, take a second pass over it and try to come up with an even more granular plan that makes truly small PRs, if feasible. For each proposed child plan, ask whether it could reasonably be broken into two or more even smaller plans that each still deliver a complete, independently testable slice — and if so, prefer that finer-grained split. Only stop subdividing when a further split would leave plans that are no longer independently meaningful or would add more coordination overhead than the smaller size is worth.
-
-If the user approves the split, the main agent should create each child plan using 'tim add' (see the using-tim skill) with appropriate title, goal, initial details, and priority. Then:
-- Each new child plan will get its own plan number, returned by \`tim add\`
-- Set \`--parent ${parentPlanLabel}\` on every child plan
-- Set the parent plan as an epic using \`tim set ${parentPlanLabel} --epic\`
-- Use \`--depends-on\` to enforce ordering when one plan must be done before another
-- A child plan may depend on at most one other child plan. Never give a child plan two or more sibling dependencies: if a later plan would otherwise need both of two independent siblings, chain those siblings into a single linear sequence instead (e.g. make the second depend on the first, and the later plan depend only on the second) so every plan has exactly one predecessor branch to base on that already contains everything it needs.
-- For child plans intended to ship as **stacked PRs** on top of an earlier sibling, also pass \`--base-plan <previous-sibling-plan-id>\` so the new plan's branch is based on its predecessor's branch instead of trunk. The first plan in the stack does not need \`--base-plan\` (it branches from trunk). \`--base-plan\` and \`--depends-on\` are independent: the former stacks the branch, the latter orders the work; for stacked PRs you typically want both pointing at the same predecessor.
-- After creating the child plans and wiring relationships, invoke a subagent for each child plan. Each subagent must edit its assigned child plan file to insert the relevant details and implementation guidance from plan ${parentPlanLabel}, then call \`tim tools update-plan-tasks\` for that child plan. The subagent should make those changes directly; it should not merely return plan details or task content for the main agent to apply.
-- Document the stacking/dependency relationship in each child plan's details section
-- Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality that works end-to-end${linearChildIssueGuidance}
-
-Do not split plans purely by architectural layers (frontend/backend, UI/API, client/server) when those layers must ship together to be useful. Each child plan should deliver a complete, working slice that produces real, testable value. (A backend foundation plan followed by stacked UI plans is fine when the foundation is independently useful or the stacking is explicit.)
-
-Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.`
-    : '';
   const planningInstructions = await loadPlanningInstructions(context);
+
+  const steps: WorkflowStep[] = [
+    {
+      title: 'Analyze the Codebase',
+      summary: 'understand existing patterns and identify files to modify',
+      body: 'Explore the codebase to understand the existing patterns and conventions, and identify the files that need to be created or modified.',
+    },
+    {
+      title: 'Plan Details',
+      summary: 'write the implementation plan details to the plan file',
+      body: generatePlanDetailsInstructions({
+        includeMarkdownFormat: false,
+        withBlockingSubissues: false,
+      }),
+    },
+    ...(allowMultiplePlans ? [buildPlanSplitStep(parentPlanLabel, linearChildIssueGuidance)] : []),
+    buildAddTasksStep(allowMultiplePlans),
+    consistencyCheckStep,
+  ];
+
+  const projectDescription = contextBlock ? `# Project Description\n\n${contextBlock}\n` : '';
 
   const text = `You are generating a tim implementation plan. tim is a tool for managing step-by-step project plans.
 
-# Progress Tracking
-
-Use your Todo tools to track progress through these steps:
-- [ ] Analyze the codebase - understand existing patterns and identify files to modify
-- [ ] Propose plan split - suggest a possible decomposition into sibling child plans and confirm with the user before creating tasks
-- [ ] Add tasks - use the 'tim tools update-plan-tasks' CLI command to add tasks
-
+${projectDescription}${planningInstructions}
 # Version Control
 
-Plan files are temporary materialized files under .tim/plans and are not tracked by version control. Your plan updates sync to the tim database. Do not create a VCS commit for plan-only work because there is nothing to commit.
+Plan files are temporary materialized files under .tim/plans and are not tracked by version control. Your plan updates sync to the tim database. Do not create a VCS commit for plan-only work because there is nothing to commit. ${planOnlyRule}
 
-${generateClaudeCodeGenerationPrompt(contextBlock, {
-  includeMarkdownFormat: false,
-  withBlockingSubissues: false,
-})}${multiplePlansGuidance}${planningInstructions}
-
-BEFORE adding the structured tasks, work through the "Plan Split Recommendation" section above: propose a possible split into sibling child plans (using \`--base-plan\` to stack them as PRs where appropriate) and confirm with the user whether to apply that split or keep the work in a single plan. Only skip this check for exceptionally small, self-contained changes.
-
-Once the plan is refined and the split decision is made, use 'tim tools update-plan-tasks' on the CLI (as described in the using-tim skill) to add the tasks to the plan file, or if you split, create and wire the child plans yourself and then use subagents as described above to insert details and call \`tim tools update-plan-tasks\` for each child plan. The list of tasks should correspond to the steps in your implementation guide.
-
-After adding the structured tasks, re-read the entire plan file and look for any conflicting requirements between different sections. During the questions and refinement phase, some parts of the document may have been updated while others were not, which can lead to inconsistencies between the goal, details, implementation guide, and tasks. If you find any conflicts, either reconcile them by updating the relevant sections to ensure consistency, or ask the user for clarification if the conflict represents a fundamental ambiguity in the requirements.`;
+${renderWorkflow(steps)}`;
 
   return {
     messages: [

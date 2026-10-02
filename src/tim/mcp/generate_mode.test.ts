@@ -197,29 +197,48 @@ describe('tim MCP generate mode helpers', () => {
     const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
     const message = prompt.messages[0]?.content;
     expect(message?.text).toContain('Test Plan');
-    expect(message?.text).toContain('Please analyze this project description');
+    expect(message?.text).toContain('Analyze the project description and the codebase');
     expect(message?.text).toContain(
       'Before you create the structured tasks for this plan, evaluate whether the work should be split'
     );
     expect(message?.text).toContain('## Manual Testing Runbooks');
   });
 
-  test('loadResearchPrompt requires an approved implementation summary between questions and plan split', async () => {
+  test('loadResearchPrompt lists workflow steps in order with matching checklist', async () => {
     const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
     const messageText = prompt.messages[0]?.content?.text ?? '';
 
-    const questionsIndex = messageText.indexOf(
-      'collaborate with your human partner to refine this plan'
-    );
-    const summaryIndex = messageText.indexOf('# Implementation Summary Approval');
-    const splitIndex = messageText.indexOf(
-      'Once the user approves the implementation summary, work through the "Plan Split Recommendation" section'
-    );
-    expect(questionsIndex).toBeGreaterThan(-1);
-    expect(summaryIndex).toBeGreaterThan(questionsIndex);
-    expect(splitIndex).toBeGreaterThan(summaryIndex);
+    const stepTitles = [
+      'Research',
+      'Implementation Guide',
+      'Questions',
+      'Implementation Summary Approval',
+      'Plan Split',
+      'Add Tasks',
+      'Consistency Check',
+    ];
+    let previousIndex = messageText.indexOf('# Workflow');
+    expect(previousIndex).toBeGreaterThan(messageText.indexOf('# Project Description'));
+    for (const [index, title] of stepTitles.entries()) {
+      expect(messageText).toContain(`- [ ] Step ${index + 1}: ${title} - `);
+      const headingIndex = messageText.indexOf(`## Step ${index + 1}: ${title}\n`);
+      expect(headingIndex).toBeGreaterThan(previousIndex);
+      previousIndex = headingIndex;
+    }
+    expect(messageText).not.toContain('For now, please');
+    expect(messageText).not.toContain('prepare to synthesize');
+    expect(messageText).not.toContain('do not repeat previous instructions');
+  });
+
+  test('loadResearchPrompt requires an approved implementation summary before plan split', async () => {
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    const summaryIndex = messageText.indexOf('## Step 4: Implementation Summary Approval');
+    expect(summaryIndex).toBeGreaterThan(messageText.indexOf('## Step 3: Questions'));
+    expect(messageText.indexOf('## Step 5: Plan Split')).toBeGreaterThan(summaryIndex);
     expect(messageText).toContain(
-      'write a few paragraphs that describe in your own words what is going to be implemented'
+      'Write a few paragraphs that describe in your own words what is going to be implemented'
     );
     expect(messageText).toContain('Continue this cycle until the user approves.');
     expect(messageText).toContain(
@@ -228,7 +247,38 @@ describe('tim MCP generate mode helpers', () => {
     expect(messageText).toContain(
       'update the plan file so that its details, research, implementation guide, and manual testing runbooks all agree'
     );
-    expect(messageText).toContain('- [ ] Confirm implementation summary');
+    expect(messageText).toContain(
+      'Do not continue to the next step until the user explicitly approves the summary.'
+    );
+  });
+
+  test('loadResearchPrompt omits the plan split step when multiple plans are disabled', async () => {
+    const prompt = await loadResearchPrompt(
+      { plan: basePlan.id, allowMultiplePlans: false },
+      context
+    );
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    expect(messageText).not.toContain('Plan Split');
+    expect(messageText).toContain('## Step 5: Add Tasks');
+    expect(messageText).toContain('## Step 6: Consistency Check');
+  });
+
+  test('loadResearchPrompt puts task rules in the Add Tasks step', async () => {
+    const prompt = await loadResearchPrompt({ plan: basePlan.id }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    const addTasksIndex = messageText.indexOf('## Step 6: Add Tasks');
+    const manualVerificationIndex = messageText.indexOf(
+      'Do not create tasks for manual verification.'
+    );
+    expect(manualVerificationIndex).toBeGreaterThan(addTasksIndex);
+    expect(messageText.lastIndexOf('Do not create tasks for manual verification.')).toBe(
+      manualVerificationIndex
+    );
+    expect(messageText.indexOf('own "## Manual Testing Runbooks" section')).toBeGreaterThan(
+      messageText.indexOf('## Step 5: Plan Split')
+    );
   });
 
   test('loadResearchPrompt keeps child plan creation with main agent and details/tasks with subagents', async () => {
@@ -254,6 +304,9 @@ describe('tim MCP generate mode helpers', () => {
 
     expect(messageText).toContain('# Planning Instructions');
     expect(messageText).toContain('Use phased rollouts and keep scope small.');
+    expect(messageText.indexOf('# Planning Instructions')).toBeLessThan(
+      messageText.indexOf('# Workflow')
+    );
   });
 
   test('loadResearchPrompt includes Linear child issue guidance for Linear-linked plans', async () => {
@@ -315,6 +368,29 @@ describe('tim MCP generate mode helpers', () => {
       'Before you create the structured tasks for this plan, evaluate whether the work should be split'
     );
     expect(message?.text).toContain('Break the project into phases');
+    expect(message?.text).not.toContain('Once again, the project being implemented is');
+    expect(message?.text).not.toContain('Generate the complete plan now.');
+  });
+
+  test('loadGeneratePrompt lists workflow steps in order with matching checklist', async () => {
+    const prompt = await loadGeneratePrompt({ plan: basePlan.id }, context);
+    const messageText = prompt.messages[0]?.content?.text ?? '';
+
+    const stepTitles = [
+      'Analyze the Codebase',
+      'Plan Details',
+      'Plan Split',
+      'Add Tasks',
+      'Consistency Check',
+    ];
+    let previousIndex = messageText.indexOf('# Workflow');
+    expect(previousIndex).toBeGreaterThan(messageText.indexOf('# Project Description'));
+    for (const [index, title] of stepTitles.entries()) {
+      expect(messageText).toContain(`- [ ] Step ${index + 1}: ${title} - `);
+      const headingIndex = messageText.indexOf(`## Step ${index + 1}: ${title}\n`);
+      expect(headingIndex).toBeGreaterThan(previousIndex);
+      previousIndex = headingIndex;
+    }
   });
 
   test('loadGeneratePrompt includes planning instructions from config', async () => {
