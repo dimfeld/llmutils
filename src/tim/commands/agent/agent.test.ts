@@ -862,7 +862,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(updatedPlan.tasks).toHaveLength(1);
     expect(updatedPlan.tasks[0]).toMatchObject({
       title: 'Taskless Plan',
-      description: 'Ship the imported issue\n\nUse the issue details as the implementation brief.',
+      description: 'Implement the work described in the plan text.',
     });
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
     const [batchOptions] = executeBatchModeSpy.mock.calls[0];
@@ -924,8 +924,7 @@ describe('timAgent - simple mode flag plumbing', () => {
     expect(updatedPlan.tasks).toHaveLength(1);
     expect(updatedPlan.tasks[0]).toMatchObject({
       title: 'Simple Flag Plan',
-      description:
-        'Exercise executor plumbing\n\nEnsure simple flag flows through to executor builder',
+      description: 'Implement the work described in the plan text.',
     });
     expect(executeBatchModeSpy).toHaveBeenCalledTimes(1);
     const [batchOptions] = executeBatchModeSpy.mock.calls[0];

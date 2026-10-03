@@ -139,20 +139,11 @@ function buildTaskForTasklessPlan(planData: PlanSchema): PlanSchema['tasks'][num
   const fallbackTitle =
     typeof planData.id === 'number' ? `Plan ${planData.id}` : (planData.uuid ?? 'Untitled Plan');
   const title = planData.title?.trim() || planData.goal?.trim() || fallbackTitle;
-  const descriptionParts: string[] = [];
-
-  if (planData.goal?.trim() && planData.goal.trim() !== title) {
-    descriptionParts.push(planData.goal.trim());
-  }
-
-  if (planData.details?.trim()) {
-    descriptionParts.push(planData.details.trim());
-  }
 
   return {
     title,
     done: false,
-    description: descriptionParts.join('\n\n') || title,
+    description: 'Implement the work described in the plan text.',
   };
 }
 
