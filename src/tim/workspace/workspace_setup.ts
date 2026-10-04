@@ -74,7 +74,7 @@ interface ResolvedWorkspaceBranchContext {
   baseBranch?: string;
   checkoutBranch?: string;
   baseBranchSource?: 'plan' | 'basePlan' | 'parent';
-  canRetryWithoutBaseBranch: boolean;
+  fallbackToTrunkOnMissingBase: boolean;
 }
 
 function timestamp(): string {
@@ -108,7 +108,7 @@ async function resolveWorkspaceBranchContext(
   let branchName: string | undefined;
   let baseBranch: string | undefined;
   let baseBranchSource: ResolvedWorkspaceBranchContext['baseBranchSource'];
-  let canRetryWithoutBaseBranch = false;
+  let fallbackToTrunkOnMissingBase = false;
 
   if (currentPlanFile) {
     try {
@@ -162,7 +162,7 @@ async function resolveWorkspaceBranchContext(
       if (basePlanBranch) {
         baseBranch = basePlanBranch;
         baseBranchSource = 'basePlan';
-        canRetryWithoutBaseBranch = true;
+        fallbackToTrunkOnMissingBase = true;
       }
     }
 
@@ -171,7 +171,7 @@ async function resolveWorkspaceBranchContext(
       if (parentBranch) {
         baseBranch = parentBranch;
         baseBranchSource = 'parent';
-        canRetryWithoutBaseBranch = true;
+        fallbackToTrunkOnMissingBase = true;
       }
     }
   }
@@ -182,7 +182,7 @@ async function resolveWorkspaceBranchContext(
     baseBranch,
     checkoutBranch: options.checkoutBranch,
     baseBranchSource,
-    canRetryWithoutBaseBranch,
+    fallbackToTrunkOnMissingBase,
   };
 }
 
@@ -356,7 +356,7 @@ export async function setupWorkspace(
           base: branchContext.checkoutBranch ?? branchContext.baseBranch,
           branchName: branchContext.branchName,
           planData: branchContext.planData,
-          fallbackToTrunkOnMissingBase: branchContext.canRetryWithoutBaseBranch,
+          fallbackToTrunkOnMissingBase: branchContext.fallbackToTrunkOnMissingBase,
           baseBranchSource: branchContext.baseBranchSource,
           ...(excludedWorkspacePaths.length > 0 ? { excludedWorkspacePaths } : {}),
           ...(options.planUuid ? { preferredPlanUuid: options.planUuid } : {}),
@@ -417,7 +417,7 @@ export async function setupWorkspace(
           ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
           ...(branchContext.branchName && { branchName: branchContext.branchName }),
           ...(createWorkspaceBaseBranch && { fromBranch: createWorkspaceBaseBranch }),
-          ...(branchContext.canRetryWithoutBaseBranch && { fallbackToTrunkOnMissingBase: true }),
+          ...(branchContext.fallbackToTrunkOnMissingBase && { fallbackToTrunkOnMissingBase: true }),
           ...(branchContext.baseBranchSource && {
             baseBranchSource: branchContext.baseBranchSource,
           }),
@@ -458,7 +458,7 @@ export async function setupWorkspace(
           ...(effectiveCreateBranch !== undefined && { createBranch: effectiveCreateBranch }),
           ...(branchContext.branchName && { branchName: branchContext.branchName }),
           ...(createWorkspaceBaseBranch && { fromBranch: createWorkspaceBaseBranch }),
-          ...(branchContext.canRetryWithoutBaseBranch && { fallbackToTrunkOnMissingBase: true }),
+          ...(branchContext.fallbackToTrunkOnMissingBase && { fallbackToTrunkOnMissingBase: true }),
           ...(branchContext.baseBranchSource && {
             baseBranchSource: branchContext.baseBranchSource,
           }),
@@ -535,9 +535,8 @@ export async function setupWorkspace(
         let branchName = branchContext.branchName ?? workspace.taskId;
         const planData = branchContext.planData;
         let baseBranch = branchContext.baseBranch;
-        let effectiveCheckoutBranch = branchContext.checkoutBranch ?? baseBranch;
+        const effectiveCheckoutBranch = branchContext.checkoutBranch ?? baseBranch;
         const baseBranchSource = branchContext.baseBranchSource;
-        const canRetryWithoutBaseBranch = branchContext.canRetryWithoutBaseBranch;
         const shouldCreateBranch = effectiveCreateBranch ?? true;
         const shouldPrepareWorkspaceBranch = Boolean(
           (currentPlanFile || typeof options.planId === 'number' || effectiveCheckoutBranch) &&
@@ -547,24 +546,18 @@ export async function setupWorkspace(
         let reusedExistingBranch = false;
         let preparedBranchName = branchName;
         if (shouldPrepareWorkspaceBranch) {
-          let prepareResult = await prepareExistingWorkspace(workspace.path, {
+          const prepareResult = await prepareExistingWorkspace(workspace.path, {
             baseBranch: effectiveCheckoutBranch,
             branchName,
             createBranch: shouldCreateBranch,
+            ...(branchContext.fallbackToTrunkOnMissingBase && {
+              fallbackToTrunkOnMissingBase: true,
+              baseBranchSource,
+            }),
           });
 
-          const baseBranchIsMissing =
-            prepareResult.error?.includes('Failed to checkout base branch') &&
-            /No such bookmark|Revision .* doesn't exist|unknown revision|pathspec .* did not match/i.test(
-              prepareResult.error
-            );
-          if (!prepareResult.success && canRetryWithoutBaseBranch && baseBranchIsMissing) {
+          if (prepareResult.fellBackToTrunk) {
             baseBranch = undefined;
-            effectiveCheckoutBranch = undefined;
-            prepareResult = await prepareExistingWorkspace(workspace.path, {
-              branchName,
-              createBranch: shouldCreateBranch,
-            });
           }
 
           if (!prepareResult.success) {

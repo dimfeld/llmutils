@@ -1440,6 +1440,8 @@ describe('setupWorkspace', () => {
       baseBranch: 'feature/parent-plan',
       branchName: '21-child-plan',
       createBranch: true,
+      fallbackToTrunkOnMissingBase: true,
+      baseBranchSource: 'parent',
     });
   });
 
@@ -1508,6 +1510,8 @@ describe('setupWorkspace', () => {
       baseBranch: 'feature/parent-plan',
       branchName: '21-child-plan',
       createBranch: true,
+      fallbackToTrunkOnMissingBase: true,
+      baseBranchSource: 'parent',
     });
   });
 
@@ -1553,7 +1557,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).not.toHaveBeenCalled();
   });
 
-  test('falls back from an inferred parent base when that base branch cannot be prepared', async () => {
+  test('asks preparation to fall back to trunk for an inferred parent base', async () => {
     const existingWorkspacePath = path.join(tempDir, 'workspace-existing-parent-fallback');
     await fs.mkdir(existingWorkspacePath, { recursive: true });
     await seedWorkspace(existingWorkspacePath, 'task-existing-parent-fallback');
@@ -1587,16 +1591,11 @@ describe('setupWorkspace', () => {
       hasChanges: false,
       checkFailed: false,
     });
-    const prepareSpy = vi
-      .spyOn(workspaceManager, 'prepareExistingWorkspace')
-      .mockResolvedValueOnce({
-        success: false,
-        error:
-          'Failed to checkout base branch "feature/missing-parent": Error: Revision `feature/missing-parent` doesn\'t exist',
-      })
-      .mockResolvedValueOnce({
-        success: true,
-      });
+    const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+      actualBranchName: '21-child-plan',
+      fellBackToTrunk: true,
+    });
     vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     const result = await setupWorkspace(
@@ -1609,14 +1608,13 @@ describe('setupWorkspace', () => {
       'tim generate'
     );
 
-    expect(prepareSpy).toHaveBeenNthCalledWith(1, existingWorkspacePath, {
+    expect(prepareSpy).toHaveBeenCalledTimes(1);
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
       baseBranch: 'feature/missing-parent',
       branchName: '21-child-plan',
       createBranch: true,
-    });
-    expect(prepareSpy).toHaveBeenNthCalledWith(2, existingWorkspacePath, {
-      branchName: '21-child-plan',
-      createBranch: true,
+      fallbackToTrunkOnMissingBase: true,
+      baseBranchSource: 'parent',
     });
   });
 

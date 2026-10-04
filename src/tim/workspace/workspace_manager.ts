@@ -959,6 +959,60 @@ async function syncWorkspaceBranchFromRemote(
   return forceAlignWorkspaceBranchToRemote(workspacePath, branchName, isJj);
 }
 
+type BaseBranchSource = 'plan' | 'basePlan' | 'parent';
+
+/**
+ * Resolves the base branch to use, falling back to trunk when a soft-derived
+ * base (parent/basePlan) no longer exists.
+ */
+async function resolveBaseBranchWithTrunkFallback(
+  workspacePath: string,
+  baseBranch: string,
+  isJj: boolean,
+  hasRemote: boolean | null,
+  allowOffline: boolean,
+  baseBranchSource?: BaseBranchSource
+): Promise<{ success: true; baseBranch: string } | { success: false; error: string }> {
+  const trunkBranch = await getTrunkBranch(workspacePath);
+  if (baseBranch === trunkBranch) {
+    return { success: true, baseBranch };
+  }
+
+  const localBaseExists = await branchExists(workspacePath, baseBranch, isJj);
+  let remoteBaseExists: boolean;
+  if ((baseBranchSource === 'basePlan' || baseBranchSource === 'parent') && hasRemote !== false) {
+    try {
+      remoteBaseExists = await remoteBranchExistsOnOrigin(workspacePath, baseBranch);
+    } catch (error) {
+      if (!allowOffline && hasRemote !== null) {
+        return {
+          success: false,
+          error: `Failed to verify ${baseBranchSource} branch "${baseBranch}" on origin: ${String(error)}`,
+        };
+      }
+      log(
+        `Warning: Failed to verify ${baseBranchSource} branch "${baseBranch}" on origin (continuing in offline mode): ${String(error)}`
+      );
+      remoteBaseExists = await remoteBranchExists(workspacePath, baseBranch, isJj);
+    }
+  } else {
+    remoteBaseExists = await remoteBranchExists(workspacePath, baseBranch, isJj);
+  }
+
+  // Soft-derived bases (parent/basePlan) should collapse to trunk once the
+  // remote branch is gone. Copy-based workspaces may still have a stale
+  // local branch from the source checkout, so don't let that local ref win
+  // when a remote exists and fresh remote refs say the base is missing.
+  if (!remoteBaseExists && (hasRemote || !localBaseExists)) {
+    log(
+      `Base branch "${baseBranch}" does not exist; falling back to trunk branch "${trunkBranch}".`
+    );
+    return { success: true, baseBranch: trunkBranch };
+  }
+
+  return { success: true, baseBranch };
+}
+
 async function createLocalWorkspaceBranch(
   workspacePath: string,
   baseBranch: string,
@@ -968,47 +1022,22 @@ async function createLocalWorkspaceBranch(
   allowOffline: boolean,
   updateBaseFromRemote: boolean,
   fallbackToTrunkOnMissingBase = false,
-  baseBranchSource?: 'plan' | 'basePlan' | 'parent'
+  baseBranchSource?: BaseBranchSource
 ): Promise<{ success: boolean; error?: string }> {
   let effectiveBaseBranch = baseBranch;
   if (fallbackToTrunkOnMissingBase) {
-    const trunkBranch = await getTrunkBranch(workspacePath);
-    if (baseBranch !== trunkBranch) {
-      const localBaseExists = await branchExists(workspacePath, baseBranch, isJj);
-      let remoteBaseExists: boolean;
-      if (
-        (baseBranchSource === 'basePlan' || baseBranchSource === 'parent') &&
-        hasRemote !== false
-      ) {
-        try {
-          remoteBaseExists = await remoteBranchExistsOnOrigin(workspacePath, baseBranch);
-        } catch (error) {
-          if (!allowOffline && hasRemote !== null) {
-            return {
-              success: false,
-              error: `Failed to verify ${baseBranchSource} branch "${baseBranch}" on origin: ${String(error)}`,
-            };
-          }
-          log(
-            `Warning: Failed to verify ${baseBranchSource} branch "${baseBranch}" on origin (continuing in offline mode): ${String(error)}`
-          );
-          remoteBaseExists = await remoteBranchExists(workspacePath, baseBranch, isJj);
-        }
-      } else {
-        remoteBaseExists = await remoteBranchExists(workspacePath, baseBranch, isJj);
-      }
-
-      // Soft-derived bases (parent/basePlan) should collapse to trunk once the
-      // remote branch is gone. Copy-based workspaces may still have a stale
-      // local branch from the source checkout, so don't let that local ref win
-      // when a remote exists and fresh remote refs say the base is missing.
-      if (!remoteBaseExists && (hasRemote || !localBaseExists)) {
-        log(
-          `Base branch "${baseBranch}" does not exist; falling back to trunk branch "${trunkBranch}".`
-        );
-        effectiveBaseBranch = trunkBranch;
-      }
+    const resolved = await resolveBaseBranchWithTrunkFallback(
+      workspacePath,
+      baseBranch,
+      isJj,
+      hasRemote,
+      allowOffline,
+      baseBranchSource
+    );
+    if (!resolved.success) {
+      return resolved;
     }
+    effectiveBaseBranch = resolved.baseBranch;
   }
 
   const baseResult = await checkoutAndUpdateBaseBranch(
@@ -1775,6 +1804,10 @@ export interface PrepareWorkspaceOptions {
   logSkippedBranchCreation?: boolean;
   /** Whether to force the checked-out base branch to the fetched remote tip when available */
   updateBaseFromRemote?: boolean;
+  /** Use the trunk branch when `baseBranch` does not exist locally or on the remote */
+  fallbackToTrunkOnMissingBase?: boolean;
+  /** Where `baseBranch` came from; affects how its existence is checked */
+  baseBranchSource?: BaseBranchSource;
 }
 
 /**
@@ -1789,6 +1822,8 @@ export interface PrepareWorkspaceResult {
   actualBranchName?: string;
   /** Whether an existing local branch was reused (vs creating a new one) */
   reusedExistingBranch?: boolean;
+  /** Whether the requested base branch was missing and the trunk branch was used instead */
+  fellBackToTrunk?: boolean;
 }
 
 async function detectIsJj(dirPath: string): Promise<boolean> {
@@ -2016,7 +2051,23 @@ export async function prepareExistingWorkspace(
   const shouldCreateBranch = options.createBranch ?? true;
 
   // Determine base branch early so stale-branch cleanup can restore to it
-  const baseBranch = options.baseBranch || (await getTrunkBranch(workspacePath));
+  let baseBranch = options.baseBranch || (await getTrunkBranch(workspacePath));
+  let fellBackToTrunk = false;
+  if (options.baseBranch && options.fallbackToTrunkOnMissingBase) {
+    const resolved = await resolveBaseBranchWithTrunkFallback(
+      workspacePath,
+      options.baseBranch,
+      workspaceIsJj,
+      hasRemote,
+      allowOffline,
+      options.baseBranchSource
+    );
+    if (!resolved.success) {
+      return resolved;
+    }
+    fellBackToTrunk = resolved.baseBranch !== options.baseBranch;
+    baseBranch = resolved.baseBranch;
+  }
 
   // Step 3: Log the base branch
   log(`Using base branch: ${baseBranch}`);
@@ -2040,6 +2091,7 @@ export async function prepareExistingWorkspace(
     }
     return {
       success: true,
+      ...(fellBackToTrunk && { fellBackToTrunk }),
       actualBranchName: baseBranch,
     };
   }
@@ -2135,6 +2187,7 @@ export async function prepareExistingWorkspace(
     log(`Successfully prepared workspace with existing branch "${actualBranchName}"`);
     return {
       success: true,
+      ...(fellBackToTrunk && { fellBackToTrunk }),
       actualBranchName,
       reusedExistingBranch: true,
     };
@@ -2157,6 +2210,7 @@ export async function prepareExistingWorkspace(
   log(`Successfully prepared workspace with branch "${actualBranchName}"`);
   return {
     success: true,
+    ...(fellBackToTrunk && { fellBackToTrunk }),
     actualBranchName,
   };
 }

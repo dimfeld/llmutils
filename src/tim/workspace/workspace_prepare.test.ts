@@ -376,6 +376,29 @@ describe.skipIf(!process.env.SLOW_TESTS)('prepareExistingWorkspace', () => {
     expect(result.error).toContain('nonexistent-branch');
   });
 
+  test('falls back to trunk for a missing parent base when recreating a stale branch', async () => {
+    await runGit(tempDir, ['checkout', '-b', 'stale-child-branch']);
+    await runGit(tempDir, ['checkout', 'main']);
+
+    const result = await prepareExistingWorkspace(tempDir, {
+      baseBranch: 'missing-parent-branch',
+      branchName: 'stale-child-branch',
+      createBranch: true,
+      fallbackToTrunkOnMissingBase: true,
+      baseBranchSource: 'parent',
+    });
+
+    expect(result).toEqual({
+      success: true,
+      actualBranchName: 'stale-child-branch',
+      fellBackToTrunk: true,
+    });
+    expect(await getCurrentBranch(tempDir)).toBe('stale-child-branch');
+    expect(await getCommitHash(tempDir, 'stale-child-branch')).toBe(
+      await getCommitHash(tempDir, 'main')
+    );
+  });
+
   test('handles an existing local-only branch by recreating it', async () => {
     // When only a stale local branch exists, the function should recreate it with the same name
 
