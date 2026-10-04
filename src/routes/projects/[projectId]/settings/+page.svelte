@@ -165,7 +165,7 @@
   }
 </script>
 
-<div class="p-6">
+<div class="h-full overflow-y-auto p-6">
   <div class="mb-6">
     <h1 class="text-xl font-semibold text-foreground">Project Settings</h1>
     <p class="mt-1 text-sm text-muted-foreground">Configure settings for this project.</p>
