@@ -301,7 +301,11 @@ async function promptForConfig(gitRoot: string): Promise<TimConfigInput> {
     message: 'What code quality level should agents use?',
     choices: [
       { name: 'production', value: 'production', description: 'Use the full agent workflow' },
-      { name: 'hobby', value: 'hobby', description: 'Use the implementer-only workflow' },
+      {
+        name: 'hobby',
+        value: 'hobby',
+        description: 'Use an implementer with a light orchestrator review',
+      },
     ],
     default: 'production',
   });

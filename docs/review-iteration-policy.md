@@ -4,6 +4,18 @@ How the orchestrator prompts drive the review → fix → re-review loop, and ho
 reviewer prompts assign severity. This is prompt policy: the rules live in the
 generated prompt text, not in runtime code.
 
+This policy applies to production quality. With `quality: hobby`, the implementer
+writes code and tests. The orchestrator reads the diff and relevant surrounding
+code to check correctness for the assigned tasks. It sends concrete defects to
+the implementer, then checks those fixes with code inspection and the implementer's
+reported check results. If the implementer reports that it ran tests and type
+checking, the orchestrator assumes they passed unless a failure is reported. This
+also applies after fixes; the orchestrator does not repeat those checks.
+It does not start another general review, the formal review command, or a
+structural pass. Unresolved defects keep the affected tasks incomplete. Hobby
+review preserves required behavior and existing protections without requiring
+speculative production hardening.
+
 Sources:
 
 - `src/tim/review_severity.ts` — the single source of truth for severity levels,

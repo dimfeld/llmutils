@@ -782,7 +782,7 @@ ${buildFinalBatchReviewGuidance(planId, options)}
    - Your review should focus on problems; lack of findings means the batch review passed.`;
 }
 
-/** Hobby quality uses one implementer for implementation and verification. */
+/** Hobby quality uses an implementer for code and tests, with an orchestrator review. */
 export function wrapWithHobbyOrchestration(
   contextContent: string,
   planId: string,
@@ -810,8 +810,12 @@ You are the orchestrator for plan ${planId}. ${batchGuidance}
 - ${delegateGuidance}
 - Ask implementer subagents to take responsibility end to end: make the changes, update unit tests, and verify the quality. ${assignmentGuidance}
 - Read the implementer's result and check that the assigned tasks are complete. Send any missing work back to the same implementer when possible.
+- If the implementer reports that it ran tests and type checking, assume those checks passed unless it reports a failure. Do not rerun those checks yourself. This also applies to checks reported after review fixes.
+- Before marking tasks done, review the changed code yourself against the assigned task requirements. Check for logic errors, regressions, missing required behavior, and tests that do not exercise that behavior. Read the actual diff and relevant surrounding code; the implementer's summary and passing tests alone are not a review.
+- Keep this review focused on correctness for the intended use. Preserve existing protections and check for security or data-loss defects that affect that use. Do not request speculative production hardening, unrelated refactoring, or style-only changes.
+- Send concrete defects to the implementer with the affected code, required behavior, and a way to verify the fix. After fixes, inspect the affected code and use the implementer's reported check results. Ask the implementer to run any relevant checks it has not reported. Verify the reported defects without starting another general review or a repeated review-fix cycle. Report any unresolved defects and leave the affected tasks incomplete.
 - Update the plan progress and mark completed tasks done with \`tim set-task-done ${planId} --title "<taskTitle>"\`. Commit the completed work with a descriptive message.
-- Do not start tester, TDD test, or reviewer subagents. Do not run a separate review phase. The implementer owns both code and tests.
+- Do not start tester, TDD test, or reviewer subagents. The implementer owns both code and tests; you own the light correctness review. Do not run the formal review command, a structural review, or the production review iteration policy.
 ${BRANCH_SETUP_GUIDANCE}${buildJjGuidance(options)}
 
 ${dynamicExecutorGuidance}${progressSectionGuidance(options.planFilePath, { useAtPrefix: options.useAtPrefix })}

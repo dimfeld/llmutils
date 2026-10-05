@@ -20,21 +20,36 @@ describe('wrapForExecutionMode', () => {
   );
 
   test.each(['normal', 'simple', 'tdd'] as OrchestrationExecutionMode[])(
-    'hobby %s uses only an implementer for code and tests',
-    (mode) => {
+    'hobby %s keeps code and tests with the implementer and adds a light orchestrator review',
+    (mode: OrchestrationExecutionMode): void => {
       for (const agentMessagingEnabled of [false, true]) {
-        const output = wrapForExecutionMode(mode, 'context', 'plan-1', {
-          quality: 'hobby',
-          batchMode: true,
-          agentMessagingEnabled,
-        });
-        expect(output).toContain('implementer');
-        expect(output).toContain('tim set-task-done plan-1');
-        expect(output).not.toContain('tim review');
-        expect(output).not.toContain('tim subagent tester');
-        expect(output).not.toContain('tim subagent reviewer');
-        expect(output).not.toContain('type `tester`');
-        expect(output).not.toContain('type `reviewer`');
+        for (const batchMode of [false, true]) {
+          const output = wrapForExecutionMode(mode, 'context', 'plan-1', {
+            quality: 'hobby',
+            batchMode,
+            agentMessagingEnabled,
+          });
+          expect(output).toContain('implementer');
+          expect(output).toContain('tim set-task-done plan-1');
+          expect(output).toContain('review the changed code yourself');
+          expect(output).toContain('logic errors, regressions, missing required behavior');
+          expect(output).toContain('Read the actual diff and relevant surrounding code');
+          expect(output).toContain('assume those checks passed unless it reports a failure');
+          expect(output).toContain('Do not rerun those checks yourself');
+          expect(output).toContain('This also applies to checks reported after review fixes');
+          expect(output).toContain('without starting another general review');
+          expect(output).toContain(
+            'Report any unresolved defects and leave the affected tasks incomplete'
+          );
+          expect(output).toContain('Do not request speculative production hardening');
+          expect(output).toContain('Do not run the formal review command, a structural review');
+          expect(output).not.toContain('Do not run a separate review phase');
+          expect(output).not.toContain('tim review');
+          expect(output).not.toContain('tim subagent tester');
+          expect(output).not.toContain('tim subagent reviewer');
+          expect(output).not.toContain('type `tester`');
+          expect(output).not.toContain('type `reviewer`');
+        }
       }
     }
   );
