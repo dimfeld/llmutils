@@ -264,23 +264,42 @@ function extractLinearIssueKey(issueUrl: string): string | null {
   return match ? match[1].toUpperCase() : null;
 }
 
-function buildLinearChildIssueGuidance(
+interface LinearSplitGuidance {
+  milestones: string;
+  childIssues: string;
+}
+
+function buildLinearSplitGuidance(
   plan: { issue?: string[] },
   linearChildIssueLabel?: string
-): string {
+): LinearSplitGuidance | null {
   const parentIssueKey = plan.issue?.map(extractLinearIssueKey).find((key) => key !== null);
 
   if (!parentIssueKey) {
-    return '';
+    return null;
   }
 
   const labelOption = linearChildIssueLabel ? ` --label "${linearChildIssueLabel}"` : '';
 
-  return `
+  const milestones = `
+
+### Linear milestones
+
+The parent plan is linked to Linear issue ${parentIssueKey}. If you propose more than one child plan, run \`linear issue view ${parentIssueKey}\` to find out whether that issue is in a Linear project; the view output shows \`**Project:** <name>\`. If it is in a project, ask the user about Linear milestones for the child issues before you apply the split:
+- Ask whether they already have milestones in mind. These may already be decided; list the project's existing milestones with \`linear milestone list --project "<project name>"\`.
+- If they have not decided, suggest a set of milestones together with your split proposal.
+- The user may say that no milestones are needed. In that case, do not use milestones for this split.
+
+Milestones do not all have to be user-visible functionality, but they must represent a progression of the project through to completion. If milestones are used, assign every proposed child plan to exactly one milestone and show those assignments in the split proposal so the user can approve them together.`;
+
+  const childIssues = `
 - Because the parent plan is linked to Linear issue ${parentIssueKey}, create and link a Linear child issue for each child tim plan after that child plan has been created and populated:
   1. Find the parent's Linear project and milestone once with \`linear issue view ${parentIssueKey}\`; the view output shows \`**Project:** <name>\` and, if the parent issue is linked to a milestone, \`**Milestone:** <name>\`.
-  2. Create each child issue with project + parent in one command: \`linear issue create --no-interactive --assignee self --state Todo --parent ${parentIssueKey} --project "<project name>"${labelOption} --title "<title>" --description "<short description>"\`. If the parent issue is linked to a milestone, also pass \`--milestone "<milestone name>"\` so each child issue is linked to that same milestone. The last line of output is the new issue URL.
-  3. Link the child tim plan to that new issue URL with \`tim set <child-plan-id> --issue "<new-issue-url>"\`.`;
+  2. If the user approved milestones in the Linear milestones discussion, create each approved milestone that does not already exist in the project, in progression order: \`linear milestone create --project "<project name>" --name "<milestone name>" --description "<short description>"\`.
+  3. Create each child issue with project + parent in one command: \`linear issue create --no-interactive --assignee self --state Todo --parent ${parentIssueKey} --project "<project name>"${labelOption} --title "<title>" --description "<short description>"\`. If milestones were approved, pass \`--milestone "<assigned milestone name>"\`; every child issue must be assigned to its milestone. Otherwise, if the parent issue is linked to a milestone, pass \`--milestone "<parent milestone name>"\` so each child issue is linked to that same milestone. The last line of output is the new issue URL.
+  4. Link the child tim plan to that new issue URL with \`tim set <child-plan-id> --issue "<new-issue-url>"\`.`;
+
+  return { milestones, childIssues };
 }
 
 interface WorkflowStep {
@@ -308,7 +327,7 @@ ${sections}`;
 
 function buildPlanSplitStep(
   parentPlanLabel: string,
-  linearChildIssueGuidance: string
+  linearGuidance: LinearSplitGuidance | null
 ): WorkflowStep {
   return {
     title: 'Plan Split',
@@ -332,7 +351,7 @@ Once you have an initial split, take a second pass over it and try to come up wi
 
 The user may prefer to split vertically by functional areas, or horizontally (e.g. backend foundation followed by UI), or both. Surface the tradeoffs in your proposal. Do not split plans purely by architectural layers (frontend/backend, UI/API, client/server) when those layers must ship together to be useful. Each child plan should deliver a complete, working slice that produces real, testable value. (A backend foundation plan followed by stacked UI plans is fine when the foundation is independently useful or the stacking is explicit.)
 
-Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.
+Only keep a single plan when the work is genuinely tiny or tightly coupled enough that splitting would add coordination overhead without improving clarity.${linearGuidance?.milestones ?? ''}
 
 ### Applying an approved split
 
@@ -346,7 +365,7 @@ If the user approves the split, the main agent should create each child plan usi
 - After creating the child plans and wiring relationships, invoke a subagent for each child plan. Each subagent must edit its assigned child plan file to insert the relevant details and implementation guidance from plan ${parentPlanLabel}, then call \`tim tools update-plan-tasks\` for that child plan. The subagent should make those changes directly; it should not merely return plan details or task content for the main agent to apply. Give each subagent the task rules from the Add Tasks step.
 - If the parent plan has a "## Manual Testing Runbooks" section, each child plan must have its own "## Manual Testing Runbooks" section in its details that covers only the changes delivered by that child plan.
 - Document the stacking/dependency relationship in each child plan's details section
-- Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality that works end-to-end${linearChildIssueGuidance}`,
+- Each child plan should be independently implementable and testable, and should deliver real, demonstrable functionality that works end-to-end${linearGuidance?.childIssues ?? ''}`,
   };
 }
 
@@ -395,7 +414,7 @@ export async function loadResearchPrompt(
   }
 
   const parentPlanLabel = parentPlanId !== undefined ? String(parentPlanId) : 'the current plan ID';
-  const linearChildIssueGuidance = buildLinearChildIssueGuidance(
+  const linearGuidance = buildLinearSplitGuidance(
     plan,
     context.config.generate?.linearChildIssueLabel
   );
@@ -429,7 +448,7 @@ export async function loadResearchPrompt(
 
 If the user requests changes, ask more clarifying questions if the requested changes are unclear or raise new decisions. Then update the plan file so that its details, research, implementation guide, and manual testing runbooks all agree with the revised understanding, write a revised summary, and ask for approval again. Continue this cycle until the user approves. Do not continue to the next step until the user explicitly approves the summary.`,
     },
-    ...(allowMultiplePlans ? [buildPlanSplitStep(parentPlanLabel, linearChildIssueGuidance)] : []),
+    ...(allowMultiplePlans ? [buildPlanSplitStep(parentPlanLabel, linearGuidance)] : []),
     buildAddTasksStep(allowMultiplePlans),
     consistencyCheckStep,
   ];
@@ -571,9 +590,9 @@ export async function loadGeneratePrompt(
   const allowMultiplePlans = parseBooleanOption(args.allowMultiplePlans, true);
 
   const parentPlanLabel = parentPlanId !== undefined ? String(parentPlanId) : 'the current plan ID';
-  const linearChildIssueGuidance = currentPlan
-    ? buildLinearChildIssueGuidance(currentPlan, context.config.generate?.linearChildIssueLabel)
-    : '';
+  const linearGuidance = currentPlan
+    ? buildLinearSplitGuidance(currentPlan, context.config.generate?.linearChildIssueLabel)
+    : null;
   const planningInstructions = await loadPlanningInstructions(context);
 
   const steps: WorkflowStep[] = [
@@ -590,7 +609,7 @@ export async function loadGeneratePrompt(
         withBlockingSubissues: false,
       }),
     },
-    ...(allowMultiplePlans ? [buildPlanSplitStep(parentPlanLabel, linearChildIssueGuidance)] : []),
+    ...(allowMultiplePlans ? [buildPlanSplitStep(parentPlanLabel, linearGuidance)] : []),
     buildAddTasksStep(allowMultiplePlans),
     consistencyCheckStep,
   ];

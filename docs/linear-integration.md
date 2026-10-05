@@ -125,6 +125,8 @@ generate:
 
 When set, the generate prompt tells the agent to pass this label when it creates each child issue. The setting does not affect imported issues or existing issues.
 
+When the agent proposes to split a Linear-linked plan into child plans and the parent issue is in a Linear project, the generate prompt tells the agent to ask about project milestones before it applies the split. The user can give milestones that are already decided, ask the agent to suggest milestones, or say that no milestones are needed. Milestones must show the progression of the project through to completion. If milestones are used, the agent creates the missing milestones with `linear milestone create` and assigns each child issue to one milestone. If no milestones are used, child issues get the parent issue's milestone, if it has one.
+
 Selected documents are downloaded as markdown files into `.tim/issue-docs/<planId>/` in the execution workspace. This cache is git-excluded and transient; the generated prompt tells the planning agent to read the files immediately and copy any implementation-relevant details into the plan details and task descriptions so the plan remains self-contained. Only native Linear Documents with markdown content are included. External-link attachments and other attachment resources are out of scope.
 
 Document fetching degrades gracefully: GitHub-tracked plans and plans without a Linear issue URL skip the step entirely with no behavior change, and if `LINEAR_API_KEY` is missing or the Linear fetch fails, tim emits a warning and continues generation without documents.

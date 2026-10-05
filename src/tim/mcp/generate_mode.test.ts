@@ -324,6 +324,15 @@ describe('tim MCP generate mode helpers', () => {
       'linear issue create --no-interactive --assignee self --state Todo --parent DF-3445 --project "<project name>"'
     );
     expect(messageText).toContain('tim set <child-plan-id> --issue "<new-issue-url>"');
+    expect(messageText).toContain('### Linear milestones');
+    expect(messageText).toContain('linear milestone list --project "<project name>"');
+    expect(messageText).toContain(
+      'linear milestone create --project "<project name>" --name "<milestone name>"'
+    );
+    expect(messageText).toContain('pass `--milestone "<assigned milestone name>"`');
+    expect(messageText.indexOf('### Linear milestones')).toBeLessThan(
+      messageText.indexOf('### Applying an approved split')
+    );
   });
 
   test('loadResearchPrompt includes the configured Linear child issue label', async () => {
@@ -368,6 +377,7 @@ describe('tim MCP generate mode helpers', () => {
       'Before you create the structured tasks for this plan, evaluate whether the work should be split'
     );
     expect(message?.text).toContain('Break the project into phases');
+    expect(message?.text).not.toContain('### Linear milestones');
     expect(message?.text).not.toContain('Once again, the project being implemented is');
     expect(message?.text).not.toContain('Generate the complete plan now.');
   });
@@ -422,6 +432,15 @@ describe('tim MCP generate mode helpers', () => {
       'linear issue create --no-interactive --assignee self --state Todo --parent DF-3445 --project "<project name>"'
     );
     expect(messageText).toContain('tim set <child-plan-id> --issue "<new-issue-url>"');
+    expect(messageText).toContain('### Linear milestones');
+    expect(messageText).toContain('linear milestone list --project "<project name>"');
+    expect(messageText).toContain(
+      'linear milestone create --project "<project name>" --name "<milestone name>"'
+    );
+    expect(messageText).toContain('pass `--milestone "<assigned milestone name>"`');
+    expect(messageText.indexOf('### Linear milestones')).toBeLessThan(
+      messageText.indexOf('### Applying an approved split')
+    );
   });
 
   test('loadGeneratePrompt includes the configured Linear child issue label', async () => {
