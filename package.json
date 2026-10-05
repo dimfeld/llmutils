@@ -58,6 +58,7 @@
     "globby": "^16.1.1",
     "gpt-tokenizer": "^3.4.0",
     "js-yaml": "^4.1.1",
+    "mermaid": "^12.1.0",
     "micromatch": "^4.0.8",
     "octokit": "^5.0.5",
     "p-queue": "^9.1.0",

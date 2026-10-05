@@ -30,6 +30,18 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<img src="/api/artifacts/image-for-chart.png" alt="Chart">');
     expect(html).toContain('<a href="chart.png">Chart</a>');
   });
+
+  test('wraps mermaid code blocks in a mermaid-diagram element with escaped source', () => {
+    const html = renderMarkdown(
+      '```mermaid\ngraph TD\n  A --> B<script>\n```\n\n```ts\nconst x = 1;\n```'
+    );
+
+    expect(html).toContain(
+      '<mermaid-diagram><pre><code class="language-mermaid">graph TD\n  A --> B&#x3C;script>\n</code></pre></mermaid-diagram>'
+    );
+    expect(html).toContain('<pre><code class="language-ts">const x = 1;\n</code></pre>');
+    expect(html.match(/<mermaid-diagram>/g)).toHaveLength(1);
+  });
 });
 
 describe('extractHeadings', () => {

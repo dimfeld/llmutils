@@ -13,6 +13,7 @@
   import { requestNotificationPermission } from '$lib/utils/browser_notifications.js';
   import { clearAppBadge, setAppBadge } from '$lib/utils/pwa_badge.js';
   import { handleGlobalShortcuts } from '$lib/utils/keyboard_shortcuts.js';
+  import { registerMermaidDiagramElement } from '$lib/utils/mermaid_diagram.js';
   import {
     resolveTabSlugForIndex,
     resolvePreservedTabForProjectSwitch,
@@ -137,6 +138,8 @@
   }
 
   onMount(() => {
+    registerMermaidDiagramElement();
+
     requestNotificationPermission().catch((e) =>
       console.warn('Failed to request notification permission:', e)
     );

@@ -316,6 +316,22 @@
   color: inherit;
 }
 
+.plan-rendered-content mermaid-diagram {
+  display: block;
+  margin: 0.75em 0;
+  overflow-x: auto;
+}
+
+.plan-rendered-content mermaid-diagram > svg {
+  display: block;
+  margin: 0 auto;
+}
+
+.plan-rendered-content .mermaid-diagram-error {
+  color: var(--destructive);
+  font-size: 0.85em;
+}
+
 .plan-rendered-content blockquote {
   margin: 0.75em 0;
   padding: 0.1em 1em;

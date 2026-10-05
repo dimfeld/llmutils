@@ -1,12 +1,31 @@
 import rehypeStringify from 'rehype-stringify';
 import remarkParse from 'remark-parse';
-import remarkRehype from 'remark-rehype';
+import remarkRehype, { defaultHandlers, type Options as RemarkRehypeOptions } from 'remark-rehype';
 import remarkGfm from 'remark-gfm';
 import { unified } from 'unified';
 import type { Code, Heading, Root, RootContent } from 'mdast';
 
 const parser = unified().use(remarkParse).use(remarkGfm);
-const htmlProcessor = unified().use(remarkRehype).use(rehypeStringify);
+
+/** Custom element defined in mermaid_diagram.ts that renders the diagram on the client. */
+export const MERMAID_DIAGRAM_TAG = 'mermaid-diagram';
+
+const codeHandler: NonNullable<RemarkRehypeOptions['handlers']>['code'] = (state, node: Code) => {
+  const codeBlock = defaultHandlers.code(state, node);
+  if (node.lang !== 'mermaid') return codeBlock;
+  // Keep the normal code block inside the element, so the source shows until
+  // the client renders the diagram (and also if rendering fails).
+  return {
+    type: 'element',
+    tagName: MERMAID_DIAGRAM_TAG,
+    properties: {},
+    children: [codeBlock],
+  };
+};
+
+const htmlProcessor = unified()
+  .use(remarkRehype, { handlers: { code: codeHandler } })
+  .use(rehypeStringify);
 
 export interface TocEntry {
   depth: number;
