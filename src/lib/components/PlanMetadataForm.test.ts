@@ -94,6 +94,19 @@ describe('PlanMetadataForm', () => {
     expect(body).toContain('type="submit" disabled');
   });
 
+  test('renders actions above and below the fields, with priority, status, and simple before details', () => {
+    const body = renderForm({ mode: 'edit', submitLabel: 'Save', initialValue: { title: 'Plan' } });
+
+    expect(body.match(/type="submit"/g)).toHaveLength(2);
+    expect(body.match(/>\s*Cancel\s*</g)).toHaveLength(2);
+
+    const detailsIndex = body.indexOf('id="plan-details"');
+    expect(body.indexOf('id="plan-priority"')).toBeLessThan(detailsIndex);
+    expect(body.indexOf('id="plan-status"')).toBeLessThan(detailsIndex);
+    expect(body.indexOf('id="plan-simple"')).toBeLessThan(detailsIndex);
+    expect(body.indexOf('type="submit"')).toBeLessThan(body.indexOf('id="plan-title"'));
+  });
+
   test('renders initially selected parent, base plan, and dependencies', () => {
     const body = renderForm({
       initialValue: {

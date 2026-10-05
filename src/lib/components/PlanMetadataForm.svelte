@@ -182,6 +182,20 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
+{#snippet actions()}
+  <div class="flex items-center gap-3">
+    <Button type="submit" disabled={!canSubmit}>
+      {submitting ? `${submitLabel}...` : submitLabel}
+    </Button>
+    <a href={effectiveCancelHref} class="text-sm text-muted-foreground hover:text-foreground">
+      Cancel
+    </a>
+    {#if error}
+      <p class="text-sm text-red-600 dark:text-red-400">{error}</p>
+    {/if}
+  </div>
+{/snippet}
+
 <form
   class="space-y-6"
   bind:this={formElement}
@@ -190,6 +204,8 @@
     handleSubmit();
   }}
 >
+  {@render actions()}
+
   <!-- Title -->
   <div class="rounded-lg border border-border p-4">
     <div class="space-y-3">
@@ -211,26 +227,6 @@
     <div class="space-y-3">
       <Label for="plan-goal" class="text-sm font-medium text-foreground">Goal</Label>
       <Input id="plan-goal" placeholder="What should this plan accomplish?" bind:value={goal} />
-    </div>
-  </div>
-
-  <!-- Details -->
-  <div class="rounded-lg border border-border p-4">
-    <div class="space-y-3">
-      <Label for="plan-details" class="text-sm font-medium text-foreground">Details</Label>
-      <Textarea
-        id="plan-details"
-        placeholder="Additional context, requirements, or notes (Markdown supported)"
-        bind:value={details}
-      />
-    </div>
-  </div>
-
-  <!-- Note -->
-  <div class="rounded-lg border border-border p-4">
-    <div class="space-y-3">
-      <Label for="plan-note" class="text-sm font-medium text-foreground">Note</Label>
-      <Textarea id="plan-note" placeholder="Internal note (Markdown supported)" bind:value={note} />
     </div>
   </div>
 
@@ -280,6 +276,27 @@
     </div>
   </div>
 
+  <!-- Details -->
+  <div class="rounded-lg border border-border p-4">
+    <div class="space-y-3">
+      <Label for="plan-details" class="text-sm font-medium text-foreground">Details</Label>
+      <Textarea
+        id="plan-details"
+        class="max-h-[70dvh] md:max-h-none"
+        placeholder="Additional context, requirements, or notes (Markdown supported)"
+        bind:value={details}
+      />
+    </div>
+  </div>
+
+  <!-- Note -->
+  <div class="rounded-lg border border-border p-4">
+    <div class="space-y-3">
+      <Label for="plan-note" class="text-sm font-medium text-foreground">Note</Label>
+      <Textarea id="plan-note" placeholder="Internal note (Markdown supported)" bind:value={note} />
+    </div>
+  </div>
+
   <!-- Tags -->
   <div class="rounded-lg border border-border p-4">
     <div class="space-y-3">
@@ -325,16 +342,5 @@
     </div>
   </div>
 
-  <!-- Submit -->
-  <div class="flex items-center gap-3">
-    <Button type="submit" disabled={!canSubmit}>
-      {submitting ? `${submitLabel}...` : submitLabel}
-    </Button>
-    <a href={effectiveCancelHref} class="text-sm text-muted-foreground hover:text-foreground">
-      Cancel
-    </a>
-    {#if error}
-      <p class="text-sm text-red-600 dark:text-red-400">{error}</p>
-    {/if}
-  </div>
+  {@render actions()}
 </form>
