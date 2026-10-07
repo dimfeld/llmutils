@@ -197,6 +197,76 @@ describe('context_helpers', () => {
     expect(context).toContain('- **Pending Sibling** (File: 103.plan.md)');
   });
 
+  test('buildPlanContextPrompt lists linked issues for current, parent, and sibling plans', async () => {
+    await writeMaterializedPlan({
+      id: 100,
+      title: 'Parent Plan',
+      status: 'in_progress',
+      issue: ['https://linear.app/acme/issue/ENG-10/parent-issue'],
+      tasks: [],
+    });
+    const currentPlanPath = await writeMaterializedPlan({
+      id: 101,
+      title: 'Current Plan',
+      status: 'pending',
+      parent: 100,
+      issue: ['https://github.com/acme/context-helpers/issues/42'],
+      tasks: [],
+    });
+    await writeMaterializedPlan({
+      id: 102,
+      title: 'Sibling Plan',
+      status: 'pending',
+      parent: 100,
+      issue: ['https://linear.app/acme/issue/ENG-11'],
+      tasks: [],
+    });
+
+    const context = await buildPlanContextPrompt({
+      planData: {
+        id: 101,
+        title: 'Current Plan',
+        status: 'pending',
+        parent: 100,
+        issue: ['https://github.com/acme/context-helpers/issues/42'],
+        tasks: [],
+      },
+      planFilePath: currentPlanPath,
+      baseDir: repoRoot,
+      includeCurrentPlanContext: false,
+    });
+
+    expect(context).toContain('## Linked Issues');
+    expect(context).toContain(
+      '- Current plan "Current Plan": #42 (https://github.com/acme/context-helpers/issues/42)'
+    );
+    expect(context).toContain(
+      '- Parent plan "Parent Plan": ENG-10 (https://linear.app/acme/issue/ENG-10/parent-issue)'
+    );
+    expect(context).toContain(
+      '- Sibling plan "Sibling Plan": ENG-11 (https://linear.app/acme/issue/ENG-11)'
+    );
+    expect(context).toContain('Never reference tim plan numbers in code');
+  });
+
+  test('buildPlanContextPrompt omits linked issues section when no related plan has issues', async () => {
+    const currentPlanPath = await writeMaterializedPlan({
+      id: 101,
+      title: 'Current Plan',
+      status: 'pending',
+      tasks: [],
+    });
+
+    const context = await buildPlanContextPrompt({
+      planData: { id: 101, title: 'Current Plan', status: 'pending', tasks: [] },
+      planFilePath: currentPlanPath,
+      baseDir: repoRoot,
+    });
+
+    expect(context).not.toContain('## Linked Issues');
+    expect(context).not.toContain('tim plan numbers');
+  });
+
   test('findSiblingPlans treats needs_review siblings as completed', async () => {
     const allPlans = new Map<number, PlanSchema>([
       [

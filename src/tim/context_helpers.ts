@@ -4,6 +4,7 @@ import { loadPlansFromDb } from './plans_db.js';
 import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { getLegacyAwareSearchDir } from './path_resolver.js';
 import { findPlanFileOnDisk } from './plans/find_plan_file.js';
+import { extractIssueNumber } from './display_utils.js';
 import { warn } from '../logging.js';
 
 /**
@@ -121,6 +122,10 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
     contextPrompt += `**Current Plan Title:** ${planData.title || 'Untitled Plan'}\n\n`;
   }
 
+  const linkedIssuePlans: Array<{ relation: string; plan: PlanSchema }> = [
+    { relation: 'Current plan', plan: planData },
+  ];
+
   // Add parent plan information if available
   if (planData.parent) {
     try {
@@ -128,6 +133,7 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
       const parentPlan = allPlans.get(planData.parent);
 
       if (parentPlan) {
+        linkedIssuePlans.push({ relation: 'Parent plan', plan: parentPlan });
         contextPrompt += `## Parent Plan Context\n\n`;
         const parentPlanFile = formatPlanFileForPrompt(parentPlan, root, searchDir);
         if (parentPlanFile) {
@@ -164,6 +170,13 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
           searchDir
         );
 
+        for (const sibling of [...siblings.completed, ...siblings.pending]) {
+          const siblingPlan = allPlans.get(sibling.id);
+          if (siblingPlan) {
+            linkedIssuePlans.push({ relation: 'Sibling plan', plan: siblingPlan });
+          }
+        }
+
         if (siblings.completed.length > 0 || siblings.pending.length > 0) {
           contextPrompt += `## Sibling Plans (Same Parent)\n\n`;
           contextPrompt += `These are other plans that are part of the same parent plan. Reference them for additional context about the overall project structure.\n\n`;
@@ -194,5 +207,40 @@ export async function buildPlanContextPrompt(options: PlanContextOptions): Promi
     }
   }
 
+  contextPrompt += buildLinkedIssuesSection(linkedIssuePlans);
+
   return contextPrompt;
+}
+
+/**
+ * Build a section that lists the issue tracker issues linked to the current plan and its
+ * related plans, with guidance on how to reference issues in code.
+ */
+function buildLinkedIssuesSection(entries: Array<{ relation: string; plan: PlanSchema }>): string {
+  const lines: string[] = [];
+  for (const { relation, plan } of entries) {
+    const title = plan.title || `Plan ${plan.id}`;
+    for (const url of plan.issue ?? []) {
+      const issueId = extractIssueNumber(url);
+      lines.push(
+        issueId
+          ? `- ${relation} "${title}": ${issueId} (${url})`
+          : `- ${relation} "${title}": ${url}`
+      );
+    }
+  }
+
+  if (lines.length === 0) {
+    return '';
+  }
+
+  return `## Linked Issues
+
+These issue tracker issues are linked to the current plan and its related plans.
+
+${lines.join('\n')}
+
+Do not reference issues in code, in comments or otherwise, unless it is necessary. If you must reference an issue in code, use the issue tracker ID (for example, an ID from the list above). Never reference tim plan numbers in code, because they have no meaning to other people who read the code.
+
+`;
 }
