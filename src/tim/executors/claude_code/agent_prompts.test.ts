@@ -272,11 +272,15 @@ describe('agent_prompts failure protocol integration', () => {
   it('adds subagent directive to reviewer prompt when enabled', () => {
     const def = getReviewerPrompt(context, { useSubagents: true });
     expect(def.prompt).toContain('Use the available sub-agents');
+    expect(def.prompt).toContain('wait for all of them to finish and collect their results');
+    expect(def.prompt).toContain('before you emit final structured output');
+    expect(def.prompt).toContain('Do not end the turn with a status message or schedule a wakeup');
   });
 
   it('omits subagent directive from reviewer prompt when disabled', () => {
     const def = getReviewerPrompt(context);
     expect(def.prompt).not.toContain('Use the available sub-agents');
+    expect(def.prompt).toContain('If you use subagents, wait for all of them to finish');
   });
 
   it('directs PR descriptions to copy manual testing runbooks from plan context', () => {

@@ -236,6 +236,11 @@ describe('review_pr_prompt', () => {
 
     expect(prompt.length).toBeGreaterThan(0);
     expect(prompt).toContain('You are a tim critical code reviewer');
+    expect(prompt).toContain('If you use subagents, wait for all of them to finish');
+    expect(prompt).toContain('call the `StructuredOutput` tool');
+    expect(prompt).toContain(
+      'Keep the current turn active with the available wait or task-result tools'
+    );
     expect(prompt).toContain('Do not be polite or encouraging');
     expect(prompt).toContain('## Critical Issues to Flag');
     expect(prompt).toContain('Code Correctness (HIGH PRIORITY)');

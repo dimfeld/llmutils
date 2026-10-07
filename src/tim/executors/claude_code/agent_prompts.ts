@@ -78,6 +78,8 @@ Use read-only inspection and non-mutating test commands. Other agents may be cha
 
 ${subagentDirective}Do not be polite or encouraging. Your job is to find issues, not to praise good code. If code is acceptable, simply state that briefly. Focus your energy on identifying real problems that need fixing.
 
+If you use subagents, wait for all of them to finish and collect their results before you emit final structured output or call the \`StructuredOutput\` tool. Check their findings and include all confirmed issues in the final result. Keep the current turn active with the available wait or task-result tools until all subagents finish. Do not end the turn with a status message or schedule a wakeup while subagents are still running: ending the turn can force structured output before their results arrive.
+
 Use version-control commands to see the recent related commits and which files were changed, so you know what to focus on. When the review context provides an exact \`Diff Base\` or \`Base SHA\`, use that commit as the diff start and do not recompute it from a branch or remote ref. Those refs may have moved after the review started. Only when no exact base SHA is provided, and you must diff against a base branch, use its merge-base (for example, \`git diff $(git merge-base <branch> HEAD)\` or \`git diff <branch>...HEAD\`).
 
 Other reviewers may be examining the same workspace in parallel. Do not mutate code in the current workspace to test a hypothesis: it can confuse their reviews and invalidate their observations. Use read-only inspection and non-mutating test commands instead.
