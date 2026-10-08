@@ -11,6 +11,12 @@ import {
 } from '$tim/db/review.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import {
+  getReviewFiles,
+  getReviewViewedItems,
+  type ReviewFileRow,
+  type ReviewViewedItemRow,
+} from '$tim/db/review_file.js';
+import {
   getLinkedPlansByPrUrl,
   getPrStatusForPlan,
   getPrStatusByUrl,
@@ -36,6 +42,9 @@ export interface ReviewDetailData {
   linkedPlanUuid: string | null;
   linkedPlans: LinkedPlanSummary[];
   reviewThreads: PrReviewThreadDetail[];
+  /** Files stored with the review (empty for reviews made before files were stored). */
+  reviewFiles: ReviewFileRow[];
+  viewedItems: ReviewViewedItemRow[];
 }
 
 function getSubmissionPrDetail(db: Database, review: ReviewRow): PrStatusDetail | null {
@@ -98,6 +107,8 @@ export async function getReviewDetailDataForReview(
 ): Promise<ReviewDetailData> {
   const issues = getReviewIssues(db, review.id);
   const submissions = getPrReviewSubmissionsForReview(db, review.id);
+  const reviewFiles = getReviewFiles(db, review.id);
+  const viewedItems = getReviewViewedItems(db, review.id);
   const prStatus = getSubmissionPrDetail(db, review);
   const submissionPrUrl = review.pr_url ?? prStatus?.status.pr_url ?? null;
   if (submissionPrUrl == null) {
@@ -112,6 +123,8 @@ export async function getReviewDetailDataForReview(
       linkedPlanUuid: review.plan_uuid,
       linkedPlans: [],
       reviewThreads: [],
+      reviewFiles,
+      viewedItems,
     };
   }
 
@@ -135,6 +148,8 @@ export async function getReviewDetailDataForReview(
     linkedPlanUuid,
     linkedPlans,
     reviewThreads,
+    reviewFiles,
+    viewedItems,
   };
 }
 

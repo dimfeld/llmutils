@@ -43,6 +43,7 @@ describe('buildAnnotationsForFile', () => {
         metadata: {
           issueId: 11,
           severity: 'minor',
+          annotationKind: null,
           content: 'Issue content',
           suggestion: null,
           lineLabel: null,
@@ -379,6 +380,7 @@ describe('buildGuideDiffAnnotations', () => {
         metadata: {
           issueId: 41,
           severity: 'minor',
+          annotationKind: null,
           content: 'Issue content',
           suggestion: null,
           lineLabel: '12–22',
@@ -460,6 +462,7 @@ describe('buildGuideDiffAnnotations', () => {
         metadata: {
           issueId: 50,
           severity: 'note',
+          annotationKind: null,
           content: 'Heads up:\nthis line was rewritten',
           suggestion: null,
           lineLabel: null,

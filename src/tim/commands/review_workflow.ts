@@ -15,11 +15,13 @@ import {
   insertReviewIssues,
   type InsertReviewIssueInput,
   type ReviewCategory,
+  type ReviewAnnotationKind,
   type ReviewIssueSource,
   type ReviewRow,
   type ReviewSeverity as DbReviewSeverity,
   updateReview,
 } from '../db/review.js';
+import { replaceReviewFiles } from '../db/review_file.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import type { Executor, ExecutorOutput } from '../executors/types.js';
 import {
@@ -48,6 +50,12 @@ import {
   type ReviewGuideDiffReference,
   type ReviewSubjectMetadata,
 } from './review_pr_prompt.js';
+import { collectReviewFiles, patchFilesFromDiffCatalog } from './review_files.js';
+import {
+  expandReviewGuideFileReferences,
+  scanGuideReferences,
+  segmentGuideByFences,
+} from './review_guide_references.js';
 
 const REVIEW_GUIDE_FILENAME = 'review-guide.md';
 const REVIEW_ISSUES_FILENAME = 'review-issues.json';
@@ -507,6 +515,7 @@ function annotationToInsertIssue(annotation: ExtractedAnnotation): InsertReviewI
     side: annotation.side,
     resolved: false,
     submittedInPrReviewId: null,
+    annotationKind: annotation.kind,
   };
 }
 
@@ -671,21 +680,14 @@ function joinUnifiedDiffSections(sections: string[]): string {
 const DIFF_REF_TAG_REGEX = /<diff\b([^>]*?)\/>/g;
 const DIFF_REF_ATTRIBUTE_REGEX = /(?:^|\s)(ref|start|end)=(?:"([^"]*)"|'([^']*)')/g;
 const ANNOTATION_TAG_REGEX = /<annotation\b([^>]*)>([\s\S]*?)<\/annotation>/g;
-// Matches an opening fenced-code-block delimiter: 3+ backticks or tildes, with
-// an optional info string after. CommonMark allows arbitrary info-string text
-// after the opener.
-const FENCE_OPEN_LINE_REGEX = /^[ \t]{0,3}(`{3,}|~{3,})/;
-// Matches a closing fenced-code-block delimiter: 3+ backticks or tildes
-// followed only by trailing whitespace. A language tag like ```ts is NOT a
-// valid close — it can only open a new fence.
-const FENCE_CLOSE_LINE_REGEX = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/;
-const ANNOTATION_ATTRIBUTE_REGEX = /(?:^|\s)(file|line)=(?:"([^"]*)"|'([^']*)')/g;
+const ANNOTATION_ATTRIBUTE_REGEX = /(?:^|\s)(file|line|type|kind)=(?:"([^"]*)"|'([^']*)')/g;
 
 export interface ExtractedAnnotation {
   file: string | null;
   line: string | null;
   startLine: string | null;
   content: string;
+  kind: ReviewAnnotationKind;
   // When anchoring to a diff ref's hunk, side indicates which side of a split
   // diff should receive the note. null means the renderer infers the side
   // per-anchor from the surrounding hunk's old/new ranges; ambiguous overlaps
@@ -694,13 +696,44 @@ export interface ExtractedAnnotation {
   side: 'LEFT' | 'RIGHT' | null;
 }
 
+const ANNOTATION_KIND_ALIASES: Record<string, ReviewAnnotationKind> = {
+  why: 'why',
+  rationale: 'why',
+  'behavior-change': 'behavior-change',
+  'behaviour-change': 'behavior-change',
+  behavior: 'behavior-change',
+  behaviour: 'behavior-change',
+  verify: 'verify',
+  check: 'verify',
+  question: 'question',
+  note: 'note',
+  fyi: 'note',
+  context: 'note',
+};
+
+export function normalizeAnnotationKind(value: string | null): ReviewAnnotationKind {
+  if (!value) {
+    return 'note';
+  }
+  return (
+    ANNOTATION_KIND_ALIASES[
+      value
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_]+/g, '-')
+    ] ?? 'note'
+  );
+}
+
 function parseAnnotationAttributes(attrString: string): {
   file: string | null;
   line: string | null;
+  kind: string | null;
 } {
-  const attributes: { file: string | null; line: string | null } = {
+  const attributes: { file: string | null; line: string | null; kind: string | null } = {
     file: null,
     line: null,
+    kind: null,
   };
 
   ANNOTATION_ATTRIBUTE_REGEX.lastIndex = 0;
@@ -712,6 +745,8 @@ function parseAnnotationAttributes(attrString: string): {
       attributes.file = value.trim() || null;
     } else if (key === 'line') {
       attributes.line = value.trim() || null;
+    } else if (key === 'type' || key === 'kind') {
+      attributes.kind = value.trim() || null;
     }
   }
 
@@ -837,54 +872,6 @@ function trimBoundaryNewlines(content: string): string {
   return content.replace(/^(?:\r?\n)+/, '').replace(/(?:\r?\n)+$/, '');
 }
 
-function segmentGuideByFences(guideText: string): Array<{ kind: 'prose' | 'fence'; text: string }> {
-  const segments: Array<{ kind: 'prose' | 'fence'; text: string }> = [];
-  const lines = guideText.split('\n');
-  let buffer: string[] = [];
-  // Track the full opening fence delimiter so the closing fence must match its
-  // character AND be at least as long (per CommonMark). A four-backtick fence
-  // must not be closed by a three-backtick line.
-  let fenceMarker: string | null = null;
-
-  const pushBuffer = (kind: 'prose' | 'fence') => {
-    if (buffer.length === 0) return;
-    segments.push({ kind, text: buffer.join('') });
-    buffer = [];
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const isLast = i === lines.length - 1;
-    const lineWithNewline = isLast ? line : line + '\n';
-    if (fenceMarker === null) {
-      const openMatch = line.match(FENCE_OPEN_LINE_REGEX);
-      if (openMatch) {
-        pushBuffer('prose');
-        fenceMarker = openMatch[1];
-        buffer.push(lineWithNewline);
-      } else {
-        buffer.push(lineWithNewline);
-      }
-    } else {
-      buffer.push(lineWithNewline);
-      const closeMatch = line.match(FENCE_CLOSE_LINE_REGEX);
-      if (
-        closeMatch &&
-        closeMatch[1][0] === fenceMarker[0] &&
-        closeMatch[1].length >= fenceMarker.length
-      ) {
-        pushBuffer('fence');
-        fenceMarker = null;
-      }
-    }
-  }
-
-  // Unterminated fence: treat the remaining buffer as a fence so we don't
-  // accidentally extract annotations from inside an unclosed code block.
-  pushBuffer(fenceMarker === null ? 'prose' : 'fence');
-  return segments;
-}
-
 export function extractReviewGuideAnnotations(options: {
   guideText: string;
   diffCatalog: ReviewGuideDiffCatalogEntry[] | null;
@@ -939,6 +926,7 @@ export function extractReviewGuideAnnotations(options: {
         line,
         startLine,
         content: trimBoundaryNewlines(String(rawContent ?? '')),
+        kind: normalizeAnnotationKind(attributes.kind),
         side: derivedSide,
       });
 
@@ -1240,6 +1228,12 @@ interface CollectedDiffRefTag {
 export function expandReviewGuideDiffReferences(options: {
   guideText: string;
   diffCatalog: ReviewGuideDiffCatalogEntry[];
+  /**
+   * Append an "Other changes" section with every hunk no tag referenced.
+   * Defaults to true. Off when the review stores its files, because the viewer
+   * then shows every change in its Files view.
+   */
+  appendUnusedRefs?: boolean;
 }): {
   guideText: string;
   replacedCount: number;
@@ -1264,6 +1258,12 @@ export function expandReviewGuideDiffReferences(options: {
   let match: RegExpExecArray | null;
   while ((match = DIFF_REF_TAG_REGEX.exec(options.guideText)) !== null) {
     const attributes = parseDiffRefTagAttributes(match[1] ?? '');
+    if (!attributes.ref && /(?:^|\s)file=/.test(match[1] ?? '')) {
+      // `<diff file=...>` tags are handled by expandReviewGuideFileReferences;
+      // any left here could not be resolved there, so leave them untouched.
+      tags.push({ ref: null, start: null, end: null, selectedIndices: [], replacement: null });
+      continue;
+    }
     const tag: CollectedDiffRefTag = {
       ref: attributes.ref,
       start: attributes.start,
@@ -1327,7 +1327,7 @@ export function expandReviewGuideDiffReferences(options: {
 
   const unusedEntries = options.diffCatalog.filter((entry) => !usedRefs.has(entry.ref));
   const otherChangesSection =
-    unusedEntries.length > 0
+    unusedEntries.length > 0 && options.appendUnusedRefs !== false
       ? [
           '## Other changes',
           'These are the remaining changes that the model did not include above.',
@@ -1770,6 +1770,55 @@ function toFormatterIssue(issue: StoredReviewIssue): ReviewIssue | null {
   };
 }
 
+/**
+ * Load the changed files (and the unchanged files the guide refers to), expand
+ * `<diff file>` and `<excerpt>` tags, and store the files with the review so the
+ * viewer can show full-file context. Returns the expanded guide text.
+ */
+async function expandAndStoreReviewFiles(options: {
+  db: Database;
+  reviewId: number;
+  baseDir: string;
+  baseSha: string | null;
+  reviewedSha: string;
+  diffCatalog: ReviewGuideDiffCatalogEntry[];
+  guideText: string;
+}): Promise<string> {
+  const patchFiles = patchFilesFromDiffCatalog(options.diffCatalog);
+  const scan = scanGuideReferences(options.guideText);
+  const contextRequests = [
+    ...scan.excerpts,
+    ...scan.diffPaths.map((path) => ({ path, rev: 'head' as const })),
+    ...scan.mentionedPaths.map((path) => ({ path, rev: 'head' as const })),
+  ];
+  const collected = await collectReviewFiles({
+    baseDir: options.baseDir,
+    baseSha: options.baseSha,
+    reviewedSha: options.reviewedSha,
+    patchFiles,
+    contextRequests,
+  });
+
+  const expansion = expandReviewGuideFileReferences({
+    guideText: options.guideText,
+    files: patchFiles,
+    contents: collected.lookup,
+  });
+  if (expansion.unresolved.length > 0) {
+    warn(`Review guide referenced unknown file(s): ${expansion.unresolved.join(', ')}`);
+  }
+
+  replaceReviewFiles(options.db, options.reviewId, collected.files);
+  const withContents = collected.files.filter(
+    (file) => file.kind === 'changed' && (file.newContent != null || file.oldContent != null)
+  ).length;
+  const changedCount = collected.files.filter((file) => file.kind === 'changed').length;
+  log(
+    `Stored ${changedCount} changed file${changedCount === 1 ? '' : 's'} (${withContents} with full contents) and ${collected.files.length - changedCount} context file${collected.files.length - changedCount === 1 ? '' : 's'} for the review guide.`
+  );
+  return expansion.guideText;
+}
+
 export async function runReviewGuideWorkflow(
   options: RunReviewGuideWorkflowOptions
 ): Promise<void> {
@@ -2037,10 +2086,29 @@ export async function runReviewGuideWorkflow(
           );
         }
 
+        let storesReviewFiles = false;
         if (options.diffCatalog && options.diffCatalog.length > 0) {
+          try {
+            reviewGuide = await expandAndStoreReviewFiles({
+              db: options.db,
+              reviewId: options.review.id,
+              baseDir: options.baseDir,
+              baseSha: options.baseSha,
+              reviewedSha: options.reviewedSha,
+              diffCatalog: options.diffCatalog,
+              guideText: reviewGuide,
+            });
+            storesReviewFiles = true;
+          } catch (err) {
+            warn(
+              `Failed to store review files; the guide will not have expandable context: ${asErrorMessage(err)}`
+            );
+          }
+
           const expansionResult = expandReviewGuideDiffReferences({
             guideText: reviewGuide,
             diffCatalog: options.diffCatalog,
+            appendUnusedRefs: !storesReviewFiles,
           });
           reviewGuide = expansionResult.guideText;
 

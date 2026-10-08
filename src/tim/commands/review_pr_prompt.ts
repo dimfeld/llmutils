@@ -13,15 +13,24 @@ const REVIEW_CATEGORIES_SECTION = `### Critical Issue Categories
 - Performance Issues (MEDIUM): unnecessary heavy work, memory growth, avoidable expensive operations.`;
 
 const REVIEW_GUIDE_ANNOTATIONS_SECTION = `## Review Guide Annotations
-Use annotations only for descriptive callouts, observations, FYI commentary, or explanatory notes that give reviewers useful context but do not require a code change. Actionable findings, regressions, bugs, security concerns, missing tests, or code-quality issues must be emitted later as structured JSON review issues instead.
+Annotations are short notes that the viewer pins to a specific line of a diff. They are the most useful part of the guide for a person reviewing someone else's code, because they put context exactly where the reader is looking. Write them generously: aim for at least one annotation for every non-trivial hunk, and more for dense or subtle code.
+
+Annotations are for descriptive context, not findings. Actionable findings (bugs, regressions, security concerns, missing tests, code-quality issues) must be emitted later as structured JSON review issues instead.
 
 Annotation syntax:
-\`<annotation file="src/foo.ts" line="42">Non-actionable context.</annotation>\`
+\`<annotation file="src/foo.ts" line="42" type="why">Non-actionable context.</annotation>\`
 
-- \`file=\` accepts either a plain file path or a diff ref token such as \`src/foo.ts#hunk-2\`.
-- \`line=\` may be omitted when \`file=\` is a diff ref token; the system anchors the note to that hunk.
-- Multi-line annotation content is rendered verbatim with whitespace preserved.
-- Do not place annotation tags inside \`\`\`unified-diff\`\`\` fences; tags inside fenced diff blocks are treated as literal diff text and are not extracted.`;
+Set \`type\` to one of:
+- \`why\`: the reason for a design or implementation choice that is not obvious from the code.
+- \`behavior-change\`: existing callers, users, or data now see different behavior here. Say what changed and who is affected.
+- \`verify\`: something the reviewer should confirm by reading nearby code, for example "check that every caller passes a sorted list". Use this when the correctness of a line depends on an assumption you could not fully confirm.
+- \`question\`: an open question for the author that the reviewer may want to ask. Phrase it as a question to the author.
+- \`note\`: any other helpful context (the default).
+
+- \`line=\` is a new-side line number (old-side for deleted lines), or a range such as \`40-52\`.
+- Place each annotation next to the diff it refers to. The line must be inside a diff that the guide shows.
+- Multi-line annotation content is rendered verbatim with whitespace preserved. Keep annotations short; long explanations belong in the section prose.
+- Do not place annotation tags inside fenced code blocks; tags inside fences are treated as literal text and are not extracted.`;
 
 const ASSUME_CHECKS_PASS_SECTION = `## Check Assumptions
 Do not run tests, type checking, linting, formatting, or similar verification commands. Assume automated checks pass unless the provided context already shows otherwise.`;
@@ -266,33 +275,81 @@ function toJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-function renderDiffReferenceCatalog(diffReferences?: ReviewGuideDiffReference[] | null): string {
+interface CatalogFileSummary {
+  filePath: string;
+  hunks: Array<{ oldRange: string | null; newRange: string | null; preview: string | null }>;
+}
+
+function summarizeCatalogFiles(diffReferences: ReviewGuideDiffReference[]): CatalogFileSummary[] {
+  const files: CatalogFileSummary[] = [];
+  const byPath = new Map<string, CatalogFileSummary>();
+  for (const entry of diffReferences) {
+    const filePath = entry.filePath ?? entry.ref.replace(/#.*$/, '');
+    let summary = byPath.get(filePath);
+    if (!summary) {
+      summary = { filePath, hunks: [] };
+      byPath.set(filePath, summary);
+      files.push(summary);
+    }
+    if (entry.oldRange || entry.newRange) {
+      summary.hunks.push({
+        oldRange: entry.oldRange,
+        newRange: entry.newRange,
+        preview: entry.preview,
+      });
+    }
+  }
+  return files;
+}
+
+function renderChangedFileCatalog(diffReferences?: ReviewGuideDiffReference[] | null): string {
   if (!diffReferences || diffReferences.length === 0) {
     return '';
   }
 
   const lines = [
-    '## Diff Reference Catalog',
-    'Use these exact refs when inserting diff placeholders into the guide.',
-    'Write placeholders as `<diff ref="..."/>`, or use 1-based inclusive line ranges like `<diff ref="..." start="4" end="10"/>`; do not invent new refs.',
-    'The `start` and `end` attributes are optional. Use them only when splitting a diff so explanatory text can appear between line ranges.',
-    'Never truncate or omit diff refs for readability or because a diff is long; include every ref needed for the complete changed code in the relevant guide section.',
+    '## Changed File Catalog',
+    'These are the changed files and the line ranges of their changes. Use these paths and new-side line numbers in `<diff>` tags and annotations.',
     '',
   ];
 
-  for (const entry of diffReferences) {
-    const filePart = entry.filePath ?? '(unknown file)';
-    const oldPart = entry.oldRange ? `old ${entry.oldRange}` : 'old n/a';
-    const newPart = entry.newRange ? `new ${entry.newRange}` : 'new n/a';
-    const headerPart = entry.header ? ` ${entry.header}` : '';
-    const previewPart = entry.preview ? ` | ${entry.preview}` : '';
-    lines.push(
-      `- \`${entry.ref}\` -> ${filePart} (${oldPart}, ${newPart})${headerPart}${previewPart}`
-    );
+  for (const file of summarizeCatalogFiles(diffReferences)) {
+    if (file.hunks.length === 0) {
+      lines.push(`- \`${file.filePath}\` (no text hunks: binary, rename, or mode change)`);
+      continue;
+    }
+    lines.push(`- \`${file.filePath}\``);
+    for (const hunk of file.hunks) {
+      const newPart = hunk.newRange ? `new ${hunk.newRange}` : 'new n/a';
+      const oldPart = hunk.oldRange ? `old ${hunk.oldRange}` : 'old n/a';
+      const previewPart = hunk.preview ? ` | ${hunk.preview}` : '';
+      lines.push(`  - ${newPart} (${oldPart})${previewPart}`);
+    }
   }
 
   return `${lines.join('\n')}\n`;
 }
+
+const CODE_REFERENCE_TAGS_SECTION = `## Showing Code in the Guide
+Do not write raw diff blocks yourself. Use these tags, each on its own line. The system replaces them with the exact code after you finish.
+
+- \`<diff file="src/foo.ts"/>\` shows every change in a file.
+- \`<diff file="src/foo.ts" start="120" end="180"/>\` shows only the changes that overlap new-side lines 120-180. Use a range to show the part of a file that the surrounding prose explains, and use several tags for the same file in different sections when a file has changes for different reasons. For a deleted file, the line numbers are on the old side.
+- \`<excerpt file="src/bar.ts" start="40" end="65"/>\` shows unchanged code at the reviewed revision. Add \`rev="base"\` to show the code as it was before the change. Use excerpts to show the existing code that the change depends on or affects: a caller of a changed function, the interface or type a change must satisfy, the old version of logic that moved, or a similar existing implementation the new code copies. Keep excerpts focused (at most about 60 lines) and explain why each one matters.
+
+The viewer lets the reader expand unchanged lines around every diff, and it has a separate Files view that shows every change in the review and marks the changed lines that no section shows. So you do not need to force every line of every file into the guide. Show the code that the explanation needs, and make sure that every change with real behavioral or design significance is discussed. Trivial changes (formatting, imports, renames, simple test fixtures) can be mentioned in one sentence or left to the Files view.
+
+When you mention a file in prose, write its repository-relative path in backticks, optionally with a line number (\`src/foo.ts:42\`). The viewer turns these into links that open the file.`;
+
+const SECTION_PRIORITY_SECTION = `## Reading Priority
+Directly under each section heading (level 2 and below), add an HTML comment that tells the reader how much attention the section needs:
+- \`<!-- priority: careful -->\`: core logic, risky changes, or subtle behavior. Read every line.
+- \`<!-- priority: skim -->\`: straightforward changes that follow existing patterns.
+- \`<!-- priority: mechanical -->\`: renames, generated code, formatting, simple plumbing, or simple test fixtures.
+The viewer collapses \`skim\` and \`mechanical\` sections by default, so do not mark a section as one of those if it has anything a reviewer must not miss.`;
+
+const CALL_GRAPH_SECTION = `## Call Graph Diagram
+Include the call graph in the overview as a Mermaid diagram in a \`\`\`mermaid fenced block (for example \`flowchart TD\`). Show the important entry points, the changed functions or modules, and the edges between them. Mark the change status of each edge or node clearly, for example with labels such as \`new\`, \`changed\`, or \`removed\`, or with Mermaid \`classDef\` styles. Keep the diagram small enough to read; use more than one diagram if the change has separate flows.`;
 
 export function buildReviewGuidePrompt(options: ReviewGuidePromptOptions): string {
   const { metadata, guidePath, useJj, diffReferences, customInstructions } = options;
@@ -305,11 +362,15 @@ ${formatSubjectMetadata(metadata)}
 ## Diff Discovery
 ${getDiffInstructions(metadata, useJj)}
 
-${renderDiffReferenceCatalog(diffReferences)}
+${renderChangedFileCatalog(diffReferences)}
 
 ${ASSUME_CHECKS_PASS_SECTION}
-
+${hasDiffReferences ? `\n${CODE_REFERENCE_TAGS_SECTION}\n` : ''}
 ${REVIEW_GUIDE_ANNOTATIONS_SECTION}
+
+${SECTION_PRIORITY_SECTION}
+
+${CALL_GRAPH_SECTION}
 
 ## Review Guide Focus
 Treat the guide as an architectural map of the change, not only as a transcription of the diff.
@@ -324,17 +385,17 @@ Treat the guide as an architectural map of the change, not only as a transcripti
 ## Required Workflow
 1. Enumerate all changed files from the ${getGuideWorkflowSubject(metadata)}.
 2. Trace the existing and changed architecture around the change: identify the main entry points, responsibilities, dependencies, consumers, and data or control flow that the changed code participates in. Map the relevant call graph for the touched code, including important callers, callees, and representative paths, and explicitly note added, removed, rerouted, or otherwise changed call-graph edges. Pay special attention to how existing code uses affected modules and how new or changed code uses them across module or component boundaries.
-3. Begin the guide with the high-level architectural overview and call graph as described above.
+3. Begin the guide with the high-level architectural overview and the call graph diagram as described above.
 4. Group files into functional sections/subsections (core logic, data model, API, tests, docs, etc.).
-5. Within each section, cover every changed file with a concise what/how/interactions explanation before or alongside its diff. For important modules or components, include the relevant existing and new or changed usage, not only the direct callers or dependencies.
+5. Within each section, explain each changed file that matters with a concise what/how/interactions explanation before or alongside its code. For important modules or components, include the relevant existing and new or changed usage, not only the direct callers or dependencies. Use \`<excerpt>\` tags to show the existing callers, contracts, or similar code that the explanation relies on.
 6. Analyze each section with enough detail that a reviewer can walk the ${metadata.kind === 'pr' ? 'PR' : 'plan changes'} without opening every file.
-7. Ensure every changed file and every changed line is covered in at least one section.
+7. Make sure every changed file with meaningful changes is discussed in at least one section. Changes that are trivial can be summarized briefly; the viewer's Files view shows them in full.
 8. ${
     hasDiffReferences
-      ? 'Each section must include all needed `<diff ref="..."/>` placeholders using refs from the catalog above. You may add optional `start` and `end` attributes for 1-based inclusive line ranges only to insert explanatory text between ranges of the same diff; the final guide still needs every line, and the system will add any omitted lines back near the closest referenced range. Do not write raw diff blocks yourself. The system will replace the placeholders with the exact canonical diff text after you finish. Never truncate or omit diff refs for readability, length, or brevity; long diffs must still be represented with all relevant diff refs so the final guide contains the complete changed code.'
+      ? 'Show code with `<diff file="..."/>` and `<excerpt .../>` tags as described in "Showing Code in the Guide". Use the paths from the Changed File Catalog. Do not write raw diff blocks yourself.'
       : 'Each section must include the full unified diff for all files in that section, in a ```unified-diff code block, copied verbatim from the relevant `git diff` output, so the reviewer can read the changes inline without opening the files separately. Never truncate or omit any part of a diff for readability, length, or brevity.'
   }
-9. Include subsection commentary plus concrete line references for important changes.
+9. Include subsection commentary, annotations on the important lines, and a reading priority comment under each section heading.
 10. Ignore comments that begin with \`AI:\` or \`AI_COMMENT_START\`.
 
 ${REVIEW_CATEGORIES_SECTION}

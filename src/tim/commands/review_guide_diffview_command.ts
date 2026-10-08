@@ -4,6 +4,7 @@ import { getCurrentBranchName } from '../../common/git.js';
 import { buildReviewGuideDiffview } from '../../lib/utils/markdown_parser.js';
 import { log } from '../../logging.js';
 import { getDatabase } from '../db/database.js';
+import { getReviewFiles } from '../db/review_file.js';
 import { getLatestReviewGuide, resolveReviewGuideTarget } from './review_guide_manage.js';
 import { resolveProjectContextForRepo } from './review_workflow.js';
 
@@ -39,6 +40,19 @@ export async function handleReviewGuideDiffviewCommand(
     markdown: review.review_guide!,
     fallbackTitle,
   });
+  // New guides show only the changes their prose needs; add the rest from the
+  // files stored with the review so the export still covers every change.
+  const listedPaths = new Set(json.groups.flatMap((group) => group.files.map((file) => file.path)));
+  const otherFiles = getReviewFiles(db, review.id)
+    .filter((file) => file.kind === 'changed' && !listedPaths.has(file.path))
+    .map((file) => ({ path: file.path }));
+  if (otherFiles.length > 0) {
+    json.groups.push({
+      name: 'Other changes',
+      description: 'Changed files that the review guide does not show.',
+      files: otherFiles,
+    });
+  }
   const serialized = JSON.stringify(json, null, 2);
   const outputPath = path.resolve(process.cwd(), options.output ?? 'review-guide.json');
 

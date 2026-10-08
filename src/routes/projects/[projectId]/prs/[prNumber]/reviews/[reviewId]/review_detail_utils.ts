@@ -2,11 +2,12 @@ import type { DiffLineAnnotation } from '@pierre/diffs';
 
 import { parseLineRange } from '$common/review_line_range.js';
 import type { MarkdownSegment } from '$lib/utils/markdown_parser.js';
-import type { ReviewIssueRow, ReviewSeverity } from '$tim/db/review.js';
+import type { ReviewAnnotationKind, ReviewIssueRow, ReviewSeverity } from '$tim/db/review.js';
 
 export interface ReviewIssueAnnotationData {
   issueId: number;
   severity: ReviewSeverity;
+  annotationKind: ReviewAnnotationKind | null;
   content: string;
   suggestion: string | null;
   lineLabel: string | null;
@@ -243,6 +244,7 @@ function toAnnotation(
     metadata: {
       issueId: parsed.issue.id,
       severity: parsed.issue.severity,
+      annotationKind: parsed.issue.annotationKind ?? null,
       content: parsed.issue.content,
       suggestion: parsed.issue.suggestion,
       lineLabel: parsed.lineLabel,
@@ -320,6 +322,19 @@ export function buildGuideDiffAnnotations(
   const annotationsBySegment = new Map<number, DiffLineAnnotation<ReviewIssueAnnotationData>[]>();
 
   const diffSegments = guideSegments.flatMap((segment, segmentIndex) => {
+    if (segment.type === 'code-excerpt' && segment.rev === 'head') {
+      // Excerpts show unchanged lines, which have the same number on both sides.
+      return [
+        {
+          segmentIndex,
+          filename: segment.filename,
+          ranges: [
+            { start: segment.start, end: segment.end, side: 'additions' as const },
+            { start: segment.start, end: segment.end, side: 'deletions' as const },
+          ],
+        },
+      ];
+    }
     if (segment.type !== 'unified-diff' || !segment.filename) return [];
     return [
       {

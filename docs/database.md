@@ -344,7 +344,10 @@ Generation paths:
 **Tables**:
 
 - `review`: Linked to a project and either a `pr_status` row or a `plan` row. Columns: `id`, `project_id` (FK CASCADE), `pr_status_id` (FK SET NULL, NULL for plan-only), `pr_url` (canonicalized, **NULLABLE** after v37), `branch` (**NULLABLE** after v37), `base_branch`, `reviewed_sha`, `plan_uuid` (FK to `plan(uuid)` ON DELETE SET NULL, added in v37), `review_guide` (TEXT), `status` (pending/in_progress/complete/error), `error_message`, `created_at`, `updated_at`. CHECK constraint: `pr_url IS NOT NULL OR plan_uuid IS NOT NULL`. No unique constraint on `(project_id, pr_url)` — use `ORDER BY created_at DESC, id DESC LIMIT 1` for latest. Indexes on `project_id`, `pr_url`, and `plan_uuid`.
-- `review_issue`: Individual issues per review. Columns: `id`, `review_id` (FK CASCADE), `severity` (critical/major/minor/info/note), `category` (security/performance/bug/style/compliance/testing/other), `content`, `file`, `line`, `start_line`, `suggestion`, `source` (claude-code/codex-cli/combined), `resolved` (INTEGER default 0), `created_at`, `updated_at`. `note` rows come from review-guide annotations, are non-actionable/local-only, are not submitted to GitHub, and can be deleted locally. Index on `review_id`.
+- `review_issue`: Individual issues per review. Columns: `id`, `review_id` (FK CASCADE), `severity` (critical/major/minor/info/note), `category` (security/performance/bug/style/compliance/testing/other), `content`, `file`, `line`, `start_line`, `suggestion`, `source` (claude-code/codex-cli/combined), `resolved` (INTEGER default 0), `created_at`, `updated_at`. `note` rows come from review-guide annotations, are non-actionable/local-only, are not submitted to GitHub, and can be deleted locally. `annotation_kind` (added in v57, nullable, validated on write: `why`/`behavior-change`/`verify`/`question`/`note`) records the annotation type of a note. A `question` note can be converted to an `info` issue so it can be submitted. Index on `review_id`.
+- `review_file` (v57): The files stored with a review so the viewer can show full-file context. Columns: `review_id` (FK CASCADE), `path`, `old_path` (renames), `kind` (`changed`/`context`), `change_type` (`added`/`deleted`/`modified`/`renamed`), `patch` (full per-file diff for changed files), `old_blob_hash`, `new_blob_hash`. UNIQUE `(review_id, path)`. `context` rows are unchanged files that the guide shows in excerpts or mentions in prose.
+- `review_blob` (v57): File contents keyed by SHA-256 (`hash`, `content`, `byte_size`), shared between reviews. `replaceReviewFiles` deletes blobs that no `review_file` row references after each write. Reviews deleted by cascade leave their blobs until the next write removes them.
+- `review_viewed_item` (v57): Per-review "viewed" marks from the guide viewer. Primary key `(review_id, item_kind, item_key)`; `item_kind` is `section` (heading slug) or `file` (path).
 
 **Plan-delete trigger** (added in v37): A `BEFORE DELETE ON plan` trigger runs `DELETE FROM review WHERE plan_uuid = OLD.uuid AND pr_url IS NULL` so plan-only reviews are removed when their plan is deleted. PR-linked reviews that also reference the plan get `plan_uuid` set to NULL via the FK's `ON DELETE SET NULL` (BEFORE-DELETE triggers run before cascading FK actions in SQLite).
 
@@ -359,6 +362,8 @@ Generation paths:
 - `getReviewIssues(db, reviewId)`: All issues for a review.
 - `updateReviewIssue(db, id, updates)`: Update a single issue (e.g., mark resolved).
 - `getReviewsForProject(db, projectId, options?)`: List reviews for a project. With `latestPerPr: true`, dedupes both PR rows by `pr_url` and plan-only rows (those with `pr_url IS NULL`) by `plan_uuid`.
+
+**Review files module** (`src/tim/db/review_file.ts`): `replaceReviewFiles(db, reviewId, files)`, `getReviewFiles(db, reviewId)` (joins the blob contents), `deleteOrphanReviewBlobs(db)`, `getReviewViewedItems(db, reviewId)`, and `setReviewItemViewed(db, { reviewId, kind, key, viewed })`.
 
 ### Webhook Log
 

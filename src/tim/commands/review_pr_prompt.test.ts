@@ -88,8 +88,11 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Trace representative end-to-end flows');
     expect(prompt).toContain('Map the relevant call graph for the touched code');
     expect(prompt).toContain(
-      'cover every changed file with a concise what/how/interactions explanation'
+      'explain each changed file that matters with a concise what/how/interactions explanation'
     );
+    expect(prompt).toContain('<!-- priority: careful -->');
+    expect(prompt).toContain('```mermaid');
+    expect(prompt).toContain('type="why"');
     expect(prompt).toContain('copied verbatim from the relevant `git diff` output');
     expect(prompt).toContain('Never truncate or omit any part of a diff');
     expect(prompt).toContain('Do not run tests, type checking, linting, formatting');
@@ -203,17 +206,15 @@ describe('review_pr_prompt', () => {
       diffReferences: DIFF_REFERENCES,
     });
 
-    expect(prompt).toContain('## Diff Reference Catalog');
-    expect(prompt).toContain(DIFF_REFERENCES[0].ref);
-    expect(prompt).toContain('Write placeholders as `<diff ref="..."/>`');
-    expect(prompt).toContain('<diff ref="..." start="4" end="10"/>');
-    expect(prompt).toContain('Use them only when splitting a diff');
+    expect(prompt).toContain('## Changed File Catalog');
+    expect(prompt).toContain(`\`${DIFF_REFERENCES[0].filePath}\``);
+    expect(prompt).not.toContain(DIFF_REFERENCES[0].ref);
+    expect(prompt).toContain('<diff file="src/foo.ts" start="120" end="180"/>');
+    expect(prompt).toContain('<excerpt file="src/bar.ts" start="40" end="65"/>');
+    expect(prompt).toContain('rev="base"');
     expect(prompt).toContain('Do not write raw diff blocks yourself');
-    expect(prompt).toContain('Never truncate or omit diff refs for readability');
-    expect(prompt).toContain('long diffs must still be represented with all relevant diff refs');
-    expect(prompt).toContain(
-      'the system will add any omitted lines back near the closest referenced range'
-    );
+    expect(prompt).toContain('you do not need to force every line of every file into the guide');
+    expect(prompt).not.toContain('Every changed line is covered');
   });
 
   test('buildReviewGuidePrompt includes jj instructions when requested', () => {

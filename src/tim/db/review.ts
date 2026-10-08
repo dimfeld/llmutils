@@ -14,6 +14,15 @@ export type ReviewCategory =
   | 'testing'
   | 'other';
 export type ReviewIssueSource = 'claude-code' | 'codex-cli' | 'combined';
+/** Kind of a review-guide annotation (stored on `note` severity issues). */
+export type ReviewAnnotationKind = 'note' | 'why' | 'behavior-change' | 'verify' | 'question';
+export const REVIEW_ANNOTATION_KINDS: readonly ReviewAnnotationKind[] = [
+  'why',
+  'behavior-change',
+  'verify',
+  'question',
+  'note',
+];
 export type PrReviewSubmissionEvent = 'APPROVE' | 'COMMENT' | 'REQUEST_CHANGES';
 
 export interface ReviewRow {
@@ -44,6 +53,8 @@ export interface ReviewIssueRow {
   suggestion: string | null;
   source: ReviewIssueSource | null;
   side: ReviewIssueSide | null;
+  /** Annotation kind for `note` issues extracted from a review guide; null otherwise. */
+  annotationKind?: ReviewAnnotationKind | null;
   submittedInPrReviewId: number | null;
   resolved: 0 | 1;
   created_at: string;
@@ -95,6 +106,7 @@ export interface InsertReviewIssueInput {
   side?: ReviewIssueSide | null;
   submittedInPrReviewId?: number | null;
   resolved?: boolean;
+  annotationKind?: ReviewAnnotationKind | null;
 }
 
 export interface InsertReviewIssuesInput {
@@ -114,6 +126,7 @@ export interface UpdateReviewIssueInput {
   side?: ReviewIssueSide | null;
   submittedInPrReviewId?: number | null;
   resolved?: boolean;
+  annotationKind?: ReviewAnnotationKind | null;
 }
 
 export interface CreatePrReviewSubmissionInput {
@@ -140,6 +153,7 @@ interface ReviewIssueDbRow {
   source: ReviewIssueSource | null;
   side: ReviewIssueSide | null;
   submitted_in_pr_review_id: number | null;
+  annotation_kind?: string | null;
   resolved: 0 | 1;
   created_at: string;
   updated_at: string;
@@ -171,6 +185,16 @@ function assertValidReviewIssueSide(
   throw new Error(`Invalid review_issue.side value in ${context}: ${side as string}`);
 }
 
+function assertValidAnnotationKind(
+  kind: ReviewAnnotationKind | null | undefined,
+  context: 'insertReviewIssues' | 'updateReviewIssue'
+): void {
+  if (kind == null || REVIEW_ANNOTATION_KINDS.includes(kind)) {
+    return;
+  }
+  throw new Error(`Invalid review_issue.annotation_kind value in ${context}: ${kind as string}`);
+}
+
 function getReviewIdForSubmission(db: Database, submissionId: number): number {
   const submission = db
     .prepare('SELECT review_id FROM pr_review_submission WHERE id = ?')
@@ -179,6 +203,16 @@ function getReviewIdForSubmission(db: Database, submissionId: number): number {
     throw new Error(`PR review submission ${submissionId} does not exist`);
   }
   return submission.review_id;
+}
+
+function parseAnnotationKind(value: string | null | undefined): ReviewAnnotationKind | null {
+  if (value == null) {
+    return null;
+  }
+  if (!REVIEW_ANNOTATION_KINDS.includes(value as ReviewAnnotationKind)) {
+    throw new Error(`Unexpected review_issue.annotation_kind value: ${value}`);
+  }
+  return value as ReviewAnnotationKind;
 }
 
 function rowToReviewIssue(row: ReviewIssueDbRow): ReviewIssueRow {
@@ -198,6 +232,7 @@ function rowToReviewIssue(row: ReviewIssueDbRow): ReviewIssueRow {
     suggestion: row.suggestion,
     source: row.source,
     side: row.side,
+    annotationKind: parseAnnotationKind(row.annotation_kind),
     submittedInPrReviewId: row.submitted_in_pr_review_id ?? null,
     resolved: row.resolved,
     created_at: row.created_at,
@@ -475,9 +510,10 @@ export function insertReviewIssues(db: Database, input: InsertReviewIssuesInput)
             side,
             submitted_in_pr_review_id,
             resolved,
+            annotation_kind,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         `
       );
       const selectIssueById = db.prepare('SELECT * FROM review_issue WHERE id = ?');
@@ -489,6 +525,7 @@ export function insertReviewIssues(db: Database, input: InsertReviewIssuesInput)
 
       for (const issue of nextInput.issues) {
         assertValidReviewIssueSide(issue.side, 'insertReviewIssues');
+        assertValidAnnotationKind(issue.annotationKind, 'insertReviewIssues');
 
         const submissionId = issue.submittedInPrReviewId ?? null;
         if (submissionId != null) {
@@ -514,7 +551,8 @@ export function insertReviewIssues(db: Database, input: InsertReviewIssuesInput)
           issue.source ?? null,
           issue.side ?? null,
           submissionId,
-          issue.resolved ? 1 : 0
+          issue.resolved ? 1 : 0,
+          issue.annotationKind ?? null
         );
 
         const insertedRow = selectIssueById.get(
@@ -606,6 +644,11 @@ export function updateReviewIssue(
       if ('source' in nextInput) {
         fields.push('source = ?');
         values.push(nextInput.source ?? null);
+      }
+      if ('annotationKind' in nextInput) {
+        assertValidAnnotationKind(nextInput.annotationKind, 'updateReviewIssue');
+        fields.push('annotation_kind = ?');
+        values.push(nextInput.annotationKind ?? null);
       }
       if ('side' in nextInput) {
         assertValidReviewIssueSide(nextInput.side, 'updateReviewIssue');

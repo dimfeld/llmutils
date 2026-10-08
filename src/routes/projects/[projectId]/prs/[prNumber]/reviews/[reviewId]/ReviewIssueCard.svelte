@@ -7,6 +7,8 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Plus from '@lucide/svelte/icons/plus';
   import Trash from '@lucide/svelte/icons/trash';
+  import Send from '@lucide/svelte/icons/send';
+  import { ANNOTATION_KIND_STYLES, noteKind } from '$lib/utils/annotation_kinds.js';
   import { untrack } from 'svelte';
   import type {
     ReviewIssueRow,
@@ -35,6 +37,8 @@
     onAddToPlan: (issue: ReviewIssueRow) => void;
     onSaveEdit: (issue: ReviewIssueRow, patch: ReviewIssuePatch) => Promise<void>;
     onJumpToDiff?: (issue: ReviewIssueRow) => void;
+    /** Turn a question note into a review comment that can be sent to the PR. */
+    onConvertQuestion?: (issue: ReviewIssueRow) => void;
   }
 
   let {
@@ -54,10 +58,12 @@
     onAddToPlan,
     onSaveEdit,
     onJumpToDiff,
+    onConvertQuestion,
   }: Props = $props();
 
   let canJumpToDiff = $derived(Boolean(onJumpToDiff && issue.file && issue.line));
   let isNote = $derived(issue.severity === 'note');
+  let kindStyle = $derived(ANNOTATION_KIND_STYLES[noteKind(issue.annotationKind)]);
 
   let expanded = $state(untrack(() => issue.severity === 'note' || !issue.resolved));
   let editing = $state(false);
@@ -156,9 +162,11 @@
       <div class="flex flex-wrap items-center gap-1">
         {#if isNote}
           <span
-            class="inline-flex items-center rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-700 @sm:text-xs dark:bg-slate-800 dark:text-slate-300"
+            class="inline-flex items-center gap-1 rounded bg-slate-100 px-1 py-0.5 text-[10px] font-medium text-slate-700 @sm:text-xs dark:bg-slate-800 dark:text-slate-300"
+            title={kindStyle.description}
           >
-            Note
+            <span class="size-1.5 rounded-full" style="background: {kindStyle.color};"></span>
+            {kindStyle.label}
           </span>
         {:else}
           <span
@@ -272,6 +280,19 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-1.5">
+            {#if isNote && onConvertQuestion}
+              <button
+                type="button"
+                onclick={() => onConvertQuestion?.(issue)}
+                disabled={actioning}
+                class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-blue-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 @sm:text-xs dark:text-blue-400 dark:hover:bg-gray-800"
+                title="Make this question a review comment that you can send to the PR"
+              >
+                <Send class="size-3 @sm:size-3.5" />
+                Ask in review
+              </button>
+            {/if}
+
             {#if !isNote && linkedPlanUuid}
               <button
                 type="button"

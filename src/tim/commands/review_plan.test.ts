@@ -1,3 +1,4 @@
+import { getReviewFiles } from '../db/review_file.js';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as fsSync from 'node:fs';
@@ -186,7 +187,10 @@ async function seedPlan(repoDir: string, options: { baseCommit?: string } = {}):
   return project.id;
 }
 
-function installExecutorMock(capturedGuidePrompts: string[]): void {
+function installExecutorMock(
+  capturedGuidePrompts: string[],
+  guideText = '# Stub Plan Review Guide\n'
+): void {
   mockBuildExecutorAndLog.mockReturnValue({
     execute: vi.fn(async (prompt: string, planInfo: { executionMode: string }) => {
       if (planInfo.executionMode === 'bare') {
@@ -196,7 +200,7 @@ function installExecutorMock(capturedGuidePrompts: string[]): void {
           throw new Error('Guide prompt did not include a review-guide.md output path.');
         }
         await fs.mkdir(path.dirname(guidePathMatch[1]), { recursive: true });
-        await fs.writeFile(guidePathMatch[1], '# Stub Plan Review Guide\n', 'utf8');
+        await fs.writeFile(guidePathMatch[1], guideText, 'utf8');
         return 'wrote guide';
       }
 
@@ -290,9 +294,67 @@ describe('handlePlanReviewGuideCommand', () => {
     expect(capturedGuidePrompts[0]).toContain('## Plan Metadata');
     expect(capturedGuidePrompts[0]).toContain(`- Head Ref: ${reviewedSha}`);
     expect(capturedGuidePrompts[0]).toContain('Plan-only review guides');
-    expect(capturedGuidePrompts[0]).toContain('src/app.ts#');
+    expect(capturedGuidePrompts[0]).toContain('`src/app.ts`');
     expect(capturedGuidePrompts[0]).toContain('+export const value = 2;');
     expect(capturedGuidePrompts[0]).not.toContain('## PR Metadata');
+  });
+
+  test('expands file references and stores review files with full contents', async () => {
+    const { repoDir } = await createRepository({
+      tempDir,
+      dirtyChange: 'export const value = 2;\n',
+    });
+    process.chdir(repoDir);
+    await seedPlan(repoDir);
+    installExecutorMock(
+      capturedGuidePrompts,
+      [
+        '# Guide',
+        '',
+        '## Value',
+        '<!-- priority: careful -->',
+        'The value changes in `src/app.ts:1`.',
+        '',
+        '<diff file="src/app.ts"/>',
+        '',
+        '<annotation file="src/app.ts" line="1" type="behavior-change">Callers now see 2.</annotation>',
+        '',
+      ].join('\n')
+    );
+
+    await handlePlanReviewGuideCommand('348', { executor: 'claude-code' }, makeCommand());
+
+    expect(capturedGuidePrompts[0]).toContain('<diff file="src/foo.ts"/>');
+    const [review] = getReviewsByPlanUuid(getDatabase(), PLAN_UUID);
+    expect(review.review_guide).toContain('```unified-diff');
+    expect(review.review_guide).toContain('+export const value = 2;');
+    expect(review.review_guide).not.toContain('<diff file=');
+    expect(review.review_guide).not.toContain('## Other changes');
+    expect(review.review_guide).toContain('<!-- priority: careful -->');
+
+    const files = getReviewFiles(getDatabase(), review.id);
+    const appFile = files.find((file) => file.path === 'src/app.ts');
+    expect(appFile).toEqual(
+      expect.objectContaining({
+        kind: 'changed',
+        changeType: 'modified',
+        // The change is uncommitted, so the new side comes from the working tree.
+        newContent: 'export const value = 2;\n',
+      })
+    );
+    expect(appFile?.oldContent).not.toBeNull();
+    expect(appFile?.patch).toContain('@@');
+
+    const note = getReviewIssues(getDatabase(), review.id).find(
+      (issue) => issue.severity === 'note'
+    );
+    expect(note).toEqual(
+      expect.objectContaining({
+        file: 'src/app.ts',
+        content: 'Callers now see 2.',
+        annotationKind: 'behavior-change',
+      })
+    );
   });
 
   test('creates a completed codex-only plan review with guide and issues', async () => {
@@ -428,7 +490,7 @@ describe('handlePlanReviewGuideCommand', () => {
       expect.any(Object),
       'tim review-guide generate'
     );
-    expect(capturedGuidePrompts[0]).toContain('src/feature.ts#');
+    expect(capturedGuidePrompts[0]).toContain('`src/feature.ts`');
     expect(capturedGuidePrompts[0]).not.toContain('+export const value = 3;');
   });
 
@@ -455,9 +517,9 @@ describe('handlePlanReviewGuideCommand', () => {
       makeCommand()
     );
 
-    expect(capturedGuidePrompts[0]).toContain('src/feature.ts#');
+    expect(capturedGuidePrompts[0]).toContain('`src/feature.ts`');
     expect(capturedGuidePrompts[0]).toContain('+export const feature = true;');
-    expect(capturedGuidePrompts[0]).not.toContain('src/base.ts#');
+    expect(capturedGuidePrompts[0]).not.toContain('`src/base.ts`');
     expect(capturedGuidePrompts[0]).not.toContain('+export const localBase = true;');
   });
 

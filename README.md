@@ -491,7 +491,17 @@ reviewGuide:
 
 `tim review-guide diffview [planId|branch|prUrl]` exports the latest stored review guide as diffview-compatible JSON — `{ title, groups: [{ name, description, files: [{ path }] }] }` — as a deterministic transformation of an already-generated guide (no executor runs). The target defaults to the current git/jj branch's plan/PR guide. The `groups` array is flat: every heading (`##`/`###`, plus any extra `#` beyond the title) becomes its own top-level group in document order, with the section's leading markdown prose as `description` and its diff-hunk files as `files`; a file appearing under multiple headings is listed only under the first. It writes `review-guide.json` to the current directory by default, or to `-o, --output <path>`, and errors (writing no file) when the target has no stored guide.
 
-Review guides can include non-actionable `<annotation file="..." line="...">...</annotation>` callouts. These render as Notes in the guide viewer sidebar and inline diff overlay, but are not submitted to GitHub or converted into cleanup work.
+Review guides can include non-actionable `<annotation file="..." line="..." type="...">...</annotation>` callouts. The `type` is `why`, `behavior-change`, `verify`, `question`, or `note`. These render as Notes in the guide viewer sidebar and inline diff overlay, with a label for the type, but are not submitted to GitHub or converted into cleanup work. On a PR guide, **Ask in review** turns a `question` note into a review comment that you can submit.
+
+The guide model shows code with `<diff file="..." start="..." end="..."/>` tags (the changed hunks of a file in a line range) and `<excerpt file="..." start="..." end="..."/>` tags (unchanged code, such as a caller of a changed function). The system replaces the tags with the exact code. The review also stores the full old and new contents of each changed file, and of unchanged files that the guide shows or mentions, so the viewer can:
+
+- expand unchanged lines around each diff,
+- open any mentioned file in a side panel by clicking its path,
+- show a **Files** tab with every changed file and mark the changed lines that the guide does not show,
+- track **Viewed** sections and files,
+- collapse sections that the model marked as `skim` or `mechanical` reading priority.
+
+Guides made before this change have no stored files and keep their old behavior.
 
 `tim review <planId> --issues` acts on saved plan review issues from previous `tim review --save-issues` or non-interactive final review runs: choose whether to append, fix, create cleanup work, or exit, then select the specific issues. Completed actions remove only the selected saved issues. `tim review-issues list <planId>` shows the current saved issue queue, and `tim review-issues resolve <planId> <indexes...>` or `--all` marks issues resolved without running an agent.
 

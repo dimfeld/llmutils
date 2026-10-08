@@ -1469,6 +1469,51 @@ const migrations: Migration[] = [
       addReviewPlanLinkage(db);
     },
   },
+  {
+    version: 57,
+    up: `
+      CREATE TABLE IF NOT EXISTS review_blob (
+        hash TEXT PRIMARY KEY,
+        content TEXT NOT NULL,
+        byte_size INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+      );
+
+      CREATE TABLE IF NOT EXISTS review_file (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        old_path TEXT,
+        kind TEXT NOT NULL CHECK(kind IN ('changed', 'context')),
+        change_type TEXT CHECK(change_type IN ('added', 'deleted', 'modified', 'renamed')),
+        patch TEXT,
+        old_blob_hash TEXT REFERENCES review_blob(hash),
+        new_blob_hash TEXT REFERENCES review_blob(hash),
+        UNIQUE(review_id, path)
+      );
+      CREATE INDEX IF NOT EXISTS idx_review_file_old_blob ON review_file(old_blob_hash);
+      CREATE INDEX IF NOT EXISTS idx_review_file_new_blob ON review_file(new_blob_hash);
+
+      CREATE TABLE IF NOT EXISTS review_viewed_item (
+        review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+        item_kind TEXT NOT NULL CHECK(item_kind IN ('section', 'file')),
+        item_key TEXT NOT NULL,
+        viewed_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+        PRIMARY KEY (review_id, item_kind, item_key)
+      );
+    `,
+    afterUp: (db: Database): void => {
+      if (!tableExists(db, 'review_issue')) {
+        return;
+      }
+      const columns = db.prepare('PRAGMA table_info(review_issue)').all() as Array<{
+        name: string;
+      }>;
+      if (!columns.some((column) => column.name === 'annotation_kind')) {
+        db.run('ALTER TABLE review_issue ADD COLUMN annotation_kind TEXT');
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

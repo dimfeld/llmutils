@@ -27,4 +27,6 @@
   chatTarget={{ projectId, prNumber: Number(prNumber) }}
   chatReturnTo={`${page.url.pathname}${page.url.search}${page.url.hash}`}
   chatExecutorOptions={data.chatExecutorOptions}
+  reviewFiles={data.reviewFiles}
+  viewedItems={data.viewedItems}
 />

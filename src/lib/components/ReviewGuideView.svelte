@@ -6,9 +6,30 @@
   import Columns2 from '@lucide/svelte/icons/columns-2';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Rows2 from '@lucide/svelte/icons/rows-2';
-  import { onDestroy, onMount } from 'svelte';
+  import ChevronDown from '@lucide/svelte/icons/chevron-down';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { toast } from 'svelte-sonner';
-  import { toggleReviewIssueResolved } from '$lib/remote/pr_reviews.remote.js';
+  import {
+    convertQuestionToComment,
+    setReviewGuideItemViewed,
+    toggleReviewIssueResolved,
+  } from '$lib/remote/pr_reviews.remote.js';
+  import ReviewFilePanel from '$lib/components/ReviewFilePanel.svelte';
+  import ReviewGuideFilesView from '$lib/components/ReviewGuideFilesView.svelte';
+  import {
+    ANNOTATION_KIND_ORDER,
+    ANNOTATION_KIND_STYLES,
+    noteKind,
+  } from '$lib/utils/annotation_kinds.js';
+  import {
+    buildExcerptDiff,
+    buildExpandableGuideDiff,
+    computeGuideCoverage,
+    ReviewFileIndex,
+  } from '$lib/utils/review_guide_files.js';
+  import type { ReviewFileRow, ReviewViewedItemRow } from '$tim/db/review_file.js';
   import {
     addReviewIssueToPlanTask,
     deleteReviewIssue,
@@ -18,7 +39,12 @@
   import MarkdownContent, { type DiffOverrides } from '$lib/components/MarkdownContent.svelte';
   import PrReviewThreadList from '$lib/components/PrReviewThreadList.svelte';
   import { computeReviewGuideDiffOverrideFlags } from '$lib/components/review_guide_view_utils.js';
-  import { parseMarkdownWithDiffsAndToc, type TocEntry } from '$lib/utils/markdown_parser.js';
+  import {
+    parseMarkdownWithDiffsAndToc,
+    type MarkdownSegment,
+    type SectionPriority,
+    type TocEntry,
+  } from '$lib/utils/markdown_parser.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { Splitpanes, Pane } from 'svelte-splitpanes';
@@ -81,6 +107,8 @@
     chatTarget?: ChatTarget;
     chatReturnTo?: string;
     chatExecutorOptions?: ChatExecutorOption[];
+    reviewFiles?: ReviewFileRow[];
+    viewedItems?: ReviewViewedItemRow[];
   }
 
   let {
@@ -101,6 +129,8 @@
     chatTarget = undefined,
     chatReturnTo = undefined,
     chatExecutorOptions = undefined,
+    reviewFiles = [],
+    viewedItems = [],
   }: Props = $props();
 
   // Local state for optimistic issue updates. $derived is writable in Svelte 5,
@@ -183,9 +213,149 @@
   let linearPrReviewUrl = $derived(buildLinearReviewDeepLink({ prUrl: effectivePrUrl }));
 
   let reviewGuideText = $derived(review.review_guide ?? '');
-  let parsedGuide = $derived(parseMarkdownWithDiffsAndToc(reviewGuideText));
+  let fileIndex = $derived(new ReviewFileIndex(reviewFiles));
+  let hasReviewFiles = $derived(fileIndex.changed.length > 0);
+  let parsedGuide = $derived(
+    parseMarkdownWithDiffsAndToc(reviewGuideText, {
+      splitSections: true,
+      fileLinkPaths: fileIndex.linkPaths,
+    })
+  );
   let toc = $derived<TocEntry[]>(parsedGuide.toc);
   let guideSegments = $derived(parsedGuide.segments);
+  let guideCoverage = $derived(computeGuideCoverage(guideSegments, fileIndex));
+
+  // Sections that get a "viewed" checkbox: the top level below the title. When
+  // the guide has a single H1 title, that is the shallowest heading under it.
+  let viewableSectionDepth = $derived.by(() => {
+    const depths = toc.map((entry) => entry.depth);
+    if (depths.length === 0) return null;
+    const h1Count = depths.filter((depth) => depth === 1).length;
+    const candidates =
+      h1Count === 1 && depths.some((d) => d > 1) ? depths.filter((d) => d > 1) : depths;
+    return Math.min(...candidates);
+  });
+  let viewableSections = $derived(toc.filter((entry) => entry.depth === viewableSectionDepth));
+
+  type GuideTab = 'guide' | 'files';
+  let activeTab = $state<GuideTab>('guide');
+
+  const viewedKeys = new SvelteSet<string>(
+    untrack(() => viewedItems.map((item) => `${item.kind}:${item.key}`))
+  );
+  let viewedFiles = $derived(
+    new Set([...viewedKeys].filter((key) => key.startsWith('file:')).map((key) => key.slice(5)))
+  );
+  let viewedSectionCount = $derived(
+    viewableSections.filter((entry) => viewedKeys.has(`section:${entry.slug}`)).length
+  );
+  let viewedFileCount = $derived(
+    fileIndex.changed.filter((entry) => viewedFiles.has(entry.row.path)).length
+  );
+
+  function isCollapsedByDefault(entry: TocEntry): boolean {
+    return (
+      entry.priority === 'skim' ||
+      entry.priority === 'mechanical' ||
+      viewedKeys.has(`section:${entry.slug}`)
+    );
+  }
+
+  const collapsedSections = new SvelteSet<string>(
+    untrack(() => toc.filter(isCollapsedByDefault).map((entry) => entry.slug))
+  );
+
+  function toggleSection(slug: string): void {
+    if (collapsedSections.has(slug)) collapsedSections.delete(slug);
+    else collapsedSections.add(slug);
+  }
+
+  function isSegmentHidden(segment: MarkdownSegment): boolean {
+    return segment.sectionSlugs?.some((slug) => collapsedSections.has(slug)) ?? false;
+  }
+
+  async function setItemViewed(kind: 'section' | 'file', key: string, viewed: boolean) {
+    const mapKey = `${kind}:${key}`;
+    if (viewed) viewedKeys.add(mapKey);
+    else viewedKeys.delete(mapKey);
+    if (kind === 'section') {
+      if (viewed) collapsedSections.add(key);
+      else collapsedSections.delete(key);
+    }
+    try {
+      await setReviewGuideItemViewed({ reviewId: review.id, kind, key, viewed });
+    } catch (err) {
+      if (viewed) viewedKeys.delete(mapKey);
+      else viewedKeys.add(mapKey);
+      issueActionError = `Failed to save viewed state: ${extractRemoteErrorMessage(err)}`;
+    }
+  }
+
+  const PRIORITY_STYLES: Record<SectionPriority, { label: string; className: string }> = {
+    careful: {
+      label: 'Read carefully',
+      className: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+    },
+    skim: {
+      label: 'Skim',
+      className: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
+    },
+    mechanical: {
+      label: 'Mechanical',
+      className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    },
+  };
+
+  interface OpenFileState {
+    path: string;
+    line: number | null;
+  }
+  let openFile = $state<OpenFileState | null>(null);
+  let openFileEntry = $derived(openFile ? fileIndex.get(openFile.path) : undefined);
+
+  function openFileLinkFromEvent(event: MouseEvent | KeyboardEvent): void {
+    if (event instanceof KeyboardEvent && event.key !== 'Enter') return;
+    const target = event.target instanceof Element ? event.target : null;
+    const link = target?.closest<HTMLElement>('.guide-file-link');
+    const path = link?.dataset.filePath;
+    if (!link || !path) return;
+    event.preventDefault();
+    const line = Number(link.dataset.line);
+    openFile = { path, line: Number.isInteger(line) && line > 0 ? line : null };
+  }
+
+  /** Annotation kinds the reader chose to hide in the guide diffs. */
+  const hiddenNoteKinds = new SvelteSet<string>();
+  let noteKindCounts = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const issue of issues) {
+      if (issue.severity !== 'note') continue;
+      const kind = noteKind(issue.annotationKind);
+      counts.set(kind, (counts.get(kind) ?? 0) + 1);
+    }
+    return counts;
+  });
+  let annotatedIssues = $derived(
+    hiddenNoteKinds.size === 0
+      ? issues
+      : issues.filter(
+          (issue) =>
+            issue.severity !== 'note' || !hiddenNoteKinds.has(noteKind(issue.annotationKind))
+        )
+  );
+
+  async function handleConvertQuestion(issue: ReviewIssueRow) {
+    setIssueActioning(issue.id);
+    try {
+      const updated = await convertQuestionToComment({ issueId: issue.id });
+      issues = issues.map((existing) => (existing.id === issue.id ? { ...updated } : existing));
+      toast.success('Question added to the review comments');
+    } catch (err) {
+      issueActionError = `Failed to convert question: ${extractRemoteErrorMessage(err)}`;
+    } finally {
+      clearIssueActioning(issue.id);
+    }
+  }
 
   let visibleSectionSlug = $state<string>('');
   let isUserNavigating = $state(false);
@@ -242,6 +412,7 @@
       a.lineNumber === b.lineNumber &&
       a.metadata.issueId === b.metadata.issueId &&
       a.metadata.severity === b.metadata.severity &&
+      a.metadata.annotationKind === b.metadata.annotationKind &&
       a.metadata.content === b.metadata.content &&
       a.metadata.suggestion === b.metadata.suggestion &&
       a.metadata.lineLabel === b.metadata.lineLabel &&
@@ -304,7 +475,10 @@
       cached.virtualizeDiffs === shouldVirtualizeDiffs &&
       cached.lineAnnotations === lineAnnotations &&
       cached.patch ===
-        (guideSegments[diffIndex]?.type === 'unified-diff' ? guideSegments[diffIndex].patch : null)
+        (guideSegments[diffIndex]?.type === 'unified-diff'
+          ? guideSegments[diffIndex].patch
+          : null) &&
+      cached.override.fileDiff === getGuideFileDiff(diffIndex)
     ) {
       return cached.override;
     }
@@ -313,6 +487,7 @@
       guideSegments[diffIndex]?.type === 'unified-diff' ? guideSegments[diffIndex].patch : null;
     const flags = computeReviewGuideDiffOverrideFlags(filename);
     const override: DiffOverrides = {
+      fileDiff: getGuideFileDiff(diffIndex),
       id: getReviewGuideDiffId(filename, patch ?? ''),
       diffStyle,
       virtualize: shouldVirtualizeDiffs,
@@ -334,6 +509,29 @@
       override,
     });
     return override;
+  }
+
+  // Expandable diff metadata per segment. Diff only reads its metadata on first
+  // render, so keep one stable object per segment.
+  const guideFileDiffCache = new Map<
+    number,
+    { segment: MarkdownSegment; fileDiff: DiffOverrides['fileDiff'] }
+  >();
+
+  function getGuideFileDiff(diffIndex: number): DiffOverrides['fileDiff'] {
+    const segment = guideSegments[diffIndex];
+    if (!segment) return undefined;
+    const cached = guideFileDiffCache.get(diffIndex);
+    if (cached && cached.segment === segment) return cached.fileDiff;
+    let fileDiff: DiffOverrides['fileDiff'];
+    if (segment.type === 'unified-diff') {
+      fileDiff =
+        buildExpandableGuideDiff(segment.patch, fileIndex.get(segment.filename)) ?? undefined;
+    } else if (segment.type === 'code-excerpt') {
+      fileDiff = buildExcerptDiff(segment, fileIndex.get(segment.filename)) ?? undefined;
+    }
+    guideFileDiffCache.set(diffIndex, { segment, fileDiff });
+    return fileDiff;
   }
 
   const annotationNodesByIssue = new Map<number, Set<HTMLElement>>();
@@ -688,7 +886,7 @@
   }
 
   let guideIssueAnnotations = $derived.by(() =>
-    stabilizeGuideIssueAnnotations(buildGuideDiffAnnotations(issues, guideSegments))
+    stabilizeGuideIssueAnnotations(buildGuideDiffAnnotations(annotatedIssues, guideSegments))
   );
 
   let issueIdsWithAnnotation = $derived.by(() => {
@@ -719,11 +917,22 @@
     };
   });
 
-  function handleTocSelect(slug: string) {
+  async function handleTocSelect(slug: string) {
     if (!slug) return;
+
+    activeTab = 'guide';
+    collapsedSections.delete(slug);
+    const headingSegment = guideSegments.find(
+      (segment) => segment.type === 'heading' && segment.entry.slug === slug
+    );
+    for (const ancestor of headingSegment?.sectionSlugs ?? []) {
+      collapsedSections.delete(ancestor);
+    }
 
     isUserNavigating = true;
     visibleSectionSlug = slug;
+    // Let expanded sections and the guide tab render before scrolling.
+    await tick();
 
     const el = document.getElementById(slug);
     el?.scrollIntoView({ behavior: 'instant', block: 'start' });
@@ -1162,6 +1371,25 @@
           >{actionableIssueCount} issue{actionableIssueCount === 1 ? '' : 's'} ({unresolvedCount} unresolved)</span
         >
       {/if}
+      {#if viewableSections.length > 0}
+        <span class="inline-flex items-center gap-1.5" title="Sections marked as viewed">
+          <span
+            class="inline-block h-1.5 w-16 overflow-hidden rounded-full bg-muted"
+            aria-hidden="true"
+          >
+            <span
+              class="block h-full bg-emerald-500"
+              style="width: {(viewedSectionCount / viewableSections.length) * 100}%"
+            ></span>
+          </span>
+          {viewedSectionCount}/{viewableSections.length} sections viewed
+        </span>
+      {/if}
+      {#if hasReviewFiles}
+        <span title="Files marked as viewed in the Files view">
+          {viewedFileCount}/{fileIndex.changed.length} files viewed
+        </span>
+      {/if}
     </div>
 
     {#if hasNewCommits}
@@ -1217,65 +1445,175 @@
                       ? 'bg-muted font-medium text-foreground'
                       : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
                     aria-current={visibleSectionSlug === entry.slug ? 'true' : undefined}
-                    title={entry.text}
+                    title={entry.priority
+                      ? `${entry.text} (${PRIORITY_STYLES[entry.priority].label})`
+                      : entry.text}
                   >
-                    {entry.text}
+                    <span class="flex items-center gap-1.5">
+                      {#if entry.priority}
+                        <span
+                          class="size-1.5 shrink-0 rounded-full {entry.priority === 'careful'
+                            ? 'bg-red-500'
+                            : entry.priority === 'skim'
+                              ? 'bg-sky-500'
+                              : 'bg-gray-400'}"
+                          aria-hidden="true"
+                        ></span>
+                      {/if}
+                      <span
+                        class="min-w-0 flex-1 {viewedKeys.has(`section:${entry.slug}`)
+                          ? 'line-through opacity-60'
+                          : ''}">{entry.text}</span
+                      >
+                    </span>
                   </button>
                 </li>
               {/each}
             </ul>
           </nav>
         {/if}
-        <div class="min-w-0 flex-1 overflow-y-auto pr-1">
-          {#if review.review_guide}
-            <MarkdownContent
-              content={review.review_guide}
-              parsedSegments={guideSegments}
-              class="text-sm text-foreground"
-              {diffOverrides}
-            >
-              {#snippet diffAnnotation(annotation)}
-                {@const metadata = annotation.metadata as ReviewIssueAnnotationMetadata | undefined}
-                {#if metadata}
-                  <div
-                    id={getReviewGuideAnnotationId(metadata.issueId)}
-                    {@attach annotationNodeAttachment(metadata.issueId)}
-                  >
-                    <ReviewIssueAnnotation
-                      issueId={metadata.issueId}
-                      severity={metadata.severity}
-                      content={metadata.content}
-                      suggestion={metadata.suggestion}
-                      lineLabel={metadata.lineLabel}
-                      resolved={metadata.resolved}
-                      onClick={annotationClick.handleAnnotationClick}
-                    />
-                  </div>
-                {/if}
-              {/snippet}
-              {#snippet diffFooter(filename, patch, _diffIndex)}
-                {@const diffReviewThreads = reviewThreadsForDiff(filename, patch)}
-                {#if allowGithubSubmission && review.pr_url && diffReviewThreads.length > 0}
-                  <div class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
-                    <div
-                      class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-                    >
-                      Existing review thread{diffReviewThreads.length === 1 ? '' : 's'}
-                    </div>
-                    <PrReviewThreadList
-                      threads={diffReviewThreads}
-                      prUrl={review.pr_url}
-                      planUuid={linkedPlanUuid ?? undefined}
-                      expandMode="expanded"
-                      showDiff={false}
-                    />
-                  </div>
-                {/if}
-              {/snippet}
-            </MarkdownContent>
-          {:else if review.status !== 'complete'}
-            <p class="text-sm text-muted-foreground">Review guide not yet available.</p>
+        <div class="flex min-w-0 flex-1 flex-col">
+          {#if hasReviewFiles}
+            <div class="mb-2 flex shrink-0 gap-1 border-b border-border" role="tablist">
+              {#each [{ id: 'guide', label: 'Guide' }, { id: 'files', label: `Files (${fileIndex.changed.length})` }] as tab (tab.id)}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  class="-mb-px border-b-2 px-3 py-1.5 text-sm transition-colors {activeTab ===
+                  tab.id
+                    ? 'border-foreground font-medium text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'}"
+                  onclick={() => (activeTab = tab.id as GuideTab)}
+                >
+                  {tab.label}
+                </button>
+              {/each}
+            </div>
           {/if}
+          {#if activeTab === 'files' && hasReviewFiles}
+            <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+              <ReviewGuideFilesView
+                files={fileIndex.changed}
+                coverage={guideCoverage}
+                {toc}
+                issues={annotatedIssues}
+                {viewedFiles}
+                diffStyle={guideDiffStyle}
+                onToggleViewed={(path, viewed) => setItemViewed('file', path, viewed)}
+                onJumpToSection={handleTocSelect}
+                onIssueClick={annotationClick.handleAnnotationClick}
+              />
+            </div>
+          {/if}
+          <!-- The guide stays mounted while the Files tab is open so its scroll position survives. -->
+          <div
+            class={['min-h-0 flex-1 overflow-y-auto pr-1', activeTab !== 'guide' && 'hidden']}
+            onclick={openFileLinkFromEvent}
+            onkeydown={openFileLinkFromEvent}
+            role="presentation"
+          >
+            {#if review.review_guide}
+              <MarkdownContent
+                content={review.review_guide}
+                parsedSegments={guideSegments}
+                class="text-sm text-foreground"
+                {diffOverrides}
+                {isSegmentHidden}
+              >
+                {#snippet heading(segment)}
+                  {@const entry = segment.entry}
+                  {@const collapsed = collapsedSections.has(entry.slug)}
+                  {@const viewable = entry.depth === viewableSectionDepth}
+                  {@const viewed = viewedKeys.has(`section:${entry.slug}`)}
+                  {@const isTitle =
+                    viewableSectionDepth != null && entry.depth < viewableSectionDepth}
+                  <div class="group/heading relative">
+                    {@html segment.content}
+                    {#if !isTitle}
+                      <div class="-mt-1 mb-2 flex flex-wrap items-center gap-2 text-xs">
+                        <button
+                          type="button"
+                          class="inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onclick={() => toggleSection(entry.slug)}
+                          aria-expanded={!collapsed}
+                        >
+                          {#if collapsed}
+                            <ChevronRight class="size-3.5" /> Show section
+                          {:else}
+                            <ChevronDown class="size-3.5" /> Hide section
+                          {/if}
+                        </button>
+                        {#if entry.priority}
+                          <span
+                            class="rounded-full px-2 py-0.5 font-medium {PRIORITY_STYLES[
+                              entry.priority
+                            ].className}"
+                          >
+                            {PRIORITY_STYLES[entry.priority].label}
+                          </span>
+                        {/if}
+                        {#if viewable}
+                          <label class="inline-flex items-center gap-1 text-muted-foreground">
+                            <input
+                              type="checkbox"
+                              checked={viewed}
+                              onchange={(event) =>
+                                setItemViewed('section', entry.slug, event.currentTarget.checked)}
+                            />
+                            Viewed
+                          </label>
+                        {/if}
+                      </div>
+                    {/if}
+                  </div>
+                {/snippet}
+                {#snippet diffAnnotation(annotation)}
+                  {@const metadata = annotation.metadata as
+                    | ReviewIssueAnnotationMetadata
+                    | undefined}
+                  {#if metadata}
+                    <div
+                      id={getReviewGuideAnnotationId(metadata.issueId)}
+                      {@attach annotationNodeAttachment(metadata.issueId)}
+                    >
+                      <ReviewIssueAnnotation
+                        issueId={metadata.issueId}
+                        severity={metadata.severity}
+                        content={metadata.content}
+                        suggestion={metadata.suggestion}
+                        lineLabel={metadata.lineLabel}
+                        resolved={metadata.resolved}
+                        annotationKind={metadata.annotationKind}
+                        onClick={annotationClick.handleAnnotationClick}
+                      />
+                    </div>
+                  {/if}
+                {/snippet}
+                {#snippet diffFooter(filename, patch, _diffIndex)}
+                  {@const diffReviewThreads = reviewThreadsForDiff(filename, patch)}
+                  {#if allowGithubSubmission && review.pr_url && diffReviewThreads.length > 0}
+                    <div class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+                      <div
+                        class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                      >
+                        Existing review thread{diffReviewThreads.length === 1 ? '' : 's'}
+                      </div>
+                      <PrReviewThreadList
+                        threads={diffReviewThreads}
+                        prUrl={review.pr_url}
+                        planUuid={linkedPlanUuid ?? undefined}
+                        expandMode="expanded"
+                        showDiff={false}
+                      />
+                    </div>
+                  {/if}
+                {/snippet}
+              </MarkdownContent>
+            {:else if review.status !== 'complete'}
+              <p class="text-sm text-muted-foreground">Review guide not yet available.</p>
+            {/if}
+          </div>
         </div>
       </div>
     </Pane>
@@ -1292,6 +1630,37 @@
             </span>
           {/if}
         </h3>
+        {#if noteKindCounts.size > 0}
+          <div class="mb-2 flex flex-wrap items-center gap-1 text-xs" aria-label="Note types">
+            <span class="text-muted-foreground">Note types:</span>
+            {#each ANNOTATION_KIND_ORDER.filter((kind) => noteKindCounts.has(kind)) as kind (kind)}
+              {@const hidden = hiddenNoteKinds.has(kind)}
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 transition-opacity {hidden
+                  ? 'opacity-50'
+                  : ''}"
+                style="border-color: {ANNOTATION_KIND_STYLES[kind].color};"
+                title="{hidden ? 'Show' : 'Hide'} {ANNOTATION_KIND_STYLES[
+                  kind
+                ].label.toLowerCase()} notes in the diffs: {ANNOTATION_KIND_STYLES[kind]
+                  .description}"
+                aria-pressed={!hidden}
+                onclick={() => {
+                  if (hidden) hiddenNoteKinds.delete(kind);
+                  else hiddenNoteKinds.add(kind);
+                }}
+              >
+                <span
+                  class="size-1.5 rounded-full"
+                  style="background: {ANNOTATION_KIND_STYLES[kind].color};"
+                ></span>
+                {ANNOTATION_KIND_STYLES[kind].label}
+                <span class="text-muted-foreground">{noteKindCounts.get(kind)}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
 
         {#if issues.length > 0}
           {#each SEVERITY_ORDER as severity (severity)}
@@ -1339,6 +1708,11 @@
                         ? handleJumpToDiff
                         : undefined}
                       onCopyError={(message) => (issueActionError = message)}
+                      onConvertQuestion={allowGithubSubmission &&
+                      issue.severity === 'note' &&
+                      issue.annotationKind === 'question'
+                        ? handleConvertQuestion
+                        : undefined}
                     />
                   {/each}
                 </ul>
@@ -1435,6 +1809,15 @@
     />
   {/if}
 
+  {#if openFile && openFileEntry}
+    <ReviewFilePanel
+      entry={openFileEntry}
+      line={openFile.line}
+      diffStyle={guideDiffStyle}
+      onClose={() => (openFile = null)}
+    />
+  {/if}
+
   {#if newIssueModalState}
     <NewReviewIssueModal
       open={true}
@@ -1448,3 +1831,17 @@
     />
   {/if}
 </div>
+
+<style>
+  :global(.guide-file-link) {
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+  }
+
+  :global(.guide-file-link:hover),
+  :global(.guide-file-link:focus-visible) {
+    color: rgb(37 99 235);
+    text-decoration-style: solid;
+  }
+</style>

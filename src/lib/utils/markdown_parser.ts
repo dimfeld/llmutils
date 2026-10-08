@@ -3,7 +3,8 @@ import remarkParse from 'remark-parse';
 import remarkRehype, { defaultHandlers, type Options as RemarkRehypeOptions } from 'remark-rehype';
 import remarkGfm from 'remark-gfm';
 import { unified } from 'unified';
-import type { Code, Heading, Root, RootContent } from 'mdast';
+import type { Code, Heading, InlineCode, Root, RootContent } from 'mdast';
+import { unquoteGitPath } from '../../common/review_guide_patch.js';
 
 const parser = unified().use(remarkParse).use(remarkGfm);
 
@@ -27,10 +28,22 @@ const htmlProcessor = unified()
   .use(remarkRehype, { handlers: { code: codeHandler } })
   .use(rehypeStringify);
 
+export type SectionPriority = 'careful' | 'skim' | 'mechanical';
+
 export interface TocEntry {
   depth: number;
   text: string;
   slug: string;
+  /** Reading priority from a `<!-- priority: ... -->` comment under the heading. */
+  priority?: SectionPriority;
+}
+
+const PRIORITY_COMMENT_REGEX = /^<!--\s*priority:\s*(careful|skim|mechanical)\s*-->$/i;
+
+function parsePriorityComment(node: RootContent): SectionPriority | null {
+  if (node.type !== 'html') return null;
+  const match = PRIORITY_COMMENT_REGEX.exec(node.value.trim());
+  return match ? (match[1].toLowerCase() as SectionPriority) : null;
 }
 
 export interface RenderMarkdownOptions {
@@ -58,7 +71,13 @@ function mdastNodeText(node: RootContent | Root): string {
 function collectHeadings(tree: Root): TocEntry[] {
   const entries: TocEntry[] = [];
   const counts = new Map<string, number>();
+  let lastEntry: TocEntry | null = null;
   for (const node of tree.children) {
+    const priority = parsePriorityComment(node);
+    if (priority) {
+      if (lastEntry && lastEntry.priority == null) lastEntry.priority = priority;
+      continue;
+    }
     if (node.type !== 'heading') continue;
     const text = mdastNodeText(node).trim();
     if (!text) continue;
@@ -66,7 +85,8 @@ function collectHeadings(tree: Root): TocEntry[] {
     const count = counts.get(base) ?? 0;
     counts.set(base, count + 1);
     const slug = count === 0 ? base : `${base}-${count}`;
-    entries.push({ depth: node.depth, text, slug });
+    lastEntry = { depth: node.depth, text, slug };
+    entries.push(lastEntry);
   }
   return entries;
 }
@@ -128,13 +148,145 @@ export function renderMarkdown(content: string, options: RenderMarkdownOptions =
   return renderMarkdownTree(tree, toc, { i: 0 });
 }
 
-export type MarkdownSegment =
+export interface CodeExcerptSegment {
+  type: 'code-excerpt';
+  filename: string;
+  start: number;
+  end: number;
+  rev: 'head' | 'base';
+  code: string;
+}
+
+export interface HeadingSegment {
+  type: 'heading';
+  content: string;
+  entry: TocEntry;
+}
+
+export type MarkdownSegment = (
   | { type: 'html'; content: string }
-  | { type: 'unified-diff'; patch: string; filename: string | null };
+  | { type: 'unified-diff'; patch: string; filename: string | null }
+  | CodeExcerptSegment
+  | HeadingSegment
+) & {
+  /**
+   * Slugs of the headings that enclose this segment, outermost first. Only set
+   * when parsing with `splitSections`. A heading segment lists its ancestors,
+   * not itself.
+   */
+  sectionSlugs?: string[];
+};
 
 export interface ParsedMarkdownWithDiffs {
   segments: MarkdownSegment[];
   toc: TocEntry[];
+}
+
+export interface ParseMarkdownWithDiffsOptions {
+  /**
+   * Emit each heading as its own `heading` segment and record the enclosing
+   * headings on every segment, so callers can collapse sections.
+   */
+  splitSections?: boolean;
+  /**
+   * Repository paths that inline code may link to. Inline code that names one
+   * of these paths (optionally with `:line` or `:start-end`, or as a unique
+   * path suffix such as a bare filename) gets `data-file-path` and
+   * `data-line` attributes and the `guide-file-link` class.
+   */
+  fileLinkPaths?: ReadonlySet<string>;
+}
+
+const FENCE_ATTRIBUTE_REGEX = /([a-zA-Z-]+)=("(?:[^"\\]|\\.)*"|'[^']*')/g;
+
+/** Parse `key="value"` pairs from a fenced code block info string. */
+export function parseFenceAttributes(meta: string | null | undefined): Map<string, string> {
+  const attributes = new Map<string, string>();
+  if (!meta) return attributes;
+  for (const match of meta.matchAll(FENCE_ATTRIBUTE_REGEX)) {
+    const raw = match[2];
+    let value = raw.slice(1, -1);
+    if (raw.startsWith('"')) {
+      try {
+        value = JSON.parse(raw) as string;
+      } catch {
+        // Keep the unescaped text when the value is not valid JSON.
+      }
+    }
+    attributes.set(match[1].toLowerCase(), value);
+  }
+  return attributes;
+}
+
+function toCodeExcerptSegment(node: Code): CodeExcerptSegment | null {
+  const attributes = parseFenceAttributes(node.meta);
+  const filename = attributes.get('file');
+  const start = Number(attributes.get('start'));
+  if (!filename || !Number.isInteger(start) || start < 1) return null;
+  const lineCount = node.value === '' ? 0 : node.value.split('\n').length;
+  const parsedEnd = Number(attributes.get('end'));
+  const end = Number.isInteger(parsedEnd) && parsedEnd >= start ? parsedEnd : start + lineCount - 1;
+  return {
+    type: 'code-excerpt',
+    filename,
+    start,
+    end,
+    rev: attributes.get('rev') === 'base' ? 'base' : 'head',
+    code: node.value,
+  };
+}
+
+const FILE_REFERENCE_REGEX = /^(?:\.\/)?([^\s:`]+?)(?::(\d+)(?:-(\d+))?)?$/;
+
+/** Resolve inline-code text such as `src/foo.ts:42` to a known path and line. */
+export function resolveFileReference(
+  text: string,
+  paths: ReadonlySet<string>
+): { path: string; line: number | null; endLine: number | null } | null {
+  const match = FILE_REFERENCE_REGEX.exec(text.trim());
+  if (!match) return null;
+  const candidate = match[1];
+  if (!candidate.includes('/') && !candidate.includes('.')) return null;
+  let path: string | null = paths.has(candidate) ? candidate : null;
+  if (!path) {
+    const suffixMatches = [...paths].filter((known) => known.endsWith(`/${candidate}`));
+    path = suffixMatches.length === 1 ? suffixMatches[0] : null;
+  }
+  if (!path) return null;
+  return {
+    path,
+    line: match[2] ? Number(match[2]) : null,
+    endLine: match[3] ? Number(match[3]) : null,
+  };
+}
+
+function applyFileLinks(tree: Root, paths: ReadonlySet<string>): void {
+  function visit(node: Root | RootContent): void {
+    if (node.type === 'inlineCode') {
+      const reference = resolveFileReference(node.value, paths);
+      if (reference) {
+        const inline = node as InlineCode;
+        inline.data = {
+          ...inline.data,
+          hProperties: {
+            className: ['guide-file-link'],
+            dataFilePath: reference.path,
+            ...(reference.line != null ? { dataLine: String(reference.line) } : {}),
+            role: 'link',
+            tabIndex: 0,
+            title: `Open ${reference.path}`,
+          },
+        };
+      }
+      return;
+    }
+    // Do not link inside links or headings' code; headings are fine to link.
+    if (node.type === 'code' || node.type === 'link') return;
+    if ('children' in node && Array.isArray(node.children)) {
+      for (const child of node.children) visit(child as RootContent);
+    }
+  }
+  visit(tree);
 }
 
 export interface ReviewGuideDiffviewFile {
@@ -157,33 +309,6 @@ const PATCH_SOURCE_FILENAME_RE = /^---\s+(.+?)\s*$/;
 const PATCH_GIT_HEADER_RE = /^diff --git a\/(.+?) b\/(.+?)\s*$/;
 const PATCH_GIT_HEADER_QUOTED_RE = /^diff --git ("(?:\\.|[^"\\])*") ("(?:\\.|[^"\\])*")\s*$/;
 const HUNK_HEADER_RE = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/;
-
-/**
- * Decode a Git-quoted path. `git diff` wraps paths containing tabs, quotes, or
- * non-printable bytes in double quotes with C-style escapes (e.g.
- * `"a/src/a\tb.txt"`); unquoted paths are returned unchanged.
- */
-function unquoteGitPath(raw: string): string {
-  if (raw.length < 2 || !raw.startsWith('"') || !raw.endsWith('"')) return raw;
-  return raw.slice(1, -1).replace(/\\(x[0-9a-fA-F]{2}|[0-7]{1,3}|.)/g, (_match, seq: string) => {
-    switch (seq) {
-      case 't':
-        return '\t';
-      case 'n':
-        return '\n';
-      case 'r':
-        return '\r';
-      case '"':
-        return '"';
-      case '\\':
-        return '\\';
-      default:
-        if (seq[0] === 'x') return String.fromCharCode(parseInt(seq.slice(1), 16));
-        if (/^[0-7]+$/.test(seq)) return String.fromCharCode(parseInt(seq, 8));
-        return seq;
-    }
-  });
-}
 
 function extractFilename(header: string | undefined): string | null {
   if (!header) return null;
@@ -447,30 +572,44 @@ export function buildReviewGuideDiffview(input: {
 }
 
 /**
- * Parse markdown into segments, extracting ```unified-diff code blocks as
- * structured data so callers can render them as Diff components. All other
- * content is converted to HTML via the normal pipeline.
+ * Parse markdown into segments, extracting ```unified-diff and ```code-excerpt
+ * code blocks as structured data so callers can render them as Diff
+ * components. All other content is converted to HTML via the normal pipeline.
  */
-export function parseMarkdownWithDiffsAndToc(content: string): ParsedMarkdownWithDiffs {
+export function parseMarkdownWithDiffsAndToc(
+  content: string,
+  options: ParseMarkdownWithDiffsOptions = {}
+): ParsedMarkdownWithDiffs {
   if (!content.trim()) return { segments: [], toc: [] };
 
   const tree = parser.parse(content);
+  if (options.fileLinkPaths && options.fileLinkPaths.size > 0) {
+    applyFileLinks(tree, options.fileLinkPaths);
+  }
   const toc = collectHeadings(tree);
   const cursor = { i: 0 };
 
-  // Fast path: no diff blocks present
-  if (!content.includes('```unified-diff')) {
+  // Fast path: nothing needs its own segment.
+  if (
+    !options.splitSections &&
+    !content.includes('```unified-diff') &&
+    !content.includes('```code-excerpt')
+  ) {
     return { segments: [{ type: 'html', content: renderMarkdownTree(tree, toc, cursor) }], toc };
   }
 
   const segments: MarkdownSegment[] = [];
   let htmlChildren: RootContent[] = [];
+  // Stack of enclosing headings, used only when splitSections is set.
+  const sectionStack: TocEntry[] = [];
+  const currentSlugs = (): string[] | undefined =>
+    options.splitSections ? sectionStack.map((entry) => entry.slug) : undefined;
 
   const pushHtml = () => {
     if (htmlChildren.length === 0) return;
     const html = renderMarkdownTree({ type: 'root', children: htmlChildren }, toc, cursor);
     if (html) {
-      segments.push({ type: 'html', content: html });
+      segments.push({ type: 'html', content: html, sectionSlugs: currentSlugs() });
     }
     htmlChildren = [];
   };
@@ -482,10 +621,40 @@ export function parseMarkdownWithDiffsAndToc(content: string): ParsedMarkdownWit
         type: 'unified-diff',
         patch: node.value,
         filename: parsePatchFilename(node.value),
+        sectionSlugs: currentSlugs(),
       });
-    } else {
-      htmlChildren.push(node);
+      continue;
     }
+
+    if (node.type === 'code' && node.lang === 'code-excerpt') {
+      const excerpt = toCodeExcerptSegment(node);
+      if (excerpt) {
+        pushHtml();
+        segments.push({ ...excerpt, sectionSlugs: currentSlugs() });
+        continue;
+      }
+    }
+
+    if (options.splitSections && node.type === 'heading') {
+      // Render pending html first so the heading cursor points at this heading.
+      pushHtml();
+      const text = mdastNodeText(node).trim();
+      const entry = text ? toc[cursor.i] : undefined;
+      if (entry && entry.depth === node.depth) {
+        while (
+          sectionStack.length > 0 &&
+          sectionStack[sectionStack.length - 1].depth >= node.depth
+        ) {
+          sectionStack.pop();
+        }
+        const html = renderMarkdownTree({ type: 'root', children: [node] }, toc, cursor);
+        segments.push({ type: 'heading', content: html, entry, sectionSlugs: currentSlugs() });
+        sectionStack.push(entry);
+        continue;
+      }
+    }
+
+    htmlChildren.push(node);
   }
 
   pushHtml();

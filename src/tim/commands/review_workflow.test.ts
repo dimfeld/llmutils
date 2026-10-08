@@ -47,6 +47,7 @@ describe('extractReviewGuideAnnotations', () => {
         line: '12',
         startLine: null,
         content: 'This is context.',
+        kind: 'note',
         side: null,
       },
     ]);
@@ -94,6 +95,7 @@ describe('extractReviewGuideAnnotations', () => {
         line: null,
         startLine: null,
         content: 'No anchor',
+        kind: 'note',
         side: null,
       },
     ]);
@@ -151,7 +153,14 @@ describe('extractReviewGuideAnnotations', () => {
     const result = extractReviewGuideAnnotations({ guideText, diffCatalog: [] });
 
     expect(result.annotations).toEqual([
-      { file: 'src/real.ts', line: '5', startLine: null, content: 'real note', side: null },
+      {
+        file: 'src/real.ts',
+        line: '5',
+        startLine: null,
+        content: 'real note',
+        kind: 'note',
+        side: null,
+      },
     ]);
     expect(result.guideText).toContain(innerAnnotation);
     expect(result.guideText).not.toContain('real note');
@@ -175,7 +184,14 @@ describe('extractReviewGuideAnnotations', () => {
     const result = extractReviewGuideAnnotations({ guideText, diffCatalog: [] });
 
     expect(result.annotations).toEqual([
-      { file: 'src/real.ts', line: '5', startLine: null, content: 'real note', side: null },
+      {
+        file: 'src/real.ts',
+        line: '5',
+        startLine: null,
+        content: 'real note',
+        kind: 'note',
+        side: null,
+      },
     ]);
     expect(result.guideText).toContain(innerAnnotation);
   });
@@ -201,7 +217,14 @@ describe('extractReviewGuideAnnotations', () => {
     const result = extractReviewGuideAnnotations({ guideText, diffCatalog: [] });
 
     expect(result.annotations).toEqual([
-      { file: 'src/real.ts', line: '5', startLine: null, content: 'real note', side: null },
+      {
+        file: 'src/real.ts',
+        line: '5',
+        startLine: null,
+        content: 'real note',
+        kind: 'note',
+        side: null,
+      },
     ]);
     expect(result.guideText).toContain(innerAnnotation);
     expect(result.guideText).not.toContain('real note');
@@ -323,6 +346,7 @@ describe('extractReviewGuideAnnotations', () => {
       line: null,
       startLine: null,
       content: 'Content without line',
+      kind: 'note',
       side: null,
     });
   });
@@ -339,6 +363,7 @@ describe('extractReviewGuideAnnotations', () => {
       line: '5',
       startLine: null,
       content: 'Body',
+      kind: 'note',
       side: null,
     });
   });
@@ -355,6 +380,7 @@ describe('extractReviewGuideAnnotations', () => {
       line: '5',
       startLine: null,
       content: 'Body',
+      kind: 'note',
       side: null,
     });
   });
@@ -370,6 +396,7 @@ describe('extractReviewGuideAnnotations', () => {
       line: '1',
       startLine: null,
       content: '',
+      kind: 'note',
       side: null,
     });
   });

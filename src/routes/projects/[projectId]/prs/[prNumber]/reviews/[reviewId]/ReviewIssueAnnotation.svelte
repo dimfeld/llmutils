@@ -1,7 +1,12 @@
 <script lang="ts">
+  import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
+  import CircleHelp from '@lucide/svelte/icons/circle-help';
+  import Lightbulb from '@lucide/svelte/icons/lightbulb';
+  import SearchCheck from '@lucide/svelte/icons/search-check';
   import StickyNote from '@lucide/svelte/icons/sticky-note';
+  import { ANNOTATION_KIND_STYLES, noteKind } from '$lib/utils/annotation_kinds.js';
   import { renderMarkdown } from '$lib/utils/markdown_parser.js';
-  import type { ReviewSeverity } from '$tim/db/review.js';
+  import type { ReviewAnnotationKind, ReviewSeverity } from '$tim/db/review.js';
 
   interface Props {
     issueId: number;
@@ -10,12 +15,32 @@
     suggestion: string | null;
     lineLabel: string | null;
     resolved: boolean;
+    annotationKind?: ReviewAnnotationKind | null;
     onClick: (issueId: number) => void;
   }
 
-  let { issueId, severity, content, suggestion, lineLabel, resolved, onClick }: Props = $props();
+  let {
+    issueId,
+    severity,
+    content,
+    suggestion,
+    lineLabel,
+    resolved,
+    annotationKind = null,
+    onClick,
+  }: Props = $props();
 
   let isNote = $derived(severity === 'note');
+  let kind = $derived(noteKind(annotationKind));
+  let kindStyle = $derived(ANNOTATION_KIND_STYLES[kind]);
+  const KIND_ICONS = {
+    why: Lightbulb,
+    'behavior-change': ArrowLeftRight,
+    verify: SearchCheck,
+    question: CircleHelp,
+    note: StickyNote,
+  } as const;
+  let KindIcon = $derived(KIND_ICONS[kind]);
 
   const SEVERITY_COLORS: Record<ReviewSeverity, string> = {
     critical: '#dc2626',
@@ -45,8 +70,10 @@
   onkeydown={handleKeydown}
   title={lineLabel ? `${content} (${lineLabel})` : content}
   class="relative mx-1 flex w-full flex-col gap-2 rounded px-2 py-1"
+  data-annotation-kind={isNote ? kind : undefined}
   style="
     border: 1px solid rgba(148, 163, 184, 0.35);
+    {isNote && kind !== 'note' ? `border-left: 3px solid ${kindStyle.color};` : ''}
     background: rgba(148, 163, 184, 0.08);
     color: {resolved ? 'rgba(100, 116, 139, 0.95)' : 'inherit'};
     font-size: 12px;
@@ -61,10 +88,10 @@
   {/if}
   <div style="display: flex; align-items: flex-start; gap: 6px; min-width: 0;">
     {#if isNote}
-      <StickyNote
+      <KindIcon
         aria-hidden="true"
         class="mt-0.5 size-3.5 shrink-0"
-        style="color: {resolved ? 'rgba(100, 116, 139, 0.95)' : SEVERITY_COLORS[severity]};"
+        style="color: {resolved ? 'rgba(100, 116, 139, 0.95)' : kindStyle.color};"
       />
     {:else}
       <span
@@ -81,7 +108,11 @@
         class="min-w-0 flex-1 whitespace-pre-wrap"
         style="overflow-wrap: anywhere; font-family: inherit;"
       >
-        {content}
+        {#if kind !== 'note'}<span
+            class="mr-1 text-[10px] font-semibold tracking-wide uppercase"
+            style="color: {kindStyle.color};"
+            title={kindStyle.description}>{kindStyle.label}</span
+          >{/if}{content}
       </div>
     {:else}
       <div class="plan-rendered-content min-w-0 flex-1" style="overflow-wrap: anywhere">
