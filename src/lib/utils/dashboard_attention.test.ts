@@ -347,6 +347,26 @@ describe('deriveAttentionItems', () => {
     ]);
   });
 
+  test('sorts review-requested PRs by review request time, oldest first', () => {
+    const makeReviewPr = (prNumber: number, reviewRequestedAt: string | null): ActionablePr =>
+      makeActionablePr({
+        prUrl: `https://github.com/org/repo/pull/${prNumber}`,
+        prNumber,
+        actionReason: 'review_requested',
+        reviewRequestedAt,
+      });
+
+    const result = deriveAttentionItems([], planIndex([]), [
+      makeReviewPr(1, '2026-03-01T00:00:00Z'),
+      makeReviewPr(2, null),
+      makeReviewPr(3, '2026-01-01T00:00:00Z'),
+      makeReviewPr(4, '2026-02-01T00:00:00Z'),
+      makeReviewPr(5, null),
+    ]);
+
+    expect(result.prReviewItems.map((item) => item.actionablePr.prNumber)).toEqual([3, 4, 1, 2, 5]);
+  });
+
   test('propagates canUpdateDocs', () => {
     const plan = makePlan({
       uuid: 'plan-finish',

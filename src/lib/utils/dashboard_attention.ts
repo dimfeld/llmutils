@@ -264,6 +264,11 @@ export function deriveAttentionItems(
     }
   }
 
+  // Oldest review request first. PRs without a known request time go last.
+  prReviewItems.sort(
+    (a, b) => reviewRequestedSortKey(a.actionablePr) - reviewRequestedSortKey(b.actionablePr)
+  );
+
   return {
     planItems,
     stackedPlanItems,
@@ -272,6 +277,11 @@ export function deriveAttentionItems(
     prReviewItems,
     sessionItems: notificationSessions,
   };
+}
+
+function reviewRequestedSortKey(pr: ActionablePr): number {
+  const time = pr.reviewRequestedAt ? Date.parse(pr.reviewRequestedAt) : NaN;
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
 }
 
 export function deriveRunningNowSessions(
