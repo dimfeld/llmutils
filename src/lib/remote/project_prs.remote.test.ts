@@ -648,6 +648,59 @@ describe('project_prs remote functions', () => {
     expect(result.reviewing.map((pr) => pr.status.pr_number)).toEqual([18, 17]);
   });
 
+  test('getProjectPrs sorts requested reviews by request time before status', async () => {
+    // Already reviewed and approved: goes after all open requests.
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/30',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 30,
+      title: 'Already reviewed PR',
+      state: 'open',
+      draft: false,
+      reviewDecision: 'APPROVED',
+      author: 'someone-else',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+      reviews: [
+        {
+          author: 'dimfeld',
+          state: 'APPROVED',
+          submittedAt: '2026-03-30T10:10:00.000Z',
+        },
+      ],
+    });
+
+    const requests = [
+      { prNumber: 31, eventAt: '2026-03-30T12:00:00.000Z', reviewDecision: 'APPROVED' as const },
+      { prNumber: 32, eventAt: '2026-03-30T09:00:00.000Z', draft: true },
+      { prNumber: 33, eventAt: '2026-03-30T11:00:00.000Z' },
+    ];
+    for (const request of requests) {
+      const pr = upsertPrStatus(currentDb, {
+        prUrl: `https://github.com/example/repo/pull/${request.prNumber}`,
+        owner: 'example',
+        repo: 'repo',
+        prNumber: request.prNumber,
+        title: `Review requested PR ${request.prNumber}`,
+        state: 'open',
+        draft: request.draft ?? false,
+        reviewDecision: request.reviewDecision,
+        author: 'someone-else',
+        lastFetchedAt: '2026-03-30T13:00:00.000Z',
+      });
+      upsertPrReviewRequestByReviewer(currentDb, pr.status.id, {
+        reviewer: 'dimfeld',
+        action: 'requested',
+        eventAt: request.eventAt,
+      });
+    }
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    expect(result.reviewing.map((pr) => pr.status.pr_number)).toEqual([32, 33, 31, 30]);
+  });
+
   test('refreshProjectPrs falls back to refreshing all projects when projectId is all', async () => {
     const otherProjectId = getOrCreateProject(currentDb, 'github.com__example__other-repo').id;
     const { refreshProjectPrs } = await import('./project_prs.remote.js');

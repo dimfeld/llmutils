@@ -164,20 +164,32 @@ function getPrSortPriority(pr: EnrichedProjectPr): number {
 
 function sortReviewingProjectPrs(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
   return [...prs].toSorted((left, right) => {
-    // Sort by status priority: approved > open > draft
-    const leftPriority = getPrSortPriority(left);
-    const rightPriority = getPrSortPriority(right);
-    const priorityComparison = rightPriority - leftPriority;
-    if (priorityComparison !== 0) {
-      return priorityComparison;
-    }
-
+    // PRs with an open review request for the current user come first.
     const leftReviewRequested = left.currentUserReviewRequestLabel === 'Review Requested' ? 1 : 0;
     const rightReviewRequested = right.currentUserReviewRequestLabel === 'Review Requested' ? 1 : 0;
 
     const reviewRequestComparison = rightReviewRequested - leftReviewRequested;
     if (reviewRequestComparison !== 0) {
       return reviewRequestComparison;
+    }
+
+    // Among requested PRs, the oldest request comes first. Requests without a
+    // known time go after the dated ones.
+    if (leftReviewRequested === 1) {
+      const requestedAtComparison =
+        reviewRequestedSortKey(left.currentUserReviewRequestedAt) -
+        reviewRequestedSortKey(right.currentUserReviewRequestedAt);
+      if (requestedAtComparison !== 0) {
+        return requestedAtComparison;
+      }
+    }
+
+    // Sort by status priority: approved > open > draft
+    const leftPriority = getPrSortPriority(left);
+    const rightPriority = getPrSortPriority(right);
+    const priorityComparison = rightPriority - leftPriority;
+    if (priorityComparison !== 0) {
+      return priorityComparison;
     }
 
     const prNumberComparison = right.status.pr_number - left.status.pr_number;
@@ -187,6 +199,11 @@ function sortReviewingProjectPrs(prs: EnrichedProjectPr[]): EnrichedProjectPr[] 
 
     return left.projectId - right.projectId;
   });
+}
+
+function reviewRequestedSortKey(requestedAt: string | null): number {
+  const time = requestedAt ? Date.parse(requestedAt) : NaN;
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
 }
 
 function getLatestSubmittedReviewAt(pr: PrStatusDetail, username: string): string | null {
