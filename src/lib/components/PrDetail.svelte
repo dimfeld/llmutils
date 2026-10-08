@@ -62,6 +62,14 @@
     isCurrent: boolean;
   }
 
+  /** True when GitHub reports the PR as approved or any reviewer has submitted an approval. */
+  function isApprovedByAnyone(entryPr: EnrichedProjectPr): boolean {
+    return (
+      entryPr.status.review_decision === 'APPROVED' ||
+      entryPr.reviews.some((review) => review.state === 'APPROVED')
+    );
+  }
+
   function buildPrChain(currentPr: EnrichedProjectPr, prs: EnrichedProjectPr[]): ChainEntry[] {
     const currentRepo = `${currentPr.status.owner}/${currentPr.status.repo}`;
     const samePrs = prs.filter(
@@ -686,6 +694,7 @@
         </h3>
         <ul class="space-y-0.5">
           {#each prChain as entry, i (entry.pr.status.pr_number)}
+            {@const entryApproved = isApprovedByAnyone(entry.pr)}
             <li
               class="flex min-w-0 items-baseline gap-1.5 rounded px-1.5 py-1 text-xs {entry.isCurrent
                 ? 'bg-gray-100 dark:bg-gray-800'
@@ -724,13 +733,22 @@
                   {/each}
                 </span>
               {/if}
+              {#if entryApproved && entry.pr.status.review_decision !== 'CHANGES_REQUESTED'}
+                <span
+                  class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium {reviewDecisionBadgeColor(
+                    'APPROVED'
+                  )}"
+                >
+                  {reviewDecisionLabel('APPROVED')}
+                </span>
+              {/if}
               {#if entry.pr.currentUserReviewRequestLabel}
                 <span
                   class="shrink-0 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
                 >
                   {entry.pr.currentUserReviewRequestLabel}
                 </span>
-              {:else if entry.pr.status.review_decision === 'APPROVED' || entry.pr.status.review_decision === 'CHANGES_REQUESTED'}
+              {:else if entry.pr.status.review_decision === 'CHANGES_REQUESTED'}
                 <span
                   class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium {reviewDecisionBadgeColor(
                     entry.pr.status.review_decision
@@ -738,13 +756,13 @@
                 >
                   {reviewDecisionLabel(entry.pr.status.review_decision)}
                 </span>
-              {:else if entry.pr.status.draft}
+              {:else if !entryApproved && entry.pr.status.draft}
                 <span
                   class="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300"
                 >
                   Draft
                 </span>
-              {:else if entry.pr.status.state === 'open'}
+              {:else if !entryApproved && entry.pr.status.state === 'open'}
                 <span
                   class="shrink-0 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
                 >

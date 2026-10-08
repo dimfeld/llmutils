@@ -424,6 +424,75 @@ describe('PrDetail', () => {
     expect(body).toContain('bg-green-100');
   });
 
+  test('shows Approved for stack entries approved by another reviewer', async () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = null;
+    pr.status.base_branch = 'feature-approved';
+
+    const approvedPr = createPr();
+    approvedPr.status.pr_number = 41;
+    approvedPr.status.title = 'Approved PR';
+    approvedPr.status.head_branch = 'feature-approved';
+    approvedPr.status.review_decision = null;
+    approvedPr.currentUserReviewRequestLabel = 'Review Requested';
+    approvedPr.reviews = [
+      {
+        id: 31,
+        pr_status_id: 2,
+        author: 'bob',
+        state: 'APPROVED',
+        body: null,
+        submitted_at: '2026-03-18T11:00:00.000Z',
+      },
+    ];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        allPrs: [approvedPr],
+      },
+    });
+
+    expect(body).toContain('Approved');
+    expect(body).toContain('bg-green-100');
+    expect(body).toContain('Review Requested');
+  });
+
+  test('does not show Approved for stack entries with only non-approving reviews', async () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = null;
+    pr.status.base_branch = 'feature-commented';
+
+    const commentedPr = createPr();
+    commentedPr.currentUserReviewRequestLabel = null;
+    commentedPr.status.pr_number = 41;
+    commentedPr.status.title = 'Commented PR';
+    commentedPr.status.head_branch = 'feature-commented';
+    commentedPr.status.review_decision = null;
+    commentedPr.reviews = [
+      {
+        id: 32,
+        pr_status_id: 2,
+        author: 'bob',
+        state: 'COMMENTED',
+        body: null,
+        submitted_at: '2026-03-18T11:00:00.000Z',
+      },
+    ];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        allPrs: [commentedPr],
+      },
+    });
+
+    expect(body).not.toContain('Approved');
+    expect(body).toContain('Open');
+  });
+
   test('renders requested reviewers who have not reviewed yet', async () => {
     const pr = createPr();
     pr.status.requested_reviewers = '["dimfeld","bob"]';
