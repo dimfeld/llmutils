@@ -36,7 +36,40 @@ const output: DisplayMessage = {
   rawType: 'stdout',
 };
 
+function thinkingMessage(id: string, status: string): DisplayMessage {
+  return {
+    ...structuredMessage({ type: 'llm_status', source: 'claude', status }),
+    id,
+  };
+}
+
 describe('filterSessionMessages', () => {
+  test('keeps only the latest of consecutive thinking messages', () => {
+    const first = thinkingMessage('first', 'Thinking... (100 tokens)');
+    const second = thinkingMessage('second', 'Thinking...');
+    const third = thinkingMessage('third', 'Thinking... (300 tokens)');
+    const fourth = thinkingMessage('fourth', 'Thinking... (50 tokens)');
+    const other = thinkingMessage('other', 'Thinking about it');
+
+    expect(
+      filterSessionMessages([first, second, third, output, fourth, other], false, false)
+    ).toEqual([third, output, fourth, other]);
+  });
+
+  test('coalesces thinking messages separated only by hidden messages', () => {
+    const first = thinkingMessage('first', 'Thinking... (100 tokens)');
+    const second = thinkingMessage('second', 'Thinking... (200 tokens)');
+    const call = toolMessage('Bash', 'llm_tool_use');
+    const lifecycle = { ...output, id: 'lifecycle', origin: 'lifecycle' as const };
+
+    expect(filterSessionMessages([first, call, lifecycle, second], false, false)).toEqual([second]);
+    expect(filterSessionMessages([first, call, second], false, true)).toEqual([
+      first,
+      call,
+      second,
+    ]);
+  });
+
   test('filters lifecycle output and ordinary tool calls independently', () => {
     const lifecycle = { ...output, id: 'lifecycle', origin: 'lifecycle' as const };
     const call = toolMessage('Bash', 'llm_tool_use');
@@ -179,6 +212,25 @@ describe('filterSessionMessages', () => {
 });
 
 describe('summarizeHiddenToolCalls', () => {
+  test('coalesces consecutive thinking messages without counting them as tool calls', () => {
+    const first = thinkingMessage('first', 'Thinking... (100 tokens)');
+    const second = thinkingMessage('second', 'Thinking... (200 tokens)');
+    const third = thinkingMessage('third', 'Thinking... (300 tokens)');
+    const call = toolMessage('Bash', 'llm_tool_use');
+
+    const summarized = summarizeHiddenToolCalls([first, second, call, third], false, false);
+    expect(summarized.map((message) => message.body)).toEqual([
+      second.body,
+      { type: 'text', text: '1 tool call hidden' },
+      third.body,
+    ]);
+    expect(summarizeHiddenToolCalls([first, second, call, third], false, true)).toEqual([
+      second,
+      call,
+      third,
+    ]);
+  });
+
   test('counts calls once and separates groups at visible messages', () => {
     const call = toolMessage('Bash', 'llm_tool_use');
     const result = toolMessage('Bash', 'llm_tool_result');

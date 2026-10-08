@@ -6,6 +6,16 @@ export function filterSessionMessages(
   showLifecycleOutput: boolean,
   showToolCalls: boolean
 ): DisplayMessage[] {
+  return coalesceThinkingMessages(
+    filterVisibleMessages(messages, showLifecycleOutput, showToolCalls)
+  );
+}
+
+function filterVisibleMessages(
+  messages: DisplayMessage[],
+  showLifecycleOutput: boolean,
+  showToolCalls: boolean
+): DisplayMessage[] {
   const latestRateLimitIndexes = new Map<string, number>();
   messages.forEach((message, index) => {
     const key = getRateLimitMessageKey(message);
@@ -43,17 +53,24 @@ export function filterSessionMessages(
   });
 }
 
+/** Keep only the last message in each run of consecutive thinking messages. */
+function coalesceThinkingMessages(messages: DisplayMessage[]): DisplayMessage[] {
+  return messages.filter(
+    (message, index) => !(isThinkingMessage(message) && isThinkingMessage(messages[index + 1]))
+  );
+}
+
 /** Replace hidden tool runs with a count without counting results twice. */
 export function summarizeHiddenToolCalls(
   messages: DisplayMessage[],
   showLifecycleOutput: boolean,
   showToolCalls: boolean
 ): DisplayMessage[] {
-  const eligible = filterSessionMessages(messages, showLifecycleOutput, true);
-  if (showToolCalls) return eligible;
+  const eligible = filterVisibleMessages(messages, showLifecycleOutput, true);
+  if (showToolCalls) return coalesceThinkingMessages(eligible);
 
   const visibleIds = new Set(
-    filterSessionMessages(eligible, true, false).map((message) => message.id)
+    filterVisibleMessages(eligible, true, false).map((message) => message.id)
   );
   const summarized: DisplayMessage[] = [];
   let firstHidden: DisplayMessage | undefined;
@@ -88,7 +105,7 @@ export function summarizeHiddenToolCalls(
     }
   }
   flush();
-  return summarized;
+  return coalesceThinkingMessages(summarized);
 }
 
 function getRateLimitMessageKey(message: DisplayMessage): string | null {
@@ -108,4 +125,12 @@ function getRateLimitMessageKey(message: DisplayMessage): string | null {
 
   const { source, status, detail, rateLimitInfo } = structured;
   return JSON.stringify(['llm_status', source, status, detail, rateLimitInfo]);
+}
+
+const THINKING_STATUS_PATTERN = /^Thinking\.\.\.(?: \(\d+ tokens\))?$/;
+
+function isThinkingMessage(message: DisplayMessage | undefined): boolean {
+  if (message?.body.type !== 'structured') return false;
+  const structured = message.body.message;
+  return structured.type === 'llm_status' && THINKING_STATUS_PATTERN.test(structured.status);
 }
