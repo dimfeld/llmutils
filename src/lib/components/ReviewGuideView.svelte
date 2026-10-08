@@ -324,6 +324,21 @@
     openFile = { path, line: Number.isInteger(line) && line > 0 ? line : null };
   }
 
+  /**
+   * Height of the sticky section headings. Diff file headers stick below them,
+   * and headings that scroll into view leave room for them.
+   */
+  let stickyHeadingHeight = $state(0);
+
+  function stickyHeadingAttachment(node: HTMLElement) {
+    const observer = new ResizeObserver(() => {
+      const height = node.offsetHeight;
+      if (height > stickyHeadingHeight) stickyHeadingHeight = height;
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }
+
   /** Annotation kinds the reader chose to hide in the guide diffs. */
   const hiddenNoteKinds = new SvelteSet<string>();
   let noteKindCounts = $derived.by(() => {
@@ -1508,7 +1523,11 @@
           {/if}
           <!-- The guide stays mounted while the Files tab is open so its scroll position survives. -->
           <div
-            class={['min-h-0 flex-1 overflow-y-auto pr-1', activeTab !== 'guide' && 'hidden']}
+            class={[
+              'review-guide-scroll min-h-0 flex-1 overflow-y-auto pr-1',
+              activeTab !== 'guide' && 'hidden',
+            ]}
+            style:--tim-diff-sticky-header-top="{stickyHeadingHeight}px"
             onclick={openFileLinkFromEvent}
             onkeydown={openFileLinkFromEvent}
             role="presentation"
@@ -1528,7 +1547,15 @@
                   {@const viewed = viewedKeys.has(`section:${entry.slug}`)}
                   {@const isTitle =
                     viewableSectionDepth != null && entry.depth < viewableSectionDepth}
-                  <div class="group/heading relative">
+                  <div
+                    class={[
+                      'group/heading',
+                      viewable
+                        ? 'sticky top-0 z-10 border-b border-border bg-background'
+                        : 'relative',
+                    ]}
+                    {@attach viewable ? stickyHeadingAttachment : undefined}
+                  >
                     {@html segment.content}
                     {#if !isTitle}
                       <div class="-mt-1 mb-2 flex flex-wrap items-center gap-2 text-xs">
@@ -1833,6 +1860,11 @@
 </div>
 
 <style>
+  /* Keep headings that scroll into view below the sticky section heading. */
+  :global(.review-guide-scroll :is(h3, h4, h5, h6)) {
+    scroll-margin-top: var(--tim-diff-sticky-header-top, 0px);
+  }
+
   :global(.guide-file-link) {
     cursor: pointer;
     text-decoration: underline dotted;
