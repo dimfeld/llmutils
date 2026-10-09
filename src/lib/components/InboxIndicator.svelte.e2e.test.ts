@@ -281,7 +281,7 @@ describe('InboxIndicator browser behavior', () => {
     expect(mocks.inboxQuery.refresh).toHaveBeenCalledTimes(1);
   });
 
-  test('uses the current project for the footer link, then falls back to the first row project', async () => {
+  test('uses the current project for the view-all link, then falls back to the first row project', async () => {
     renderIndicator(makeResponse({ items: [makeItem({ project_id: 8 })], unreadCount: 1 }));
     await openPopover();
     await expect
@@ -298,7 +298,7 @@ describe('InboxIndicator browser behavior', () => {
       .toHaveAttribute('href', '/projects/8/inbox');
   });
 
-  test('preserves the all-project footer target with rows and in the empty state', async () => {
+  test('preserves the all-project view-all target with rows and in the empty state', async () => {
     mocks.pageState.params.projectId = 'all';
     renderIndicator(makeResponse({ items: [makeItem({ project_id: 8 })], unreadCount: 1 }));
     await openPopover();
@@ -315,7 +315,7 @@ describe('InboxIndicator browser behavior', () => {
       .toHaveAttribute('href', '/projects/all/inbox');
   });
 
-  test('closes the popover and navigates via goto when the footer link is clicked', async () => {
+  test('closes the popover and navigates via goto when the view-all link is clicked', async () => {
     renderIndicator(makeResponse({ items: [makeItem()], unreadCount: 1 }));
     await openPopover();
 

@@ -51,7 +51,7 @@
 
   let displayItems = $derived((data?.items ?? []).slice(0, 10));
 
-  let footerProjectId = $derived.by(() => {
+  let viewAllProjectId = $derived.by(() => {
     const routeProjectId = page.params.projectId;
     if (routeProjectId === 'all') {
       return 'all';
@@ -125,12 +125,12 @@
     }
   }
 
-  async function handleFooterLinkClick(event: MouseEvent): Promise<void> {
+  async function handleViewAllLinkClick(event: MouseEvent): Promise<void> {
     event.preventDefault();
     popoverOpen = false;
-    if (footerProjectId) {
+    if (viewAllProjectId) {
       try {
-        await goto(`/projects/${footerProjectId}/inbox`);
+        await goto(`/projects/${viewAllProjectId}/inbox`);
       } catch (error) {
         reportInboxFailure('open the inbox page', error);
       }
@@ -218,15 +218,14 @@
   >
     <div class="flex items-center justify-between border-b border-gray-700 px-3 py-2">
       <h3 class="text-xs font-semibold tracking-wider text-gray-400 uppercase">Inbox</h3>
-      {#if indicator.hasUnread}
-        <button
-          type="button"
+      {#if viewAllProjectId}
+        <a
+          href="/projects/{viewAllProjectId}/inbox"
           class="text-xs text-blue-400 hover:text-blue-300"
-          onclick={handleMarkAllRead}
-          aria-label="Mark all inbox items as read"
+          onclick={handleViewAllLinkClick}
         >
-          Mark all read
-        </button>
+          View all notifications
+        </a>
       {/if}
     </div>
 
@@ -284,15 +283,16 @@
       </div>
     {/if}
 
-    {#if footerProjectId}
+    {#if indicator.hasUnread}
       <div class="border-t border-gray-700 px-3 py-2 text-center">
-        <a
-          href="/projects/{footerProjectId}/inbox"
+        <button
+          type="button"
           class="text-xs text-blue-400 hover:text-blue-300"
-          onclick={handleFooterLinkClick}
+          onclick={handleMarkAllRead}
+          aria-label="Mark all inbox items as read"
         >
-          View all notifications
-        </a>
+          Mark all read
+        </button>
       </div>
     {/if}
   </PopoverContent>
