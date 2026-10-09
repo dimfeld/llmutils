@@ -123,11 +123,26 @@ export function buildExpandableGuideDiff(
   if (!diff || diff.isPartial || diff.hunks.length !== block.hunks.length) return null;
 
   const first = diff.hunks[0];
-  first.collapsedBefore = Math.max(0, first.additionStart - bounds.leadingStartNew);
+  const collapsedBefore = Math.max(0, first.additionStart - bounds.leadingStartNew);
   if (bounds.trailingEndNew != null && bounds.trailingEndOld != null) {
     diff.additionLines = diff.additionLines.slice(0, bounds.trailingEndNew);
     diff.deletionLines = diff.deletionLines.slice(0, bounds.trailingEndOld);
   }
+  // Drop the lines above the expandable region instead of only shrinking
+  // collapsedBefore. The highlighter collects the lines it iterates over into
+  // one array, and the renderer reads that array by line index, so the line
+  // arrays must start where iteration starts. Line numbers come from the hunk
+  // starts, so they do not change.
+  const additionOffset = first.additionLineIndex - collapsedBefore;
+  const deletionOffset = first.deletionLineIndex - collapsedBefore;
+  if (additionOffset < 0 || deletionOffset < 0) return null;
+  diff.additionLines = diff.additionLines.slice(additionOffset);
+  diff.deletionLines = diff.deletionLines.slice(deletionOffset);
+  for (const hunk of diff.hunks) {
+    hunk.additionLineIndex -= additionOffset;
+    hunk.deletionLineIndex -= deletionOffset;
+  }
+  first.collapsedBefore = collapsedBefore;
   recomputeLineCounts(diff);
   return diff;
 }

@@ -1,3 +1,8 @@
+import {
+  getSharedHighlighter,
+  renderDiffWithHighlighter,
+  type FileDiffMetadata,
+} from '@pierre/diffs';
 import { createTwoFilesPatch } from 'diff';
 import { describe, expect, it } from 'vitest';
 
@@ -89,9 +94,53 @@ describe('buildExpandableGuideDiff', () => {
   });
 
   it('keeps the rest of the file for the last hunk', () => {
-    const diff = buildExpandableGuideDiff(blockFor([2]), entry);
-    expect(diff!.additionLines).toHaveLength(NEW_LINES.length);
-    expect(diff!.deletionLines).toHaveLength(OLD_LINES.length);
+    const diff = buildExpandableGuideDiff(blockFor([2]), entry)!;
+    // Lines above the expandable region are dropped; everything after it stays.
+    const [hunk] = diff.hunks;
+    const leadingNew = hunk.additionStart - hunk.collapsedBefore;
+    const leadingOld = hunk.deletionStart - hunk.collapsedBefore;
+    expect(diff.additionLines).toHaveLength(NEW_LINES.length - (leadingNew - 1));
+    expect(diff.deletionLines).toHaveLength(OLD_LINES.length - (leadingOld - 1));
+    expect(diff.additionLines[0]).toBe(`${NEW_LINES[leadingNew - 1]}\n`);
+  });
+
+  it('keeps line indices and line numbers consistent', () => {
+    for (const selected of [[0], [1], [2], [0, 1], [1, 2]]) {
+      const diff = buildExpandableGuideDiff(blockFor(selected), entry)!;
+      for (const hunk of diff.hunks) {
+        expect(diff.additionLines[hunk.additionLineIndex]).toBe(
+          `${NEW_LINES[hunk.additionStart - 1]}\n`
+        );
+        expect(diff.deletionLines[hunk.deletionLineIndex]).toBe(
+          `${OLD_LINES[hunk.deletionStart - 1]}\n`
+        );
+      }
+      expect(diff.hunks[0].additionLineIndex).toBe(diff.hunks[0].collapsedBefore);
+      expect(diff.hunks[0].deletionLineIndex).toBe(diff.hunks[0].collapsedBefore);
+    }
+  });
+
+  it('gives a highlighted line for every line index the renderer reads', async () => {
+    const highlighter = await getSharedHighlighter({
+      themes: ['pierre-dark', 'pierre-light'],
+      langs: ['typescript'],
+    });
+    const check = (diff: FileDiffMetadata): void => {
+      const { code } = renderDiffWithHighlighter(diff, highlighter, {
+        theme: { dark: 'pierre-dark', light: 'pierre-light' },
+        useTokenTransformer: false,
+        tokenizeMaxLineLength: 1000,
+        lineDiffType: 'word-alt',
+        maxLineDiffLength: 1000,
+      });
+      // The highlighted arrays are read by line index, so they must line up
+      // with the diff's own line arrays.
+      expect(code.additionLines).toHaveLength(diff.additionLines.length);
+      expect(code.deletionLines).toHaveLength(diff.deletionLines.length);
+    };
+    for (const selected of [[0], [1], [2], [0, 1], [1, 2]]) {
+      check(buildExpandableGuideDiff(blockFor(selected), entry)!);
+    }
   });
 
   it('recomputes line counts', () => {
