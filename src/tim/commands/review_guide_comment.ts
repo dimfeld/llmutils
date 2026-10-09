@@ -6,13 +6,20 @@ import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
 import { getGitHubAppInstallationTokenForOwner } from '../../common/github/app_auth.js';
 import {
+  isReviewCommandEnabled,
+  REVIEW_COMMAND_PROJECT_SETTING_KEY,
+  type ReviewCommandProjectSetting,
+} from '../../common/github/review_command.js';
+import {
   isReviewGuideCommentPostReviewEnabled,
   parseReviewGuideCommentProjectSetting,
   REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY,
   type ReviewGuideCommentProjectSetting,
 } from '../../common/github/review_guide_comment_setting.js';
 import {
+  addIssueCommentReaction,
   findPullRequestCommentByMarker,
+  type IssueCommentReaction,
   parseOwnerRepoFromRepositoryId,
   postPullRequestComment,
   updatePullRequestComment,
@@ -72,6 +79,13 @@ export interface PrReviewGuideCommentOptions {
    * project's reviewGuideComment.postReview setting decides.
    */
   postReview?: boolean;
+  /**
+   * Post only a new automatic review. Do not post, check for, or edit a guide comment.
+   * Used by the `/tim review` PR comment command.
+   */
+  reviewOnly?: boolean;
+  /** PR comment that requested the review. It gets 👀 at the start and 😕 on failure. */
+  triggerCommentId?: number;
   verbose?: boolean;
 }
 
@@ -241,6 +255,51 @@ export async function handlePrReviewGuideCommentStatusCommand(): Promise<void> {
   const reviewStatus = setting?.postReview === true ? 'enabled' : 'disabled';
   log(`Automatic PR review-guide comments are ${status} for ${project.repository_id}.`);
   log(`Automatic reviews with inline issue comments are ${reviewStatus}.`);
+}
+
+async function writeReviewCommandSetting(
+  enabled: boolean,
+  command: RootCommandLike | undefined
+): Promise<Project> {
+  const globalOpts = getRootOptions(command);
+  const config = await loadEffectiveConfig(globalOpts.config, { cwd: process.cwd() });
+  const project = await resolveCurrentProject();
+  const setting: ReviewCommandProjectSetting = { enabled };
+  await writeProjectSettingSet(
+    getDatabase(),
+    config,
+    project.id,
+    REVIEW_COMMAND_PROJECT_SETTING_KEY,
+    setting,
+    'latest'
+  );
+  return project;
+}
+
+export async function handlePrReviewCommandEnableCommand(
+  _options: Record<string, never>,
+  command: RootCommandLike | undefined
+): Promise<void> {
+  const project = await writeReviewCommandSetting(true, command);
+  log(`Enabled \`/tim review\` PR comment commands for ${project.repository_id}.`);
+}
+
+export async function handlePrReviewCommandDisableCommand(
+  _options: Record<string, never>,
+  command: RootCommandLike | undefined
+): Promise<void> {
+  const project = await writeReviewCommandSetting(false, command);
+  log(`Disabled \`/tim review\` PR comment commands for ${project.repository_id}.`);
+}
+
+export async function handlePrReviewCommandStatusCommand(): Promise<void> {
+  const project = await resolveCurrentProject();
+  const enabled = isReviewCommandEnabled(
+    getProjectSetting(getDatabase(), project.id, REVIEW_COMMAND_PROJECT_SETTING_KEY)
+  );
+  log(
+    `\`/tim review\` PR comment commands are ${enabled ? 'enabled' : 'disabled'} for ${project.repository_id}.`
+  );
 }
 
 async function resolveHeadSha(baseDir: string): Promise<string> {
@@ -430,6 +489,15 @@ export async function handlePrReviewGuideCommentCommand(
   if (!prArg) {
     throw new Error('Provide a PR URL or number.');
   }
+  if (options.reviewOnly === true && options.postReview === false) {
+    throw new Error('--review-only cannot be used with --no-post-review.');
+  }
+  if (
+    options.triggerCommentId !== undefined &&
+    (!Number.isInteger(options.triggerCommentId) || options.triggerCommentId <= 0)
+  ) {
+    throw new Error('--trigger-comment-id must be a positive integer.');
+  }
 
   const globalOpts = getRootOptions(command);
   const db: Database = getDatabase();
@@ -463,202 +531,242 @@ export async function handlePrReviewGuideCommentCommand(
         );
       }
 
-      const prContext = await gatherPrContext({
-        db,
-        prUrlOrNumber: prUrl,
-        cwd: initialRepoRoot,
-        authToken: appToken,
-      });
-      updateReviewGuideCommentSessionInfo(db, prContext);
-
-      // Validate that the current repository is the one the PR belongs to before checking out
-      // its branch, mirroring `tim pr review-guide`.
-      const { repoRoot, projectId } = await resolveProjectContextForRepo(db, initialRepoRoot);
-      const repoIdentity = await getRepositoryIdentity({ cwd: repoRoot });
-      const parsedRepositoryId = parseOwnerRepoFromRepositoryId(repoIdentity.repositoryId);
-      if (!parsedRepositoryId) {
-        throw new Error(
-          `Cannot validate repository identity: ${repoIdentity.repositoryId} is not a recognized GitHub repository. This command only works with GitHub PRs.`
-        );
-      }
-      if (
-        parsedRepositoryId.owner.toLowerCase() !== prContext.owner.toLowerCase() ||
-        parsedRepositoryId.repo.toLowerCase() !== prContext.repo.toLowerCase()
-      ) {
-        throw new Error(
-          `PR ${prContext.prUrl} belongs to ${prContext.owner}/${prContext.repo}, but the current repository is ${parsedRepositoryId.owner}/${parsedRepositoryId.repo}. Run this command from inside the matching repository.`
-        );
-      }
-
-      // Idempotency: post at most one guide comment per PR unless --force is given.
-      const existingComment =
-        options.dryRun === true
-          ? null
-          : await findPullRequestCommentByMarker(
-              prContext.owner,
-              prContext.repo,
-              prContext.prNumber,
-              REVIEW_GUIDE_COMMENT_MARKER,
-              { authToken: appToken }
-            );
-      if (!options.force && existingComment) {
-        log(
-          `Review guide comment already exists for ${prContext.prUrl} (${existingComment.htmlUrl ?? `#${existingComment.id}`}); skipping. Pass --force to update it.`
-        );
-        return;
-      }
-
-      let baseDir = initialRepoRoot;
-      if (options.autoWorkspace === true) {
-        const selector = new WorkspaceAutoSelector(baseDir, config);
-        const taskId = `pr-review-guide-comment-${prContext.prNumber}-${Date.now()}`;
-        const selectedWorkspace = await selector.selectWorkspace(taskId, undefined, {
-          interactive: options.nonInteractive !== true,
-          createBranch: false,
-        });
-        if (!selectedWorkspace) {
-          throw new Error(
-            'Failed to select or create a workspace for the PR review guide comment.'
-          );
+      const triggerCommentId = options.triggerCommentId;
+      const reactToTrigger = async (content: IssueCommentReaction): Promise<void> => {
+        if (triggerCommentId === undefined) {
+          return;
         }
-
-        const lockInfo = await WorkspaceLock.acquireLock(
-          selectedWorkspace.workspace.workspacePath,
-          'tim pr review-guide-comment',
-          {
-            type: 'pid',
-            ...(selectedWorkspace.isNew ? { allowPersistentToPidTransition: true } : {}),
-          }
-        );
-        WorkspaceLock.setupCleanupHandlers(
-          selectedWorkspace.workspace.workspacePath,
-          lockInfo.type
-        );
-        baseDir = selectedWorkspace.workspace.workspacePath;
-        updateHeadlessSessionInfo({ workspacePath: baseDir });
-      }
-
-      await checkoutPrBranch({
-        branch: prContext.headBranch,
-        baseBranch: prContext.baseBranch,
-        prNumber: prContext.prNumber,
-        skipDirtyCheck: options.autoWorkspace === true,
-        cwd: baseDir,
-      });
-
-      const remoteBaseRef = `origin/${prContext.baseBranch}`;
-      const mergeBaseResult = await $`git merge-base HEAD ${remoteBaseRef}`
-        .cwd(baseDir)
-        .quiet()
-        .nothrow();
-      const baseSha = mergeBaseResult.stdout.toString().trim();
-      if (mergeBaseResult.exitCode !== 0 || !baseSha) {
-        throw new Error(
-          `Failed to resolve PR review guide comment merge base from ${remoteBaseRef}: ${mergeBaseResult.stderr.toString().trim() || 'git merge-base failed.'}`
-        );
-      }
-
-      const nonTestChangeStats = await loadJjNonTestChangeStats(baseDir, baseSha);
-      const customInstructions = await loadCustomReviewInstructions(config, baseDir);
-      const metadata = buildPrMetadata(prContext, baseSha);
-
-      const postReview =
-        options.postReview ??
-        isReviewGuideCommentPostReviewEnabled(
-          getProjectSetting(db, projectId, REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY)
-        );
-
-      let reviewState: AutoReviewState | null = null;
-      let reviewPromise: Promise<unknown> | null = null;
-      if (postReview) {
-        const reviewedSha = await resolveHeadSha(baseDir);
-        reviewState = { kind: 'running' };
-        reviewPromise = runAutomaticPrReview({
-          db,
-          config,
-          baseDir,
-          projectId,
-          prStatusId: prContext.prStatus.id,
-          metadata,
-          baseSha,
-          reviewedSha,
-          customInstructions,
-          authToken: appToken,
-          dryRun: options.dryRun,
-          filesReviewed: prContext.prStatus.changed_files ?? 0,
-        }).then(
-          (result) => {
-            reviewState = { kind: 'posted', result };
-          },
-          (err: unknown) => {
-            reviewState = { kind: 'failed' };
-            throw err;
-          }
-        );
-        // Errors are handled below, after the comment step finishes.
-        reviewPromise.catch(() => {});
-      }
-
-      let commentError: unknown;
-      let postedComment: PostedGuideComment | null = null;
-      try {
-        postedComment = await generateAndPostGuideComment({
-          config,
-          options,
-          executorName,
-          baseDir,
-          prContext,
-          metadata,
-          nonTestChangeStats,
-          customInstructions,
-          existingComment,
-          appToken,
-          getReviewState: () => reviewState,
-        });
-      } catch (err) {
-        commentError = err;
-      }
-
-      let reviewError: Error | null = null;
-      if (reviewPromise) {
         try {
-          await reviewPromise;
-        } catch (err) {
-          reviewError = err instanceof Error ? err : new Error(String(err));
-        }
-      }
-
-      // The comment was posted while the review was still running: replace the
-      // in-progress line with the final review status.
-      if (postedComment?.reviewState?.kind === 'running' && reviewState) {
-        try {
-          await updatePullRequestComment(
-            prContext.owner,
-            prContext.repo,
-            postedComment.commentId,
-            buildGuideCommentBody({
-              guide: postedComment.guide,
-              reviewStatus: formatAutoReviewStatus(reviewState),
-              updatedAt: postedComment.updatedAt,
-            }),
-            { authToken: appToken }
-          );
+          await addIssueCommentReaction(parsedPr.owner, parsedPr.repo, triggerCommentId, content, {
+            authToken: appToken,
+          });
         } catch (err) {
           warn(
-            `Failed to update the review status in the guide comment: ${err instanceof Error ? err.message : String(err)}`
+            `Failed to add a ${content} reaction to comment ${triggerCommentId}: ${err instanceof Error ? err.message : String(err)}`
           );
         }
-      }
+      };
 
-      if (reviewError) {
-        if (!commentError) {
-          throw reviewError;
+      await reactToTrigger('eyes');
+      try {
+        const prContext = await gatherPrContext({
+          db,
+          prUrlOrNumber: prUrl,
+          cwd: initialRepoRoot,
+          authToken: appToken,
+        });
+        updateReviewGuideCommentSessionInfo(db, prContext);
+
+        // Validate that the current repository is the one the PR belongs to before checking out
+        // its branch, mirroring `tim pr review-guide`.
+        const { repoRoot, projectId } = await resolveProjectContextForRepo(db, initialRepoRoot);
+        const repoIdentity = await getRepositoryIdentity({ cwd: repoRoot });
+        const parsedRepositoryId = parseOwnerRepoFromRepositoryId(repoIdentity.repositoryId);
+        if (!parsedRepositoryId) {
+          throw new Error(
+            `Cannot validate repository identity: ${repoIdentity.repositoryId} is not a recognized GitHub repository. This command only works with GitHub PRs.`
+          );
         }
-        warn(`Automatic review failed: ${reviewError.message}`);
-      }
+        if (
+          parsedRepositoryId.owner.toLowerCase() !== prContext.owner.toLowerCase() ||
+          parsedRepositoryId.repo.toLowerCase() !== prContext.repo.toLowerCase()
+        ) {
+          throw new Error(
+            `PR ${prContext.prUrl} belongs to ${prContext.owner}/${prContext.repo}, but the current repository is ${parsedRepositoryId.owner}/${parsedRepositoryId.repo}. Run this command from inside the matching repository.`
+          );
+        }
 
-      if (commentError) {
-        throw commentError;
+        // Idempotency: post at most one guide comment per PR unless --force is given.
+        const existingComment =
+          options.dryRun === true || options.reviewOnly === true
+            ? null
+            : await findPullRequestCommentByMarker(
+                prContext.owner,
+                prContext.repo,
+                prContext.prNumber,
+                REVIEW_GUIDE_COMMENT_MARKER,
+                { authToken: appToken }
+              );
+        if (!options.force && existingComment) {
+          log(
+            `Review guide comment already exists for ${prContext.prUrl} (${existingComment.htmlUrl ?? `#${existingComment.id}`}); skipping. Pass --force to update it.`
+          );
+          return;
+        }
+
+        let baseDir = initialRepoRoot;
+        if (options.autoWorkspace === true) {
+          const selector = new WorkspaceAutoSelector(baseDir, config);
+          const taskId = `pr-review-guide-comment-${prContext.prNumber}-${Date.now()}`;
+          const selectedWorkspace = await selector.selectWorkspace(taskId, undefined, {
+            interactive: options.nonInteractive !== true,
+            createBranch: false,
+          });
+          if (!selectedWorkspace) {
+            throw new Error(
+              'Failed to select or create a workspace for the PR review guide comment.'
+            );
+          }
+
+          const lockInfo = await WorkspaceLock.acquireLock(
+            selectedWorkspace.workspace.workspacePath,
+            'tim pr review-guide-comment',
+            {
+              type: 'pid',
+              ...(selectedWorkspace.isNew ? { allowPersistentToPidTransition: true } : {}),
+            }
+          );
+          WorkspaceLock.setupCleanupHandlers(
+            selectedWorkspace.workspace.workspacePath,
+            lockInfo.type
+          );
+          baseDir = selectedWorkspace.workspace.workspacePath;
+          updateHeadlessSessionInfo({ workspacePath: baseDir });
+        }
+
+        await checkoutPrBranch({
+          branch: prContext.headBranch,
+          baseBranch: prContext.baseBranch,
+          prNumber: prContext.prNumber,
+          skipDirtyCheck: options.autoWorkspace === true,
+          cwd: baseDir,
+        });
+
+        const remoteBaseRef = `origin/${prContext.baseBranch}`;
+        const mergeBaseResult = await $`git merge-base HEAD ${remoteBaseRef}`
+          .cwd(baseDir)
+          .quiet()
+          .nothrow();
+        const baseSha = mergeBaseResult.stdout.toString().trim();
+        if (mergeBaseResult.exitCode !== 0 || !baseSha) {
+          throw new Error(
+            `Failed to resolve PR review guide comment merge base from ${remoteBaseRef}: ${mergeBaseResult.stderr.toString().trim() || 'git merge-base failed.'}`
+          );
+        }
+
+        if (options.reviewOnly === true) {
+          await runAutomaticPrReview({
+            db,
+            config,
+            baseDir,
+            projectId,
+            prStatusId: prContext.prStatus.id,
+            metadata: buildPrMetadata(prContext, baseSha),
+            baseSha,
+            reviewedSha: await resolveHeadSha(baseDir),
+            customInstructions: await loadCustomReviewInstructions(config, baseDir),
+            authToken: appToken,
+            dryRun: options.dryRun,
+            filesReviewed: prContext.prStatus.changed_files ?? 0,
+          });
+          return;
+        }
+
+        const nonTestChangeStats = await loadJjNonTestChangeStats(baseDir, baseSha);
+        const customInstructions = await loadCustomReviewInstructions(config, baseDir);
+        const metadata = buildPrMetadata(prContext, baseSha);
+
+        const postReview =
+          options.postReview ??
+          isReviewGuideCommentPostReviewEnabled(
+            getProjectSetting(db, projectId, REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY)
+          );
+
+        let reviewState: AutoReviewState | null = null;
+        let reviewPromise: Promise<unknown> | null = null;
+        if (postReview) {
+          const reviewedSha = await resolveHeadSha(baseDir);
+          reviewState = { kind: 'running' };
+          reviewPromise = runAutomaticPrReview({
+            db,
+            config,
+            baseDir,
+            projectId,
+            prStatusId: prContext.prStatus.id,
+            metadata,
+            baseSha,
+            reviewedSha,
+            customInstructions,
+            authToken: appToken,
+            dryRun: options.dryRun,
+            filesReviewed: prContext.prStatus.changed_files ?? 0,
+          }).then(
+            (result) => {
+              reviewState = { kind: 'posted', result };
+            },
+            (err: unknown) => {
+              reviewState = { kind: 'failed' };
+              throw err;
+            }
+          );
+          // Errors are handled below, after the comment step finishes.
+          reviewPromise.catch(() => {});
+        }
+
+        let commentError: unknown;
+        let postedComment: PostedGuideComment | null = null;
+        try {
+          postedComment = await generateAndPostGuideComment({
+            config,
+            options,
+            executorName,
+            baseDir,
+            prContext,
+            metadata,
+            nonTestChangeStats,
+            customInstructions,
+            existingComment,
+            appToken,
+            getReviewState: () => reviewState,
+          });
+        } catch (err) {
+          commentError = err;
+        }
+
+        let reviewError: Error | null = null;
+        if (reviewPromise) {
+          try {
+            await reviewPromise;
+          } catch (err) {
+            reviewError = err instanceof Error ? err : new Error(String(err));
+          }
+        }
+
+        // The comment was posted while the review was still running: replace the
+        // in-progress line with the final review status.
+        if (postedComment?.reviewState?.kind === 'running' && reviewState) {
+          try {
+            await updatePullRequestComment(
+              prContext.owner,
+              prContext.repo,
+              postedComment.commentId,
+              buildGuideCommentBody({
+                guide: postedComment.guide,
+                reviewStatus: formatAutoReviewStatus(reviewState),
+                updatedAt: postedComment.updatedAt,
+              }),
+              { authToken: appToken }
+            );
+          } catch (err) {
+            warn(
+              `Failed to update the review status in the guide comment: ${err instanceof Error ? err.message : String(err)}`
+            );
+          }
+        }
+
+        if (reviewError) {
+          if (!commentError) {
+            throw reviewError;
+          }
+          warn(`Automatic review failed: ${reviewError.message}`);
+        }
+
+        if (commentError) {
+          throw commentError;
+        }
+      } catch (err) {
+        await reactToTrigger('confused');
+        throw err;
       }
     },
   });

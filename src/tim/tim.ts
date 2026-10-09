@@ -2086,6 +2086,18 @@ const prReviewGuideCommentCommand = prCommand
     'Also generate review issues and post them as a review (default: project setting)'
   )
   .option('--no-post-review', 'Do not post a review, even if the project setting enables it')
+  .option(
+    '--review-only',
+    'Post only a new automatic review; do not post, check for, or edit the guide comment'
+  )
+  .addOption(
+    new Option(
+      '--trigger-comment-id <id>',
+      'PR comment that requested the review; it gets reactions for progress and failure'
+    )
+      .argParser((value: string) => Number(value))
+      .hideHelp()
+  )
   .option('--no-terminal-input', 'Disable terminal input')
   .option('--non-interactive', 'No user prompts')
   .option('--verbose', 'Verbose output')
@@ -2124,6 +2136,37 @@ prReviewGuideCommentCommand
     const { handlePrReviewGuideCommentStatusCommand } =
       await import('./commands/review_guide_comment.js');
     await handlePrReviewGuideCommentStatusCommand().catch(handleCommandError);
+  });
+
+const prReviewCommandCommand = prCommand
+  .command('review-command')
+  .description('Manage `/tim review` PR comment commands for the current project');
+
+prReviewCommandCommand
+  .command('enable')
+  .description('Respond to `/tim review` PR comments with an automatic review')
+  .action(async (options, command) => {
+    const { handlePrReviewCommandEnableCommand } =
+      await import('./commands/review_guide_comment.js');
+    await handlePrReviewCommandEnableCommand(options, command).catch(handleCommandError);
+  });
+
+prReviewCommandCommand
+  .command('disable')
+  .description('Ignore `/tim review` PR comments')
+  .action(async (options, command) => {
+    const { handlePrReviewCommandDisableCommand } =
+      await import('./commands/review_guide_comment.js');
+    await handlePrReviewCommandDisableCommand(options, command).catch(handleCommandError);
+  });
+
+prReviewCommandCommand
+  .command('status')
+  .description('Show whether `/tim review` PR comments are enabled for the current project')
+  .action(async () => {
+    const { handlePrReviewCommandStatusCommand } =
+      await import('./commands/review_guide_comment.js');
+    await handlePrReviewCommandStatusCommand().catch(handleCommandError);
   });
 
 const githubAppCommand = program

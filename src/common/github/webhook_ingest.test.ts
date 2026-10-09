@@ -1261,6 +1261,7 @@ describe('common/github/webhook_ingest', () => {
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      reviewCommands: [],
       inboxSignals: [],
       errors: [],
     });
@@ -1455,6 +1456,7 @@ describe('common/github/webhook_ingest', () => {
         },
       ],
       reviewsSubmitted: [],
+      reviewCommands: [],
       inboxSignals: [],
       errors: [],
     });
@@ -1466,6 +1468,7 @@ describe('common/github/webhook_ingest', () => {
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      reviewCommands: [],
       inboxSignals: [],
       errors: [],
     });
@@ -1794,6 +1797,8 @@ describe('common/github/webhook_ingest', () => {
       commentCreatedAt?: string | null;
       receivedAt?: string;
       isPullRequest?: boolean;
+      commentId?: number;
+      authorAssociation?: string;
     }): Record<string, unknown> {
       return {
         id: params.id,
@@ -1812,6 +1817,10 @@ describe('common/github/webhook_ingest', () => {
             ...(params.isPullRequest === false ? {} : { pull_request: {} }),
           },
           comment: {
+            ...(params.commentId === undefined ? {} : { id: params.commentId }),
+            ...(params.authorAssociation === undefined
+              ? {}
+              : { author_association: params.authorAssociation }),
             body: params.body === undefined ? 'a comment' : params.body,
             ...(params.commentCreatedAt === undefined
               ? { created_at: '2026-03-30T09:59:00.000Z' }
@@ -1826,6 +1835,78 @@ describe('common/github/webhook_ingest', () => {
         }),
       };
     }
+
+    test('collects /tim review comments from allowed authors', async () => {
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildIssueCommentEvent({
+          id: 90,
+          deliveryId: 'review-command-member',
+          prNumber: 80,
+          author: 'member-user',
+          authorType: 'User',
+          authorAssociation: 'MEMBER',
+          commentId: 5001,
+          body: 'Looks close.\n/tim review',
+          receivedAt: '2026-03-30T10:05:00.000Z',
+        }),
+        buildIssueCommentEvent({
+          id: 91,
+          deliveryId: 'review-command-outsider',
+          prNumber: 80,
+          author: 'outsider',
+          authorType: 'User',
+          authorAssociation: 'CONTRIBUTOR',
+          commentId: 5002,
+          body: '/tim review',
+        }),
+        buildIssueCommentEvent({
+          id: 92,
+          deliveryId: 'review-command-plain',
+          prNumber: 80,
+          author: 'member-user',
+          authorType: 'User',
+          authorAssociation: 'MEMBER',
+          commentId: 5003,
+          body: 'No command here',
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.reviewCommands).toEqual([
+        {
+          owner: 'example',
+          repo: 'repo',
+          prNumber: 80,
+          prUrl: 'https://github.com/example/repo/pull/80',
+          commentId: 5001,
+          commenter: 'member-user',
+          requestedAt: '2026-03-30T10:05:00.000Z',
+        },
+      ]);
+    });
+
+    test('skips /tim review comments received before the side-effect cutoff', async () => {
+      mocks.loadEffectiveConfig.mockResolvedValue({
+        githubWebhooks: { ignoreSideEffectsBefore: '2026-03-30T10:00:00.000Z' },
+      });
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        buildIssueCommentEvent({
+          id: 93,
+          deliveryId: 'review-command-old',
+          prNumber: 80,
+          author: 'member-user',
+          authorAssociation: 'MEMBER',
+          commentId: 5004,
+          body: '/tim review',
+          receivedAt: '2026-03-30T09:00:00.000Z',
+        }),
+      ]);
+
+      const result = await ingestWebhookEvents(db);
+
+      expect(result.reviewCommands).toEqual([]);
+    });
 
     test('dispatches issue_comment events to the handler and populates inboxSignals', async () => {
       mocks.fetchWebhookEvents.mockResolvedValueOnce([

@@ -6,6 +6,7 @@ import type { IngestResult } from '$common/github/webhook_ingest.js';
 const mocks = vi.hoisted(() => ({
   ingestWebhookEvents: vi.fn(),
   processInboxSignals: vi.fn(),
+  triggerReviewCommands: vi.fn(),
 }));
 
 vi.mock('$common/github/webhook_ingest.js', () => ({
@@ -16,6 +17,10 @@ vi.mock('./inbox_producer.js', () => ({
   processInboxSignals: mocks.processInboxSignals,
 }));
 
+vi.mock('./review_command_trigger.js', () => ({
+  triggerReviewCommands: mocks.triggerReviewCommands,
+}));
+
 import { ingestWebhookEventsWithInbox } from './webhook_ingest_orchestrator.js';
 
 function makeResult(overrides: Partial<IngestResult> = {}): IngestResult {
@@ -24,6 +29,7 @@ function makeResult(overrides: Partial<IngestResult> = {}): IngestResult {
     prsUpdated: [],
     prsReadyForReview: [],
     reviewsSubmitted: [],
+    reviewCommands: [],
     inboxSignals: [],
     errors: [],
     ...overrides,
@@ -46,6 +52,57 @@ describe('ingestWebhookEventsWithInbox', () => {
     vi.clearAllMocks();
     mocks.ingestWebhookEvents.mockResolvedValue(makeResult());
     mocks.processInboxSignals.mockResolvedValue([]);
+    mocks.triggerReviewCommands.mockResolvedValue(undefined);
+  });
+
+  test('starts /tim review commands from every ingest', async () => {
+    const reviewCommands = [
+      {
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 17,
+        prUrl: 'https://github.com/example/repo/pull/17',
+        commentId: 55,
+        commenter: 'dana',
+        requestedAt: '2026-06-01T10:00:00.000Z',
+      },
+    ];
+    mocks.ingestWebhookEvents.mockResolvedValue(makeResult({ reviewCommands }));
+
+    await ingestWebhookEventsWithInbox(null as Database);
+
+    expect(mocks.triggerReviewCommands).toHaveBeenCalledWith(null, reviewCommands);
+  });
+
+  test('does not call the review command trigger when there are no requests', async () => {
+    await ingestWebhookEventsWithInbox(null as Database);
+
+    expect(mocks.triggerReviewCommands).not.toHaveBeenCalled();
+  });
+
+  test('a review command failure does not fail the ingest or skip inbox processing', async () => {
+    const result = makeResult({
+      inboxSignals: [makeInboxSignal()],
+      reviewCommands: [
+        {
+          owner: 'example',
+          repo: 'repo',
+          prNumber: 17,
+          prUrl: 'https://github.com/example/repo/pull/17',
+          commentId: 55,
+          commenter: 'dana',
+          requestedAt: '2026-06-01T10:00:00.000Z',
+        },
+      ],
+    });
+    mocks.ingestWebhookEvents.mockResolvedValue(result);
+    mocks.triggerReviewCommands.mockRejectedValue(new Error('trigger failed'));
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(ingestWebhookEventsWithInbox(null as Database)).resolves.toBe(result);
+
+    expect(mocks.processInboxSignals).toHaveBeenCalled();
+    consoleWarn.mockRestore();
   });
 
   test('returns the complete ingest result and processes inbox signals with a supplied manager', async () => {

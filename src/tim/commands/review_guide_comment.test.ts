@@ -27,6 +27,7 @@ vi.mock('../../common/github/identifiers.js', () => ({
 }));
 
 vi.mock('../../common/github/pull_requests.js', () => ({
+  addIssueCommentReaction: vi.fn(),
   findPullRequestCommentByMarker: vi.fn(),
   parseOwnerRepoFromRepositoryId: vi.fn(),
   postPullRequestComment: vi.fn(),
@@ -101,6 +102,7 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { getGitHubAppInstallationTokenForOwner } from '../../common/github/app_auth.js';
 import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
 import {
+  addIssueCommentReaction,
   findPullRequestCommentByMarker,
   parseOwnerRepoFromRepositoryId,
   postPullRequestComment,
@@ -129,6 +131,7 @@ const mockWarn = vi.mocked(warn);
 const mockIsTunnelActive = vi.mocked(isTunnelActive);
 const mockGetGitHubAppInstallationTokenForOwner = vi.mocked(getGitHubAppInstallationTokenForOwner);
 const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
+const mockAddIssueCommentReaction = vi.mocked(addIssueCommentReaction);
 const mockFindPullRequestCommentByMarker = vi.mocked(findPullRequestCommentByMarker);
 const mockParseOwnerRepoFromRepositoryId = vi.mocked(parseOwnerRepoFromRepositoryId);
 const mockPostPullRequestComment = vi.mocked(postPullRequestComment);
@@ -227,6 +230,7 @@ describe('review_guide_comment', () => {
     } as any);
     mockParseOwnerRepoFromRepositoryId.mockReturnValue({ owner: 'acme', repo: 'repo' });
     mockFindPullRequestCommentByMarker.mockResolvedValue(null);
+    mockAddIssueCommentReaction.mockResolvedValue(undefined);
     mockCheckoutPrBranch.mockImplementation(async (): Promise<void> => {
       await $`git checkout -q --detach feature/review-guide`.cwd(tempDir);
     });
@@ -675,6 +679,94 @@ describe('review_guide_comment', () => {
     expect(mockPostPullRequestComment.mock.calls[0]?.[3]).toBe(
       '<!-- tim:pr-review-guide -->\n## Review Guide\n\nGenerated guide.\n'
     );
+  });
+  test('review-only mode posts only a review and never touches the guide comment', async () => {
+    mockFindPullRequestCommentByMarker.mockResolvedValue({ id: 456, htmlUrl: 'https://c/456' });
+
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', reviewOnly: true, triggerCommentId: 777 },
+      makeCommand()
+    );
+
+    expect(mockFindPullRequestCommentByMarker).not.toHaveBeenCalled();
+    expect(mockBuildExecutorAndLog).not.toHaveBeenCalled();
+    expect(mockPostPullRequestComment).not.toHaveBeenCalled();
+    expect(mockUpdatePullRequestComment).not.toHaveBeenCalled();
+    expect(mockGetProjectSetting).not.toHaveBeenCalled();
+    expect(mockRunAutomaticPrReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseSha: mergeBaseSha,
+        authToken: 'app-installation-token',
+        metadata: expect.objectContaining({ prNumber: 42 }),
+      })
+    );
+    expect(mockAddIssueCommentReaction).toHaveBeenCalledTimes(1);
+    expect(mockAddIssueCommentReaction).toHaveBeenCalledWith('acme', 'repo', 777, 'eyes', {
+      authToken: 'app-installation-token',
+    });
+  });
+
+  test('review-only mode adds a confused reaction when the review fails', async () => {
+    mockRunAutomaticPrReview.mockRejectedValue(new Error('review exploded'));
+
+    await expect(
+      handlePrReviewGuideCommentCommand(
+        '42',
+        { executor: 'codex-cli', reviewOnly: true, triggerCommentId: 777 },
+        makeCommand()
+      )
+    ).rejects.toThrow('review exploded');
+
+    expect(mockAddIssueCommentReaction.mock.calls.map((call) => call[3])).toEqual([
+      'eyes',
+      'confused',
+    ]);
+  });
+
+  test('a failed reaction is only a warning', async () => {
+    mockAddIssueCommentReaction.mockRejectedValue(new Error('no permission'));
+
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', reviewOnly: true, triggerCommentId: 777 },
+      makeCommand()
+    );
+
+    expect(mockWarn).toHaveBeenCalledWith(
+      'Failed to add a eyes reaction to comment 777: no permission'
+    );
+    expect(mockRunAutomaticPrReview).toHaveBeenCalled();
+  });
+
+  test('review-only mode without a trigger comment adds no reactions', async () => {
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', reviewOnly: true },
+      makeCommand()
+    );
+
+    expect(mockAddIssueCommentReaction).not.toHaveBeenCalled();
+    expect(mockRunAutomaticPrReview).toHaveBeenCalled();
+  });
+
+  test('rejects conflicting and invalid review-only options before any work', async () => {
+    await expect(
+      handlePrReviewGuideCommentCommand(
+        '42',
+        { reviewOnly: true, postReview: false },
+        makeCommand()
+      )
+    ).rejects.toThrow('--review-only cannot be used with --no-post-review.');
+    await expect(
+      handlePrReviewGuideCommentCommand(
+        '42',
+        { reviewOnly: true, triggerCommentId: Number.NaN },
+        makeCommand()
+      )
+    ).rejects.toThrow('--trigger-comment-id must be a positive integer.');
+
+    expect(mockGatherPrContext).not.toHaveBeenCalled();
   });
 });
 

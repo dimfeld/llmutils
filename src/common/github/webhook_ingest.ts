@@ -9,6 +9,7 @@ import {
   fetchAndUpdatePrReviewThreads,
 } from './pr_status_service.js';
 import { tryCanonicalizePrUrl } from './identifiers.js';
+import { parseReviewCommandEvent, type ReviewCommandRequest } from './review_command.js';
 import {
   handleCheckRunEvent,
   handleIssueCommentEvent,
@@ -362,6 +363,8 @@ export interface IngestResult {
   prsReadyForReview: ReadyForReviewPr[];
   /** Reviews submitted on known PRs during this run (side-effect cutoff already applied). */
   reviewsSubmitted: SubmittedPrReview[];
+  /** `/tim review` PR comments from allowed authors (side-effect cutoff already applied). */
+  reviewCommands: ReviewCommandRequest[];
   /** Raw inbox signals emitted by handlers during this run. */
   inboxSignals: InboxSignal[];
   errors: string[];
@@ -396,6 +399,7 @@ export async function ingestWebhookEvents(
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      reviewCommands: [],
       inboxSignals: [],
       errors: [],
     };
@@ -409,6 +413,7 @@ export async function ingestWebhookEvents(
       prsUpdated: [],
       prsReadyForReview: [],
       reviewsSubmitted: [],
+      reviewCommands: [],
       inboxSignals: [],
       errors: ['WEBHOOK_INTERNAL_API_TOKEN is not configured but TIM_WEBHOOK_SERVER_URL is set'],
     };
@@ -426,6 +431,8 @@ export async function ingestWebhookEvents(
   const prsReadyForReview = new Map<string, ReadyForReviewPr>();
   /** Deduplicated submitted reviews, keyed by "prUrl:author:state". */
   const reviewsSubmitted = new Map<string, SubmittedPrReview>();
+  /** `/tim review` requests, keyed by comment ID. */
+  const reviewCommands = new Map<number, ReviewCommandRequest>();
   /** Deduplicated inbox signals, keyed by kind, PR, actor/target, and event time. */
   const inboxSignals = new Map<string, InboxSignal>();
   const errors: string[] = [];
@@ -534,6 +541,20 @@ export async function ingestWebhookEvents(
               prUrl: result.prUrl,
               readyForReviewAt: event.receivedAt,
             });
+          }
+        }
+
+        if (
+          event.eventType === 'issue_comment' &&
+          isWebhookSideEffectAllowed(config, event.receivedAt)
+        ) {
+          const request = parseReviewCommandEvent(
+            payload,
+            event.repositoryFullName,
+            event.receivedAt
+          );
+          if (request) {
+            reviewCommands.set(request.commentId, request);
           }
         }
 
@@ -697,6 +718,7 @@ export async function ingestWebhookEvents(
     prsUpdated: [...prsUpdated],
     prsReadyForReview: [...prsReadyForReview.values()],
     reviewsSubmitted: [...reviewsSubmitted.values()],
+    reviewCommands: [...reviewCommands.values()],
     inboxSignals: [...inboxSignals.values()],
     errors,
   };

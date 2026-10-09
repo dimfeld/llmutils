@@ -577,6 +577,23 @@ tim pr review-guide-comment enable --no-review  # Post only the guide comment ag
 
 With the review on, tim runs the same issue generation as `tim pr review-guide` (the configured review executors, the Codex simplification pass, and the issue merge step), but it does not generate the full guide. The review runs at the same time as the guide comment. tim stores the result as a normal review, so you can see it in the web interface, and posts all issues except notes as a `COMMENT` review. As in the interactive "Submit review" flow, an issue on a line in the PR diff becomes an inline comment, and all other issues go in the review body under "Additional notes". If the review finds no issues, the posted review says "No issues found." The guide comment starts with a status line for the review. If the comment is posted while the review still runs, the line says that the review is in progress, and tim edits it when the review is done. The final line gives the issue count and a link to the review, or says that the review failed. Edits do not send GitHub notifications. The submission is recorded with the review, and its issues are marked as submitted. `--dry-run` logs the issues and does not post them. If the guide comment already exists and you do not give `--force`, tim does not run the review either, so webhook retries do not post duplicate reviews.
 
+#### `/tim review` PR comments
+
+You can also request an automatic review with a PR comment. Put `/tim review` on a line of its own in a PR conversation comment. tim adds 👀 to the comment, runs the same issue generation as the automatic review above, and posts a new `COMMENT` review from the GitHub App. If the run fails, tim adds 😕 to the comment. This works on draft PRs too. It does not post, check for, or edit the guide comment.
+
+Only comments from repository owners, organization members, and collaborators (`OWNER`, `MEMBER`, or `COLLABORATOR` author association) start a review. tim ignores comments from bots, edited comments, and quoted commands (`> /tim review`). The feature is off by default and needs two switches, as the guide comment does:
+
+```yaml
+githubWebhooks:
+  reviewCommands: true # On the machine that should respond
+```
+
+```bash
+tim pr review-command enable   # Per project; also disable and status
+```
+
+Requests arrive through webhook ingestion, so a review starts on the next webhook poll or PR refresh. The App must subscribe to the "Issue comment" webhook event. The command that runs is `tim pr review-guide-comment <pr> --review-only --trigger-comment-id <id>`. You can also run `tim pr review-guide-comment <pr> --review-only` manually.
+
 See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-interface.md) for implementation details and edge cases.
 
 ### Uploading plan artifacts to PR comments

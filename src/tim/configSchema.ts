@@ -367,6 +367,12 @@ export const githubWebhooksConfigSchema = z
       .describe(
         'Whether to generate review guide comments on pull requests (default false). Gates both the manual command and the webhook auto-trigger.'
       ),
+    reviewCommands: z
+      .boolean()
+      .optional()
+      .describe(
+        'Whether this machine responds to `/tim review` PR comments by posting an automatic review (default false). The project must also opt in with `tim pr review-command enable`.'
+      ),
     ignoreSideEffectsBefore: z
       .string()
       .datetime()

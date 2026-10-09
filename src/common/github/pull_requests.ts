@@ -759,6 +759,25 @@ export async function postPullRequestComment(
   };
 }
 
+export type IssueCommentReaction = 'eyes' | 'confused' | 'rocket' | '+1';
+
+/** Adds a reaction to a PR conversation comment. Reactions do not send notifications. */
+export async function addIssueCommentReaction(
+  owner: string,
+  repo: string,
+  commentId: number,
+  content: IssueCommentReaction,
+  options: GitHubRequestAuthOptions = {}
+): Promise<void> {
+  const octokit = getOctokit(options.authToken);
+  await octokit.rest.reactions.createForIssueComment({
+    owner,
+    repo,
+    comment_id: commentId,
+    content,
+  });
+}
+
 /**
  * Posts an immediate reply to an existing top-level pull request review comment.
  * Unlike addPullRequestReviewThreadReply without a review ID, this REST endpoint

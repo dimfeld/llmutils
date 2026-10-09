@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite';
 import { ingestWebhookEvents, type IngestResult } from '$common/github/webhook_ingest.js';
 
 import { processInboxSignals } from './inbox_producer.js';
+import { triggerReviewCommands } from './review_command_trigger.js';
 import type { SessionManager } from './session_manager.js';
 
 export type InboxSessionManager = Pick<
@@ -18,7 +19,8 @@ export interface WebhookIngestOrchestratorOptions {
 }
 
 /**
- * Ingest webhook events and persist the resulting inbox signals.
+ * Ingest webhook events, start `/tim review` PR comment commands, and persist the
+ * resulting inbox signals.
  *
  * Ingestion errors still reject. Inbox processing happens after successful
  * ingestion and cannot turn a completed ingest into a refresh failure.
@@ -28,6 +30,16 @@ export async function ingestWebhookEventsWithInbox(
   options: WebhookIngestOrchestratorOptions = {}
 ): Promise<IngestResult> {
   const ingestResult = await ingestWebhookEvents(db);
+
+  // Every ingest path advances the shared cursor, so `/tim review` requests must be handled
+  // here. Otherwise a manual refresh would consume them before the poller sees them.
+  if ((ingestResult.reviewCommands?.length ?? 0) > 0) {
+    try {
+      await triggerReviewCommands(db, ingestResult.reviewCommands);
+    } catch (error) {
+      console.warn('[webhook_ingest] Review command processing failed', error);
+    }
+  }
 
   if ((ingestResult.inboxSignals?.length ?? 0) === 0) {
     return ingestResult;

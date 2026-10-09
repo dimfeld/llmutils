@@ -586,3 +586,26 @@ export async function spawnPrReviewGuideCommentProcess(
     cwd
   );
 }
+
+export async function spawnPrReviewCommandProcess(
+  prNumber: number,
+  triggerCommentId: number,
+  cwd: string
+): Promise<SpawnProcessResult> {
+  return spawnPlanTimProcess(
+    describeTarget('pr', prNumber),
+    prNumber,
+    [
+      'pr',
+      'review-guide-comment',
+      String(prNumber),
+      '--review-only',
+      '--trigger-comment-id',
+      String(triggerCommentId),
+      '--auto-workspace',
+      '--no-terminal-input',
+      '--non-interactive',
+    ],
+    cwd
+  );
+}

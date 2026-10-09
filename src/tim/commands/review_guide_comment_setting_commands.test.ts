@@ -30,6 +30,8 @@ vi.mock('../assignments/workspace_identifier.js', () => ({
 }));
 
 import {
+  handlePrReviewCommandDisableCommand,
+  handlePrReviewCommandEnableCommand,
   handlePrReviewGuideCommentDisableCommand,
   handlePrReviewGuideCommentEnableCommand,
 } from './review_guide_comment.js';
@@ -82,6 +84,17 @@ describe('review-guide-comment enable/disable', () => {
 
   test('enable without --review does not turn on reviews', async () => {
     await handlePrReviewGuideCommentEnableCommand({}, undefined);
+    expect(readSetting()).toEqual({ enabled: true });
+  });
+
+  test('review-command enable and disable write their own setting', async () => {
+    await handlePrReviewGuideCommentEnableCommand({}, undefined);
+    await handlePrReviewCommandEnableCommand({}, undefined);
+    expect(getProjectSetting(mocks.db!, projectId, 'reviewCommand')).toEqual({ enabled: true });
+
+    await handlePrReviewCommandDisableCommand({}, undefined);
+    expect(getProjectSetting(mocks.db!, projectId, 'reviewCommand')).toEqual({ enabled: false });
+    // The guide comment setting is separate.
     expect(readSetting()).toEqual({ enabled: true });
   });
 });
