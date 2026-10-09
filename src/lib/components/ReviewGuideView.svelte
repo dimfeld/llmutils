@@ -18,6 +18,7 @@
   } from '$lib/remote/pr_reviews.remote.js';
   import ReviewFilePanel from '$lib/components/ReviewFilePanel.svelte';
   import ReviewGuideFilesView from '$lib/components/ReviewGuideFilesView.svelte';
+  import { buildReviewFileTree, type FileTreeNode } from '$lib/utils/review_file_tree.js';
   import {
     ANNOTATION_KIND_ORDER,
     ANNOTATION_KIND_STYLES,
@@ -215,6 +216,7 @@
   let reviewGuideText = $derived(review.review_guide ?? '');
   let fileIndex = $derived(new ReviewFileIndex(reviewFiles));
   let hasReviewFiles = $derived(fileIndex.changed.length > 0);
+  let fileTree = $derived(buildReviewFileTree(fileIndex.changed.map((entry) => entry.row.path)));
   let parsedGuide = $derived(
     parseMarkdownWithDiffsAndToc(reviewGuideText, {
       splitSections: true,
@@ -375,6 +377,34 @@
   let visibleSectionSlug = $state<string>('');
   let isUserNavigating = $state(false);
   let sectionSidebar = $state<HTMLElement | null>(null);
+
+  let filesView = $state<ReturnType<typeof ReviewGuideFilesView> | null>(null);
+  let filesScroll = $state<HTMLElement | null>(null);
+  let visibleFilePath = $state<string>('');
+  /** Directories closed in the file tree, as `category:path`. */
+  const collapsedTreeDirs = new SvelteSet<string>();
+
+  function toggleTreeDir(key: string): void {
+    if (collapsedTreeDirs.has(key)) collapsedTreeDirs.delete(key);
+    else collapsedTreeDirs.add(key);
+  }
+
+  async function handleFileTreeSelect(path: string): Promise<void> {
+    visibleFilePath = path;
+    await filesView?.revealFile(path);
+  }
+
+  /** Mark the file whose card is at the top of the Files view. */
+  function updateVisibleFile(): void {
+    if (!filesScroll) return;
+    const top = filesScroll.getBoundingClientRect().top + 8;
+    for (const section of filesScroll.querySelectorAll<HTMLElement>('section[data-file-path]')) {
+      if (section.getBoundingClientRect().bottom > top) {
+        visibleFilePath = section.dataset.filePath ?? '';
+        return;
+      }
+    }
+  }
 
   interface NewIssueModalState {
     file: string;
@@ -866,6 +896,15 @@
     if (!slug || !sectionSidebar) return;
     const activeItem = sectionSidebar.querySelector<HTMLElement>(
       `[data-section-slug="${CSS.escape(slug)}"]`
+    );
+    activeItem?.scrollIntoView({ block: 'nearest' });
+  });
+
+  $effect(() => {
+    const path = visibleFilePath;
+    if (!path || !sectionSidebar || activeTab !== 'files') return;
+    const activeItem = sectionSidebar.querySelector<HTMLElement>(
+      `[data-tree-file-path="${CSS.escape(path)}"]`
     );
     activeItem?.scrollIntoView({ block: 'nearest' });
   });
@@ -1441,7 +1480,90 @@
   <Splitpanes theme="tim-split" class="min-h-0 flex-1 pb-6">
     <Pane minSize={20}>
       <div class="flex h-full min-h-0 gap-3">
-        {#if toc.length > 0}
+        {#snippet fileTreeNodes(nodes: FileTreeNode[], category: string, depth: number)}
+          {#each nodes as node (node.path)}
+            {@const indent = `padding-left: ${0.5 + depth * 0.75}rem`}
+            {#if node.kind === 'dir'}
+              {@const key = `${category}:${node.path}`}
+              {@const collapsed = collapsedTreeDirs.has(key)}
+              <li>
+                <button
+                  type="button"
+                  style={indent}
+                  class="flex w-full items-center gap-1 rounded py-0.5 pr-2 text-left text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  aria-expanded={!collapsed}
+                  onclick={() => toggleTreeDir(key)}
+                  title={node.path}
+                >
+                  {#if collapsed}
+                    <ChevronRight class="size-3.5 shrink-0" />
+                  {:else}
+                    <ChevronDown class="size-3.5 shrink-0" />
+                  {/if}
+                  <span class="min-w-0 truncate">{node.name}/</span>
+                </button>
+                {#if !collapsed}
+                  <ul>
+                    {@render fileTreeNodes(node.children, category, depth + 1)}
+                  </ul>
+                {/if}
+              </li>
+            {:else}
+              {@const viewed = viewedFiles.has(node.path)}
+              {@const uncovered = guideCoverage.get(node.path)?.uncoveredLineCount ?? 0}
+              <li>
+                <button
+                  type="button"
+                  data-tree-file-path={node.path}
+                  style="padding-left: {0.5 + depth * 0.75 + 1.125}rem"
+                  class="flex w-full items-center gap-1.5 rounded py-0.5 pr-2 text-left text-sm transition-colors {visibleFilePath ===
+                  node.path
+                    ? 'bg-muted font-medium text-foreground'
+                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}"
+                  aria-current={visibleFilePath === node.path ? 'true' : undefined}
+                  title={uncovered > 0
+                    ? `${node.path} (${uncovered} changed lines not in the guide)`
+                    : node.path}
+                  onclick={() => handleFileTreeSelect(node.path)}
+                >
+                  <span
+                    class="min-w-0 flex-1 truncate font-mono text-xs {viewed
+                      ? 'line-through opacity-60'
+                      : ''}">{node.name}</span
+                  >
+                  {#if uncovered > 0}
+                    <span class="size-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true"
+                    ></span>
+                  {/if}
+                </button>
+              </li>
+            {/if}
+          {/each}
+        {/snippet}
+        {#if activeTab === 'files' && hasReviewFiles}
+          <nav
+            bind:this={sectionSidebar}
+            aria-label="Changed files"
+            class="w-72 shrink-0 overflow-y-auto border-r border-border pr-2"
+          >
+            {#each fileTree as group (group.category)}
+              {@const viewedInGroup = group.paths.filter((path) => viewedFiles.has(path)).length}
+              <div class="mb-2">
+                <div
+                  class="flex items-baseline justify-between px-2 pt-1 pb-0.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                >
+                  <span>{group.label}</span>
+                  <span class="font-normal normal-case" title="Files viewed"
+                    >{viewedInGroup}/{group.paths.length}</span
+                  >
+                </div>
+                <ul class="space-y-px">
+                  {@render fileTreeNodes(group.nodes, group.category, 0)}
+                </ul>
+              </div>
+            {/each}
+          </nav>
+        {:else if toc.length > 0}
           <nav
             bind:this={sectionSidebar}
             aria-label="Review guide sections"
@@ -1499,7 +1621,13 @@
                   tab.id
                     ? 'border-foreground font-medium text-foreground'
                     : 'border-transparent text-muted-foreground hover:text-foreground'}"
-                  onclick={() => (activeTab = tab.id as GuideTab)}
+                  onclick={async () => {
+                    activeTab = tab.id as GuideTab;
+                    if (activeTab === 'files') {
+                      await tick();
+                      updateVisibleFile();
+                    }
+                  }}
                 >
                   {tab.label}
                 </button>
@@ -1507,9 +1635,15 @@
             </div>
           {/if}
           {#if activeTab === 'files' && hasReviewFiles}
-            <div class="min-h-0 flex-1 overflow-y-auto pr-1">
+            <div
+              class="min-h-0 flex-1 overflow-y-auto pr-1"
+              bind:this={filesScroll}
+              onscroll={updateVisibleFile}
+            >
               <ReviewGuideFilesView
+                bind:this={filesView}
                 files={fileIndex.changed}
+                groups={fileTree}
                 coverage={guideCoverage}
                 {toc}
                 issues={annotatedIssues}

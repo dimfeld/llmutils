@@ -497,7 +497,7 @@ The guide model shows code with `<diff file="..." start="..." end="..."/>` tags 
 
 - expand unchanged lines around each diff,
 - open any mentioned file in a side panel by clicking its path,
-- show a **Files** tab with every changed file and mark the changed lines that the guide does not show,
+- show a **Files** tab with every changed file, grouped into implementation, documentation, and tests in a sidebar file tree, and mark the changed lines that the guide does not show,
 - track **Viewed** sections and files,
 - collapse sections that the model marked as `skim` or `mechanical` reading priority.
 
