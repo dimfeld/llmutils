@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { invalidateAll } from '$app/navigation';
+  import { invalidateAll, replaceState } from '$app/navigation';
   import type { DiffLineAnnotation, FileDiffOptions } from '@pierre/diffs';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
@@ -39,7 +39,12 @@
   import CopyButton from '$lib/components/CopyButton.svelte';
   import MarkdownContent, { type DiffOverrides } from '$lib/components/MarkdownContent.svelte';
   import PrReviewThreadList from '$lib/components/PrReviewThreadList.svelte';
-  import { computeReviewGuideDiffOverrideFlags } from '$lib/components/review_guide_view_utils.js';
+  import {
+    computeReviewGuideDiffOverrideFlags,
+    readReviewGuideLocation,
+    writeReviewGuideLocation,
+    type ReviewGuideLocation,
+  } from '$lib/components/review_guide_view_utils.js';
   import {
     parseMarkdownWithDiffsAndToc,
     type MarkdownSegment,
@@ -163,6 +168,11 @@
       guideDiffStyle = storedStyle;
     }
     virtualizeDiffs = readReviewGuideVirtualizationPreference(localStorage);
+
+    mountedPathname = window.location.pathname;
+    void applyGuideLocation(readReviewGuideLocation(window.location.search)).finally(() => {
+      urlSyncEnabled = true;
+    });
   });
 
   function openSubmitDialog() {
@@ -758,6 +768,32 @@
     },
   });
 
+  function isChangedFile(path: string | null | undefined): boolean {
+    return fileIndex.get(path)?.row.kind === 'changed';
+  }
+
+  /**
+   * On the Files tab, jump to the issue in the file's full diff. Otherwise, or
+   * when that diff does not show the issue, jump to it in the guide.
+   */
+  async function handleJumpToIssue(issue: ReviewIssueRow): Promise<void> {
+    if (activeTab === 'files' && issue.file && isChangedFile(issue.file)) {
+      visibleFilePath = issue.file;
+      const node = await filesView?.revealIssue(issue.id, issue.file);
+      if (node) {
+        annotationHighlight?.cancel();
+        annotationHighlight = highlightAnnotationNode(node);
+        return;
+      }
+    }
+    if (!issueIdsWithAnnotation.has(issue.id)) return;
+    if (activeTab !== 'guide') {
+      await selectTab('guide');
+      await tick();
+    }
+    await handleJumpToDiff(issue);
+  }
+
   interface GuideReviewThreadTarget {
     filename: string;
     patch: string;
@@ -817,6 +853,8 @@
   });
 
   onDestroy(() => {
+    clearTimeout(urlSyncTimer);
+    urlSyncEnabled = false;
     annotationClick.cancel();
     annotationHighlight?.cancel();
     intersectionObserver?.disconnect();
@@ -970,6 +1008,63 @@
       );
     };
   });
+
+  // The query string records the tab and the section or file at the top, so
+  // Back, Forward, and a reload restore them. Changes replace the current
+  // history entry and never add one.
+  let mountedPathname = '';
+  let urlSyncEnabled = false;
+  let urlSyncTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function currentGuideLocation(): ReviewGuideLocation {
+    return {
+      tab: activeTab,
+      section: visibleSectionSlug || null,
+      file: visibleFilePath || null,
+    };
+  }
+
+  function writeGuideUrl(): void {
+    urlSyncTimer = undefined;
+    if (!urlSyncEnabled || window.location.pathname !== mountedPathname) return;
+    const href = writeReviewGuideLocation(window.location.href, currentGuideLocation());
+    if (href !== window.location.href) replaceState(href, {});
+  }
+
+  $effect(() => {
+    currentGuideLocation();
+    if (!urlSyncEnabled) return;
+    clearTimeout(urlSyncTimer);
+    // Debounce, because browsers limit how often a page can replace history entries.
+    urlSyncTimer = setTimeout(writeGuideUrl, 300);
+  });
+
+  async function selectTab(tab: GuideTab): Promise<void> {
+    if (tab === activeTab) return;
+    activeTab = tab;
+    if (tab === 'files') {
+      await tick();
+      updateVisibleFile();
+    }
+  }
+
+  async function applyGuideLocation(guideLocation: ReviewGuideLocation): Promise<void> {
+    if (guideLocation.tab === 'files' && hasReviewFiles) {
+      activeTab = 'files';
+      await tick();
+      if (guideLocation.file) {
+        visibleFilePath = guideLocation.file;
+        await filesView?.revealFile(guideLocation.file);
+      } else {
+        filesScroll?.scrollTo({ top: 0 });
+        updateVisibleFile();
+      }
+    } else if (guideLocation.section && toc.some((entry) => entry.slug === guideLocation.section)) {
+      await handleTocSelect(guideLocation.section);
+    } else {
+      activeTab = 'guide';
+    }
+  }
 
   async function handleTocSelect(slug: string) {
     if (!slug) return;
@@ -1621,13 +1716,7 @@
                   tab.id
                     ? 'border-foreground font-medium text-foreground'
                     : 'border-transparent text-muted-foreground hover:text-foreground'}"
-                  onclick={async () => {
-                    activeTab = tab.id as GuideTab;
-                    if (activeTab === 'files') {
-                      await tick();
-                      updateVisibleFile();
-                    }
-                  }}
+                  onclick={() => selectTab(tab.id as GuideTab)}
                 >
                   {tab.label}
                 </button>
@@ -1865,8 +1954,9 @@
                       onDelete={handleDeleteIssue}
                       onAddToPlan={handleAddIssueToPlan}
                       onSaveEdit={handleSaveEdit}
-                      onJumpToDiff={issueIdsWithAnnotation.has(issue.id)
-                        ? handleJumpToDiff
+                      onJumpToDiff={issueIdsWithAnnotation.has(issue.id) ||
+                      (activeTab === 'files' && isChangedFile(issue.file))
+                        ? handleJumpToIssue
                         : undefined}
                       onCopyError={(message) => (issueActionError = message)}
                       onConvertQuestion={allowGithubSubmission &&
@@ -1940,7 +2030,13 @@
                   <div class="mt-2 flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
-                      onclick={() => handleJumpToReviewThreadDiff({ id: thread.thread.id })}
+                      onclick={async () => {
+                        if (activeTab !== 'guide') {
+                          await selectTab('guide');
+                          await tick();
+                        }
+                        await handleJumpToReviewThreadDiff({ id: thread.thread.id });
+                      }}
                       class="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground @sm:text-xs dark:hover:bg-gray-800"
                       title="Jump to this review thread in the diff"
                     >
