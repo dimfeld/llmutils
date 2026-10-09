@@ -32,6 +32,11 @@ Set \`type\` to one of:
 - Multi-line annotation content is rendered verbatim with whitespace preserved. Keep annotations short; long explanations belong in the section prose.
 - Do not place annotation tags inside fenced code blocks; tags inside fences are treated as literal text and are not extracted.`;
 
+const ISSUE_LINE_NUMBERS_SECTION = `## Issue Line Numbers
+- Set \`line\` to a line number or range in the file itself: the new-side line in the file at the reviewed revision, or the old-side line for code that the change deletes.
+- Do not use line positions from the diff output. If a large diff output was saved to a file and you read it with line numbers, those numbers are positions in the diff, not lines in the source file.
+- Before you report an issue, open the file at the reviewed revision and confirm that the line number points to the code that the issue describes.`;
+
 const ASSUME_CHECKS_PASS_SECTION = `## Check Assumptions
 Do not run tests, type checking, linting, formatting, or similar verification commands. Assume automated checks pass unless the provided context already shows otherwise.`;
 
@@ -574,6 +579,8 @@ ${buildReviewerCriticalIssuesGuidance()}
 
 ${buildSiblingPlanReviewGuidance(metadata)}
 
+${ISSUE_LINE_NUMBERS_SECTION}
+
 ${ASSUME_CHECKS_PASS_SECTION}
 
 ## Review Requirements
@@ -609,6 +616,8 @@ ${formatSubjectMetadata(metadata)}
 ${getDiffInstructions(metadata, useJj)}
 
 ${buildReviewerSimplificationGuidance()}
+
+${ISSUE_LINE_NUMBERS_SECTION}
 
 ${ASSUME_CHECKS_PASS_SECTION}
 
