@@ -564,6 +564,19 @@ tim pr review-guide-comment disable
 
 Like Slack digest settings, the per-project opt-in is stored as a per-project database setting, not in committed config. The automatic path additionally requires the global `githubWebhooks.reviewGuideComments` config above to be set. With both enabled, the webhook trigger spawns a `tim pr review-guide-comment` process in the project's primary workspace for each newly-ready PR. The comment is posted at most once per PR — before posting, tim looks for its hidden marker (`<!-- tim:pr-review-guide -->`) in the PR's existing comments and skips if one is already present. Run the command manually with `--force` to refresh the existing marked comment instead; refreshed comments include an `Updated at <timestamp>` footer, and a new comment is created if none exists. Posting uses the configured GitHub App installation token for the PR owner; it does not use `GITHUB_TOKEN` or `gh auth token`.
 
+#### Automatic reviews with the guide comment
+
+The project setting can also make the command run a review and post its issues as a GitHub review from the App identity:
+
+```bash
+tim pr review-guide-comment enable --review     # Post a review together with the guide comment
+tim pr review-guide-comment enable --no-review  # Post only the guide comment again
+```
+
+`disable` and `enable` without `--review` keep the stored review value. For one manual run, `--post-review` or `--no-post-review` overrides the setting.
+
+With the review on, tim runs the same issue generation as `tim pr review-guide` (the configured review executors, the Codex simplification pass, and the issue merge step), but it does not generate the full guide. The review runs at the same time as the guide comment. tim stores the result as a normal review, so you can see it in the web interface, and posts all issues except notes as a `COMMENT` review. As in the interactive "Submit review" flow, an issue on a line in the PR diff becomes an inline comment, and all other issues go in the review body under "Additional notes". If the review finds no issues, the posted review says "No issues found." The guide comment starts with a status line for the review. If the comment is posted while the review still runs, the line says that the review is in progress, and tim edits it when the review is done. The final line gives the issue count and a link to the review, or says that the review failed. Edits do not send GitHub notifications. The submission is recorded with the review, and its issues are marked as submitted. `--dry-run` logs the issues and does not post them. If the guide comment already exists and you do not give `--force`, tim does not run the review either, so webhook retries do not post duplicate reviews.
+
 See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-interface.md) for implementation details and edge cases.
 
 ### Uploading plan artifacts to PR comments

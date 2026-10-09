@@ -6,6 +6,7 @@ import { getGitRoot, getUsingJj } from '../../common/git.js';
 import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
 import { getGitHubAppInstallationTokenForOwner } from '../../common/github/app_auth.js';
 import {
+  isReviewGuideCommentPostReviewEnabled,
   parseReviewGuideCommentProjectSetting,
   REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY,
   type ReviewGuideCommentProjectSetting,
@@ -43,6 +44,8 @@ import {
 import { loadCustomReviewInstructions, resolveProjectContextForRepo } from './review_workflow.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { LATEST_GPT5_MODEL } from '../constants.js';
+import type { TimConfig } from '../configSchema.js';
+import { runAutomaticPrReview, type AutomaticPrReviewResult } from './review_guide_auto_review.js';
 
 /** Hidden marker used to detect an existing review-guide comment so we post at most one per PR. */
 export const REVIEW_GUIDE_COMMENT_MARKER = '<!-- tim:pr-review-guide -->';
@@ -64,6 +67,11 @@ export interface PrReviewGuideCommentOptions {
   force?: boolean;
   /** Generate and print the guide, but do not post it to GitHub. */
   dryRun?: boolean;
+  /**
+   * Also generate review issues and post them as a GitHub review. When unset, the
+   * project's reviewGuideComment.postReview setting decides.
+   */
+  postReview?: boolean;
   verbose?: boolean;
 }
 
@@ -172,37 +180,55 @@ async function resolveCurrentProject(cwd: string = process.cwd()): Promise<Proje
 }
 
 async function writeReviewGuideCommentSetting(
-  enabled: boolean,
+  patch: ReviewGuideCommentProjectSetting,
   command: RootCommandLike | undefined
-): Promise<Project> {
+): Promise<{ project: Project; setting: ReviewGuideCommentProjectSetting }> {
   const globalOpts = getRootOptions(command);
   const config = await loadEffectiveConfig(globalOpts.config, { cwd: process.cwd() });
   const project = await resolveCurrentProject();
-  const setting: ReviewGuideCommentProjectSetting = { enabled };
+  const db = getDatabase();
+  const existing = parseReviewGuideCommentProjectSetting(
+    getProjectSetting(db, project.id, REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY)
+  );
+  const setting: ReviewGuideCommentProjectSetting = { ...existing, ...patch };
   await writeProjectSettingSet(
-    getDatabase(),
+    db,
     config,
     project.id,
     REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY,
     setting,
     'latest'
   );
-  return project;
+  return { project, setting };
+}
+
+export interface PrReviewGuideCommentEnableOptions {
+  /** Sets the postReview field. Named `review` so it does not collide with the parent command's --post-review. */
+  review?: boolean;
 }
 
 export async function handlePrReviewGuideCommentEnableCommand(
-  _options: Record<string, never>,
+  options: PrReviewGuideCommentEnableOptions,
   command: RootCommandLike | undefined
 ): Promise<void> {
-  const project = await writeReviewGuideCommentSetting(true, command);
+  const { project, setting } = await writeReviewGuideCommentSetting(
+    {
+      enabled: true,
+      ...(options.review !== undefined ? { postReview: options.review } : {}),
+    },
+    command
+  );
   log(`Enabled automatic PR review-guide comments for ${project.repository_id}.`);
+  log(
+    `Automatic reviews with inline issue comments are ${setting.postReview === true ? 'enabled' : 'disabled'}.`
+  );
 }
 
 export async function handlePrReviewGuideCommentDisableCommand(
   _options: Record<string, never>,
   command: RootCommandLike | undefined
 ): Promise<void> {
-  const project = await writeReviewGuideCommentSetting(false, command);
+  const { project } = await writeReviewGuideCommentSetting({ enabled: false }, command);
   log(`Disabled automatic PR review-guide comments for ${project.repository_id}.`);
 }
 
@@ -212,7 +238,188 @@ export async function handlePrReviewGuideCommentStatusCommand(): Promise<void> {
     getProjectSetting(getDatabase(), project.id, REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY)
   );
   const status = setting?.enabled === true ? 'enabled' : 'disabled';
+  const reviewStatus = setting?.postReview === true ? 'enabled' : 'disabled';
   log(`Automatic PR review-guide comments are ${status} for ${project.repository_id}.`);
+  log(`Automatic reviews with inline issue comments are ${reviewStatus}.`);
+}
+
+async function resolveHeadSha(baseDir: string): Promise<string> {
+  const result = await $`git rev-parse HEAD`.cwd(baseDir).quiet().nothrow();
+  const sha = result.stdout.toString().trim();
+  if (result.exitCode !== 0 || !sha) {
+    throw new Error(
+      `Failed to resolve the checked-out PR head commit: ${result.stderr.toString().trim() || 'git rev-parse failed.'}`
+    );
+  }
+  return sha;
+}
+
+/** State of the automatic review that runs next to the guide comment. */
+export type AutoReviewState =
+  | { kind: 'running' }
+  | { kind: 'posted'; result: AutomaticPrReviewResult }
+  | { kind: 'failed' };
+
+export function formatAutoReviewStatus(state: AutoReviewState): string {
+  if (state.kind === 'running') {
+    return '⏳ An automated review is in progress. This comment will update when the review is posted.';
+  }
+  if (state.kind === 'failed') {
+    return '⚠️ The automated review failed.';
+  }
+
+  const { issueCount, githubReviewUrl } = state.result;
+  const link = githubReviewUrl ? ` [View the review](${githubReviewUrl}).` : '';
+  if (issueCount === 0) {
+    return `✅ The automated review found no issues.${link}`;
+  }
+  return `🔎 The automated review found ${issueCount} ${issueCount === 1 ? 'issue' : 'issues'}.${link}`;
+}
+
+export function buildGuideCommentBody(options: {
+  guide: string;
+  reviewStatus: string | null;
+  updatedAt: string | null;
+}): string {
+  const status = options.reviewStatus ? `> ${options.reviewStatus}\n\n` : '';
+  const footer = options.updatedAt
+    ? `\n\n---\n<sub>${UPDATED_AT_FOOTER_PREFIX} ${options.updatedAt}</sub>`
+    : '';
+  return `${REVIEW_GUIDE_COMMENT_MARKER}\n${status}${options.guide}${footer}\n`;
+}
+
+/** A posted guide comment, with what is needed to edit its review status line later. */
+interface PostedGuideComment {
+  commentId: number;
+  guide: string;
+  updatedAt: string | null;
+  /** The status line in the posted body, or null if it had none. */
+  reviewState: AutoReviewState | null;
+}
+
+async function generateAndPostGuideComment(args: {
+  config: TimConfig;
+  options: PrReviewGuideCommentOptions;
+  executorName: string;
+  baseDir: string;
+  prContext: Awaited<ReturnType<typeof gatherPrContext>>;
+  metadata: PrReviewMetadata;
+  nonTestChangeStats: string | null;
+  customInstructions: string | undefined;
+  existingComment: Awaited<ReturnType<typeof findPullRequestCommentByMarker>>;
+  appToken: string;
+  /** Returns the automatic review state when the comment is posted, or null with no review. */
+  getReviewState: () => AutoReviewState | null;
+}): Promise<PostedGuideComment | null> {
+  const { config, options, executorName, baseDir, prContext, existingComment, appToken } = args;
+
+  const outputDir = path.join(baseDir, TMP_DIR);
+  const outputPath = path.join(outputDir, `pr-review-guide-comment-${prContext.prNumber}.md`);
+  await fs.mkdir(outputDir, { recursive: true });
+
+  const configModel =
+    executorName === ClaudeCodeExecutorName
+      ? config.reviewGuideComments?.model?.claude
+      : config.reviewGuideComments?.model?.codex;
+
+  const executor = buildExecutorAndLog(
+    executorName,
+    {
+      baseDir,
+      model:
+        options.model ??
+        configModel ??
+        (executorName === CodexCliExecutorName ? LATEST_GPT5_MODEL : undefined),
+      terminalInput: false,
+      noninteractive: true,
+      timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(config, baseDir, {
+        branch: prContext.headBranch,
+      }),
+    },
+    config,
+    executorName === ClaudeCodeExecutorName ? { reasoningEffort: 'medium' } : {}
+  );
+
+  try {
+    await executor.execute(
+      buildReviewGuideCommentPrompt({
+        metadata: args.metadata,
+        outputPath,
+        // checkoutPrBranch uses Git fetch/checkout even for colocated jj repositories, so the
+        // executor must diff against the detached Git HEAD instead of the jj working-copy revision.
+        useJj: false,
+        nonTestChangeStats: args.nonTestChangeStats,
+        customInstructions: args.customInstructions,
+        commentInstructions: config.reviewGuideComments?.instructions,
+      }),
+      {
+        planId: `pr-${prContext.prNumber}`,
+        planTitle: `PR review guide comment: ${prContext.prUrl}`,
+        planFilePath: '',
+        captureOutput: 'result',
+        executionMode: 'bare',
+      }
+    );
+
+    let guide: string;
+    try {
+      guide = (await fs.readFile(outputPath, 'utf8')).trim();
+    } catch (err) {
+      throw new Error(
+        `The executor completed but did not write the review guide to ${outputPath}.`,
+        { cause: err }
+      );
+    }
+
+    if (!guide) {
+      throw new Error('The executor produced an empty review guide; nothing to post.');
+    }
+
+    log(guide);
+
+    if (options.dryRun === true) {
+      log('Dry run: not posting review guide comment.');
+      return null;
+    }
+
+    const reviewState = args.getReviewState();
+    const updatedAt = options.force && existingComment ? new Date().toISOString() : null;
+    const body = buildGuideCommentBody({
+      guide,
+      reviewStatus: reviewState ? formatAutoReviewStatus(reviewState) : null,
+      updatedAt,
+    });
+
+    if (options.force && existingComment) {
+      const updated = await updatePullRequestComment(
+        prContext.owner,
+        prContext.repo,
+        existingComment.id,
+        body,
+        { authToken: appToken }
+      );
+      log(
+        `Updated review guide comment for ${prContext.prUrl}: ${updated.htmlUrl ?? `comment #${updated.id}`}`
+      );
+      return { commentId: updated.id, guide, updatedAt, reviewState };
+    }
+
+    const posted = await postPullRequestComment(
+      prContext.owner,
+      prContext.repo,
+      prContext.prNumber,
+      body,
+      { authToken: appToken }
+    );
+    log(
+      `Posted review guide comment to ${prContext.prUrl}: ${posted.htmlUrl ?? `comment #${posted.id}`}`
+    );
+    return { commentId: posted.id, guide, updatedAt, reviewState };
+  } finally {
+    await fs
+      .rm(outputPath, { force: true })
+      .catch((err) => warn(`Failed to clean up ${outputPath}: ${String(err)}`));
+  }
 }
 
 export async function handlePrReviewGuideCommentCommand(
@@ -266,7 +473,7 @@ export async function handlePrReviewGuideCommentCommand(
 
       // Validate that the current repository is the one the PR belongs to before checking out
       // its branch, mirroring `tim pr review-guide`.
-      const { repoRoot } = await resolveProjectContextForRepo(db, initialRepoRoot);
+      const { repoRoot, projectId } = await resolveProjectContextForRepo(db, initialRepoRoot);
       const repoIdentity = await getRepositoryIdentity({ cwd: repoRoot });
       const parsedRepositoryId = parseOwnerRepoFromRepositoryId(repoIdentity.repositoryId);
       if (!parsedRepositoryId) {
@@ -339,9 +546,6 @@ export async function handlePrReviewGuideCommentCommand(
         cwd: baseDir,
       });
 
-      // checkoutPrBranch uses Git fetch/checkout even for colocated jj repositories, so the
-      // executor must diff against the detached Git HEAD instead of the jj working-copy revision.
-      const useJjDiffInstructions = false;
       const remoteBaseRef = `origin/${prContext.baseBranch}`;
       const mergeBaseResult = await $`git merge-base HEAD ${remoteBaseRef}`
         .cwd(baseDir)
@@ -358,102 +562,103 @@ export async function handlePrReviewGuideCommentCommand(
       const customInstructions = await loadCustomReviewInstructions(config, baseDir);
       const metadata = buildPrMetadata(prContext, baseSha);
 
-      const outputDir = path.join(baseDir, TMP_DIR);
-      const outputPath = path.join(outputDir, `pr-review-guide-comment-${prContext.prNumber}.md`);
-      await fs.mkdir(outputDir, { recursive: true });
-
-      const configModel =
-        executorName === ClaudeCodeExecutorName
-          ? config.reviewGuideComments?.model?.claude
-          : config.reviewGuideComments?.model?.codex;
-
-      const executor = buildExecutorAndLog(
-        executorName,
-        {
-          baseDir,
-          model:
-            options.model ??
-            configModel ??
-            (executorName === CodexCliExecutorName ? LATEST_GPT5_MODEL : undefined),
-          terminalInput: false,
-          noninteractive: true,
-          timEnvironment: buildTimWorkspaceCommandEnvironmentOptionsForPath(config, baseDir, {
-            branch: prContext.headBranch,
-          }),
-        },
-        config,
-        executorName === ClaudeCodeExecutorName ? { reasoningEffort: 'medium' } : {}
-      );
-
-      try {
-        await executor.execute(
-          buildReviewGuideCommentPrompt({
-            metadata,
-            outputPath,
-            useJj: useJjDiffInstructions,
-            nonTestChangeStats,
-            customInstructions,
-            commentInstructions: config.reviewGuideComments?.instructions,
-          }),
-          {
-            planId: `pr-${prContext.prNumber}`,
-            planTitle: `PR review guide comment: ${prContext.prUrl}`,
-            planFilePath: '',
-            captureOutput: 'result',
-            executionMode: 'bare',
-          }
+      const postReview =
+        options.postReview ??
+        isReviewGuideCommentPostReviewEnabled(
+          getProjectSetting(db, projectId, REVIEW_GUIDE_COMMENT_PROJECT_SETTING_KEY)
         );
 
-        let guide: string;
+      let reviewState: AutoReviewState | null = null;
+      let reviewPromise: Promise<unknown> | null = null;
+      if (postReview) {
+        const reviewedSha = await resolveHeadSha(baseDir);
+        reviewState = { kind: 'running' };
+        reviewPromise = runAutomaticPrReview({
+          db,
+          config,
+          baseDir,
+          projectId,
+          prStatusId: prContext.prStatus.id,
+          metadata,
+          baseSha,
+          reviewedSha,
+          customInstructions,
+          authToken: appToken,
+          dryRun: options.dryRun,
+          filesReviewed: prContext.prStatus.changed_files ?? 0,
+        }).then(
+          (result) => {
+            reviewState = { kind: 'posted', result };
+          },
+          (err: unknown) => {
+            reviewState = { kind: 'failed' };
+            throw err;
+          }
+        );
+        // Errors are handled below, after the comment step finishes.
+        reviewPromise.catch(() => {});
+      }
+
+      let commentError: unknown;
+      let postedComment: PostedGuideComment | null = null;
+      try {
+        postedComment = await generateAndPostGuideComment({
+          config,
+          options,
+          executorName,
+          baseDir,
+          prContext,
+          metadata,
+          nonTestChangeStats,
+          customInstructions,
+          existingComment,
+          appToken,
+          getReviewState: () => reviewState,
+        });
+      } catch (err) {
+        commentError = err;
+      }
+
+      let reviewError: Error | null = null;
+      if (reviewPromise) {
         try {
-          guide = (await fs.readFile(outputPath, 'utf8')).trim();
+          await reviewPromise;
         } catch (err) {
-          throw new Error(
-            `The executor completed but did not write the review guide to ${outputPath}.`,
-            { cause: err }
-          );
+          reviewError = err instanceof Error ? err : new Error(String(err));
         }
+      }
 
-        if (!guide) {
-          throw new Error('The executor produced an empty review guide; nothing to post.');
-        }
-
-        log(guide);
-
-        if (options.dryRun === true) {
-          log('Dry run: not posting review guide comment.');
-          return;
-        }
-
-        if (options.force && existingComment) {
-          const body = `${REVIEW_GUIDE_COMMENT_MARKER}\n${guide}\n\n---\n<sub>${UPDATED_AT_FOOTER_PREFIX} ${new Date().toISOString()}</sub>\n`;
-          const updated = await updatePullRequestComment(
+      // The comment was posted while the review was still running: replace the
+      // in-progress line with the final review status.
+      if (postedComment?.reviewState?.kind === 'running' && reviewState) {
+        try {
+          await updatePullRequestComment(
             prContext.owner,
             prContext.repo,
-            existingComment.id,
-            body,
+            postedComment.commentId,
+            buildGuideCommentBody({
+              guide: postedComment.guide,
+              reviewStatus: formatAutoReviewStatus(reviewState),
+              updatedAt: postedComment.updatedAt,
+            }),
             { authToken: appToken }
           );
-          log(
-            `Updated review guide comment for ${prContext.prUrl}: ${updated.htmlUrl ?? `comment #${updated.id}`}`
-          );
-        } else {
-          const body = `${REVIEW_GUIDE_COMMENT_MARKER}\n${guide}\n`;
-          const posted = await postPullRequestComment(
-            prContext.owner,
-            prContext.repo,
-            prContext.prNumber,
-            body,
-            { authToken: appToken }
-          );
-          log(
-            `Posted review guide comment to ${prContext.prUrl}: ${posted.htmlUrl ?? `comment #${posted.id}`}`
+        } catch (err) {
+          warn(
+            `Failed to update the review status in the guide comment: ${err instanceof Error ? err.message : String(err)}`
           );
         }
-      } finally {
-        await fs
-          .rm(outputPath, { force: true })
-          .catch((err) => warn(`Failed to clean up ${outputPath}: ${String(err)}`));
+      }
+
+      if (reviewError) {
+        if (!commentError) {
+          throw reviewError;
+        }
+        warn(`Automatic review failed: ${reviewError.message}`);
+      }
+
+      if (commentError) {
+        throw commentError;
       }
     },
   });

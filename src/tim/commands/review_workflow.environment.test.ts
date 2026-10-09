@@ -138,4 +138,58 @@ describe('runReviewGuideWorkflow environment context', () => {
       branch: 'plan-head-ref',
     });
   });
+  test('issuesOnly runs the issue prompts without the review guide', async () => {
+    const baseDir = await mkdtemp(path.join(tmpdir(), 'tim-review-issues-only-'));
+    vi.mocked(getWorkspaceInfoByPath).mockReturnValue({
+      taskId: 'workspace-2',
+      workspacePath: baseDir,
+      workspaceType: 'standard',
+      branch: 'feature',
+      name: 'Workspace 2',
+      createdAt: '2026-06-01T00:00:00.000Z',
+    });
+    const planTitles: string[] = [];
+    vi.mocked(buildExecutorAndLog).mockReturnValue({
+      execute: vi.fn(async (_prompt: string, options: { planTitle: string }) => {
+        planTitles.push(options.planTitle);
+        return JSON.stringify({ issues: [], recommendations: [], actionItems: [] });
+      }),
+      filePathPrefix: '',
+    } as never);
+
+    await runReviewGuideWorkflow({
+      db: {} as never,
+      config: {} as never,
+      baseDir,
+      review: { id: 43 } as never,
+      metadata: {
+        kind: 'pr',
+        prUrl: 'https://github.com/acme/repo/pull/7',
+        prNumber: 7,
+        title: 'PR',
+        author: 'alice',
+        baseBranch: 'main',
+        baseSha: 'base-sha',
+        headBranch: 'feature',
+        owner: 'acme',
+        repo: 'repo',
+      },
+      baseSha: 'base-sha',
+      reviewedSha: 'reviewed-sha',
+      diffCatalog: null,
+      executorSelection: 'both',
+      executorTerminalInput: false,
+      executorNoninteractive: true,
+      issuesOnly: true,
+    });
+
+    // claude issues, codex issues, codex simplification, and the combination step. No guide.
+    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(4);
+    expect(planTitles.some((title) => title.startsWith('PR review guide:'))).toBe(false);
+    expect(vi.mocked(updateReview)).toHaveBeenCalledWith(
+      {},
+      43,
+      expect.objectContaining({ status: 'complete', reviewGuide: null })
+    );
+  });
 });

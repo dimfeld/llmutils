@@ -128,6 +128,8 @@ export interface RunReviewGuideWorkflowOptions {
   completionLabel?: string;
   planTag?: string;
   guideOnly?: boolean;
+  /** Run only the issue prompts. No review guide is generated or stored. */
+  issuesOnly?: boolean;
 }
 
 export function buildReviewGuideWorkflowTimEnvironment(
@@ -1858,8 +1860,10 @@ export async function runReviewGuideWorkflow(
       const hasClaude = selectedExecutorNames.includes('claude-code');
       const hasCodex = selectedExecutorNames.includes('codex-cli');
       const guideExecutorName: ReviewExecutorName | null =
-        options.config.reviewGuide?.executor ??
-        (hasClaude ? 'claude-code' : hasCodex ? 'codex-cli' : null);
+        options.issuesOnly === true
+          ? null
+          : (options.config.reviewGuide?.executor ??
+            (hasClaude ? 'claude-code' : hasCodex ? 'codex-cli' : null));
       const runIssuePrompts = options.guideOnly !== true;
       const concurrentJobCount =
         (guideExecutorName ? 1 : 0) +

@@ -7,12 +7,12 @@ import {
   appendIssuesToBody,
   buildDiffIndex,
   buildReviewComments,
+  fetchPullRequestCompareDiff,
   filterReviewIssuesForSubmission,
   partitionIssuesForSubmission,
   submitPrReview,
   type ReviewIssueForSubmission,
 } from '$common/github/pr_reviews.js';
-import { getOctokit } from '$common/github/octokit.js';
 import * as prStatusService from '$common/github/pr_status_service.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import {
@@ -498,21 +498,7 @@ async function fetchPullRequestDiff(
   baseBranch: string,
   commitSha: string
 ): Promise<string> {
-  const octokit = getOctokit();
-  const response = await octokit.rest.repos.compareCommitsWithBasehead({
-    owner,
-    repo,
-    basehead: `${baseBranch}...${commitSha}`,
-    mediaType: {
-      format: 'diff',
-    },
-  });
-
-  if (typeof response.data !== 'string') {
-    throw new Error('GitHub compareCommitsWithBasehead response was not a diff string');
-  }
-
-  return response.data;
+  return fetchPullRequestCompareDiff({ owner, repo, baseBranch, commitSha });
 }
 
 function isMissingCommitError(err: unknown): boolean {

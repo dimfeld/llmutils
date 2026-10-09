@@ -45,6 +45,14 @@ vi.mock('../db/pr_status.js', () => ({
   getLinkedPlansByPrUrl: vi.fn(),
 }));
 
+vi.mock('../db/project_settings.js', () => ({
+  getProjectSetting: vi.fn(),
+}));
+
+vi.mock('./review_guide_auto_review.js', () => ({
+  runAutomaticPrReview: vi.fn(),
+}));
+
 vi.mock('../executors/index.js', async () => {
   const actual =
     await vi.importActual<typeof import('../executors/index.js')>('../executors/index.js');
@@ -88,7 +96,7 @@ vi.mock('./review_workflow.js', () => ({
 }));
 
 import { getGitRoot, getUsingJj } from '../../common/git.js';
-import { log } from '../../logging.js';
+import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { getGitHubAppInstallationTokenForOwner } from '../../common/github/app_auth.js';
 import { parsePrOrIssueNumber } from '../../common/github/identifiers.js';
@@ -101,16 +109,23 @@ import {
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import { getLinkedPlansByPrUrl } from '../db/pr_status.js';
+import { getProjectSetting } from '../db/project_settings.js';
+import { runAutomaticPrReview } from './review_guide_auto_review.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { runWithHeadlessAdapterIfEnabled, updateHeadlessSessionInfo } from '../headless.js';
 import { gatherPrContext, checkoutPrBranch, resolvePrUrl } from '../utils/pr_context_gathering.js';
 import { loadCustomReviewInstructions, resolveProjectContextForRepo } from './review_workflow.js';
-import { handlePrReviewGuideCommentCommand } from './review_guide_comment.js';
+import {
+  buildGuideCommentBody,
+  formatAutoReviewStatus,
+  handlePrReviewGuideCommentCommand,
+} from './review_guide_comment.js';
 
 const mockGetGitRoot = vi.mocked(getGitRoot);
 const mockGetUsingJj = vi.mocked(getUsingJj);
 const mockLog = vi.mocked(log);
+const mockWarn = vi.mocked(warn);
 const mockIsTunnelActive = vi.mocked(isTunnelActive);
 const mockGetGitHubAppInstallationTokenForOwner = vi.mocked(getGitHubAppInstallationTokenForOwner);
 const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
@@ -121,6 +136,8 @@ const mockUpdatePullRequestComment = vi.mocked(updatePullRequestComment);
 const mockLoadEffectiveConfig = vi.mocked(loadEffectiveConfig);
 const mockGetDatabase = vi.mocked(getDatabase);
 const mockGetLinkedPlansByPrUrl = vi.mocked(getLinkedPlansByPrUrl);
+const mockGetProjectSetting = vi.mocked(getProjectSetting);
+const mockRunAutomaticPrReview = vi.mocked(runAutomaticPrReview);
 const mockBuildExecutorAndLog = vi.mocked(buildExecutorAndLog);
 const mockGetRepositoryIdentity = vi.mocked(getRepositoryIdentity);
 const mockRunWithHeadlessAdapterIfEnabled = vi.mocked(runWithHeadlessAdapterIfEnabled);
@@ -196,7 +213,15 @@ describe('review_guide_comment', () => {
       headSha,
     } as any);
     mockGetLinkedPlansByPrUrl.mockReturnValue(new Map());
-    mockResolveProjectContextForRepo.mockResolvedValue({ repoRoot: tempDir } as any);
+    mockResolveProjectContextForRepo.mockResolvedValue({ repoRoot: tempDir, projectId: 7 });
+    mockGetProjectSetting.mockReturnValue({ enabled: true });
+    mockRunAutomaticPrReview.mockResolvedValue({
+      reviewId: 1,
+      issueCount: 0,
+      githubReviewUrl: null,
+      inlineCount: 0,
+      appendedCount: 0,
+    });
     mockGetRepositoryIdentity.mockResolvedValue({
       repositoryId: 'github:acme/repo',
     } as any);
@@ -426,6 +451,259 @@ describe('review_guide_comment', () => {
     expect(body).toMatch(/<sub>Updated at \d{4}-\d{2}-\d{2}T/);
     expect(mockLog).toHaveBeenCalledWith(
       'Updated review guide comment for https://github.com/acme/repo/pull/42: https://comment/123'
+    );
+  });
+  test('does not post a review when the project setting does not enable it', async () => {
+    await handlePrReviewGuideCommentCommand('42', { executor: 'codex-cli' }, makeCommand());
+
+    expect(mockGetProjectSetting).toHaveBeenCalledWith({}, 7, 'reviewGuideComment');
+    expect(mockRunAutomaticPrReview).not.toHaveBeenCalled();
+    expect(mockPostPullRequestComment).toHaveBeenCalled();
+  });
+
+  test('posts a review alongside the comment when the project setting enables it', async () => {
+    mockGetProjectSetting.mockReturnValue({ enabled: true, postReview: true });
+
+    await handlePrReviewGuideCommentCommand('42', { executor: 'codex-cli' }, makeCommand());
+
+    const headSha = (await $`git rev-parse HEAD`.cwd(tempDir).text()).trim();
+    expect(mockRunAutomaticPrReview).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: 7,
+        prStatusId: 99,
+        baseDir: tempDir,
+        baseSha: mergeBaseSha,
+        reviewedSha: headSha,
+        authToken: 'app-installation-token',
+        metadata: expect.objectContaining({ prUrl: 'https://github.com/acme/repo/pull/42' }),
+      })
+    );
+    expect(mockPostPullRequestComment).toHaveBeenCalled();
+  });
+
+  test('the --no-post-review option overrides the project setting', async () => {
+    mockGetProjectSetting.mockReturnValue({ enabled: true, postReview: true });
+
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', postReview: false },
+      makeCommand()
+    );
+
+    expect(mockRunAutomaticPrReview).not.toHaveBeenCalled();
+  });
+
+  test('passes dry run through to the automatic review', async () => {
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', dryRun: true, postReview: true },
+      makeCommand()
+    );
+
+    expect(mockRunAutomaticPrReview).toHaveBeenCalledWith(
+      expect.objectContaining({ dryRun: true })
+    );
+    expect(mockPostPullRequestComment).not.toHaveBeenCalled();
+  });
+
+  test('skips the review when the guide comment already exists', async () => {
+    mockGetProjectSetting.mockReturnValue({ enabled: true, postReview: true });
+    mockFindPullRequestCommentByMarker.mockResolvedValue({ id: 456, htmlUrl: 'https://c/456' });
+
+    await handlePrReviewGuideCommentCommand('42', { executor: 'codex-cli' }, makeCommand());
+
+    expect(mockRunAutomaticPrReview).not.toHaveBeenCalled();
+    expect(mockPostPullRequestComment).not.toHaveBeenCalled();
+  });
+
+  test('still posts the comment when the review fails, then reports the review error', async () => {
+    mockRunAutomaticPrReview.mockRejectedValue(new Error('review exploded'));
+
+    await expect(
+      handlePrReviewGuideCommentCommand(
+        '42',
+        { executor: 'codex-cli', postReview: true },
+        makeCommand()
+      )
+    ).rejects.toThrow('review exploded');
+
+    expect(mockPostPullRequestComment).toHaveBeenCalled();
+  });
+
+  test('reports the comment error and warns about the review when both fail', async () => {
+    mockRunAutomaticPrReview.mockRejectedValue(new Error('review exploded'));
+    mockPostPullRequestComment.mockRejectedValue(new Error('comment exploded'));
+
+    await expect(
+      handlePrReviewGuideCommentCommand(
+        '42',
+        { executor: 'codex-cli', postReview: true },
+        makeCommand()
+      )
+    ).rejects.toThrow('comment exploded');
+
+    expect(mockWarn).toHaveBeenCalledWith('Automatic review failed: review exploded');
+  });
+  test('posts an in-progress status line, then edits it when the review is posted', async () => {
+    let finishReview: () => void = () => {};
+    mockRunAutomaticPrReview.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishReview = () =>
+            resolve({
+              reviewId: 1,
+              issueCount: 3,
+              githubReviewUrl: 'https://review/1',
+              inlineCount: 2,
+              appendedCount: 1,
+            });
+        })
+    );
+    // The review finishes only after the comment is posted.
+    mockPostPullRequestComment.mockImplementation(async () => {
+      finishReview();
+      return { id: 123, htmlUrl: 'https://comment/123' };
+    });
+
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', postReview: true },
+      makeCommand()
+    );
+
+    const postedBody = mockPostPullRequestComment.mock.calls[0]?.[3] ?? '';
+    expect(postedBody).toContain('> ⏳ An automated review is in progress.');
+    expect(postedBody).toContain('Generated guide.');
+
+    expect(mockUpdatePullRequestComment).toHaveBeenCalledTimes(1);
+    const [owner, repo, commentId, updatedBody, auth] =
+      mockUpdatePullRequestComment.mock.calls[0] ?? [];
+    expect([owner, repo, commentId, auth]).toEqual([
+      'acme',
+      'repo',
+      123,
+      { authToken: 'app-installation-token' },
+    ]);
+    expect(updatedBody).toBe(
+      '<!-- tim:pr-review-guide -->\n> 🔎 The automated review found 3 issues. [View the review](https://review/1).\n\n## Review Guide\n\nGenerated guide.\n'
+    );
+  });
+
+  test('posts the final status directly when the review finishes first', async () => {
+    mockRunAutomaticPrReview.mockResolvedValue({
+      reviewId: 1,
+      issueCount: 0,
+      githubReviewUrl: 'https://review/1',
+      inlineCount: 0,
+      appendedCount: 0,
+    });
+
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', postReview: true },
+      makeCommand()
+    );
+
+    const postedBody = mockPostPullRequestComment.mock.calls[0]?.[3] ?? '';
+    expect(postedBody).toContain(
+      '> ✅ The automated review found no issues. [View the review](https://review/1).'
+    );
+    expect(mockUpdatePullRequestComment).not.toHaveBeenCalled();
+  });
+
+  test('marks the review as failed in the comment when the review fails', async () => {
+    let failReview: () => void = () => {};
+    mockRunAutomaticPrReview.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          failReview = () => reject(new Error('review exploded'));
+        })
+    );
+    mockPostPullRequestComment.mockImplementation(async () => {
+      failReview();
+      return { id: 123, htmlUrl: 'https://comment/123' };
+    });
+
+    await expect(
+      handlePrReviewGuideCommentCommand(
+        '42',
+        { executor: 'codex-cli', postReview: true },
+        makeCommand()
+      )
+    ).rejects.toThrow('review exploded');
+
+    expect(mockUpdatePullRequestComment.mock.calls[0]?.[3]).toContain(
+      '> ⚠️ The automated review failed.'
+    );
+  });
+
+  test('a status edit failure is only a warning', async () => {
+    let finishReview: () => void = () => {};
+    mockRunAutomaticPrReview.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishReview = () =>
+            resolve({
+              reviewId: 1,
+              issueCount: 1,
+              githubReviewUrl: null,
+              inlineCount: 1,
+              appendedCount: 0,
+            });
+        })
+    );
+    mockPostPullRequestComment.mockImplementation(async () => {
+      finishReview();
+      return { id: 123, htmlUrl: 'https://comment/123' };
+    });
+    mockUpdatePullRequestComment.mockRejectedValue(new Error('edit failed'));
+
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', postReview: true },
+      makeCommand()
+    );
+
+    expect(mockWarn).toHaveBeenCalledWith(
+      'Failed to update the review status in the guide comment: edit failed'
+    );
+  });
+
+  test('has no status line when no review runs', async () => {
+    await handlePrReviewGuideCommentCommand('42', { executor: 'codex-cli' }, makeCommand());
+
+    expect(mockPostPullRequestComment.mock.calls[0]?.[3]).toBe(
+      '<!-- tim:pr-review-guide -->\n## Review Guide\n\nGenerated guide.\n'
+    );
+  });
+});
+
+describe('guide comment review status', () => {
+  test('formats each review state', () => {
+    expect(formatAutoReviewStatus({ kind: 'failed' })).toBe('⚠️ The automated review failed.');
+    expect(
+      formatAutoReviewStatus({
+        kind: 'posted',
+        result: {
+          reviewId: 1,
+          issueCount: 1,
+          githubReviewUrl: null,
+          inlineCount: 1,
+          appendedCount: 0,
+        },
+      })
+    ).toBe('🔎 The automated review found 1 issue.');
+  });
+
+  test('keeps the Updated at footer below the guide', () => {
+    expect(
+      buildGuideCommentBody({
+        guide: 'Guide',
+        reviewStatus: 'Status',
+        updatedAt: '2026-10-09T00:00:00.000Z',
+      })
+    ).toBe(
+      '<!-- tim:pr-review-guide -->\n> Status\n\nGuide\n\n---\n<sub>Updated at 2026-10-09T00:00:00.000Z</sub>\n'
     );
   });
 });

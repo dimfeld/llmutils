@@ -2081,6 +2081,11 @@ const prReviewGuideCommentCommand = prCommand
   .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
   .option('--force', 'Update an existing review-guide comment, or post one if none exists')
   .option('--dry-run', 'Generate and print the guide comment without posting it')
+  .option(
+    '--post-review',
+    'Also generate review issues and post them as a review (default: project setting)'
+  )
+  .option('--no-post-review', 'Do not post a review, even if the project setting enables it')
   .option('--no-terminal-input', 'Disable terminal input')
   .option('--non-interactive', 'No user prompts')
   .option('--verbose', 'Verbose output')
@@ -2095,6 +2100,8 @@ const prReviewGuideCommentCommand = prCommand
 prReviewGuideCommentCommand
   .command('enable')
   .description('Enable automatic PR review-guide comments for the current project')
+  .option('--review', 'Also generate review issues and post them as a review')
+  .option('--no-review', 'Post only the guide comment, without a review')
   .action(async (options, command) => {
     const { handlePrReviewGuideCommentEnableCommand } =
       await import('./commands/review_guide_comment.js');

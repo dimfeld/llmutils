@@ -43,6 +43,8 @@ export interface SubmitPrReviewInput {
   event: PrReviewEvent;
   body: string;
   comments: ReviewCommentPayload[];
+  /** Token to submit with, such as a GitHub App installation token. Defaults to the personal token. */
+  authToken?: string | null;
 }
 
 function normalizeDiffPath(diffPath: string): string {
@@ -380,16 +382,45 @@ export function appendIssuesToBody<T extends ReviewIssueForSubmission>(
   return `${body}\n\n## Additional notes\n${noteSections.join('\n\n')}`;
 }
 
+/**
+ * Fetch the `baseBranch...commitSha` comparison diff. This is the same diff GitHub uses
+ * to decide which lines of a PR can take inline review comments.
+ */
+export async function fetchPullRequestCompareDiff(options: {
+  owner: string;
+  repo: string;
+  baseBranch: string;
+  commitSha: string;
+  authToken?: string | null;
+}): Promise<string> {
+  const octokit = getOctokit(options.authToken);
+  const response = await octokit.rest.repos.compareCommitsWithBasehead({
+    owner: options.owner,
+    repo: options.repo,
+    basehead: `${options.baseBranch}...${options.commitSha}`,
+    mediaType: {
+      format: 'diff',
+    },
+  });
+
+  if (typeof response.data !== 'string') {
+    throw new Error('GitHub compareCommitsWithBasehead response was not a diff string');
+  }
+
+  return response.data;
+}
+
 export async function submitPrReview(input: SubmitPrReviewInput): Promise<{
   id: number;
   html_url: string | null;
+  user_login: string | null;
 }> {
   const parsed = await parsePrOrIssueNumber(input.prUrl);
   if (!parsed) {
     throw new Error(`Invalid pull request identifier: ${input.prUrl}`);
   }
 
-  const octokit = getOctokit();
+  const octokit = getOctokit(input.authToken);
   const response = await octokit.rest.pulls.createReview({
     owner: parsed.owner,
     repo: parsed.repo,
@@ -403,5 +434,6 @@ export async function submitPrReview(input: SubmitPrReviewInput): Promise<{
   return {
     id: response.data.id,
     html_url: response.data.html_url ?? null,
+    user_login: response.data.user?.login ?? null,
   };
 }

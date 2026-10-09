@@ -674,6 +674,7 @@ describe('common/github/pr_reviews', () => {
     expect(result).toEqual({
       id: 9001,
       html_url: 'https://github.com/example/repo/pull/42#pullrequestreview-9001',
+      user_login: null,
     });
   });
 });
