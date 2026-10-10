@@ -48,34 +48,54 @@ describe('hasReviewCommand', () => {
 describe('parseReviewCommandEvent', () => {
   test('returns a request for a new PR comment from an allowed author', () => {
     expect(parseReviewCommandEvent(payload({}), 'acme/repo', '2026-10-09T10:00:00Z')).toEqual({
-      owner: 'acme',
-      repo: 'repo',
-      prNumber: 12,
-      prUrl: 'https://github.com/acme/repo/pull/12',
-      commentId: 345,
-      commenter: 'dana',
-      requestedAt: '2026-10-09T10:00:00Z',
+      kind: 'request',
+      request: {
+        owner: 'acme',
+        repo: 'repo',
+        prNumber: 12,
+        prUrl: 'https://github.com/acme/repo/pull/12',
+        commentId: 345,
+        commenter: 'dana',
+        requestedAt: '2026-10-09T10:00:00Z',
+      },
     });
     for (const association of ['OWNER', 'MEMBER']) {
-      expect(parseReviewCommandEvent(payload({ association }), 'acme/repo', 't')).not.toBeNull();
+      expect(parseReviewCommandEvent(payload({ association }), 'acme/repo', 't').kind).toBe(
+        'request'
+      );
     }
   });
 
-  test('ignores other authors, bots, edits, issues, and comments without the command', () => {
-    const cases = [
-      payload({ association: 'CONTRIBUTOR' }),
-      payload({ association: 'NONE' }),
-      payload({ userType: 'Bot' }),
-      payload({ action: 'edited' }),
-      payload({ isPullRequest: false }),
-      payload({ body: 'Nice work' }),
-      null,
-      'not an object',
-    ];
-    for (const value of cases) {
-      expect(parseReviewCommandEvent(value, 'acme/repo', 't')).toBeNull();
+  test('returns none for comments without the command and for bad payloads', () => {
+    for (const value of [payload({ body: 'Nice work' }), null, 'not an object']) {
+      expect(parseReviewCommandEvent(value, 'acme/repo', 't')).toEqual({ kind: 'none' });
     }
-    expect(parseReviewCommandEvent(payload({}), null, 't')).toBeNull();
+  });
+
+  test('gives the reason when it ignores a comment with the command', () => {
+    const cases: Array<[unknown, string | null, string]> = [
+      [
+        payload({ association: 'CONTRIBUTOR' }),
+        'acme/repo',
+        'author association CONTRIBUTOR is not OWNER, MEMBER, or COLLABORATOR',
+      ],
+      [payload({ userType: 'Bot' }), 'acme/repo', 'the comment author is a bot'],
+      [payload({ action: 'edited' }), 'acme/repo', 'comment action is "edited", not "created"'],
+      [
+        payload({ isPullRequest: false }),
+        'acme/repo',
+        'the comment is on an issue, not a pull request',
+      ],
+      [payload({}), null, 'the payload has no repository, PR number, or comment ID'],
+    ];
+    for (const [value, repositoryFullName, reason] of cases) {
+      expect(parseReviewCommandEvent(value, repositoryFullName, 't')).toEqual({
+        kind: 'ignored',
+        reason,
+        target: `${repositoryFullName ?? 'unknown repository'}#12`,
+        commenter: 'dana',
+      });
+    }
   });
 });
 

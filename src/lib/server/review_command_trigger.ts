@@ -28,6 +28,9 @@ export async function triggerReviewCommands(
     try {
       const project = getProject(db, constructGitHubRepositoryId(request.owner, request.repo));
       if (!project) {
+        console.info(
+          `[review-command] skipping /tim review on ${request.prUrl}: ${request.owner}/${request.repo} is not a known project`
+        );
         continue;
       }
 
@@ -41,6 +44,9 @@ export async function triggerReviewCommands(
 
       const config = await loadEffectiveConfig(undefined, { cwd: primaryWorkspacePath });
       if (config.githubWebhooks?.reviewCommands !== true) {
+        console.info(
+          `[review-command] skipping /tim review on ${request.prUrl}: githubWebhooks.reviewCommands is not enabled on this machine`
+        );
         continue;
       }
 
@@ -49,6 +55,9 @@ export async function triggerReviewCommands(
           getProjectSetting(db, project.id, REVIEW_COMMAND_PROJECT_SETTING_KEY)
         )
       ) {
+        console.info(
+          `[review-command] skipping /tim review on ${request.prUrl}: the project has not enabled it (run \`tim pr review-command enable\`)`
+        );
         continue;
       }
 

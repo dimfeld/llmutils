@@ -58,52 +58,74 @@ interface IssueCommentPayload {
   };
 }
 
+export type ReviewCommandParseResult =
+  /** The event is not a comment that contains the command. */
+  | { kind: 'none' }
+  /** The comment contains the command, but tim must not act on it. */
+  | { kind: 'ignored'; reason: string; target: string; commenter: string | null }
+  | { kind: 'request'; request: ReviewCommandRequest };
+
 /**
- * Return the review request in an `issue_comment` webhook payload, or null if the event is
- * not a new PR comment with the command from an allowed author.
+ * Classify an `issue_comment` webhook payload. Only a new PR comment with the command from
+ * an allowed author that is not a bot gives a request. A comment that has the command but
+ * fails a check gives the reason, so the caller can log it.
  */
 export function parseReviewCommandEvent(
   payload: unknown,
   repositoryFullName: string | null,
   receivedAt: string
-): ReviewCommandRequest | null {
-  if (!payload || typeof payload !== 'object' || !repositoryFullName) {
-    return null;
+): ReviewCommandParseResult {
+  if (!payload || typeof payload !== 'object') {
+    return { kind: 'none' };
   }
 
   const { action, issue, comment } = payload as IssueCommentPayload;
-  if (action !== 'created' || !issue?.pull_request || typeof issue.number !== 'number') {
-    return null;
-  }
-  if (typeof comment?.id !== 'number' || typeof comment.body !== 'string') {
-    return null;
-  }
-  if (!hasReviewCommand(comment.body)) {
-    return null;
-  }
-  if (
-    typeof comment.author_association !== 'string' ||
-    !ALLOWED_AUTHOR_ASSOCIATIONS.has(comment.author_association)
-  ) {
-    return null;
-  }
-  const login = comment.user?.login;
-  if (typeof login !== 'string' || comment.user?.type === 'Bot') {
-    return null;
+  if (typeof comment?.body !== 'string' || !hasReviewCommand(comment.body)) {
+    return { kind: 'none' };
   }
 
-  const [owner, repo] = repositoryFullName.split('/');
-  if (!owner || !repo) {
-    return null;
+  const login = typeof comment.user?.login === 'string' ? comment.user.login : null;
+  const issueNumber = typeof issue?.number === 'number' ? issue.number : null;
+  const target = `${repositoryFullName ?? 'unknown repository'}#${issueNumber ?? '?'}`;
+  const ignore = (reason: string): ReviewCommandParseResult => ({
+    kind: 'ignored',
+    reason,
+    target,
+    commenter: login,
+  });
+
+  if (action !== 'created') {
+    return ignore(`comment action is "${String(action)}", not "created"`);
+  }
+  if (!issue?.pull_request) {
+    return ignore('the comment is on an issue, not a pull request');
+  }
+  const [owner, repo] = repositoryFullName?.split('/') ?? [];
+  if (!owner || !repo || issueNumber === null || typeof comment.id !== 'number') {
+    return ignore('the payload has no repository, PR number, or comment ID');
+  }
+  if (login === null) {
+    return ignore('the comment has no author login');
+  }
+  if (comment.user?.type === 'Bot') {
+    return ignore('the comment author is a bot');
+  }
+  const association =
+    typeof comment.author_association === 'string' ? comment.author_association : 'missing';
+  if (!ALLOWED_AUTHOR_ASSOCIATIONS.has(association)) {
+    return ignore(`author association ${association} is not OWNER, MEMBER, or COLLABORATOR`);
   }
 
   return {
-    owner,
-    repo,
-    prNumber: issue.number,
-    prUrl: `https://github.com/${owner}/${repo}/pull/${issue.number}`,
-    commentId: comment.id,
-    commenter: login,
-    requestedAt: receivedAt,
+    kind: 'request',
+    request: {
+      owner,
+      repo,
+      prNumber: issueNumber,
+      prUrl: `https://github.com/${owner}/${repo}/pull/${issueNumber}`,
+      commentId: comment.id,
+      commenter: login,
+      requestedAt: receivedAt,
+    },
   };
 }

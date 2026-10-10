@@ -544,17 +544,28 @@ export async function ingestWebhookEvents(
           }
         }
 
-        if (
-          event.eventType === 'issue_comment' &&
-          isWebhookSideEffectAllowed(config, event.receivedAt)
-        ) {
-          const request = parseReviewCommandEvent(
+        if (event.eventType === 'issue_comment') {
+          const parsed = parseReviewCommandEvent(
             payload,
             event.repositoryFullName,
             event.receivedAt
           );
-          if (request) {
-            reviewCommands.set(request.commentId, request);
+          if (parsed.kind === 'ignored') {
+            console.info(
+              `[review-command] ignored /tim review from ${parsed.commenter ?? 'unknown user'} on ${parsed.target}: ${parsed.reason}`
+            );
+          } else if (
+            parsed.kind === 'request' &&
+            !isWebhookSideEffectAllowed(config, event.receivedAt)
+          ) {
+            console.info(
+              `[review-command] ignored /tim review from ${parsed.request.commenter} on ${parsed.request.prUrl}: received at ${event.receivedAt}, before githubWebhooks.ignoreSideEffectsBefore`
+            );
+          } else if (parsed.kind === 'request') {
+            console.info(
+              `[review-command] found /tim review from ${parsed.request.commenter} on ${parsed.request.prUrl} (comment ${parsed.request.commentId})`
+            );
+            reviewCommands.set(parsed.request.commentId, parsed.request);
           }
         }
 

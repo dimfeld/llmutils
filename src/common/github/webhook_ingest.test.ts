@@ -1871,8 +1871,19 @@ describe('common/github/webhook_ingest', () => {
         }),
       ]);
 
+      const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
       const result = await ingestWebhookEvents(db);
+      const infoLines = consoleInfo.mock.calls.map((call) => String(call[0]));
+      consoleInfo.mockRestore();
 
+      expect(infoLines).toContain(
+        '[review-command] found /tim review from member-user on https://github.com/example/repo/pull/80 (comment 5001)'
+      );
+      expect(infoLines).toContain(
+        '[review-command] ignored /tim review from outsider on example/repo#80: author association CONTRIBUTOR is not OWNER, MEMBER, or COLLABORATOR'
+      );
+      // Comments without the command are not logged.
+      expect(infoLines.filter((line) => line.startsWith('[review-command]'))).toHaveLength(2);
       expect(result.reviewCommands).toEqual([
         {
           owner: 'example',
@@ -1903,9 +1914,15 @@ describe('common/github/webhook_ingest', () => {
         }),
       ]);
 
+      const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
       const result = await ingestWebhookEvents(db);
+      const infoLines = consoleInfo.mock.calls.map((call) => String(call[0]));
+      consoleInfo.mockRestore();
 
       expect(result.reviewCommands).toEqual([]);
+      expect(infoLines).toContain(
+        '[review-command] ignored /tim review from member-user on https://github.com/example/repo/pull/80: received at 2026-03-30T09:00:00.000Z, before githubWebhooks.ignoreSideEffectsBefore'
+      );
     });
 
     test('dispatches issue_comment events to the handler and populates inboxSignals', async () => {

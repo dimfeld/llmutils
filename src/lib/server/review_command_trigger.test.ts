@@ -60,29 +60,50 @@ describe('triggerReviewCommands', () => {
   });
 
   test('does not spawn when the global config setting is off or absent', async () => {
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
     for (const config of [{ githubWebhooks: { reviewCommands: false } }, {}]) {
       vi.mocked(loadEffectiveConfig).mockResolvedValue(config as never);
       await triggerReviewCommands(fakeDb, [REQUEST]);
     }
 
+    expect(consoleInfo).toHaveBeenCalledWith(
+      '[review-command] skipping /tim review on https://github.com/example/repo/pull/7: githubWebhooks.reviewCommands is not enabled on this machine'
+    );
+    consoleInfo.mockRestore();
     expect(getProjectSetting).not.toHaveBeenCalled();
     expect(spawnPrReviewCommandProcess).not.toHaveBeenCalled();
   });
 
   test('does not spawn when the project setting is off or absent', async () => {
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
     for (const setting of [{ enabled: false }, null]) {
       vi.mocked(getProjectSetting).mockReturnValue(setting);
       await triggerReviewCommands(fakeDb, [REQUEST]);
     }
 
+    expect(consoleInfo).toHaveBeenCalledWith(
+      '[review-command] skipping /tim review on https://github.com/example/repo/pull/7: the project has not enabled it (run `tim pr review-command enable`)'
+    );
+    consoleInfo.mockRestore();
+
     expect(spawnPrReviewCommandProcess).not.toHaveBeenCalled();
   });
 
   test('does not spawn for unknown projects or projects without a primary workspace', async () => {
+    const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.mocked(getProject).mockReturnValueOnce(null as never);
     await triggerReviewCommands(fakeDb, [REQUEST]);
+    expect(consoleInfo).toHaveBeenCalledWith(
+      '[review-command] skipping /tim review on https://github.com/example/repo/pull/7: example/repo is not a known project'
+    );
+    consoleInfo.mockRestore();
     vi.mocked(getPrimaryWorkspacePath).mockReturnValueOnce(null);
     await triggerReviewCommands(fakeDb, [REQUEST]);
+    expect(consoleWarn).toHaveBeenCalledWith(
+      '[review-command] No primary workspace for example/repo; skipping PR #7'
+    );
+    consoleWarn.mockRestore();
 
     expect(spawnPrReviewCommandProcess).not.toHaveBeenCalled();
   });
