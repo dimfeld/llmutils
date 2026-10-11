@@ -225,6 +225,17 @@ describe('resolveClaudeModel', () => {
 });
 
 describe('buildCodexRunPromptArgs', () => {
+  test('passes the selected provider to Codex', (): void => {
+    expect(buildCodexRunPromptArgs({ prompt: 'test', modelProvider: 'custom-provider' })).toContain(
+      'model_provider="custom-provider"'
+    );
+    expect(
+      buildCodexRunPromptArgs({ prompt: 'test' }).some((arg: string): boolean =>
+        arg.startsWith('model_provider=')
+      )
+    ).toBe(false);
+  });
+
   test('builds expected args with schema and reasoning', () => {
     const args = buildCodexRunPromptArgs({
       prompt: 'hello',

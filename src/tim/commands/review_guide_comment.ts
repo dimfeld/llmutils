@@ -502,7 +502,14 @@ export async function handlePrReviewGuideCommentCommand(
   const globalOpts = getRootOptions(command);
   const db: Database = getDatabase();
   const initialRepoRoot = await getGitRoot(process.cwd());
-  const config = await loadEffectiveConfig(globalOpts.config, { cwd: initialRepoRoot });
+  const config = { ...(await loadEffectiveConfig(globalOpts.config, { cwd: initialRepoRoot })) };
+  const modelProvider = config.reviewGuideComments?.modelProvider;
+  if (modelProvider) {
+    config.environment = {
+      ...config.environment,
+      TIM_CODEX_MODEL_PROVIDER: { value: modelProvider, precedence: 'override-dotenv' },
+    };
+  }
   const tunnelActive = isTunnelActive();
 
   await runWithHeadlessAdapterIfEnabled({

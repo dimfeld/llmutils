@@ -4,7 +4,11 @@ import * as fs from 'fs/promises';
 import type { TimConfig } from '../../configSchema';
 import type { CodexReasoningLevel } from '../schemas.js';
 import { spawnAndLogOutput } from '../../../common/process';
-import type { TimWorkspaceCommandEnvironmentOptions } from '../../../common/env.js';
+import {
+  buildWorkspaceCommandEnv,
+  type TimWorkspaceCommandEnvironmentOptions,
+} from '../../../common/env.js';
+import { getCodexModelProviderArgs, TIM_CODEX_MODEL_PROVIDER } from './model_provider.js';
 import {
   normalizeSubprocessMonitorRules,
   startSubprocessMonitor,
@@ -125,6 +129,9 @@ export async function executeCodexStep(
     ? ['--dangerously-bypass-approvals-and-sandbox']
     : ['--sandbox', 'workspace-write'];
 
+  const providerEnv = await buildWorkspaceCommandEnv(cwd, undefined, {
+    timEnvironment: options.timEnvironment,
+  });
   const reasoningLevel = options.reasoningLevel ?? 'medium';
   const args = [
     'codex',
@@ -134,6 +141,7 @@ export async function executeCodexStep(
     '-c',
     `model_reasoning_effort=${reasoningLevel}`,
     ...sandboxSettings,
+    ...getCodexModelProviderArgs(providerEnv),
   ];
 
   if (options.model) {
@@ -208,6 +216,9 @@ export async function executeCodexStep(
           sessionProcessLabel: `Codex CLI attempt ${attempt}`,
           cwd,
           env: {
+            ...(providerEnv[TIM_CODEX_MODEL_PROVIDER]
+              ? { [TIM_CODEX_MODEL_PROVIDER]: providerEnv[TIM_CODEX_MODEL_PROVIDER] }
+              : {}),
             TIM_EXECUTOR: 'codex',
             AGENT: process.env.AGENT || '1',
             TIM_NOTIFY_SUPPRESS: '1',

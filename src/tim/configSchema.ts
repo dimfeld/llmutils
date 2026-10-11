@@ -1247,6 +1247,12 @@ export const timConfigSchema = z
     reviewGuideComments: z
       .object({
         executor: z.enum(['claude-code', 'codex-cli']).optional(),
+        modelProvider: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe('Codex model provider for guide comments, reviews, and child agents'),
         model: z
           .object({
             claude: z.string().optional().describe('Model override for claude-code execution'),

@@ -406,6 +406,42 @@ describe('review_guide_comment', () => {
     expect(mockLog).toHaveBeenCalledWith('Dry run: not posting review guide comment.');
   });
 
+  test.each([false, true])(
+    'passes the provider to all executors with reviewOnly=%s',
+    async (reviewOnly: boolean): Promise<void> => {
+      const originalProvider = process.env.TIM_CODEX_MODEL_PROVIDER;
+      mockLoadEffectiveConfig.mockResolvedValue({
+        reviewGuideComments: { modelProvider: 'custom-provider' },
+        environment: { OTHER_VALUE: 'kept' },
+      });
+      await handlePrReviewGuideCommentCommand(
+        '42',
+        { dryRun: true, postReview: true, reviewOnly },
+        makeCommand()
+      );
+      const environment = {
+        OTHER_VALUE: 'kept',
+        TIM_CODEX_MODEL_PROVIDER: { value: 'custom-provider', precedence: 'override-dotenv' },
+      };
+      expect(mockRunAutomaticPrReview).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({ environment }),
+        })
+      );
+      if (!reviewOnly) {
+        expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
+          expect.any(String),
+          expect.objectContaining({
+            timEnvironment: expect.objectContaining({ environment }),
+          }),
+          expect.objectContaining({ environment }),
+          expect.any(Object)
+        );
+      }
+      expect(process.env.TIM_CODEX_MODEL_PROVIDER).toBe(originalProvider);
+    }
+  );
+
   test('manual generation does not require githubWebhooks.reviewGuideComments', async () => {
     mockLoadEffectiveConfig.mockResolvedValue({
       terminalInput: true,

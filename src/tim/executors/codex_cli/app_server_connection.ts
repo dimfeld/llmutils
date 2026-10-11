@@ -1,3 +1,4 @@
+import { getCodexModelProviderArgs } from './model_provider.js';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -634,11 +635,20 @@ export class CodexAppServerConnection {
     };
     let proc: Bun.Subprocess<'ignore', 'ignore', 'pipe'>;
     try {
-      proc = Bun.spawn(['codex', 'app-server', '--listen', `unix://${socketPath}`], {
-        cwd: options.cwd,
-        env: spawnEnv,
-        stdio: ['ignore', 'ignore', 'pipe'],
-      });
+      proc = Bun.spawn(
+        [
+          'codex',
+          ...getCodexModelProviderArgs(env),
+          'app-server',
+          '--listen',
+          `unix://${socketPath}`,
+        ],
+        {
+          cwd: options.cwd,
+          env: spawnEnv,
+          stdio: ['ignore', 'ignore', 'pipe'],
+        }
+      );
       lifecycle?.markSpawned(proc);
     } catch (error) {
       lifecycle?.markSpawnFailed();

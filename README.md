@@ -547,6 +547,7 @@ Project-specific directions for the generated PR comment can live in the project
 ```yaml
 reviewGuideComments:
   executor: codex-cli
+  modelProvider: openai
   model:
     codex: gpt-6-terra
   instructions: |
@@ -561,6 +562,8 @@ tim pr review-guide-comment enable
 tim pr review-guide-comment status
 tim pr review-guide-comment disable
 ```
+
+Set `reviewGuideComments.modelProvider` to a provider name from your Codex configuration. The command sets `TIM_CODEX_MODEL_PROVIDER` in executor environments. All Codex executors started by the comment process, including automatic reviews and child agents, use `-c model_provider="<provider>"`. Child tim processes inherit the variable. You can also set this variable directly for other tim commands. If no provider is set, Codex uses its own configuration.
 
 Like Slack digest settings, the per-project opt-in is stored as a per-project database setting, not in committed config. The automatic path additionally requires the global `githubWebhooks.reviewGuideComments` config above to be set. With both enabled, the webhook trigger spawns a `tim pr review-guide-comment` process in the project's primary workspace for each newly-ready PR. The comment is posted at most once per PR — before posting, tim looks for its hidden marker (`<!-- tim:pr-review-guide -->`) in the PR's existing comments and skips if one is already present. Run the command manually with `--force` to refresh the existing marked comment instead; refreshed comments include an `Updated at <timestamp>` footer, and a new comment is created if none exists. Posting uses the configured GitHub App installation token for the PR owner; it does not use `GITHUB_TOKEN` or `gh auth token`.
 

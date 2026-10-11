@@ -54,6 +54,7 @@ describePlatform('CodexAppServerConnection project environment', () => {
       join(cwd, '.env'),
       [
         'TIM_DATABASE_NAME=dotenv_database',
+        'TIM_CODEX_MODEL_PROVIDER=dotenv-provider',
         'TIM_HIGH_PRIORITY=dotenv_high',
         'TIM_PLAN_ID=dotenv_plan',
         'TIM_AGENT_ID=stale-id',
@@ -72,6 +73,8 @@ describePlatform('CodexAppServerConnection project environment', () => {
 import * as fs from 'node:fs';
 
 fs.writeFileSync(process.env.MOCK_ENV_LOG, JSON.stringify({
+  TIM_CODEX_MODEL_PROVIDER: process.env.TIM_CODEX_MODEL_PROVIDER,
+  args: process.argv.slice(2),
   TIM_DATABASE_NAME: process.env.TIM_DATABASE_NAME,
   TIM_HIGH_PRIORITY: process.env.TIM_HIGH_PRIORITY,
   TIM_PLAN_ID: process.env.TIM_PLAN_ID,
@@ -139,6 +142,7 @@ const server = Bun.serve({
         },
         timEnvironment: {
           environment: {
+            TIM_CODEX_MODEL_PROVIDER: { value: 'custom-provider', precedence: 'override-dotenv' },
             TIM_DATABASE_NAME: 'project_{{planId}}',
             TIM_HIGH_PRIORITY: {
               value: 'high_{{planId}}',
@@ -184,6 +188,12 @@ const server = Bun.serve({
         TIM_AGENT_NAME: 'orchestrator',
         TIM_AGENT_ROLE: 'orchestrator',
       });
+      expect(capturedEnv.TIM_CODEX_MODEL_PROVIDER).toBe('custom-provider');
+      expect(capturedEnv.args.slice(0, 3)).toEqual([
+        '-c',
+        'model_provider="custom-provider"',
+        'app-server',
+      ]);
       expect(capturedEnv.TIM_AGENT_TYPE).toBeUndefined();
       expect(process.env.TIM_DATABASE_NAME).toBe(previousDatabaseName);
       expect(process.env.TIM_HIGH_PRIORITY).toBe(previousHighPriority);

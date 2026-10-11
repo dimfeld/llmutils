@@ -16,6 +16,7 @@ afterEach(() => {
     process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
   }
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
 });
 
 vi.mock('../../../common/process.ts', () => ({
@@ -132,6 +133,41 @@ describe('executeCodexStep retries', () => {
     expect(args.join(' ').length).toBeGreaterThan(2048);
     expect(options).toMatchObject({ sessionProcessLabel: 'Codex CLI attempt 1' });
   });
+
+  test.each(['project', 'inherited'])(
+    'passes the %s provider to every retry and its child environment',
+    async (source: string): Promise<void> => {
+      if (source === 'inherited') vi.stubEnv('TIM_CODEX_MODEL_PROVIDER', 'custom-provider');
+      vi.mocked(spawnAndLogOutput).mockResolvedValue({
+        exitCode: 1,
+        stdout: '',
+        stderr: '',
+        signal: null,
+        killedByInactivity: false,
+      });
+      vi.mocked(createCodexStdoutFormatter).mockReturnValue({
+        formatChunk: (): string => '',
+        getFinalAgentMessage: (): undefined => undefined,
+        getFailedAgentMessage: (): undefined => undefined,
+        getThreadId: (): string => 'provider-thread',
+        getSessionId: (): undefined => undefined,
+      } as any);
+      await expect(
+        executeCodexStep('prompt', '/tmp', {} as any, {
+          timEnvironment: {
+            context: {},
+            environment:
+              source === 'project' ? { TIM_CODEX_MODEL_PROVIDER: 'custom-provider' } : {},
+          },
+        })
+      ).rejects.toThrow();
+      expect(vi.mocked(spawnAndLogOutput)).toHaveBeenCalledTimes(3);
+      for (const [args, options] of vi.mocked(spawnAndLogOutput).mock.calls) {
+        expect(args).toContain('model_provider="custom-provider"');
+        expect(options?.env?.TIM_CODEX_MODEL_PROVIDER).toBe('custom-provider');
+      }
+    }
+  );
 
   test('stops after three failed attempts when codex keeps exiting', async () => {
     vi.mocked(spawnAndLogOutput).mockImplementation(async (_args: string[], opts: any) => {

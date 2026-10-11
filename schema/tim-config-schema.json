@@ -1639,6 +1639,11 @@
             "codex-cli"
           ]
         },
+        "modelProvider": {
+          "description": "Codex model provider for guide comments, reviews, and child agents",
+          "type": "string",
+          "minLength": 1
+        },
         "model": {
           "type": "object",
           "properties": {

@@ -2011,15 +2011,23 @@ describe('configSchema', () => {
         reviewGuideComments: {
           executor: 'codex-cli',
           model: { codex: 'gpt-6-terra' },
+          modelProvider: 'custom-provider',
           instructions: 'Mention migration risk before UI changes when both are present in the PR.',
         },
       };
 
       const result = timConfigSchema.parse(config);
 
+      expect(result.reviewGuideComments?.modelProvider).toBe('custom-provider');
       expect(result.reviewGuideComments?.instructions).toBe(
         'Mention migration risk before UI changes when both are present in the PR.'
       );
+    });
+
+    test('rejects an empty review guide comment provider', () => {
+      expect(() =>
+        timConfigSchema.parse({ reviewGuideComments: { modelProvider: '  ' } })
+      ).toThrow();
     });
 
     test('should reject unknown fields in review guide model configuration', () => {

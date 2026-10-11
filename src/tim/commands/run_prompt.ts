@@ -10,7 +10,14 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
+import {
+  buildWorkspaceCommandEnv,
+  type TimWorkspaceCommandEnvironmentOptions,
+} from '../../common/env.js';
+import {
+  getCodexModelProviderArgs,
+  TIM_CODEX_MODEL_PROVIDER,
+} from '../executors/codex_cli/model_provider.js';
 import { codexReasoningLevelSchema, type CodexReasoningLevel } from '../executors/schemas.js';
 import { createClaudeOutputStreamFormatter } from '../executors/claude_code/output_stream_formatter.js';
 import { createCodexStdoutFormatter } from '../executors/codex_cli/format.js';
@@ -175,6 +182,7 @@ interface ClaudeArgOptions {
 }
 
 interface CodexArgOptions {
+  modelProvider?: string;
   prompt: string;
   outputSchemaPath?: string;
   reasoningLevel?: CodexReasoningLevel;
@@ -251,6 +259,7 @@ export function buildCodexRunPromptArgs(options: CodexArgOptions): string[] {
     '-c',
     `model_reasoning_effort=${reasoningLevel}`,
     ...sandboxSettings,
+    ...getCodexModelProviderArgs({ [TIM_CODEX_MODEL_PROVIDER]: options.modelProvider }),
   ];
 
   if (
@@ -437,7 +446,11 @@ async function executeCodexPrompt(
       }
     }
 
+    const providerEnv = await buildWorkspaceCommandEnv(options.cwd, undefined, {
+      timEnvironment: options.timEnvironment,
+    });
     const args = buildCodexRunPromptArgs({
+      modelProvider: providerEnv[TIM_CODEX_MODEL_PROVIDER],
       prompt,
       outputSchemaPath,
       reasoningLevel: options.reasoningLevel,
@@ -452,6 +465,9 @@ async function executeCodexPrompt(
       sessionProcessLabel: 'Codex prompt',
       cwd: options.cwd,
       env: {
+        ...(providerEnv[TIM_CODEX_MODEL_PROVIDER]
+          ? { [TIM_CODEX_MODEL_PROVIDER]: providerEnv[TIM_CODEX_MODEL_PROVIDER] }
+          : {}),
         TIM_EXECUTOR: 'codex',
         AGENT: process.env.AGENT || '1',
         TIM_NOTIFY_SUPPRESS: '1',
@@ -524,6 +540,9 @@ async function executeCodexPrompt(
         sessionProcessLabel: 'Codex schema correction',
         cwd: options.cwd,
         env: {
+          ...(providerEnv[TIM_CODEX_MODEL_PROVIDER]
+            ? { [TIM_CODEX_MODEL_PROVIDER]: providerEnv[TIM_CODEX_MODEL_PROVIDER] }
+            : {}),
           TIM_EXECUTOR: 'codex',
           AGENT: process.env.AGENT || '1',
           TIM_NOTIFY_SUPPRESS: '1',
@@ -583,6 +602,9 @@ async function executeCodexPrompt(
           sessionProcessLabel: 'Codex schema conversion',
           cwd: options.cwd,
           env: {
+            ...(providerEnv[TIM_CODEX_MODEL_PROVIDER]
+              ? { [TIM_CODEX_MODEL_PROVIDER]: providerEnv[TIM_CODEX_MODEL_PROVIDER] }
+              : {}),
             TIM_EXECUTOR: 'codex',
             AGENT: process.env.AGENT || '1',
             TIM_NOTIFY_SUPPRESS: '1',
