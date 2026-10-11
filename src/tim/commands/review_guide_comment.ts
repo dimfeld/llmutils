@@ -52,6 +52,7 @@ import { loadCustomReviewInstructions, resolveProjectContextForRepo } from './re
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { LATEST_GPT5_MODEL } from '../constants.js';
 import type { TimConfig } from '../configSchema.js';
+import { withReviewQueue } from './review_queue.js';
 import { runAutomaticPrReview, type AutomaticPrReviewResult } from './review_guide_auto_review.js';
 
 /** Hidden marker used to detect an existing review-guide comment so we post at most one per PR. */
@@ -315,11 +316,15 @@ async function resolveHeadSha(baseDir: string): Promise<string> {
 
 /** State of the automatic review that runs next to the guide comment. */
 export type AutoReviewState =
+  | { kind: 'queued' }
   | { kind: 'running' }
   | { kind: 'posted'; result: AutomaticPrReviewResult }
   | { kind: 'failed' };
 
 export function formatAutoReviewStatus(state: AutoReviewState): string {
+  if (state.kind === 'queued') {
+    return '⏳ The automated review is queued. This comment will update when the review starts.';
+  }
   if (state.kind === 'running') {
     return '⏳ An automated review is in progress. This comment will update when the review is posted.';
   }
@@ -652,19 +657,23 @@ export async function handlePrReviewGuideCommentCommand(
         }
 
         if (options.reviewOnly === true) {
-          await runAutomaticPrReview({
-            db,
-            config,
-            baseDir,
-            projectId,
-            prStatusId: prContext.prStatus.id,
-            metadata: buildPrMetadata(prContext, baseSha),
-            baseSha,
-            reviewedSha: await resolveHeadSha(baseDir),
-            customInstructions: await loadCustomReviewInstructions(config, baseDir),
-            authToken: appToken,
-            dryRun: options.dryRun,
-            filesReviewed: prContext.prStatus.changed_files ?? 0,
+          await withReviewQueue({
+            concurrency: config.reviewGuideComments?.reviewConcurrency ?? 2,
+            run: async (): Promise<AutomaticPrReviewResult> =>
+              runAutomaticPrReview({
+                db,
+                config,
+                baseDir,
+                projectId,
+                prStatusId: prContext.prStatus.id,
+                metadata: buildPrMetadata(prContext, baseSha),
+                baseSha,
+                reviewedSha: await resolveHeadSha(baseDir),
+                customInstructions: await loadCustomReviewInstructions(config, baseDir),
+                authToken: appToken,
+                dryRun: options.dryRun,
+                filesReviewed: prContext.prStatus.changed_files ?? 0,
+              }),
           });
           return;
         }
@@ -681,27 +690,69 @@ export async function handlePrReviewGuideCommentCommand(
 
         let reviewState: AutoReviewState | null = null;
         let reviewPromise: Promise<unknown> | null = null;
+        let postedComment: PostedGuideComment | null = null;
+        let statusUpdates: Promise<void> = Promise.resolve();
+        let lastStatusAttempt: AutoReviewState | null = null;
+        const updateCommentStatus = (): void => {
+          statusUpdates = statusUpdates.then(async (): Promise<void> => {
+            if (
+              !postedComment ||
+              !reviewState ||
+              postedComment.reviewState === reviewState ||
+              lastStatusAttempt === reviewState
+            )
+              return;
+            const state = reviewState;
+            lastStatusAttempt = state;
+            try {
+              await updatePullRequestComment(
+                prContext.owner,
+                prContext.repo,
+                postedComment.commentId,
+                buildGuideCommentBody({
+                  guide: postedComment.guide,
+                  reviewStatus: formatAutoReviewStatus(state),
+                  updatedAt: postedComment.updatedAt,
+                }),
+                { authToken: appToken }
+              );
+              postedComment.reviewState = state;
+            } catch (err) {
+              warn(
+                `Failed to update the review status in the guide comment: ${err instanceof Error ? err.message : String(err)}`
+              );
+            }
+          });
+        };
         if (postReview) {
           const reviewedSha = await resolveHeadSha(baseDir);
-          reviewState = { kind: 'running' };
-          reviewPromise = runAutomaticPrReview({
-            db,
-            config,
-            baseDir,
-            projectId,
-            prStatusId: prContext.prStatus.id,
-            metadata,
-            baseSha,
-            reviewedSha,
-            customInstructions,
-            authToken: appToken,
-            dryRun: options.dryRun,
-            filesReviewed: prContext.prStatus.changed_files ?? 0,
+          reviewState = { kind: 'queued' };
+          reviewPromise = withReviewQueue({
+            concurrency: config.reviewGuideComments?.reviewConcurrency ?? 2,
+            onStart: (): void => {
+              reviewState = { kind: 'running' };
+              updateCommentStatus();
+            },
+            run: async (): Promise<AutomaticPrReviewResult> =>
+              runAutomaticPrReview({
+                db,
+                config,
+                baseDir,
+                projectId,
+                prStatusId: prContext.prStatus.id,
+                metadata,
+                baseSha,
+                reviewedSha,
+                customInstructions,
+                authToken: appToken,
+                dryRun: options.dryRun,
+                filesReviewed: prContext.prStatus.changed_files ?? 0,
+              }),
           }).then(
-            (result) => {
+            (result: AutomaticPrReviewResult): void => {
               reviewState = { kind: 'posted', result };
             },
-            (err: unknown) => {
+            (err: unknown): never => {
               reviewState = { kind: 'failed' };
               throw err;
             }
@@ -711,7 +762,6 @@ export async function handlePrReviewGuideCommentCommand(
         }
 
         let commentError: unknown;
-        let postedComment: PostedGuideComment | null = null;
         try {
           postedComment = await generateAndPostGuideComment({
             config,
@@ -726,6 +776,7 @@ export async function handlePrReviewGuideCommentCommand(
             appToken,
             getReviewState: () => reviewState,
           });
+          updateCommentStatus();
         } catch (err) {
           commentError = err;
         }
@@ -739,27 +790,8 @@ export async function handlePrReviewGuideCommentCommand(
           }
         }
 
-        // The comment was posted while the review was still running: replace the
-        // in-progress line with the final review status.
-        if (postedComment?.reviewState?.kind === 'running' && reviewState) {
-          try {
-            await updatePullRequestComment(
-              prContext.owner,
-              prContext.repo,
-              postedComment.commentId,
-              buildGuideCommentBody({
-                guide: postedComment.guide,
-                reviewStatus: formatAutoReviewStatus(reviewState),
-                updatedAt: postedComment.updatedAt,
-              }),
-              { authToken: appToken }
-            );
-          } catch (err) {
-            warn(
-              `Failed to update the review status in the guide comment: ${err instanceof Error ? err.message : String(err)}`
-            );
-          }
-        }
+        updateCommentStatus();
+        await statusUpdates;
 
         if (reviewError) {
           if (!commentError) {

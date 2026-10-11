@@ -1246,6 +1246,12 @@ export const timConfigSchema = z
     /** PR review-guide comment configuration options */
     reviewGuideComments: z
       .object({
+        reviewConcurrency: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Maximum concurrent automatic PR reviews on this machine (default 2)'),
         executor: z.enum(['claude-code', 'codex-cli']).optional(),
         modelProvider: z
           .string()

@@ -112,6 +112,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import { getLinkedPlansByPrUrl } from '../db/pr_status.js';
 import { getProjectSetting } from '../db/project_settings.js';
+import { withReviewQueue } from './review_queue.js';
 import { runAutomaticPrReview } from './review_guide_auto_review.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -161,6 +162,7 @@ function makeCommand(config?: string) {
 
 describe('review_guide_comment', () => {
   let tempDir: string;
+  const originalConfigHome = process.env.XDG_CONFIG_HOME;
   let mergeBaseSha: string;
   let mainTipSha: string;
   let capturedPrompt = '';
@@ -170,6 +172,7 @@ describe('review_guide_comment', () => {
     vi.clearAllMocks();
     capturedPrompt = '';
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-review-guide-comment-'));
+    process.env.XDG_CONFIG_HOME = tempDir;
     await $`git init -q --initial-branch=main`.cwd(tempDir);
     await $`git config user.email test@example.com`.cwd(tempDir);
     await $`git config user.name Test`.cwd(tempDir);
@@ -265,6 +268,8 @@ describe('review_guide_comment', () => {
   });
 
   afterEach(async (): Promise<void> => {
+    if (originalConfigHome === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = originalConfigHome;
     spawnSpy.mockRestore();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -627,6 +632,73 @@ describe('review_guide_comment', () => {
     expect(updatedBody).toBe(
       '<!-- tim:pr-review-guide -->\n> 🔎 The automated review found 3 issues. [View the review](https://review/1).\n\n## Review Guide\n\nGenerated guide.\n'
     );
+  });
+
+  test('posts the guide while queued and updates the status when a slot opens', async (): Promise<void> => {
+    let release: () => void = (): void => {};
+    let entered: () => void = (): void => {};
+    const active = new Promise<void>((resolve): void => {
+      entered = resolve;
+    });
+    const blocker = withReviewQueue({
+      concurrency: 1,
+      run: async (): Promise<void> => {
+        entered();
+        await new Promise<void>((resolve): void => {
+          release = resolve;
+        });
+      },
+    });
+    await active;
+    mockLoadEffectiveConfig.mockResolvedValue({
+      reviewGuideComments: { reviewConcurrency: 1 },
+    } as any);
+    let finishReview: () => void = (): void => {};
+    mockRunAutomaticPrReview.mockImplementation(
+      () =>
+        new Promise((resolve): void => {
+          finishReview = (): void => {
+            resolve({
+              reviewId: 1,
+              issueCount: 0,
+              githubReviewUrl: null,
+              inlineCount: 0,
+              appendedCount: 0,
+            });
+          };
+        })
+    );
+    const command = handlePrReviewGuideCommentCommand('42', { postReview: true }, makeCommand());
+    try {
+      await vi.waitFor((): void => {
+        expect(mockPostPullRequestComment).toHaveBeenCalledTimes(1);
+      });
+      expect(mockPostPullRequestComment.mock.calls[0][3]).toContain(
+        'The automated review is queued.'
+      );
+      expect(mockRunAutomaticPrReview).not.toHaveBeenCalled();
+      release();
+      await vi.waitFor(
+        (): void => {
+          expect(mockUpdatePullRequestComment.mock.calls[0]?.[3]).toContain(
+            'An automated review is in progress.'
+          );
+        },
+        { timeout: 3000 }
+      );
+      finishReview();
+      await command;
+      expect(mockUpdatePullRequestComment.mock.calls.at(-1)?.[3]).toContain(
+        'The automated review found no issues.'
+      );
+    } finally {
+      release();
+      const timer = setInterval((): void => {
+        finishReview();
+      }, 5);
+      await Promise.allSettled([blocker, command]);
+      clearInterval(timer);
+    }
   });
 
   test('posts the final status directly when the review finishes first', async () => {

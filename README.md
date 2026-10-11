@@ -580,6 +580,17 @@ tim pr review-guide-comment enable --no-review  # Post only the guide comment ag
 
 With the review on, tim runs the same issue generation as `tim pr review-guide` (the configured review executors, the Codex simplification pass, and the issue merge step), but it does not generate the full guide. The review runs at the same time as the guide comment. tim stores the result as a normal review, so you can see it in the web interface, and posts all issues except notes as a `COMMENT` review. As in the interactive "Submit review" flow, an issue on a line in the PR diff becomes an inline comment, and all other issues go in the review body under "Additional notes". If the review finds no issues, the posted review says "No issues found." The guide comment starts with a status line for the review. If the comment is posted while the review still runs, the line says that the review is in progress, and tim edits it when the review is done. The final line gives the issue count and a link to the review, or says that the review failed. Edits do not send GitHub notifications. The submission is recorded with the review, and its issues are marked as submitted. `--dry-run` logs the issues and does not post them. If the guide comment already exists and you do not give `--force`, tim does not run the review either, so webhook retries do not post duplicate reviews.
 
+Issue finding uses a local queue shared by command processes across projects. The default limit is 2 active reviews. Guide comments can be generated and posted while issue finding waits. The status line at the top says that the review is queued, then changes when the review starts and finishes. The queue removes entries from stopped processes. The `/tim review` command uses the same queue.
+
+Set the limit in the machine configuration. Use the same value for all projects on the machine:
+
+```yaml
+reviewGuideComments:
+  reviewConcurrency: 3
+```
+
+The queue uses SQLite file locks in `review-queue.sqlite` under the tim configuration directory. The queue is local to the machine and is not synced between nodes.
+
 #### `/tim review` PR comments
 
 You can also request an automatic review with a PR comment. Put `/tim review` on a line of its own in a PR conversation comment. tim adds 👀 to the comment, runs the same issue generation as the automatic review above, and posts a new `COMMENT` review from the GitHub App. If the run fails, tim adds 😕 to the comment. This works on draft PRs too. It does not post, check for, or edit the guide comment.
