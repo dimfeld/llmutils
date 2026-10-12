@@ -544,15 +544,15 @@ export async function spawnUpdateDocsProcess(
 export async function spawnPrReviewGuideProcess(
   prNumber: number,
   cwd: string,
-  envOverrides?: Record<string, string>
+  envOverrides?: Record<string, string>,
+  options: { guideOnly?: boolean } = {}
 ): Promise<SpawnProcessResult> {
-  return spawnPlanTimProcess(
-    describeTarget('pr', prNumber),
-    prNumber,
-    ['pr', 'review-guide', String(prNumber), '--auto-workspace'],
-    cwd,
-    envOverrides
-  );
+  const args = ['pr', 'review-guide', String(prNumber), '--auto-workspace'];
+  if (options.guideOnly === true) {
+    args.push('--guide-only');
+  }
+
+  return spawnPlanTimProcess(describeTarget('pr', prNumber), prNumber, args, cwd, envOverrides);
 }
 
 export async function spawnPlanReviewGuideProcess(

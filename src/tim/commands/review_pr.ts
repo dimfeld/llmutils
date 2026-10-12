@@ -60,6 +60,7 @@ export interface ReviewGuideCommandOptions {
   terminalInput?: boolean;
   nonInteractive?: boolean;
   verbose?: boolean;
+  guideOnly?: boolean;
 }
 
 interface MaterializeCommandOptions {
@@ -446,6 +447,7 @@ export async function handleReviewGuideCommand(
           model: options.model,
           filesReviewed: prContext.prStatus.changed_files ?? 0,
           completionLabel: prContext.prUrl,
+          guideOnly: options.guideOnly,
         });
       },
     });

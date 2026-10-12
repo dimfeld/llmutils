@@ -1698,10 +1698,38 @@ describe('startFixPrThreads', () => {
     const result = await invokeCommand(startPrReviewGuide, { projectId, prNumber: 42 });
 
     expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
-    expect(spawnPrReviewGuideProcessMock).toHaveBeenCalledWith(42, '/tmp/pr-primary-workspace', {
-      TIM_LINKED_PR_URL: CANONICAL_PR_URL,
-    });
+    expect(spawnPrReviewGuideProcessMock).toHaveBeenCalledWith(
+      42,
+      '/tmp/pr-primary-workspace',
+      { TIM_LINKED_PR_URL: CANONICAL_PR_URL },
+      { guideOnly: undefined }
+    );
     expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+  });
+
+  test('passes guideOnly through to tim pr review-guide', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrReviewGuideProcessMock.mockResolvedValue({ success: true });
+
+    const result = await invokeCommand(startPrReviewGuide, {
+      projectId,
+      prNumber: 42,
+      guideOnly: true,
+    });
+
+    expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
+    expect(spawnPrReviewGuideProcessMock).toHaveBeenCalledWith(
+      42,
+      '/tmp/pr-primary-workspace',
+      { TIM_LINKED_PR_URL: CANONICAL_PR_URL },
+      { guideOnly: true }
+    );
   });
 
   test('startPrReviewGuide returns already_running for an active PR session and does not spawn again', async () => {

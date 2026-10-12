@@ -52,6 +52,7 @@ import {
   spawnGenerateProcess,
   spawnPlanReviewGuideProcess,
   spawnPrFixForPrProcess,
+  spawnPrReviewGuideProcess,
   spawnRebaseProcess,
   spawnShellProcess,
   spawnUpdateDocsProcess,
@@ -245,6 +246,51 @@ describe('lib/server/plan_actions', () => {
       detached: true,
     });
     expect(result).toEqual({ success: true, planId: 212 });
+  });
+
+  test('spawnPrReviewGuideProcess includes guide-only flag when requested', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnPrReviewGuideProcess(
+      42,
+      '/tmp/primary-workspace',
+      { TIM_LINKED_PR_URL: 'https://github.com/example/repo/pull/42' },
+      { guideOnly: true }
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'pr',
+      'review-guide',
+      '42',
+      '--auto-workspace',
+      '--guide-only',
+    ]);
+    expect(result.success).toBe(true);
+  });
+
+  test('spawnPrReviewGuideProcess omits guide-only flag by default', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnPrReviewGuideProcess(42, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    await resultPromise;
+
+    const [, options] = spawnSpy.mock.calls[0];
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'pr',
+      'review-guide',
+      '42',
+      '--auto-workspace',
+    ]);
   });
 
   test('spawnGenerateProcess falls back to tim when TIM_PATH is blank', async () => {

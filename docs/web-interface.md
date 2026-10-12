@@ -110,6 +110,8 @@ PR-only (gated by `allowGithubSubmission`):
 
 `PlanDetail.svelte` has a "Review Guides" section with **Generate Full Guide** and **Generate Guide Only** buttons that call the `startPlanReviewGuide` remote command in `src/lib/remote/plan_actions.remote.ts`. That command validates the plan belongs to the project (404 otherwise), rejects with 409 if a `pending`/`in_progress` plan review already exists, and spawns `tim review-guide generate <planId> --auto-workspace` via `spawnPlanReviewGuideProcess` (`src/lib/server/plan_actions.ts`). The guide-only button passes `--guide-only`, which skips issue extraction and only runs the guide generation prompt.
 
+`PrDetail.svelte` has the same two buttons. They call `startPrReviewGuide` in `src/lib/remote/review_thread_actions.remote.ts` with an optional `guideOnly` flag, which `spawnPrReviewGuideProcess` turns into `tim pr review-guide <prNumber> --auto-workspace --guide-only`.
+
 Concurrency is layered: a per-plan launch lock is acquired BEFORE the DB pending/in-progress check (race-safe across simultaneous requests), and the lock is released on spawn failure and on `spawnTimProcess`'s `earlyExit: true` callback. The button is disabled while `reviewGuideRunning` (local optimistic flag) is set or any review for the plan is still `pending`/`in_progress`.
 
 Review history is rendered below the button: `#{review.id} - relative time`, status label, unresolved/total issue counts for complete reviews, with the latest first and a "No review guides yet" empty state. Each entry links to the plan review viewer route above.

@@ -381,7 +381,7 @@ Useful web actions:
 - Expand unresolved PR review threads and reply, resolve, or convert them to plan tasks.
 - Use **Fix Unresolved** to spawn `tim pr fix` for review thread cleanup.
 - Use **Fix CI** to spawn `tim pr fix-ci` when the required checks of your own PR fail. The button is in the Check Runs section of the PR detail page and in the plan detail page's PR section; it is hidden for PRs you did not author and for PRs whose required checks pass.
-- Open stored PR review guides from project PR pages when standalone review has been run.
+- Open stored PR review guides from project PR pages when standalone review has been run. On a PR detail page, select **Generate Full Guide** for a full review, or **Generate Guide Only** to skip issue extraction (`tim pr review-guide --guide-only`).
 - **Generate Full Guide** from the plan detail page to run a plan-only review (no PR required), or **Generate Guide Only** to skip issue extraction and only generate the guide; past review guides for the plan are listed with status badges and link to a viewer route.
 - Use **Project Settings → Virtualize Review Guide Diffs** to enable or disable lazy mounting of review-guide diff blocks. This preference is saved in the current browser only.
 

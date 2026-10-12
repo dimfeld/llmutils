@@ -617,10 +617,17 @@ export const startPrCiFix = command(startPrReviewGuideSchema, async ({ projectId
 );
 
 export const startPrReviewGuide = command(
-  startPrReviewGuideSchema,
-  async ({ projectId, prNumber }) =>
+  startPrReviewGuideSchema.extend({
+    guideOnly: z.boolean().optional(),
+  }),
+  async ({ projectId, prNumber, guideOnly }) =>
     launchPrTimCommand('review-guide', projectId, prNumber, (prUrlOrNumber, cwd) =>
-      spawnPrReviewGuideProcess(prNumber, cwd, { [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber })
+      spawnPrReviewGuideProcess(
+        prNumber,
+        cwd,
+        { [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber },
+        { guideOnly }
+      )
     )
 );
 

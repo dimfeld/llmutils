@@ -2051,6 +2051,7 @@ const prReviewGuideCommand = prCommand
   .option('-m, --model <model>', 'Model override for executors')
   .option('--no-terminal-input', 'Disable terminal input')
   .option('--non-interactive', 'No user prompts')
+  .option('--guide-only', 'Only generate the review guide; skip issue generation prompts')
   .option('--verbose', 'Verbose output')
   .action(async (prUrlOrNumber, options, command) => {
     if (options.plan !== undefined) {

@@ -125,7 +125,7 @@
 
   let refreshing = $state(false);
   let draftUpdating = $state(false);
-  let reviewGuideRunning = $state(false);
+  let reviewGuideRunning: 'full' | 'guide-only' | false = $state(false);
   let fixStarting = $state(false);
   let ciFixStarting = $state(false);
   let autoreviewStarting = $state(false);
@@ -346,17 +346,18 @@
     }
   }
 
-  async function handleStartReviewGuide() {
+  async function handleStartReviewGuide(guideOnly: boolean = false) {
     if (reviewGuideRunning) {
       return;
     }
 
     actionError = null;
-    reviewGuideRunning = true;
+    reviewGuideRunning = guideOnly ? 'guide-only' : 'full';
     try {
       await startPrReviewGuide({
         projectId: pr.projectId,
         prNumber: pr.status.pr_number,
+        guideOnly,
       });
     } catch (err) {
       actionError = err instanceof Error ? err.message : String(err);
@@ -887,14 +888,26 @@
         <h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Review Guides
         </h3>
-        <button
-          onclick={handleStartReviewGuide}
-          disabled={reviewGuideRunning}
-          class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-          title="Generate a new review guide"
-        >
-          {reviewGuideRunning ? 'Starting...' : 'Generate'}
-        </button>
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            onclick={() => handleStartReviewGuide(false)}
+            disabled={Boolean(reviewGuideRunning)}
+            class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+            title="Generate a full review guide with issue extraction"
+          >
+            {reviewGuideRunning === 'full' ? 'Starting...' : 'Generate Full Guide'}
+          </button>
+          <button
+            type="button"
+            onclick={() => handleStartReviewGuide(true)}
+            disabled={Boolean(reviewGuideRunning)}
+            class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+            title="Generate only the review guide prompt output"
+          >
+            {reviewGuideRunning === 'guide-only' ? 'Starting...' : 'Generate Guide Only'}
+          </button>
+        </div>
       </div>
 
       {#if hasNewCommitsSinceReview}
