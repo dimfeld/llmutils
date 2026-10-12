@@ -10,6 +10,7 @@ const testContext = vi.hoisted(() => ({
   loadProofConfiguredForProject: vi.fn(),
   loadMediaHostConfiguredForProject: vi.fn(),
   loadChatExecutorOptionsForProject: vi.fn(),
+  loadPrFixExecutorOptionsForProject: vi.fn(),
 }));
 
 vi.mock('$lib/server/init.js', () => ({
@@ -25,6 +26,7 @@ vi.mock('$lib/server/plans_browser.js', () => ({
   loadProofConfiguredForProject: testContext.loadProofConfiguredForProject,
   loadMediaHostConfiguredForProject: testContext.loadMediaHostConfiguredForProject,
   loadChatExecutorOptionsForProject: testContext.loadChatExecutorOptionsForProject,
+  loadPrFixExecutorOptionsForProject: testContext.loadPrFixExecutorOptionsForProject,
 }));
 
 import { load } from './+page.server.js';
@@ -43,6 +45,10 @@ describe('projects/[projectId]/active/plan/[planUuid]/+page.server', () => {
     testContext.loadChatExecutorOptionsForProject.mockReset();
     testContext.loadChatExecutorOptionsForProject.mockResolvedValue([
       { executor: 'claude-code', model: 'claude-opus-4.6' },
+    ]);
+    testContext.loadPrFixExecutorOptionsForProject.mockReset();
+    testContext.loadPrFixExecutorOptionsForProject.mockResolvedValue([
+      { executor: 'codex-cli', model: 'gpt-5-codex' },
     ]);
 
     projectId = getOrCreateProject(db, 'active-proof-route-repo', {
@@ -74,11 +80,13 @@ describe('projects/[projectId]/active/plan/[planUuid]/+page.server', () => {
       proofConfigured: true,
       mediaHostConfigured: true,
       chatExecutorOptions: [{ executor: 'claude-code', model: 'claude-opus-4.6' }],
+      prFixExecutorOptions: [{ executor: 'codex-cli', model: 'gpt-5-codex' }],
     });
 
     expect(testContext.loadProofConfiguredForProject).toHaveBeenCalledWith(db, projectId);
     expect(testContext.loadMediaHostConfiguredForProject).toHaveBeenCalledWith(db, projectId);
     expect(testContext.loadChatExecutorOptionsForProject).toHaveBeenCalledWith(db, projectId);
+    expect(testContext.loadPrFixExecutorOptionsForProject).toHaveBeenCalledWith(db, projectId);
   });
 
   test('returns false when the plan does not exist', async () => {
@@ -90,10 +98,12 @@ describe('projects/[projectId]/active/plan/[planUuid]/+page.server', () => {
       proofConfigured: false,
       mediaHostConfigured: false,
       chatExecutorOptions: undefined,
+      prFixExecutorOptions: undefined,
     });
 
     expect(testContext.loadProofConfiguredForProject).not.toHaveBeenCalled();
     expect(testContext.loadMediaHostConfiguredForProject).not.toHaveBeenCalled();
     expect(testContext.loadChatExecutorOptionsForProject).not.toHaveBeenCalled();
+    expect(testContext.loadPrFixExecutorOptionsForProject).not.toHaveBeenCalled();
   });
 });

@@ -6,6 +6,7 @@ import {
   getPlanDetailRouteData,
   loadMediaHostConfiguredForProject,
   loadChatExecutorOptionsForProject,
+  loadPrFixExecutorOptionsForProject,
   loadProofConfiguredForProject,
   toPlanDetailView,
   toPlanReviewListItems,
@@ -35,6 +36,10 @@ export const load: PageServerLoad = async ({ params, url }) => {
     db,
     result.planDetail.projectId
   );
+  const prFixExecutorOptions = await loadPrFixExecutorOptionsForProject(
+    db,
+    result.planDetail.projectId
+  );
   const autoRunSetting = parseAutoRunSetting(
     getProjectSetting(db, result.planDetail.projectId, AUTO_RUN_SETTING_KEY)
   );
@@ -45,6 +50,7 @@ export const load: PageServerLoad = async ({ params, url }) => {
     proofConfigured,
     mediaHostConfigured,
     chatExecutorOptions,
+    prFixExecutorOptions,
     autoRunEnabled: autoRunSetting?.enabled === true && autoRunSetting.maxConcurrent !== null,
   };
 };

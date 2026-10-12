@@ -17,6 +17,7 @@ import {
   getPlanDetailRouteData,
   getPlansPageData,
   loadChatExecutorOptionsForProject,
+  loadPrFixExecutorOptionsForProject,
   loadProofConfiguredForProject,
   toPlanDetailView,
   toPlanReviewListItems,
@@ -312,6 +313,28 @@ describe('lib/server/plans_browser', () => {
   test('loadChatExecutorOptionsForProject reads choices from the project git root', async () => {
     await expect(loadChatExecutorOptionsForProject(db, projectId)).resolves.toEqual([
       { executor: 'codex-cli', model: 'gpt-6-luna:high' },
+    ]);
+  });
+
+  test('loadPrFixExecutorOptionsForProject reads prFix.options from the project git root', async () => {
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      chat: [{ executor: 'codex-cli', model: 'gpt-6-luna:high' }],
+      prFix: { options: [{ executor: 'claude-code', model: 'opus' }] },
+    } as any);
+
+    await expect(loadPrFixExecutorOptionsForProject(db, projectId)).resolves.toEqual([
+      { executor: 'claude-code', model: 'opus' },
+    ]);
+  });
+
+  test('loadPrFixExecutorOptionsForProject falls back to default choices', async () => {
+    vi.mocked(loadEffectiveConfig).mockResolvedValue({
+      prFix: { executor: 'codex-cli' },
+    } as any);
+
+    await expect(loadPrFixExecutorOptionsForProject(db, projectId)).resolves.toEqual([
+      { executor: 'claude-code' },
+      { executor: 'codex-cli' },
     ]);
   });
 

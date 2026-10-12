@@ -1555,9 +1555,15 @@ async function executePrFixCommand({
     configuredPrFix?.executor ??
     config.defaultExecutor ??
     DEFAULT_EXECUTOR;
+  // A configured prFix model belongs to the configured prFix executor, so do not apply it
+  // when the caller picked a different executor.
+  const configuredPrFixModel =
+    !configuredPrFix?.executor || configuredPrFix.executor === executorName
+      ? configuredPrFix?.model
+      : undefined;
   const model =
     resolveStringOption(options.model) ??
-    configuredPrFix?.model ??
+    configuredPrFixModel ??
     config.models?.execution ??
     defaultModelForExecutor(executorName, 'execution');
   const effort = resolveStringOption(options.effort) ?? configuredPrFix?.effort;

@@ -2,6 +2,7 @@ import { getServerContext } from '$lib/server/init.js';
 import {
   loadMediaHostConfiguredForProject,
   loadChatExecutorOptionsForProject,
+  loadPrFixExecutorOptionsForProject,
   loadProofConfiguredForProject,
 } from '$lib/server/plans_browser.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
@@ -18,6 +19,9 @@ export const load: PageServerLoad = async ({ params }) => {
   const chatExecutorOptions = plan
     ? await loadChatExecutorOptionsForProject(db, plan.project_id)
     : undefined;
+  const prFixExecutorOptions = plan
+    ? await loadPrFixExecutorOptionsForProject(db, plan.project_id)
+    : undefined;
 
-  return { proofConfigured, mediaHostConfigured, chatExecutorOptions };
+  return { proofConfigured, mediaHostConfigured, chatExecutorOptions, prFixExecutorOptions };
 };

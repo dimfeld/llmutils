@@ -277,8 +277,9 @@ describe('PrDetail', () => {
     });
 
     expect(body).toContain('Session Active');
-    expect(body).toContain('aria-label="Fix all unresolved review threads"');
-    expect(body).toContain('<button disabled=""');
+    expect(body).toMatch(
+      /<button[^>]*\sdisabled=""[^>]*aria-label="Fix all unresolved review threads"/
+    );
   });
 
   test('does not show Convert to Task in the review thread list when no plan is linked', async () => {

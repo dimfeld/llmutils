@@ -1,5 +1,6 @@
 <script lang="ts">
   import SessionChatButton from './SessionChatButton.svelte';
+  import ExecutorChoiceDropdown from './ExecutorChoiceDropdown.svelte';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import {
     stateBadgeColor,
@@ -48,6 +49,7 @@
     tokenConfigured = false,
     allPrs = [],
     chatExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
+    prFixExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
   }: {
     pr: EnrichedProjectPr;
     projectId: string;
@@ -55,6 +57,7 @@
     tokenConfigured?: boolean;
     allPrs?: EnrichedProjectPr[];
     chatExecutorOptions?: ChatExecutorOption[];
+    prFixExecutorOptions?: ChatExecutorOption[];
   } = $props();
 
   interface ChainEntry {
@@ -292,7 +295,7 @@
     }
   }
 
-  async function handleStartFix() {
+  async function handleStartFix(option: ChatExecutorOption) {
     if (!canFixUnresolvedThreads || fixStarting || fixLaunched || sessionActive) {
       return;
     }
@@ -304,6 +307,8 @@
       const result = await startFixPrThreads({
         projectId: Number(projectId),
         prNumber: requestPrNumber,
+        executor: option.executor,
+        model: option.model,
       });
       if (pr.status.pr_number !== requestPrNumber) return;
       const fixResultState = getFixStartResultState(result.status, 'pr');
@@ -970,14 +975,14 @@
         <div class="mt-1.5 pl-2">
           {#if canFixUnresolvedThreads}
             <div class="mb-2 flex justify-end">
-              <button
-                onclick={handleStartFix}
+              <ExecutorChoiceDropdown
+                label={fixButtonState.label}
+                options={prFixExecutorOptions}
                 disabled={fixButtonState.disabled}
-                class="rounded-md px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 hover:text-amber-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
-                aria-label="Fix all unresolved review threads"
-              >
-                {fixButtonState.label}
-              </button>
+                onselect={handleStartFix}
+                buttonClass="rounded-md px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 hover:text-amber-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
+                ariaLabel="Fix all unresolved review threads"
+              />
             </div>
           {/if}
           <PrReviewThreadList

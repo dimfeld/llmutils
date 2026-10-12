@@ -21,6 +21,7 @@
     username={prData.username}
     tokenConfigured={prData.tokenConfigured}
     chatExecutorOptions={data.chatExecutorOptions}
+    prFixExecutorOptions={data.prFixExecutorOptions}
   />
 {:else}
   <div class="flex items-center justify-center p-8 text-sm text-muted-foreground">

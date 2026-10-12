@@ -846,8 +846,9 @@ describe('PrStatusSection', () => {
     });
 
     expect(body).toContain('Session Active');
-    expect(body).toContain('aria-label="Fix all unresolved review threads"');
-    expect(body).toContain('<button disabled=""');
+    expect(body).toMatch(
+      /<button[^>]*\sdisabled=""[^>]*aria-label="Fix all unresolved review threads"/
+    );
   });
 
   test('renders check run details URL as link', async () => {

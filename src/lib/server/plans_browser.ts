@@ -90,9 +90,13 @@ export async function loadMediaHostConfiguredForProject(
   }
 }
 
-export async function loadChatExecutorOptionsForProject(
+async function loadExecutorOptionsForProject(
   db: Database,
-  projectId: number
+  projectId: number,
+  description: string,
+  select: (
+    config: Awaited<ReturnType<typeof loadEffectiveConfig>>
+  ) => ChatExecutorOption[] | undefined
 ): Promise<ChatExecutorOption[]> {
   const cwd = getPreferredProjectGitRoot(db, projectId);
   if (!cwd) {
@@ -101,13 +105,27 @@ export async function loadChatExecutorOptionsForProject(
 
   try {
     const config = await loadEffectiveConfig(undefined, { cwd });
-    return config.chat ?? DEFAULT_CHAT_EXECUTOR_OPTIONS;
+    return select(config) ?? DEFAULT_CHAT_EXECUTOR_OPTIONS;
   } catch (err) {
     console.warn(
-      `Failed to load tim config for project ${projectId} when loading Chat options: ${err as Error}`
+      `Failed to load tim config for project ${projectId} when loading ${description} options: ${err as Error}`
     );
     return DEFAULT_CHAT_EXECUTOR_OPTIONS;
   }
+}
+
+export async function loadChatExecutorOptionsForProject(
+  db: Database,
+  projectId: number
+): Promise<ChatExecutorOption[]> {
+  return loadExecutorOptionsForProject(db, projectId, 'Chat', (config) => config.chat);
+}
+
+export async function loadPrFixExecutorOptionsForProject(
+  db: Database,
+  projectId: number
+): Promise<ChatExecutorOption[]> {
+  return loadExecutorOptionsForProject(db, projectId, 'PR fix', (config) => config.prFix?.options);
 }
 
 async function loadFinishConfigForProjects(

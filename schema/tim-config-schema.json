@@ -805,6 +805,33 @@
               ]
             }
           ]
+        },
+        "options": {
+          "description": "Executor and model choices for the web Fix Unresolved dropdown",
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "executor": {
+                "type": "string",
+                "enum": [
+                  "claude-code",
+                  "codex-cli"
+                ],
+                "description": "Executor to use for the chat session"
+              },
+              "model": {
+                "description": "Optional model to use for the chat session",
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "executor"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "additionalProperties": false

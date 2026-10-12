@@ -33,11 +33,22 @@
   } from '$lib/utils/pr_display.js';
 
   import CopyButton from './CopyButton.svelte';
+  import ExecutorChoiceDropdown from './ExecutorChoiceDropdown.svelte';
+  import type { ChatExecutorOption } from '$tim/configSchema.js';
+  import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
   import PrCheckRunList from './PrCheckRunList.svelte';
   import PrReviewList from './PrReviewList.svelte';
   import PrReviewThreadList from './PrReviewThreadList.svelte';
 
-  let { planUuid, projectId }: { planUuid: string; projectId: string } = $props();
+  let {
+    planUuid,
+    projectId,
+    prFixExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
+  }: {
+    planUuid: string;
+    projectId: string;
+    prFixExecutorOptions?: ChatExecutorOption[];
+  } = $props();
   const sessionManager = useSessionManager();
 
   let prData = $derived(await getPrStatus({ planUuid }));
@@ -281,7 +292,7 @@
     return () => clearTimeout(timer);
   });
 
-  async function handleStartFix() {
+  async function handleStartFix(option: ChatExecutorOption) {
     if (fixStarting || fixLaunched || sessionActiveForPlan) {
       return;
     }
@@ -289,7 +300,11 @@
     fixStarting = true;
     refreshError = null;
     try {
-      const result = await startFixThreads({ planUuid: requestPlanUuid });
+      const result = await startFixThreads({
+        planUuid: requestPlanUuid,
+        executor: option.executor,
+        model: option.model,
+      });
       if (planUuid !== requestPlanUuid) return;
       const fixResultState = getFixStartResultState(result.status);
       fixLaunched = fixResultState.fixLaunched;
@@ -389,14 +404,14 @@
         </button>
       {/if}
       {#if hasUnresolvedThreads}
-        <button
-          onclick={handleStartFix}
+        <ExecutorChoiceDropdown
+          label={fixButtonState.label}
+          options={prFixExecutorOptions}
           disabled={fixButtonState.disabled}
-          class="rounded px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
-          aria-label="Fix all unresolved review threads"
-        >
-          {fixButtonState.label}
-        </button>
+          onselect={handleStartFix}
+          buttonClass="rounded px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
+          ariaLabel="Fix all unresolved review threads"
+        />
       {/if}
       {#if tokenConfigured}
         <button

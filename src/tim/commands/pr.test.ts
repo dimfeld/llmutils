@@ -2267,6 +2267,34 @@ describe('tim/commands/pr', () => {
     );
   });
 
+  test('pr fix ignores the configured model when the CLI picks a different executor', async () => {
+    currentAutoLinkedDetails = [
+      {
+        ...createPrDetail(701, 'PR', 'success'),
+        reviewThreads: [
+          createReviewThreadDetail({
+            threadId: 'thread-1',
+            path: 'src/auth.ts',
+            line: 42,
+            comments: [{ body: 'Fix.' }],
+          }),
+        ],
+      },
+    ];
+    mockLoadEffectiveConfig.mockResolvedValueOnce({
+      prFix: {
+        executor: 'codex-cli',
+        model: 'gpt-5-codex',
+      },
+    } as any);
+
+    await handlePrFixCommand(248, { executor: 'claude-code' }, createNestedCommand());
+
+    const [executorName, sharedOptions] = mockBuildExecutorAndLog.mock.calls.at(-1)!;
+    expect(executorName).toBe('claude-code');
+    expect(sharedOptions.model).not.toBe('gpt-5-codex');
+  });
+
   test('buildReviewThreadFixPrompt follows address-review guidance without resolving threads', () => {
     const prompt = buildReviewThreadFixPrompt(
       {

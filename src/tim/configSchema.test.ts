@@ -2132,6 +2132,33 @@ describe('configSchema', () => {
       expect(result.prFix?.effort).toBe('xhigh');
     });
 
+    test('accepts prFix web dropdown options', () => {
+      const result = timConfigSchema.parse({
+        prFix: {
+          options: [{ executor: 'claude-code', model: 'opus' }, { executor: 'codex-cli' }],
+        },
+      });
+
+      expect(result.prFix?.options).toEqual([
+        { executor: 'claude-code', model: 'opus' },
+        { executor: 'codex-cli' },
+      ]);
+    });
+
+    test('rejects duplicate and empty prFix options', () => {
+      expect(() =>
+        timConfigSchema.parse({
+          prFix: {
+            options: [
+              { executor: 'claude-code', model: 'opus' },
+              { executor: 'claude-code', model: 'opus' },
+            ],
+          },
+        })
+      ).toThrow();
+      expect(() => timConfigSchema.parse({ prFix: { options: [] } })).toThrow();
+    });
+
     test('accepts ciFix executor, model, and effort configuration', () => {
       const result = timConfigSchema.parse({
         ciFix: {

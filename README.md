@@ -520,6 +520,17 @@ prFix:
   effort: high
 ```
 
+In the web UI, **Fix Unresolved** (on the PR detail page and on a plan's PR section) is a dropdown. You choose the executor and model for the fix from the list in `prFix.options`. This list has the same format as `chat`. If `prFix.options` is not set, the dropdown shows Claude Code and Codex CLI with their default models. When you choose an executor that is different from `prFix.executor`, tim does not use `prFix.model` for that run. The inbox **Fix** action still starts the fix with the `prFix` defaults.
+
+```yaml
+prFix:
+  options:
+    - executor: claude-code
+      model: opus
+    - executor: codex-cli
+      model: gpt-5-codex
+```
+
 `tim pr fix-ci --pr <pr-url-or-number>` diagnoses failing CI checks for a pull request. It downloads available GitHub Actions logs into the selected workspace, asks the agent to diagnose each failure and confirm the proposed actions, then applies the requested fixes and pushes them to the PR branch. Configure defaults with `ciFix.executor`, `ciFix.model`, and `ciFix.effort`; CLI flags override these values.
 
 Target resolution matches `tim pr fix`: `--pr` wins, then `--plan`, then the positional argument (a number means a plan ID, a URL means a PR), and with no argument the plan is inferred from the workspace. A plan target must have exactly one linked pull request. The command refreshes the check status from GitHub first; when no check is failing it prints `No failing checks for PR #n` and exits before it takes a workspace. Otherwise it always prepares a managed workspace on the PR head branch, and it refuses fork PRs whose head branch is not on `origin`. Logs go to `.tim/tmp/ci-fix/pr-<number>-<short-sha>/` in that workspace and are deleted when the command exits, including on Ctrl-C. The agent must present a numbered diagnosis of every failure and wait for your direction; by default it fixes only the required checks. The web UI starts the same command from the **Fix CI** buttons on the PR detail page and on a plan's PR section. See `docs/ci-check-logs.md` for details.

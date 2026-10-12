@@ -376,11 +376,34 @@ export async function spawnRebaseProcess(planId: number, cwd: string): Promise<S
   );
 }
 
-export async function spawnPrFixProcess(planId: number, cwd: string): Promise<SpawnProcessResult> {
+export interface PrFixExecutorSelection {
+  executor?: string;
+  model?: string;
+}
+
+function prFixExecutorArgs(selection: PrFixExecutorSelection): string[] {
+  const args: string[] = [];
+  if (selection.executor !== undefined) args.push('--executor', selection.executor);
+  if (selection.model !== undefined) args.push('--model', selection.model);
+  return args;
+}
+
+export async function spawnPrFixProcess(
+  planId: number,
+  cwd: string,
+  selection: PrFixExecutorSelection = {}
+): Promise<SpawnProcessResult> {
   return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
-    ['pr', 'fix', String(planId), '--auto-workspace', '--no-terminal-input'],
+    [
+      'pr',
+      'fix',
+      String(planId),
+      ...prFixExecutorArgs(selection),
+      '--auto-workspace',
+      '--no-terminal-input',
+    ],
     cwd
   );
 }
@@ -396,12 +419,21 @@ export async function spawnCiFixProcess(planId: number, cwd: string): Promise<Sp
 
 export async function spawnPrFixForPrProcess(
   prUrlOrNumber: string,
-  cwd: string
+  cwd: string,
+  selection: PrFixExecutorSelection = {}
 ): Promise<SpawnTargetProcessResult> {
   return spawnTimProcess(
     describeTarget('pr', prUrlOrNumber),
     null,
-    ['pr', 'fix', '--pr', prUrlOrNumber, '--auto-workspace', '--no-terminal-input'],
+    [
+      'pr',
+      'fix',
+      '--pr',
+      prUrlOrNumber,
+      ...prFixExecutorArgs(selection),
+      '--auto-workspace',
+      '--no-terminal-input',
+    ],
     cwd,
     { [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber }
   );

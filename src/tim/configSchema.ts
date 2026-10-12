@@ -531,7 +531,7 @@ export const timEnvironmentConfigSchema = z
   .record(timEnvironmentVariableNameSchema, timEnvironmentEntrySchema)
   .describe('Project-level environment variables rendered at process launch time');
 
-/** Executor and model option shown by the web Chat dialog. */
+/** Executor and model option shown by the web Chat dialog and Fix Unresolved dropdown. */
 export const chatExecutorOptionSchema = z
   .object({
     executor: z
@@ -805,6 +805,10 @@ export const timConfigSchema = z
           .union([claudeCodeReasoningEffortSchema, codexReasoningLevelSchema])
           .optional()
           .describe('Reasoning effort to use for PR review thread fixes'),
+        /** Executor and model choices shown by the web Fix Unresolved dropdown. */
+        options: chatExecutorOptionsSchema
+          .optional()
+          .describe('Executor and model choices for the web Fix Unresolved dropdown'),
       })
       .strict()
       .optional()

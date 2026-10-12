@@ -106,7 +106,8 @@ const {
   spawnPrFixForPrProcessMock: vi.fn<
     (
       prUrlOrNumber: string,
-      cwd: string
+      cwd: string,
+      selection?: { executor?: string; model?: string }
     ) => Promise<{
       success: boolean;
       error?: string;
@@ -116,7 +117,8 @@ const {
   spawnPrFixProcessMock: vi.fn<
     (
       planId: number,
-      cwd: string
+      cwd: string,
+      selection?: { executor?: string; model?: string }
     ) => Promise<{
       success: boolean;
       planId?: number;
@@ -1484,12 +1486,21 @@ describe('startFixThreads', () => {
     });
     spawnPrFixProcessMock.mockResolvedValue({ success: true, planId: 403 });
 
-    await expect(invokeCommand(startFixThreads, { planUuid: 'plan-start-fix' })).resolves.toEqual({
+    await expect(
+      invokeCommand(startFixThreads, {
+        planUuid: 'plan-start-fix',
+        executor: 'codex-cli',
+        model: 'gpt-5-codex',
+      })
+    ).resolves.toEqual({
       status: 'started',
       planId: 403,
     });
 
-    expect(spawnPrFixProcessMock).toHaveBeenCalledWith(403, '/tmp/primary-workspace');
+    expect(spawnPrFixProcessMock).toHaveBeenCalledWith(403, '/tmp/primary-workspace', {
+      executor: 'codex-cli',
+      model: 'gpt-5-codex',
+    });
     expect(isPlanLaunching('plan-start-fix')).toBe(true);
   });
 });
@@ -1574,9 +1585,44 @@ describe('startFixPrThreads', () => {
     expect(result).toEqual({ status: 'started', prUrl: CANONICAL_PR_URL });
     expect(spawnPrFixForPrProcessMock).toHaveBeenCalledWith(
       CANONICAL_PR_URL,
-      '/tmp/pr-primary-workspace'
+      '/tmp/pr-primary-workspace',
+      { executor: undefined, model: undefined }
     );
     expect(isPrLaunching(CANONICAL_PR_URL)).toBe(true);
+  });
+
+  test('passes the selected executor and model to spawnPrFixForPrProcess', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-primary-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrFixForPrProcessMock.mockResolvedValue({ success: true });
+
+    await invokeCommand(startFixPrThreads, {
+      projectId,
+      prNumber: 42,
+      executor: 'claude-code',
+      model: 'opus',
+    });
+
+    expect(spawnPrFixForPrProcessMock).toHaveBeenCalledWith(
+      CANONICAL_PR_URL,
+      '/tmp/pr-primary-workspace',
+      { executor: 'claude-code', model: 'opus' }
+    );
+  });
+
+  test('rejects an unknown executor', async () => {
+    const projectId = getProjectId();
+    seedPrStatusWithUnresolvedThread(currentDb, 42);
+
+    await expect(
+      invokeCommand(startFixPrThreads, { projectId, prNumber: 42, executor: 'other' } as never)
+    ).rejects.toThrow();
+    expect(spawnPrFixForPrProcessMock).not.toHaveBeenCalled();
   });
 
   test('PR chat uses the PR launch lock and releases it after failure', async () => {
@@ -2014,8 +2060,10 @@ describe('startFixPrThreads', () => {
 
     const result = await invokeCommand(startFixThreads, { planUuid: 'plan-alongside-pr' });
 
-    expect(result).toEqual({ status: 'started', planId: 500 });
-    expect(spawnPrFixProcessMock).toHaveBeenCalledWith(500, '/tmp/plan-alongside-workspace');
+    expect(spawnPrFixProcessMock).toHaveBeenCalledWith(500, '/tmp/plan-alongside-workspace', {
+      executor: undefined,
+      model: undefined,
+    });
     expect(spawnPrFixForPrProcessMock).not.toHaveBeenCalled();
   });
 });

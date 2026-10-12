@@ -52,6 +52,7 @@ import {
   spawnGenerateProcess,
   spawnPlanReviewGuideProcess,
   spawnPrFixForPrProcess,
+  spawnPrFixProcess,
   spawnPrReviewGuideProcess,
   spawnRebaseProcess,
   spawnShellProcess,
@@ -848,6 +849,57 @@ describe('lib/server/plan_actions', () => {
     });
     expect(result).toEqual({ success: true });
     expect((result as { planId?: number }).planId).toBeUndefined();
+  });
+
+  test('spawnPrFixForPrProcess passes the selected executor and model', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const prUrl = 'https://github.com/owner/repo/pull/5';
+    const resultPromise = spawnPrFixForPrProcess(prUrl, '/tmp/primary-workspace', {
+      executor: 'codex-cli',
+      model: 'gpt-5-codex',
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    await resultPromise;
+
+    const [, options] = spawnSpy.mock.calls[0];
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'pr',
+      'fix',
+      '--pr',
+      prUrl,
+      '--executor',
+      'codex-cli',
+      '--model',
+      'gpt-5-codex',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+  });
+
+  test('spawnPrFixProcess passes the selected executor without a model', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnPrFixProcess(205, '/tmp/primary-workspace', {
+      executor: 'claude-code',
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    await resultPromise;
+
+    const [, options] = spawnSpy.mock.calls[0];
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'pr',
+      'fix',
+      '205',
+      '--executor',
+      'claude-code',
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
   });
 
   test('spawnCiFixProcess spawns tim pr fix-ci for the plan with auto-workspace flags', async () => {

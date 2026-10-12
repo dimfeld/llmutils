@@ -72,6 +72,7 @@
     proofConfigured = false,
     mediaHostConfigured = false,
     chatExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
+    prFixExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
     autoRunEnabled = false,
   }: {
     plan: PlanDetailView;
@@ -82,6 +83,7 @@
     proofConfigured?: boolean;
     mediaHostConfigured?: boolean;
     chatExecutorOptions?: ChatExecutorOption[];
+    prFixExecutorOptions?: ChatExecutorOption[];
     autoRunEnabled?: boolean;
   } = $props();
 
@@ -1697,7 +1699,7 @@
 
     <!-- Pull Requests -->
     {#if visiblePullRequests.length > 0 || plan.invalidPrUrls.length > 0 || visiblePrStatuses.length > 0}
-      <PrStatusSection planUuid={plan.uuid} {projectId} />
+      <PrStatusSection planUuid={plan.uuid} {projectId} {prFixExecutorOptions} />
     {/if}
 
     <!-- Review Guides -->

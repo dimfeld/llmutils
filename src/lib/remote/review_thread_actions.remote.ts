@@ -47,6 +47,7 @@ import {
 } from '$tim/headless.js';
 import { createTaskFromReviewThread } from '$tim/commands/review.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
+import { ClaudeCodeExecutorName, CodexCliExecutorName } from '$tim/executors/schemas.js';
 import {
   getPrStatusForPlan,
   getPrStatusByProjectAndNumber,
@@ -337,70 +338,78 @@ export const replyToThread = command(
   }
 );
 
-const startFixThreadsSchema = z.object({
+const prFixExecutorSelectionSchema = z.object({
+  executor: z.enum([ClaudeCodeExecutorName, CodexCliExecutorName]).optional(),
+  model: z.string().min(1).optional(),
+});
+
+const startFixThreadsSchema = prFixExecutorSelectionSchema.extend({
   planUuid: z.string().min(1),
 });
 
-export const startFixThreads = command(startFixThreadsSchema, async ({ planUuid }) => {
-  const { db } = await getServerContext();
+export const startFixThreads = command(
+  startFixThreadsSchema,
+  async ({ planUuid, executor, model }) => {
+    const { db } = await getServerContext();
 
-  const plan = getPlanByUuid(db, planUuid);
-  if (!plan) {
-    error(404, 'Plan not found');
+    const plan = getPlanByUuid(db, planUuid);
+    if (!plan) {
+      error(404, 'Plan not found');
+    }
+
+    // Include explicit PR URLs so fallback-linked PRs are found
+    const explicitPrUrls = parseJsonStringArray(plan.pull_request);
+    const { valid: validPrUrls } = categorizePrUrls(explicitPrUrls);
+    const prStatuses = getPrStatusForPlan(
+      db,
+      planUuid,
+      validPrUrls.length > 0 ? validPrUrls : undefined,
+      { includeReviewThreads: true }
+    );
+    const hasUnresolvedThreads = prStatuses.some((ps) =>
+      ps.reviewThreads?.some((rt) => !rt.thread.is_resolved)
+    );
+    if (!hasUnresolvedThreads) {
+      error(400, 'No unresolved review threads to fix');
+    }
+
+    // Check for active session
+    const activeSession = getSessionManager().hasActiveSessionForPlan(planUuid);
+    if (activeSession.active) {
+      return { status: 'already_running' as const, connectionId: activeSession.connectionId };
+    }
+
+    if (isPlanLaunching(planUuid)) {
+      return { status: 'already_running' as const };
+    }
+
+    const primaryWorkspacePath = getPrimaryWorkspacePath(db, plan.project_id);
+    if (!primaryWorkspacePath) {
+      error(400, 'Project does not have a primary workspace');
+    }
+
+    setLaunchLock(planUuid);
+
+    let result;
+    try {
+      result = await spawnPrFixProcess(plan.plan_id, primaryWorkspacePath, { executor, model });
+    } catch (e) {
+      clearLaunchLock(planUuid);
+      throw e;
+    }
+
+    if (!result.success) {
+      clearLaunchLock(planUuid);
+      error(500, result.error);
+    }
+
+    if (result.earlyExit) {
+      clearLaunchLock(planUuid);
+    }
+
+    return { status: 'started' as const, planId: plan.plan_id };
   }
-
-  // Include explicit PR URLs so fallback-linked PRs are found
-  const explicitPrUrls = parseJsonStringArray(plan.pull_request);
-  const { valid: validPrUrls } = categorizePrUrls(explicitPrUrls);
-  const prStatuses = getPrStatusForPlan(
-    db,
-    planUuid,
-    validPrUrls.length > 0 ? validPrUrls : undefined,
-    { includeReviewThreads: true }
-  );
-  const hasUnresolvedThreads = prStatuses.some((ps) =>
-    ps.reviewThreads?.some((rt) => !rt.thread.is_resolved)
-  );
-  if (!hasUnresolvedThreads) {
-    error(400, 'No unresolved review threads to fix');
-  }
-
-  // Check for active session
-  const activeSession = getSessionManager().hasActiveSessionForPlan(planUuid);
-  if (activeSession.active) {
-    return { status: 'already_running' as const, connectionId: activeSession.connectionId };
-  }
-
-  if (isPlanLaunching(planUuid)) {
-    return { status: 'already_running' as const };
-  }
-
-  const primaryWorkspacePath = getPrimaryWorkspacePath(db, plan.project_id);
-  if (!primaryWorkspacePath) {
-    error(400, 'Project does not have a primary workspace');
-  }
-
-  setLaunchLock(planUuid);
-
-  let result;
-  try {
-    result = await spawnPrFixProcess(plan.plan_id, primaryWorkspacePath);
-  } catch (e) {
-    clearLaunchLock(planUuid);
-    throw e;
-  }
-
-  if (!result.success) {
-    clearLaunchLock(planUuid);
-    error(500, result.error);
-  }
-
-  if (result.earlyExit) {
-    clearLaunchLock(planUuid);
-  }
-
-  return { status: 'started' as const, planId: plan.plan_id };
-});
+);
 
 const startCiFixSchema = z.object({
   planUuid: z.string().min(1),
@@ -463,14 +472,14 @@ export const startCiFix = command(startCiFixSchema, async ({ planUuid }) => {
   return { status: 'started' as const, planId: plan.plan_id };
 });
 
-const startFixPrThreadsSchema = z.object({
+const startFixPrThreadsSchema = prFixExecutorSelectionSchema.extend({
   projectId: z.number().int(),
   prNumber: z.number().int(),
 });
 
 export const startFixPrThreads = command(
   startFixPrThreadsSchema,
-  async ({ projectId, prNumber }) => {
+  async ({ projectId, prNumber, executor, model }) => {
     const { db } = await getServerContext();
 
     const prStatus = getPrStatusByProjectAndNumber(db, projectId, prNumber, {
@@ -508,7 +517,10 @@ export const startFixPrThreads = command(
 
     let result;
     try {
-      result = await spawnPrFixForPrProcess(canonicalPrUrl, primaryWorkspacePath);
+      result = await spawnPrFixForPrProcess(canonicalPrUrl, primaryWorkspacePath, {
+        executor,
+        model,
+      });
     } catch (e) {
       clearPrLaunchLock(canonicalPrUrl);
       throw e;
