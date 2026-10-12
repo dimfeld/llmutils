@@ -9,7 +9,6 @@
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import {
     DEFAULT_CHAT_EXECUTOR_OPTIONS,
-    chatExecutorLabel,
     chatOptionKey,
   } from '$lib/utils/chat_executor_options.js';
   import type { PlanReviewListItem } from '$lib/server/plans_browser.js';
@@ -60,6 +59,7 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import { Textarea } from '$lib/components/ui/textarea/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
+  import ChatOptionsDialog from './ChatOptionsDialog.svelte';
   import * as Collapsible from '$lib/components/ui/collapsible/index.js';
   import ActionButtonWithDropdown, { type ActionItem } from './ActionButtonWithDropdown.svelte';
 
@@ -2041,37 +2041,10 @@
   </Dialog.Content>
 </Dialog.Root>
 
-<Dialog.Root
+<ChatOptionsDialog
   open={chatDialogOpen}
-  onOpenChange={(open) => {
-    if (!open && startingChat) return;
-    chatDialogOpen = open;
-  }}
->
-  <Dialog.Content class="sm:max-w-md">
-    <Dialog.Header>
-      <Dialog.Title>Start Chat Session</Dialog.Title>
-      <Dialog.Description>Choose an executor and model</Dialog.Description>
-    </Dialog.Header>
-    <div class="grid gap-3 py-4">
-      {#each chatExecutorOptions as option (chatOptionKey(option))}
-        {@const optionKey = chatOptionKey(option)}
-        <Button
-          onclick={() => handleChat(option)}
-          class="justify-between"
-          disabled={!!startingChat}
-        >
-          {#if startingChat === optionKey}
-            <span
-              class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
-            ></span>
-            Starting…
-          {:else}
-            <span>{chatExecutorLabel(option.executor)}</span>
-            <span class="text-xs opacity-80">{option.model ?? 'Default model'}</span>
-          {/if}
-        </Button>
-      {/each}
-    </div>
-  </Dialog.Content>
-</Dialog.Root>
+  options={chatExecutorOptions}
+  startingKey={startingChat}
+  onOpenChange={(open) => (chatDialogOpen = open)}
+  onselect={handleChat}
+/>

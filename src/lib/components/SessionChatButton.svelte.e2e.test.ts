@@ -47,12 +47,46 @@ describe('review guide chat button', () => {
       },
     });
     await page.getByRole('button', { name: 'Chat with plan' }).click();
-    await expect.element(page.getByRole('button', { name: /gpt-test Codex CLI 2/ })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'gpt-test, Codex CLI' })).toBeVisible();
     await userEvent.keyboard('2');
     expect(startChat).toHaveBeenCalledWith({
       planUuid: 'plan-uuid',
       executor: 'codex-cli',
       model: 'gpt-test',
+    });
+  });
+
+  test('groups options by executor and numbers them in displayed order', async () => {
+    vi.mocked(startChat).mockResolvedValue({ status: 'started', planId: 42 });
+    render(SessionChatButton, {
+      props: {
+        target: { planUuid: 'plan-uuid' },
+        chatExecutorOptions: [
+          { executor: 'claude-code', model: 'opus:high' },
+          { executor: 'codex-cli', model: 'gpt-a' },
+          { executor: 'claude-code', model: 'opus:medium' },
+          { executor: 'codex-cli', model: 'gpt-b' },
+          { executor: 'claude-code', model: 'sonnet' },
+          { executor: 'codex-cli', model: 'gpt-c' },
+          { executor: 'claude-code' },
+          { executor: 'codex-cli' },
+        ],
+      },
+    });
+    await page.getByRole('button', { name: 'Chat with plan' }).click();
+
+    const claudeGroup = page.getByRole('region', { name: 'Claude Code' });
+    const codexGroup = page.getByRole('region', { name: 'Codex CLI' });
+    await expect.element(claudeGroup.getByRole('button').nth(3)).toHaveTextContent('Default model');
+    await expect.element(codexGroup.getByRole('button').first()).toHaveTextContent('gpt-a');
+    await expect.element(codexGroup.getByRole('button').first()).toHaveTextContent('5');
+
+    // Key 5 is the first Codex option on screen, not the fifth option in the config.
+    await userEvent.keyboard('5');
+    expect(startChat).toHaveBeenCalledWith({
+      planUuid: 'plan-uuid',
+      executor: 'codex-cli',
+      model: 'gpt-a',
     });
   });
 
