@@ -1333,9 +1333,14 @@ export async function getPlanDetail(
     }
   }
 
+  // Plans that use this plan as their base plan also depend on it.
   const dependentRows = db
-    .prepare('SELECT plan_uuid FROM plan_dependency WHERE depends_on_uuid = ?')
-    .all(planUuid) as Array<{ plan_uuid: string }>;
+    .prepare(
+      `SELECT plan_uuid FROM plan_dependency WHERE depends_on_uuid = ?
+       UNION
+       SELECT uuid AS plan_uuid FROM plan WHERE base_plan_uuid = ?`
+    )
+    .all(planUuid, planUuid) as Array<{ plan_uuid: string }>;
   const dependentUuids = dependentRows.map((r) => r.plan_uuid);
   for (const uuid of dependentUuids) referencedPlanUuids.add(uuid);
 

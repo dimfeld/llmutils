@@ -1137,6 +1137,57 @@ describe('lib/server/db_queries', () => {
     });
   });
 
+  test('getPlanDetail includes plans that use the plan as their base plan in dependents', async () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-dependents-base',
+      planId: 130,
+      title: 'Base for dependents',
+      status: 'pending',
+      priority: 'medium',
+      filename: '130-dependents-base.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-dependents-via-base',
+      planId: 131,
+      title: 'Dependent via base plan',
+      status: 'pending',
+      priority: 'medium',
+      basePlanUuid: 'plan-dependents-base',
+      filename: '131-dependents-via-base.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-dependents-via-both',
+      planId: 132,
+      title: 'Dependent via base plan and dependency',
+      status: 'pending',
+      priority: 'medium',
+      basePlanUuid: 'plan-dependents-base',
+      dependencyUuids: ['plan-dependents-base'],
+      filename: '132-dependents-via-both.plan.md',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'plan-dependents-via-dependency',
+      planId: 133,
+      title: 'Dependent via dependency',
+      status: 'pending',
+      priority: 'medium',
+      dependencyUuids: ['plan-dependents-base'],
+      filename: '133-dependents-via-dependency.plan.md',
+    });
+
+    const detail = await getPlanDetail(db, 'plan-dependents-base');
+
+    expect(detail?.dependents.map((dependent) => dependent.uuid).sort()).toEqual([
+      'plan-dependents-via-base',
+      'plan-dependents-via-both',
+      'plan-dependents-via-dependency',
+    ]);
+    expect(detail?.dependents.find((d) => d.uuid === 'plan-dependents-via-base')).toMatchObject({
+      planId: 131,
+      title: 'Dependent via base plan',
+    });
+  });
+
   test('getPlanDetail warns when base plan is an unfinished epic with one final child', async () => {
     nonSyncedUpsertPlan(db, projectId, {
       uuid: 'base-epic-linear',
