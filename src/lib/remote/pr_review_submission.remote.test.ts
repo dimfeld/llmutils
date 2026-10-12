@@ -579,7 +579,7 @@ describe('pr_review_submission remote functions', () => {
             side: 'RIGHT',
           }),
         ],
-        body: expect.stringContaining('## Additional notes'),
+        body: expect.stringContaining('## Comments not linked to a diff line'),
       })
     );
 

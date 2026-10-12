@@ -625,7 +625,7 @@ describe('common/github/pr_reviews', () => {
       },
     ]);
 
-    expect(updated).toContain('## Additional notes');
+    expect(updated).toContain('## Comments not linked to a diff line');
     expect(updated).toContain(
       '### src/a.ts:22\n\nNeeds follow-up\n\n- Suggestion: Add test coverage'
     );

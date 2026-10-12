@@ -379,7 +379,7 @@ export function appendIssuesToBody<T extends ReviewIssueForSubmission>(
     return `### ${location}\n\n${issue.content}${suggestionLine}`;
   });
 
-  return `${body}\n\n## Additional notes\n${noteSections.join('\n\n')}`;
+  return `${body}\n\n## Comments not linked to a diff line\n\n_These comments could not be matched to a specific line in the diff._\n\n${noteSections.join('\n\n')}`;
 }
 
 /**
