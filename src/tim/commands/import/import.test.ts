@@ -453,6 +453,41 @@ describe('handleImportCommand', () => {
     expect(planData.updatedAt).toBeDefined();
   });
 
+  test('adds existing plans for blocking issues as dependencies and sets the base plan', async () => {
+    const blockerPlan: PlanSchema & { filename: string } = {
+      id: 3,
+      title: 'Blocking plan',
+      status: 'in_progress',
+      issue: ['https://linear.app/acme/issue/TEAM-3/blocking-plan'],
+      tasks: [],
+      filename: '3.plan.md',
+    };
+    currentPlansResult = {
+      plans: new Map([[3, blockerPlan]]),
+      maxNumericId: 5,
+      duplicates: {},
+    };
+    vi.mocked(getInstructionsFromIssue).mockResolvedValue({
+      ...mockIssueData,
+      issue: {
+        ...mockIssueData.issue,
+        blockedBy: [
+          {
+            id: 'linear-3',
+            identifier: 'TEAM-3',
+            title: 'Blocking plan',
+            url: 'https://linear.app/acme/issue/TEAM-3/blocking-plan',
+          },
+        ],
+      },
+    });
+
+    await handleImportCommand('123');
+
+    const [, planData] = vi.mocked(writePlanFile).mock.calls[0];
+    expect(planData).toMatchObject({ id: 6, dependencies: [3], basePlan: 3 });
+  });
+
   test('reopens a reviewed parent when importing a child under it', async () => {
     const reviewedParent: PlanSchema & { filename: string } = {
       id: 1,

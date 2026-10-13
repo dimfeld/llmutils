@@ -2,7 +2,11 @@
 
 import { checkbox } from '@inquirer/prompts';
 import type { PlanSchema, PlanWithLegacyMetadata } from './planSchema.js';
-import type { IssueTrackerClient, IssueWithComments } from '../common/issue_tracker/types.js';
+import type {
+  IssueTrackerClient,
+  IssueWithComments,
+  LinkedIssueRef,
+} from '../common/issue_tracker/types.js';
 import { singleLineWithPrefix, limitLines } from '../common/formatting.js';
 import {
   parseCommandOptionsFromComment,
@@ -112,6 +116,7 @@ export interface IssueInstructionData {
   issue: {
     title: string;
     html_url: string;
+    blockedBy?: LinkedIssueRef[];
     [key: string]: any;
   };
   plan: string;

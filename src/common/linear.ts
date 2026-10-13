@@ -8,7 +8,7 @@
 
 import { getLinearClient } from './linear_client.ts';
 import { debugLog } from '../logging.ts';
-import { LinearDocument } from '@linear/sdk';
+import { LinearDocument, type Issue } from '@linear/sdk';
 import type {
   IssueTrackerClient,
   IssueTrackerConfig,
@@ -18,6 +18,7 @@ import type {
   IssueDocument,
   IssueStateTransitionResult,
   IssueTrackerUploadFileInput,
+  LinkedIssueRef,
   IssueTrackerUploadedFile,
   IssueTrackerUpsertCommentResult,
   ParsedIssueIdentifier,
@@ -150,10 +151,11 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       const comments = commentsConnection.nodes;
 
       // Fetch related data
-      const [state, labels, project] = await Promise.all([
+      const [state, labels, project, blockedBy] = await Promise.all([
         issue.state,
         issue.labels(),
         issue.project,
+        this.fetchBlockingIssues(issue),
       ]);
 
       debugLog('Fetched issue', issue);
@@ -186,6 +188,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
               description: project.description || undefined,
             }
           : undefined,
+        ...(blockedBy.length > 0 ? { blockedBy } : {}),
       };
 
       // Map Linear comments to generic CommentData format
@@ -246,13 +249,15 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       }
 
       // Fetch comments, children, and related data
-      const [commentsConnection, childrenConnection, state, labels, project] = await Promise.all([
-        issue.comments(),
-        issue.children(),
-        issue.state,
-        issue.labels(),
-        issue.project,
-      ]);
+      const [commentsConnection, childrenConnection, state, labels, project, blockedBy] =
+        await Promise.all([
+          issue.comments(),
+          issue.children(),
+          issue.state,
+          issue.labels(),
+          issue.project,
+          this.fetchBlockingIssues(issue),
+        ]);
 
       const comments = commentsConnection.nodes;
       const children = childrenConnection.nodes.toSorted(
@@ -289,6 +294,7 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
               description: project.description || undefined,
             }
           : undefined,
+        ...(blockedBy.length > 0 ? { blockedBy } : {}),
       };
 
       // Map Linear comments to generic CommentData format
@@ -337,6 +343,38 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
         `Failed to fetch Linear issue with children ${parsed.identifier}: ${errorMessage}`,
         { cause: error }
       );
+    }
+  }
+
+  /**
+   * Fetch the issues that block an issue. Linear stores "blocked by" as an inverse "blocks"
+   * relation, where the related issue is this issue and the source issue is the blocker.
+   * Blockers are optional import data, so a failure here does not stop the import.
+   */
+  private async fetchBlockingIssues(issue: Issue): Promise<LinkedIssueRef[]> {
+    try {
+      const relations = await issue.inverseRelations();
+      const blockers = await Promise.all(
+        relations.nodes
+          .filter((relation) => relation.type === 'blocks')
+          .map(async (relation) => relation.issue)
+      );
+
+      return blockers.flatMap((blocker) =>
+        blocker
+          ? [
+              {
+                id: blocker.id,
+                identifier: blocker.identifier,
+                title: blocker.title,
+                url: blocker.url,
+              },
+            ]
+          : []
+      );
+    } catch (error) {
+      debugLog(`Failed to fetch blocking issues for ${issue.identifier}: ${error as Error}`);
+      return [];
     }
   }
 

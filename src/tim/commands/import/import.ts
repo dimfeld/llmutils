@@ -6,7 +6,11 @@ import { checkbox } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { log } from '../../../logging.js';
 import { getIssueTracker } from '../../../common/issue_tracker/factory.js';
-import type { IssueWithComments, IssueTrackerClient } from '../../../common/issue_tracker/types.js';
+import type {
+  IssueWithComments,
+  IssueTrackerClient,
+  LinkedIssueRef,
+} from '../../../common/issue_tracker/types.js';
 import { getRepositoryIdentity } from '../../assignments/workspace_identifier.js';
 import { writePlanFile } from '../../plans.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
@@ -35,6 +39,7 @@ import { resolvePlanByNumericId } from '../../plans.js';
 import { isReopenableCompletedStatus } from '../../plans/plan_state_utils.js';
 import { editMaterializedPlan } from '../materialized_edit.js';
 import {
+  applyBlockingIssueDependencies,
   applyCommandOptions,
   getImportedIssueUrlsFromPlans,
   reserveImportedPlanStartId,
@@ -53,6 +58,22 @@ type ImportCommandOptions = ImportCommandPlanOptions & {
   edit?: boolean;
   editor?: string;
 };
+
+function addBlockingIssueDependencies(
+  plan: PlanSchema,
+  blockedBy: LinkedIssueRef[] | undefined,
+  allPlans: Map<number, PlanSchema>
+): void {
+  const result = applyBlockingIssueDependencies(plan, blockedBy, allPlans);
+  if (result.addedDependencies.length > 0) {
+    log(
+      `Plan ${plan.id} depends on existing plan(s) ${result.addedDependencies.join(', ')} for blocking issues`
+    );
+  }
+  if (result.basePlan !== undefined) {
+    log(`Set base plan of plan ${plan.id} to ${result.basePlan}`);
+  }
+}
 
 async function refreshPlanSnapshot(repoRoot: string, planRoot: string): Promise<PlanSnapshot> {
   const repository = await getRepositoryIdentity({ cwd: repoRoot });
@@ -340,6 +361,11 @@ async function importHierarchicalIssue(
 
     // Apply command-line options to the new parent plan
     applyCommandOptions(parentPlan, options);
+    addBlockingIssueDependencies(
+      parentPlan,
+      hierarchicalData.parentIssue.issue.blockedBy,
+      currentPlans
+    );
 
     const filenameSuffix = hierarchicalData.parentIssue.suggestedFileName.endsWith('.plan.md')
       ? hierarchicalData.parentIssue.suggestedFileName
@@ -419,6 +445,7 @@ async function importHierarchicalIssue(
       const childOptions = { ...options };
       delete childOptions.parent; // Parent is already set from hierarchy
       applyCommandOptions(childPlan, childOptions);
+      addBlockingIssueDependencies(childPlan, child.issueData.issue.blockedBy, currentPlans);
 
       const childFilenameSuffix = child.issueData.suggestedFileName.endsWith('.plan.md')
         ? child.issueData.suggestedFileName
@@ -595,6 +622,11 @@ async function importHierarchicalIssueMerged(
     parentPlan.issue = mergedIssueUrls;
     parentPlanId = newId;
     applyCommandOptions(parentPlan, options);
+    addBlockingIssueDependencies(
+      parentPlan,
+      hierarchicalData.parentIssue.issue.blockedBy,
+      allPlans
+    );
 
     const filenameSuffix = hierarchicalData.parentIssue.suggestedFileName.endsWith('.plan.md')
       ? hierarchicalData.parentIssue.suggestedFileName
@@ -771,6 +803,7 @@ export async function importSingleIssue(
 
   // Apply command-line options to the new plan
   applyCommandOptions(stubPlan, options);
+  addBlockingIssueDependencies(stubPlan, issueData.issue.blockedBy, allPlans);
 
   // Write the plan to DB only (no file)
   await writePlanFile(null, stubPlan, { cwdForIdentity: repoRoot });

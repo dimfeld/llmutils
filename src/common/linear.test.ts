@@ -156,6 +156,47 @@ describe('LinearIssueTrackerClient', () => {
       process.env.LINEAR_API_KEY = 'test-linear-api-key';
     });
 
+    test('includes issues that block the fetched issue', async () => {
+      const blocker = {
+        id: 'blocker-uuid',
+        identifier: 'TEAM-100',
+        title: 'Blocking issue',
+        url: 'https://linear.app/company/issue/TEAM-100/blocking-issue',
+      };
+      const mockLinearClient = {
+        issue: vi.fn(async () => ({
+          id: 'issue-uuid-123',
+          identifier: 'TEAM-123',
+          title: 'Blocked issue',
+          description: '',
+          url: 'https://linear.app/company/issue/TEAM-123',
+          creator: undefined,
+          assignee: undefined,
+          labels: vi.fn(async () => ({ nodes: [] })),
+          state: Promise.resolve({ name: 'Todo' }),
+          project: Promise.resolve(null),
+          createdAt: new Date('2024-01-15T10:30:00Z'),
+          updatedAt: new Date('2024-01-16T14:22:00Z'),
+          comments: vi.fn(async () => ({ nodes: [] })),
+          inverseRelations: vi.fn(async () => ({
+            nodes: [
+              { type: 'blocks', issue: Promise.resolve(blocker) },
+              {
+                type: 'related',
+                issue: Promise.resolve({ ...blocker, id: 'related-uuid', identifier: 'TEAM-101' }),
+              },
+            ],
+          })),
+        })),
+      };
+      vi.mocked(linearClientModule.getLinearClient).mockReturnValue(mockLinearClient);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.fetchIssue('TEAM-123');
+
+      expect(result.issue.blockedBy).toEqual([blocker]);
+    });
+
     test('fetches issue with comments successfully', async () => {
       const mockLinearClient = {
         issue: vi.fn(async (id: string) => ({

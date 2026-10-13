@@ -16,6 +16,7 @@ import type { IssueWithComments } from '$common/issue_tracker/types.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getRepositoryIdentity } from '$tim/assignments/workspace_identifier.js';
 import {
+  applyBlockingIssueDependencies,
   reserveImportedPlanStartId,
   writeImportedPlansToDbTransactionally,
   type PendingImportedPlanWrite,
@@ -357,6 +358,7 @@ export async function createPlansFromIssue(
     if (selectedBasePlan !== undefined) {
       plan.basePlan = selectedBasePlan;
     }
+    applyBlockingIssueDependencies(plan, issueInstruction.issue.blockedBy, allPlans);
     return plan;
   };
   const assertNotSelfBasePlan = (planId: number) => {

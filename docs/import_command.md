@@ -64,6 +64,10 @@ For each issue being imported, you can choose which parts to include:
 
 When importing issues with sub-issues (hierarchical imports), all related plans (parent + children) are written to the database atomically in a single transaction. This ensures that if the process fails midway through, the DB remains consistent — either all plans from the hierarchy are created, or none are. File writes happen after the transaction completes.
 
+### Blocking Issue Dependencies (Linear)
+
+When a Linear issue is blocked by other issues ("blocked by" relations), and some of those blocking issues already have tim plans, the new plan depends on those plans. If exactly one of those plans is not `done` or `cancelled`, it also becomes the new plan's `basePlan`, so the branch stacks on that plan's branch. A base plan that you select in the web UI or set another way is not replaced. A blocking issue without a plan is ignored. A blocking plan that is also the new plan's parent is skipped, because the parent already depends on its children. Plans are matched by the Linear issue key, so a changed title slug in the URL does not prevent a match. This applies only to new plans, not to updates of plans that already exist.
+
 ### rmfilter Argument Parsing
 
 Similar to the `generate` command, the import command can parse embedded `rmfilter` arguments from issue text. This allows issues to specify which files should be included for context when working on the implementation.

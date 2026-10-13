@@ -23,6 +23,20 @@ export interface UserData {
 }
 
 /**
+ * Short reference to another issue, such as one that blocks this issue
+ */
+export interface LinkedIssueRef {
+  /** Unique identifier */
+  id: string;
+  /** Issue key, such as "TEAM-123" */
+  identifier: string;
+  /** Issue title */
+  title: string;
+  /** URL to view the issue in the web interface */
+  url: string;
+}
+
+/**
  * Generic issue data structure that works for both GitHub and Linear
  */
 export interface IssueData {
@@ -54,6 +68,8 @@ export interface IssueData {
   updatedAt: string;
   /** Whether this is a pull request (GitHub specific) */
   pullRequest?: boolean;
+  /** Issues that block this issue (Linear "blocked by" relations) */
+  blockedBy?: LinkedIssueRef[];
   /** Project information (if the issue belongs to a project) */
   project?: {
     /** Project name/title */

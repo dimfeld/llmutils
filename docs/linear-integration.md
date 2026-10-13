@@ -97,6 +97,8 @@ tim import
 - Filter by team, status, or assignee
 - Bulk import with automatic duplicate detection
 
+**Blocking issues:** When a Linear issue is blocked by other issues ("blocked by" relations), and some of those blocking issues already have tim plans, the new plan depends on those plans. If exactly one of those plans is not `done` or `cancelled`, it also becomes the new plan's `basePlan`, so the branch stacks on that plan's branch. A base plan that you select in the web UI or set another way is not replaced. A blocking issue without a plan is ignored. A blocking plan that is also the new plan's parent is skipped, because the parent already depends on its children. Plans are matched by the Linear issue key, so a changed title slug in the URL does not prevent a match. This applies only to new plans, not to updates of plans that already exist. This works in the CLI and the web UI.
+
 **Web UI Import:**
 
 The web interface also supports importing Linear issues at `/projects/[projectId]/import/`. An "Import Issue" button appears on the Plans tab when Linear is configured. The web import supports all three modes (single, separate subissues, merged subissues) with visual content selection via checkboxes. Linear's hierarchical issue support (sub-issues) is fully available in the web UI.

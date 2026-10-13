@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import type { IssueTrackerClient, IssueWithComments } from '$common/issue_tracker/types.js';
+import type {
+  IssueTrackerClient,
+  IssueWithComments,
+  LinkedIssueRef,
+} from '$common/issue_tracker/types.js';
 import type { PendingImportedPlanWrite } from '$tim/commands/import/import_helpers.js';
 import type { PlanSchema } from '$tim/planSchema.js';
 
@@ -14,7 +18,8 @@ vi.mock('$common/issue_tracker/factory.js', () => ({
   getIssueTracker: vi.fn(),
 }));
 
-vi.mock('$common/linear.js', () => ({
+vi.mock('$common/linear.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$common/linear.js')>()),
   createLinearClient: vi.fn(),
 }));
 
@@ -39,7 +44,8 @@ vi.mock('$tim/db/project.js', () => ({
   getProjectById: vi.fn(),
 }));
 
-vi.mock('$tim/commands/import/import_helpers.js', () => ({
+vi.mock('$tim/commands/import/import_helpers.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$tim/commands/import/import_helpers.js')>()),
   reserveImportedPlanStartId: vi.fn(),
   writeImportedPlansToDbTransactionally: vi.fn(),
 }));
@@ -96,6 +102,7 @@ function makeIssue(
     comments?: string[];
     children?: IssueWithComments[];
     htmlUrl?: string;
+    blockedBy?: LinkedIssueRef[];
   }
 ): IssueWithComments {
   const body = options?.body ?? `${title} body`;
@@ -110,6 +117,7 @@ function makeIssue(
       state: 'open',
       createdAt: '2024-01-01T00:00:00.000Z',
       updatedAt: '2024-01-01T00:00:00.000Z',
+      ...(options?.blockedBy ? { blockedBy: options.blockedBy } : {}),
     },
     comments: comments.map((comment, index) => ({
       id: `${number}-comment-${index + 1}`,
@@ -477,6 +485,118 @@ describe('issue_import server helpers', () => {
 
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
       expect(pendingWrites).toHaveLength(1);
+      expect(pendingWrites?.[0]?.plan.basePlan).toBe(9);
+    });
+
+    test('adds plans for blocking issues as dependencies and sets the single unfinished one as base plan', async () => {
+      const issueData = makeIssue('TEAM-3', 'Blocked issue', {
+        body: 'Blocked body',
+        htmlUrl: 'https://linear.app/acme/issue/TEAM-3/blocked-issue',
+        blockedBy: [
+          {
+            id: 'linear-1',
+            identifier: 'TEAM-1',
+            title: 'Done blocker',
+            url: 'https://linear.app/acme/issue/TEAM-1/done-blocker',
+          },
+          {
+            id: 'linear-2',
+            identifier: 'TEAM-2',
+            title: 'Open blocker',
+            url: 'https://linear.app/acme/issue/TEAM-2/open-blocker',
+          },
+          {
+            id: 'linear-4',
+            identifier: 'TEAM-4',
+            title: 'Not imported',
+            url: 'https://linear.app/acme/issue/TEAM-4/not-imported',
+          },
+        ],
+      });
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map<number, PlanSchema>([
+          [
+            10,
+            {
+              id: 10,
+              uuid: 'uuid-10',
+              title: 'Done blocker',
+              status: 'done',
+              issue: ['https://linear.app/acme/issue/TEAM-1/done-blocker'],
+              tasks: [],
+            } as PlanSchema,
+          ],
+          [
+            11,
+            {
+              id: 11,
+              uuid: 'uuid-11',
+              title: 'Open blocker',
+              status: 'needs_review',
+              // The title slug changed after this plan was imported.
+              issue: ['https://linear.app/acme/issue/TEAM-2/old-title'],
+              tasks: [],
+            } as PlanSchema,
+          ],
+        ]),
+        duplicates: {},
+      });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(41);
+
+      await createPlansFromIssue(7, issueData, 'single', defaultSelectedContent());
+
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites).toHaveLength(1);
+      expect(pendingWrites?.[0]?.plan.dependencies).toEqual([10, 11]);
+      expect(pendingWrites?.[0]?.plan.basePlan).toBe(11);
+    });
+
+    test('keeps the selected base plan when blocking issues have plans', async () => {
+      const issueData = makeIssue('TEAM-3', 'Blocked issue', {
+        body: 'Blocked body',
+        blockedBy: [
+          {
+            id: 'linear-2',
+            identifier: 'TEAM-2',
+            title: 'Open blocker',
+            url: 'https://linear.app/acme/issue/TEAM-2/open-blocker',
+          },
+        ],
+      });
+      vi.mocked(loadPlansFromDb).mockReturnValue({
+        plans: new Map<number, PlanSchema>([
+          [
+            9,
+            {
+              id: 9,
+              uuid: 'uuid-9',
+              title: 'Selected base',
+              status: 'in_progress',
+              tasks: [],
+            } as PlanSchema,
+          ],
+          [
+            11,
+            {
+              id: 11,
+              uuid: 'uuid-11',
+              title: 'Open blocker',
+              status: 'in_progress',
+              issue: ['https://linear.app/acme/issue/TEAM-2/open-blocker'],
+              tasks: [],
+            } as PlanSchema,
+          ],
+        ]),
+        duplicates: {},
+      });
+      vi.mocked(reserveImportedPlanStartId).mockResolvedValue(41);
+
+      await createPlansFromIssue(7, issueData, 'single', defaultSelectedContent(), {
+        basePlan: 9,
+      });
+
+      const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
+      expect(pendingWrites?.[0]?.plan.dependencies).toEqual([11]);
       expect(pendingWrites?.[0]?.plan.basePlan).toBe(9);
     });
 

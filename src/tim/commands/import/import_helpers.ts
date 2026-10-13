@@ -6,6 +6,8 @@ import { ensureReferences } from '../../utils/references.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
 import { needArrayOrUndefined } from '../../../common/cli.js';
 import type { PlanSchema } from '../../planSchema.js';
+import type { LinkedIssueRef } from '../../../common/issue_tracker/types.js';
+import { parseLinearIssueIdentifier } from '../../../common/linear.js';
 import { applyPlanWritePostCommitUpdates, routePlanWriteIntoBatch } from '../../plans.js';
 import { loadEffectiveConfig } from '../../configLoader.js';
 import { resolveWriteMode, usesPlanIdReserve } from '../../sync/write_mode.js';
@@ -287,4 +289,78 @@ export function applyCommandOptions(plan: PlanSchema, options: ImportCommandPlan
   if (options.assign) {
     plan.assignedTo = options.assign;
   }
+}
+
+export interface BlockingIssueDependencyResult {
+  /** Plan IDs that were added to the plan's dependencies */
+  addedDependencies: number[];
+  /** Plan ID that was set as the base plan, if any */
+  basePlan?: number;
+}
+
+function getLinearIdentifierFromUrl(url: string): string | undefined {
+  const parsed = parseLinearIssueIdentifier(url);
+  return parsed?.url ? parsed.identifier : undefined;
+}
+
+function findPlanForIssue(
+  issue: LinkedIssueRef,
+  allPlans: Map<number, PlanSchema>
+): PlanSchema | undefined {
+  const identifier = issue.identifier.toUpperCase();
+  for (const plan of allPlans.values()) {
+    // Linear URLs can end with a title slug that changes when the title changes,
+    // so match on the issue key as well as the full URL.
+    if (
+      plan.issue?.some(
+        (issueUrl) => issueUrl === issue.url || getLinearIdentifierFromUrl(issueUrl) === identifier
+      )
+    ) {
+      return plan;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Add existing plans for the issues that block a newly imported issue as dependencies of its plan.
+ * When exactly one of those plans is not done or cancelled, and no base plan is set yet,
+ * that plan also becomes the base plan.
+ */
+export function applyBlockingIssueDependencies(
+  plan: PlanSchema,
+  blockedBy: LinkedIssueRef[] | undefined,
+  allPlans: Map<number, PlanSchema>
+): BlockingIssueDependencyResult {
+  const blockingPlans = new Map<number, PlanSchema>();
+  for (const blocker of blockedBy ?? []) {
+    const blockingPlan = findPlanForIssue(blocker, allPlans);
+    // The parent already depends on its children, so a dependency on the parent would be a cycle.
+    if (blockingPlan && blockingPlan.id !== plan.id && blockingPlan.id !== plan.parent) {
+      blockingPlans.set(blockingPlan.id, blockingPlan);
+    }
+  }
+
+  if (blockingPlans.size === 0) {
+    return { addedDependencies: [] };
+  }
+
+  const existingDependencies = new Set(plan.dependencies ?? []);
+  const addedDependencies = [...blockingPlans.keys()].filter(
+    (planId) => !existingDependencies.has(planId)
+  );
+  if (addedDependencies.length > 0) {
+    plan.dependencies = [...(plan.dependencies ?? []), ...addedDependencies];
+  }
+
+  const result: BlockingIssueDependencyResult = { addedDependencies };
+  const unfinishedBlockingPlans = [...blockingPlans.values()].filter(
+    (blockingPlan) => blockingPlan.status !== 'done' && blockingPlan.status !== 'cancelled'
+  );
+  if (plan.basePlan === undefined && unfinishedBlockingPlans.length === 1) {
+    plan.basePlan = unfinishedBlockingPlans[0].id;
+    result.basePlan = plan.basePlan;
+  }
+
+  return result;
 }

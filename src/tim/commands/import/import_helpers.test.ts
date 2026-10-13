@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
+import type { LinkedIssueRef } from '../../../common/issue_tracker/types.js';
 import type { PlanSchema } from '../../planSchema.js';
 import type { PendingImportedPlanWrite } from './import_helpers.js';
 
@@ -57,6 +58,7 @@ import {
 } from '../../plans.js';
 import { beginSyncBatch } from '../../sync/write_router.js';
 import {
+  applyBlockingIssueDependencies,
   getImportedIssueUrlsFromPlans,
   reserveImportedPlanStartId,
   writeImportedPlansToDbTransactionally,
@@ -225,5 +227,120 @@ describe('import_helpers', () => {
     const urls = getImportedIssueUrlsFromPlans(plans);
 
     expect([...urls].toSorted()).toEqual(['https://issue/1', 'https://issue/2', 'https://issue/3']);
+  });
+});
+
+describe('applyBlockingIssueDependencies', () => {
+  function blocker(identifier: string, slug = 'title'): LinkedIssueRef {
+    return {
+      id: `id-${identifier}`,
+      identifier,
+      title: `Issue ${identifier}`,
+      url: `https://linear.app/acme/issue/${identifier}/${slug}`,
+    };
+  }
+
+  function plansFor(...plans: PlanSchema[]): Map<number, PlanSchema> {
+    return new Map(plans.map((plan) => [plan.id, plan]));
+  }
+
+  test('does nothing when the issue has no blockers', () => {
+    const plan = makePlan(5);
+
+    expect(applyBlockingIssueDependencies(plan, undefined, plansFor(makePlan(1)))).toEqual({
+      addedDependencies: [],
+    });
+    expect(plan.dependencies).toBeUndefined();
+    expect(plan.basePlan).toBeUndefined();
+  });
+
+  test('ignores blockers that have no plan', () => {
+    const plan = makePlan(5);
+    const result = applyBlockingIssueDependencies(
+      plan,
+      [blocker('TEAM-9')],
+      plansFor(makePlan(1, { issue: ['https://linear.app/acme/issue/TEAM-1/title'] }))
+    );
+
+    expect(result).toEqual({ addedDependencies: [] });
+    expect(plan.dependencies).toBeUndefined();
+  });
+
+  test('matches plans by Linear issue key when the URL slug differs', () => {
+    const plan = makePlan(5);
+    const result = applyBlockingIssueDependencies(
+      plan,
+      [blocker('TEAM-1', 'new-title')],
+      plansFor(makePlan(1, { issue: ['https://linear.app/acme/issue/team-1/old-title'] }))
+    );
+
+    expect(result).toEqual({ addedDependencies: [1], basePlan: 1 });
+    expect(plan.dependencies).toEqual([1]);
+    expect(plan.basePlan).toBe(1);
+  });
+
+  test('sets the base plan only when exactly one blocking plan is unfinished', () => {
+    const allPlans = plansFor(
+      makePlan(1, { status: 'done', issue: [blocker('TEAM-1').url] }),
+      makePlan(2, { status: 'cancelled', issue: [blocker('TEAM-2').url] }),
+      makePlan(3, { status: 'needs_review', issue: [blocker('TEAM-3').url] }),
+      makePlan(4, { status: 'in_progress', issue: [blocker('TEAM-4').url] })
+    );
+
+    const onePending = makePlan(10);
+    applyBlockingIssueDependencies(
+      onePending,
+      [blocker('TEAM-1'), blocker('TEAM-2'), blocker('TEAM-3')],
+      allPlans
+    );
+    expect(onePending.dependencies).toEqual([1, 2, 3]);
+    expect(onePending.basePlan).toBe(3);
+
+    const twoPending = makePlan(11);
+    const result = applyBlockingIssueDependencies(
+      twoPending,
+      [blocker('TEAM-3'), blocker('TEAM-4')],
+      allPlans
+    );
+    expect(result).toEqual({ addedDependencies: [3, 4] });
+    expect(twoPending.dependencies).toEqual([3, 4]);
+    expect(twoPending.basePlan).toBeUndefined();
+
+    const allDone = makePlan(12);
+    applyBlockingIssueDependencies(allDone, [blocker('TEAM-1')], allPlans);
+    expect(allDone.dependencies).toEqual([1]);
+    expect(allDone.basePlan).toBeUndefined();
+  });
+
+  test('keeps existing dependencies and an existing base plan', () => {
+    const plan = makePlan(10, { dependencies: [7, 1], basePlan: 7 });
+    const result = applyBlockingIssueDependencies(
+      plan,
+      [blocker('TEAM-1'), blocker('TEAM-2')],
+      plansFor(
+        makePlan(1, { issue: [blocker('TEAM-1').url] }),
+        makePlan(2, { issue: [blocker('TEAM-2').url] })
+      )
+    );
+
+    expect(result).toEqual({ addedDependencies: [2] });
+    expect(plan.dependencies).toEqual([7, 1, 2]);
+    expect(plan.basePlan).toBe(7);
+  });
+
+  test('skips the plan itself and its parent', () => {
+    const plan = makePlan(10, { parent: 1 });
+    const result = applyBlockingIssueDependencies(
+      plan,
+      [blocker('TEAM-1'), blocker('TEAM-10')],
+      plansFor(
+        makePlan(1, { issue: [blocker('TEAM-1').url] }),
+        makePlan(10, { issue: [blocker('TEAM-10').url] })
+      )
+    );
+
+    expect(result).toEqual({ addedDependencies: [] });
+    expect(plan.dependencies).toBeUndefined();
+    expect(plan.basePlan).toBeUndefined();
   });
 });

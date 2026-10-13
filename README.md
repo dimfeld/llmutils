@@ -711,6 +711,9 @@ tim import TEAM-123
 tim import https://linear.app/acme/issue/TEAM-123/example-title
 ```
 
+When you import a Linear issue, existing plans for the issues that block it become dependencies of the new plan.
+If exactly one of those plans is not done or cancelled, it also becomes the new plan's base plan.
+
 Generate and execute:
 
 ```bash
