@@ -120,6 +120,8 @@ describe('common/github/webhook_ingest', () => {
     headRef?: string;
     receivedAt?: string;
     updatedAt?: string;
+    requestedReviewers?: string[];
+    requestedReviewer?: string;
   }): void {
     const receivedAt = params.receivedAt ?? '2026-03-30T10:00:00.000Z';
     mocks.fetchWebhookEvents.mockResolvedValueOnce([
@@ -133,6 +135,9 @@ describe('common/github/webhook_ingest', () => {
         payloadJson: JSON.stringify({
           action: params.action,
           repository: { full_name: 'example/repo' },
+          ...(params.requestedReviewer
+            ? { requested_reviewer: { login: params.requestedReviewer } }
+            : {}),
           pull_request: {
             number: params.prNumber,
             title: params.title,
@@ -143,7 +148,7 @@ describe('common/github/webhook_ingest', () => {
             head: { sha: params.headSha ?? `sha-${params.prNumber}`, ref: params.headRef },
             base: { ref: 'main' },
             labels: [],
-            requested_reviewers: [],
+            requested_reviewers: (params.requestedReviewers ?? []).map((login) => ({ login })),
             updated_at: params.updatedAt ?? receivedAt,
           },
         }),
@@ -582,6 +587,7 @@ describe('common/github/webhook_ingest', () => {
       title: 'Draft PR',
       draft: false,
       headRef: 'feature/ready-source',
+      requestedReviewers: ['bob'],
     });
     mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -696,6 +702,7 @@ describe('common/github/webhook_ingest', () => {
       title: 'Ready PR',
       draft: false,
       headRef: 'feature/closed-and-ready-prs',
+      requestedReviewers: ['bob'],
     });
     mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
 
@@ -778,6 +785,7 @@ describe('common/github/webhook_ingest', () => {
       title: 'Draft PR',
       draft: false,
       headRef: 'feature/pr-branch',
+      requestedReviewers: ['bob'],
     });
     mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
 
@@ -818,6 +826,7 @@ describe('common/github/webhook_ingest', () => {
       title: 'Ready PR',
       draft: false,
       headRef: 'feature/ready-cache-nondraft',
+      requestedReviewers: ['bob'],
     });
     mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
 
@@ -825,6 +834,202 @@ describe('common/github/webhook_ingest', () => {
 
     expect(result.errors).toEqual([]);
     expect(getPlanByUuid(db, cacheNonDraftPlanUuid)?.status).toBe('reviewed');
+  });
+
+  test('ingestWebhookEvents keeps a plan in needs_review when a PR becomes ready without a review request', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/90',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 90,
+      title: 'Draft PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const planUuid = '00000000-0000-4000-8000-000000000090';
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 90,
+      title: 'Ready without reviewers',
+      branch: 'feature/ready-no-reviewers',
+      filename: '90.plan.md',
+      status: 'needs_review',
+    });
+    linkPlanToPr(planUuid, pr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 90,
+      deliveryId: 'delivery-ready-no-reviewers',
+      action: 'ready_for_review',
+      prNumber: 90,
+      title: 'Draft PR',
+      draft: false,
+      headRef: 'feature/ready-no-reviewers',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(getPrStatusByUrl(db, pr.status.pr_url)?.status.draft).toBe(0);
+    expect(getPlanByUuid(db, planUuid)?.status).toBe('needs_review');
+  });
+
+  test('ingestWebhookEvents moves linked needs_review plans to reviewed when a review is requested on a ready PR', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/91',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 91,
+      title: 'Ready PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const planUuid = '00000000-0000-4000-8000-000000000091';
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 91,
+      title: 'Review requested',
+      branch: 'feature/review-requested',
+      filename: '91.plan.md',
+      status: 'needs_review',
+    });
+    linkPlanToPr(planUuid, pr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 91,
+      deliveryId: 'delivery-review-requested',
+      action: 'review_requested',
+      prNumber: 91,
+      title: 'Ready PR',
+      draft: false,
+      headRef: 'feature/review-requested',
+      requestedReviewers: ['bob'],
+      requestedReviewer: 'bob',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(getPlanByUuid(db, planUuid)?.status).toBe('reviewed');
+  });
+
+  test('ingestWebhookEvents keeps a plan in needs_review when a review is requested on a draft PR', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/92',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 92,
+      title: 'Draft PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const planUuid = '00000000-0000-4000-8000-000000000092';
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 92,
+      title: 'Review requested on draft',
+      branch: 'feature/review-requested-draft',
+      filename: '92.plan.md',
+      status: 'needs_review',
+    });
+    linkPlanToPr(planUuid, pr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 92,
+      deliveryId: 'delivery-review-requested-draft',
+      action: 'review_requested',
+      prNumber: 92,
+      title: 'Draft PR',
+      draft: true,
+      headRef: 'feature/review-requested-draft',
+      requestedReviewers: ['bob'],
+      requestedReviewer: 'bob',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const result = await ingestWebhookEvents(db);
+
+    expect(result.errors).toEqual([]);
+    expect(getPlanByUuid(db, planUuid)?.status).toBe('needs_review');
+  });
+
+  test('ingestWebhookEvents keeps a plan in needs_review until every open linked PR has a review request', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const firstPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/93',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 93,
+      title: 'First ready PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const secondPr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/94',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 94,
+      title: 'Second ready PR',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const planUuid = '00000000-0000-4000-8000-000000000093';
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: planUuid,
+      planId: 93,
+      title: 'Multiple PRs with partial review requests',
+      branch: 'feature/partial-review-requests',
+      filename: '93.plan.md',
+      status: 'needs_review',
+      pullRequest: [firstPr.status.pr_url, secondPr.status.pr_url],
+    });
+    linkPlanToPr(planUuid, firstPr.status.id);
+    linkPlanToPr(planUuid, secondPr.status.id);
+
+    enqueuePullRequestEvent({
+      id: 93,
+      deliveryId: 'delivery-review-requested-first',
+      action: 'review_requested',
+      prNumber: 93,
+      title: 'First ready PR',
+      draft: false,
+      headRef: 'feature/partial-review-requests',
+      requestedReviewers: ['bob'],
+      requestedReviewer: 'bob',
+    });
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+    const firstResult = await ingestWebhookEvents(db);
+
+    expect(firstResult.errors).toEqual([]);
+    expect(getPlanByUuid(db, planUuid)?.status).toBe('needs_review');
+
+    enqueuePullRequestEvent({
+      id: 94,
+      deliveryId: 'delivery-review-requested-second',
+      action: 'review_requested',
+      prNumber: 94,
+      title: 'Second ready PR',
+      draft: false,
+      headRef: 'feature/partial-review-requests',
+      requestedReviewers: ['carol'],
+      requestedReviewer: 'carol',
+    });
+
+    const secondResult = await ingestWebhookEvents(db);
+
+    expect(secondResult.errors).toEqual([]);
+    expect(getPlanByUuid(db, planUuid)?.status).toBe('reviewed');
   });
 
   test('ingestWebhookEvents moves linked reviewed plans back to needs_review when a PR becomes draft', async () => {

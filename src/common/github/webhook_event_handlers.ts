@@ -96,6 +96,8 @@ export interface WebhookHandlerResult {
    * either opened directly as a non-draft PR or transitioned from draft to ready.
    */
   prReadyForReview?: boolean;
+  /** True when this event added a review request to a known PR. */
+  prReviewRequested?: boolean;
   /** Present when a pull_request_review "submitted" event landed on a known PR. */
   reviewSubmission?: ReviewSubmission;
   inboxSignals?: InboxSignal[];
@@ -902,6 +904,7 @@ export function handlePullRequestEvent(
     prUrl,
     ...(prDraftTransition ? { prDraftTransition } : {}),
     ...(prReadyForReview ? { prReadyForReview: true } : {}),
+    ...(updated && parsed.action === 'review_requested' ? { prReviewRequested: true } : {}),
     apiRefreshTargets: needsApiRefresh
       ? [
           {
