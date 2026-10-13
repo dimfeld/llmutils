@@ -3,6 +3,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Download from '@lucide/svelte/icons/download';
   import Info from '@lucide/svelte/icons/info';
+  import Pencil from '@lucide/svelte/icons/pencil';
   import PanelRightClose from '@lucide/svelte/icons/panel-right-close';
   import PanelRightOpen from '@lucide/svelte/icons/panel-right-open';
   import Wrench from '@lucide/svelte/icons/wrench';
@@ -16,7 +17,7 @@
   import { useUIState } from '$lib/stores/ui_state.svelte.js';
   import SessionMessage from './SessionMessage.svelte';
   import { formatMessageTimestamp } from '$lib/utils/message_formatting.js';
-  import { projectChatLabel } from '$lib/utils/session_window_title.js';
+  import { sessionDisplayName } from '$lib/utils/session_window_title.js';
   import { summarizeHiddenToolCalls } from '$lib/utils/session_message_visibility.js';
   import { mergeConsecutiveOutputMessages } from '$lib/utils/merge_output_messages.js';
   import PromptRenderer from './PromptRenderer.svelte';
@@ -72,6 +73,39 @@
   let startedAgentStatus: 'started' | 'already_running' | null = $state(null);
   let startedAgentTimeout: ReturnType<typeof setTimeout> | null = null;
   const FULLY_RENDERED_MESSAGE_COUNT = 20;
+
+  let renaming = $state(false);
+  let renameValue = $state('');
+  let renameSaving = $state(false);
+
+  function startRename(): void {
+    renameValue = session.sessionInfo.customTitle ?? '';
+    renaming = true;
+  }
+
+  async function saveRename(): Promise<void> {
+    // Blur also fires when the input is removed after Enter or Escape.
+    if (!renaming || renameSaving) return;
+    const title = renameValue.trim();
+    if (title === (session.sessionInfo.customTitle ?? '')) {
+      renaming = false;
+      return;
+    }
+
+    renameSaving = true;
+    const renamed = await sessionManager.renameSession(session.connectionId, title || null);
+    renameSaving = false;
+    if (renamed) {
+      renaming = false;
+    } else {
+      toast.error('Failed to rename session');
+    }
+  }
+
+  function focusAndSelect(node: HTMLInputElement): void {
+    node.focus();
+    node.select();
+  }
 
   afterNavigate(({ from, to }) => {
     if (!floating && from && to && from.url.pathname !== to.url.pathname) {
@@ -411,9 +445,40 @@
           aria-label={statusText}
           role="img"
         ></span>
-        <h2 class="truncate text-lg font-semibold text-foreground">
-          {projectChatLabel(session.sessionInfo) ?? session.sessionInfo.command}
-        </h2>
+        {#if renaming}
+          <input
+            class="min-w-0 rounded border border-gray-300 bg-white px-2 py-0.5 text-lg font-semibold text-foreground focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900"
+            aria-label="Session name"
+            placeholder={sessionDisplayName({ ...session.sessionInfo, customTitle: undefined })}
+            maxlength={200}
+            bind:value={renameValue}
+            disabled={renameSaving}
+            use:focusAndSelect
+            onkeydown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void saveRename();
+              } else if (event.key === 'Escape') {
+                event.preventDefault();
+                renaming = false;
+              }
+            }}
+            onblur={() => void saveRename()}
+          />
+        {:else}
+          <h2 class="truncate text-lg font-semibold text-foreground">
+            {sessionDisplayName(session.sessionInfo)}
+          </h2>
+          <button
+            type="button"
+            class="shrink-0 rounded p-1 text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+            aria-label="Rename session"
+            title="Rename session"
+            onclick={startRename}
+          >
+            <Pencil class="h-3.5 w-3.5" />
+          </button>
+        {/if}
         {#if displayPlan.title || displayPlan.id != null}
           {#snippet planText()}
             {#if displayPlan.id != null}

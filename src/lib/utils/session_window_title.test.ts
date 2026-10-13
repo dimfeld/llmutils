@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { formatSessionWindowTitle, projectChatLabel } from './session_window_title.js';
+import {
+  formatSessionWindowTitle,
+  projectChatLabel,
+  sessionDisplayName,
+} from './session_window_title.js';
 
 describe('projectChatLabel', () => {
   test('labels chats with a chat branch as project chats', () => {
@@ -45,5 +49,24 @@ describe('formatSessionWindowTitle', () => {
 
   test('falls back to the command when no target metadata is available', () => {
     expect(formatSessionWindowTitle({ command: 'chat' })).toBe('chat');
+  });
+});
+
+describe('custom session titles', () => {
+  test('sessionDisplayName prefers the custom title', () => {
+    expect(sessionDisplayName({ command: 'chat', customTitle: 'Auth work' })).toBe('Auth work');
+    expect(sessionDisplayName({ command: 'chat', projectChatId: 'abc' })).toBe('Trunk Chat');
+    expect(sessionDisplayName({ command: 'agent' })).toBe('agent');
+  });
+
+  test('formatSessionWindowTitle prefers the custom title over plan and PR', () => {
+    expect(
+      formatSessionWindowTitle({
+        command: 'chat',
+        planId: 42,
+        planTitle: 'Build feature',
+        customTitle: 'Auth work',
+      })
+    ).toBe('Auth work');
   });
 });

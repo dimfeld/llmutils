@@ -94,8 +94,9 @@ export function filterSessions(
 
     const planTitle = session.sessionInfo.planTitle?.toLowerCase() ?? '';
     const planId = session.sessionInfo.planId ? String(session.sessionInfo.planId) : '';
+    const customTitle = session.sessionInfo.customTitle?.toLowerCase() ?? '';
 
-    if (planTitle.includes(q) || planId === q) {
+    if (planTitle.includes(q) || planId === q || customTitle.includes(q)) {
       results.push(session);
     }
   }

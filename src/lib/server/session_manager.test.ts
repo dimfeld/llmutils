@@ -1976,6 +1976,46 @@ describe('lib/server/session_manager', () => {
     });
   });
 
+  test('renameSession sets the title locally, sends it to the agent, and emits an update', () => {
+    const sender = vi.fn<(message: HeadlessServerMessage) => void>();
+    manager.handleWebSocketConnect('conn-1', sender);
+    const onUpdate = vi.fn();
+    manager.subscribe('session:update', onUpdate);
+
+    expect(manager.renameSession('conn-1', '  My chat  ')).toBe(true);
+    expect(manager.renameSession('missing', 'nope')).toBe(false);
+
+    expect(sender).toHaveBeenCalledWith({ type: 'set_session_title', title: 'My chat' });
+    expect(manager.getSessionSnapshot().sessions[0]?.sessionInfo.customTitle).toBe('My chat');
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    expect(onUpdate.mock.calls[0]?.[0].session.sessionInfo.customTitle).toBe('My chat');
+
+    manager.renameSession('conn-1', '   ');
+    expect(sender).toHaveBeenLastCalledWith({ type: 'set_session_title', title: null });
+    expect(manager.getSessionSnapshot().sessions[0]?.sessionInfo.customTitle).toBeUndefined();
+  });
+
+  test('renameSession works for offline sessions without a sender', () => {
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketDisconnect('conn-1');
+
+    expect(manager.renameSession('conn-1', 'Old chat')).toBe(true);
+    expect(manager.getSessionSnapshot().sessions[0]?.sessionInfo.customTitle).toBe('Old chat');
+  });
+
+  test('session_info messages carry the custom title reported by the agent', () => {
+    manager.handleWebSocketConnect('conn-1', vi.fn());
+    manager.handleWebSocketMessage('conn-1', {
+      type: 'session_info',
+      command: 'chat',
+      customTitle: 'Reported title',
+    });
+
+    expect(manager.getSessionSnapshot().sessions[0]?.sessionInfo.customTitle).toBe(
+      'Reported title'
+    );
+  });
+
   test('broadcasts notification subscriber changes to connected agents', () => {
     const senderA = vi.fn<(message: HeadlessServerMessage) => void>();
     const senderB = vi.fn<(message: HeadlessServerMessage) => void>();

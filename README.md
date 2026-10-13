@@ -302,6 +302,8 @@ Open the Vite URL printed by the command. The app groups data by project and pro
 
 The web UI discovers running agent processes through session files in `~/.cache/tim/sessions/` and connects to each process over its embedded local WebSocket server. It also uses SSE to update the browser as sessions and PR status change.
 
+To rename a session, click the pencil icon next to its name in Session Detail. Press Enter to save or Escape to cancel. Save an empty name to go back to the default name. The running `tim` process keeps the name, so the name stays when the web server restarts. The session list, floating windows, and command bar show the new name.
+
 When tool calls are hidden, Session Detail shows a count in place of each consecutive group.
 Tool results do not add to the call count. Tim agent calls remain visible.
 

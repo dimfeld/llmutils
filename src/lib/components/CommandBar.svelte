@@ -215,9 +215,11 @@
           >
             <span class="flex items-center gap-2">
               <span class="truncate">
-                {session.sessionInfo.planTitle ?? session.sessionInfo.command}
+                {session.sessionInfo.customTitle ??
+                  session.sessionInfo.planTitle ??
+                  session.sessionInfo.command}
               </span>
-              {#if session.sessionInfo.planTitle}
+              {#if session.sessionInfo.customTitle || session.sessionInfo.planTitle}
                 <span class="shrink-0 text-xs text-muted-foreground">
                   {session.sessionInfo.command}
                 </span>

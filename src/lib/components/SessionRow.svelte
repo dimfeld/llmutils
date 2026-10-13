@@ -60,6 +60,7 @@
   });
 
   let displayCommand = $derived.by(() => {
+    if (session.sessionInfo.customTitle) return session.sessionInfo.customTitle;
     const chatLabel = projectChatLabel(session.sessionInfo);
     if (chatLabel) return chatLabel;
     const cmd = session.sessionInfo.command;

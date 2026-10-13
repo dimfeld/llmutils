@@ -854,6 +854,47 @@ describe('HeadlessAdapter', () => {
     await adapter.destroy();
   });
 
+  it('applies set_session_title and re-broadcasts session info with the title', async () => {
+    const { adapter: wrapped } = createRecordingAdapter();
+    const adapter = createTestHeadlessAdapter({ command: 'chat' }, wrapped);
+
+    const port = (adapter as any).sessionServer.port as number;
+    const ws = await openWebSocket(`ws://127.0.0.1:${port}/tim-agent`);
+    const messages: HeadlessMessage[] = [];
+    ws.addEventListener('message', (event) => {
+      const parsed = parseMessage(event.data as string);
+      if (parsed) {
+        messages.push(parsed);
+      }
+    });
+    await waitFor(() => messages.some((message) => message.type === 'replay_end'));
+    messages.length = 0;
+
+    ws.send(
+      JSON.stringify({
+        type: 'set_session_title',
+        title: '  Auth refactor  ',
+      } satisfies HeadlessServerMessage)
+    );
+    await waitFor(() =>
+      messages.some(
+        (message) => message.type === 'session_info' && message.customTitle === 'Auth refactor'
+      )
+    );
+
+    messages.length = 0;
+    ws.send(
+      JSON.stringify({ type: 'set_session_title', title: null } satisfies HeadlessServerMessage)
+    );
+    await waitFor(() => messages.some((message) => message.type === 'session_info'));
+    const cleared = messages.find((message) => message.type === 'session_info');
+    expect(cleared).toBeDefined();
+    expect(cleared && 'customTitle' in cleared ? cleared.customTitle : undefined).toBeUndefined();
+
+    ws.close();
+    await adapter.destroy();
+  });
+
   it('broadcasts live plan content updates to embedded-server clients', async () => {
     const { adapter: wrapped } = createRecordingAdapter();
     const adapter = createTestHeadlessAdapter({ command: 'agent' }, wrapped);

@@ -426,6 +426,9 @@ export class HeadlessAdapter implements LoggerAdapter {
           this.wrappedAdapter.warn(`Headless force end session handler error: ${err as Error}`);
         }
         break;
+      case 'set_session_title':
+        this.updateSessionInfo({ customTitle: message.title?.trim() || undefined });
+        break;
       case 'notification_subscribers_changed':
         this.hasBrowserNotificationSubscribers = message.hasSubscribers;
         break;

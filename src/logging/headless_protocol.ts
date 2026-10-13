@@ -33,6 +33,8 @@ export interface HeadlessSessionInfo {
   buildSha?: string;
   buildTime?: string;
   binaryPath?: string;
+  /** User-assigned display name for the session, set from the web UI. */
+  customTitle?: string;
 }
 
 export interface HeadlessSessionInfoMessage extends HeadlessSessionInfo {
@@ -149,6 +151,12 @@ export interface HeadlessTerminateExecutorServerMessage {
   action?: SessionProcessControlOperation;
 }
 
+/** Server→client message: set or clear (null) the user-assigned session title. */
+export interface HeadlessSetSessionTitleServerMessage {
+  type: 'set_session_title';
+  title: string | null;
+}
+
 /** Server→client message: browser notification subscriber status update. */
 export interface HeadlessNotificationSubscribersMessage {
   type: 'notification_subscribers_changed';
@@ -164,4 +172,5 @@ export type HeadlessServerMessage =
   | HeadlessEndSessionServerMessage
   | HeadlessForceEndSessionServerMessage
   | HeadlessTerminateExecutorServerMessage
+  | HeadlessSetSessionTitleServerMessage
   | HeadlessNotificationSubscribersMessage;

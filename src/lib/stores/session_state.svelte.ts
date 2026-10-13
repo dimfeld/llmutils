@@ -6,6 +6,7 @@ import {
   endExecutor as endExecutorRemote,
   endSession as endSessionRemote,
   forceEndSession as forceEndSessionRemote,
+  renameSession as renameSessionRemote,
   sendSessionPromptResponse,
   sendSessionUserInput,
   terminateExecutor as terminateExecutorRemote,
@@ -536,6 +537,15 @@ export class SessionManager {
   async forceEndSession(connectionId: string): Promise<boolean> {
     try {
       await forceEndSessionRemote({ connectionId });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async renameSession(connectionId: string, title: string | null): Promise<boolean> {
+    try {
+      await renameSessionRemote({ connectionId, title });
       return true;
     } catch {
       return false;

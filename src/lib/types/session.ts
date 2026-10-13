@@ -165,6 +165,7 @@ export interface HeadlessSessionInfo {
   buildSha?: string;
   buildTime?: string;
   binaryPath?: string;
+  customTitle?: string;
 }
 
 export interface SessionPlanTask {

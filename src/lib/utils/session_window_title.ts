@@ -11,6 +11,7 @@ type SessionWindowTitleInfo = Pick<
   | 'linkedPrTitle'
   | 'projectChatId'
   | 'projectChatBranch'
+  | 'customTitle'
 >;
 
 /**
@@ -24,8 +25,22 @@ export function projectChatLabel(
   return sessionInfo.projectChatBranch ? 'Project Chat' : 'Trunk Chat';
 }
 
+/**
+ * Primary name of a session: the user-assigned title, then the project chat label, then the
+ * command.
+ */
+export function sessionDisplayName(
+  sessionInfo: Pick<
+    HeadlessSessionInfo,
+    'command' | 'customTitle' | 'projectChatId' | 'projectChatBranch'
+  >
+): string {
+  return sessionInfo.customTitle || projectChatLabel(sessionInfo) || sessionInfo.command;
+}
+
 /** Format the title used by a floating session window and its minimized button. */
 export function formatSessionWindowTitle(sessionInfo: SessionWindowTitleInfo): string {
+  if (sessionInfo.customTitle) return sessionInfo.customTitle;
   const planId = sessionInfo.planId ?? sessionInfo.linkedPlanId;
   const planTitle = sessionInfo.planTitle ?? sessionInfo.linkedPlanTitle;
   const plan =

@@ -75,6 +75,17 @@ export const forceEndSession = command(sessionTargetSchema, async (target) => {
   }
 });
 
+const renameSessionSchema = sessionTargetSchema.extend({
+  title: z.string().max(200).nullable(),
+});
+
+export const renameSession = command(renameSessionSchema, async (target) => {
+  const renamed = getSessionManager().renameSession(target.connectionId, target.title);
+  if (!renamed) {
+    error(404, 'Session not found');
+  }
+});
+
 export const dismissSession = command(sessionTargetSchema, async (target) => {
   const dismissed = getSessionManager().dismissSession(target.connectionId);
   if (!dismissed) {

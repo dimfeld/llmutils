@@ -27,6 +27,7 @@ export const VALID_HEADLESS_SERVER_TYPES = new Set<HeadlessServerMessage['type']
   'end_session',
   'force_end_session',
   'terminate_executor',
+  'set_session_title',
   'notification_subscribers_changed',
 ]);
 
@@ -188,6 +189,11 @@ export function parseHeadlessServerMessage(payload: string): HeadlessServerMessa
         !isProcessId(parsed.executorId) ||
         (parsed.action !== undefined && parsed.action !== 'terminate' && parsed.action !== 'end')
       ) {
+        return null;
+      }
+      return parsed as unknown as HeadlessServerMessage;
+    case 'set_session_title':
+      if (parsed.title !== null && typeof parsed.title !== 'string') {
         return null;
       }
       return parsed as unknown as HeadlessServerMessage;

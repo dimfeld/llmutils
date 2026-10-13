@@ -612,6 +612,7 @@ export class SessionManager {
           buildSha: message.buildSha,
           buildTime: message.buildTime,
           binaryPath: message.binaryPath,
+          customTitle: message.customTitle,
         };
         session.pty = message.pty === true;
         session.groupKey = sessionGroupKey(message.gitRemote, message.workspacePath);
@@ -960,6 +961,24 @@ export class SessionManager {
 
   forceEndSession(connectionId: string): boolean {
     return this.trySend(connectionId, { type: 'force_end_session' });
+  }
+
+  /**
+   * Sets or clears (null/blank) the user-assigned title of a session. The title is applied
+   * locally right away and sent to the live tim process, which owns it and re-reports it in
+   * later session_info messages. Returns false when the session does not exist.
+   */
+  renameSession(connectionId: string, title: string | null): boolean {
+    const session = this.sessions.get(connectionId);
+    if (!session) {
+      return false;
+    }
+
+    const customTitle = title?.trim() || undefined;
+    session.sessionInfo = { ...session.sessionInfo, customTitle };
+    this.trySend(connectionId, { type: 'set_session_title', title: customTitle ?? null });
+    this.emit('session:update', { session: this.cloneSessionMetadata(session) });
+    return true;
   }
 
   registerSSESubscriber(): void {

@@ -31,6 +31,7 @@ describe('headless_message_utils', () => {
       'end_session',
       'force_end_session',
       'terminate_executor',
+      'set_session_title',
       'notification_subscribers_changed',
     ]);
   });
@@ -228,6 +229,12 @@ describe('headless_message_utils', () => {
       hasSubscribers: true,
     });
     expect(
+      parseHeadlessServerMessage(JSON.stringify({ type: 'set_session_title', title: 'Chat' }))
+    ).toEqual({ type: 'set_session_title', title: 'Chat' });
+    expect(
+      parseHeadlessServerMessage(JSON.stringify({ type: 'set_session_title', title: null }))
+    ).toEqual({ type: 'set_session_title', title: null });
+    expect(
       parseHeadlessServerMessage(
         JSON.stringify({
           type: 'terminate_executor',
@@ -289,6 +296,10 @@ describe('headless_message_utils', () => {
         JSON.stringify({ type: 'notification_subscribers_changed', hasSubscribers: 'yes' })
       )
     ).toBeNull();
+    expect(
+      parseHeadlessServerMessage(JSON.stringify({ type: 'set_session_title', title: 42 }))
+    ).toBeNull();
+    expect(parseHeadlessServerMessage(JSON.stringify({ type: 'set_session_title' }))).toBeNull();
     expect(parseHeadlessServerMessage(JSON.stringify({ type: 'output' }))).toBeNull();
     expect(
       parseHeadlessServerMessage(
