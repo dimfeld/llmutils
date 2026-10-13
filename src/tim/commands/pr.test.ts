@@ -1638,7 +1638,13 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain('Commit the code changes.');
     expect(prompt).toContain('jj bookmark set <current-bookmark> -r @-');
     expect(prompt).toContain('Push the branch/bookmark changes to the PR before replying');
-    expect(prompt).toContain('Group addressed threads by PR URL.');
+    expect(prompt).toContain(
+      'Group the threads that need a reply (addressed threads and threads with issues you decided not to fix) by PR URL.'
+    );
+    expect(prompt).toContain(
+      'For each actionable issue that you decide not to fix, or that the user tells you not to fix, also leave a reply that gives the reason.'
+    );
+    expect(prompt).toContain('reason for not fixing');
     expect(prompt).toContain('addPullRequestReview(input:{pullRequestId:$pr})');
     expect(prompt).toContain(
       'addPullRequestReviewThreadReply(input:{pullRequestReviewId:$review,pullRequestReviewThreadId:$thread,body:$body})'
