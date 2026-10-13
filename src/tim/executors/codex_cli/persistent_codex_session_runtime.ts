@@ -104,7 +104,7 @@ export class PersistentCodexSessionRuntime {
     }
 
     const approvalPolicy = allowAllTools ? 'never' : undefined;
-    const sandbox = allowAllTools ? 'danger-full-access' : 'workspace-write';
+    const sandbox = allowAllTools ? 'danger-full-access' : undefined;
     const approvalHandler = createApprovalHandler({
       sandboxAllowsFileWrites: !allowAllTools,
       writableRoots,
@@ -338,14 +338,14 @@ export class PersistentCodexSessionRuntime {
 
   private buildThreadStartParams(
     approvalPolicy: string | undefined,
-    sandbox: 'workspace-write' | 'danger-full-access'
+    sandbox: 'danger-full-access' | undefined
   ): ThreadStartParams {
     const provider = this.options
       .dynamicToolProvider as CodexDynamicToolProvider<CodexAgentToolContext>;
     return {
       cwd: this.options.cwd,
       approvalPolicy,
-      sandbox,
+      ...(sandbox ? { sandbox } : {}),
       model: this.options.model,
       dynamicTools: provider.definitions,
     };

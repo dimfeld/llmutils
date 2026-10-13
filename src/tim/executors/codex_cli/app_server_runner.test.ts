@@ -783,25 +783,47 @@ describe('executeCodexStepViaAppServer', () => {
     expect(conversionInput).toContain('Do not perform the original task again');
   });
 
-  test('passes model through to threadStart and turnStart', async () => {
-    const harness = await createHarness();
+  test.each([false, true])(
+    'passes model and sandbox settings with allowAllTools=%s',
+    async (allowAllTools: boolean) => {
+      const harness = await createHarness();
 
-    harness.connection.turnStart.mockImplementationOnce(async () => {
-      harness.connectionHandlers.onNotification?.('turn/completed', {
-        turn: { status: 'completed' },
+      harness.connection.turnStart.mockImplementationOnce(async () => {
+        harness.connectionHandlers.onNotification?.('turn/completed', {
+          turn: { status: 'completed' },
+        });
+        return { turnId: 'turn-1' };
       });
-      return { turnId: 'turn-1' };
-    });
 
-    await harness.executeCodexStepViaAppServer('prompt', '/repo', {}, { model: 'gpt-5' });
+      const previousAllowAllTools = process.env.ALLOW_ALL_TOOLS;
+      process.env.ALLOW_ALL_TOOLS = String(allowAllTools);
+      try {
+        await harness.executeCodexStepViaAppServer('prompt', '/repo', {}, { model: 'gpt-5' });
+      } finally {
+        if (previousAllowAllTools === undefined) {
+          delete process.env.ALLOW_ALL_TOOLS;
+        } else {
+          process.env.ALLOW_ALL_TOOLS = previousAllowAllTools;
+        }
+      }
 
-    expect(harness.connection.threadStart.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ model: 'gpt-5' })
-    );
-    expect(harness.connection.turnStart.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ model: 'gpt-5' })
-    );
-  });
+      const threadParams = harness.connection.threadStart.mock.calls[0]?.[0];
+      if (allowAllTools) {
+        expect(threadParams).toEqual(
+          expect.objectContaining({ sandbox: 'danger-full-access', approvalPolicy: 'never' })
+        );
+      } else {
+        expect(threadParams).not.toHaveProperty('sandbox');
+      }
+
+      expect(harness.connection.threadStart.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ model: 'gpt-5' })
+      );
+      expect(harness.connection.turnStart.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({ model: 'gpt-5' })
+      );
+    }
+  );
 
   test('creates and cleans up tunnel server when tunnel is not active', async () => {
     const harness = await createHarness({ tunnelActive: false });

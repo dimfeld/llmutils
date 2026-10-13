@@ -521,6 +521,12 @@ describe('persistent Codex setup', () => {
         );
 
         await expect(handle.ready).resolves.toBeUndefined();
+        const threadRequest = (await readJsonLines(fixture.requestLogPath)).find(
+          (request) => request.method === 'thread/start'
+        );
+        expect(threadRequest).toBeDefined();
+        expect(threadRequest?.params).not.toHaveProperty('sandbox');
+
         await waitForCondition(
           async () =>
             (await readJsonLines(fixture.responseLogPath)).some((response) => {

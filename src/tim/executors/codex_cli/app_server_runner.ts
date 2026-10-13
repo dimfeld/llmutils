@@ -189,7 +189,7 @@ async function executeCodexStepViaAppServerInternal(
   }
 
   const approvalPolicy = allowAllTools ? 'never' : undefined;
-  const sandbox = allowAllTools ? 'danger-full-access' : 'workspace-write';
+  const sandbox = allowAllTools ? 'danger-full-access' : undefined;
 
   const reasoningLevel = options?.reasoningLevel ?? 'medium';
   const model = options?.model;
@@ -492,7 +492,7 @@ async function executeCodexStepViaAppServerInternal(
       {
         cwd,
         approvalPolicy,
-        sandbox,
+        ...(sandbox ? { sandbox } : {}),
         model,
         ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
       },
@@ -904,7 +904,7 @@ async function executeCodexStepViaAppServerInternal(
         const conversionThreadResult = await activeConnection.threadStart({
           cwd,
           approvalPolicy,
-          sandbox,
+          ...(sandbox ? { sandbox } : {}),
           model,
           ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
         });
