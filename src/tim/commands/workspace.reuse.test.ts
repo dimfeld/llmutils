@@ -549,34 +549,23 @@ describe.skipIf(!process.env.SLOW_TESTS)('workspace add --reuse and --try-reuse'
     expect(logCalls.some((msg: string) => msg.includes('created successfully'))).toBe(true);
   });
 
-  test('skips workspaces with uncommitted changes', async () => {
-    // Create two workspaces
+  test('stashes uncommitted changes and reuses the workspace', async () => {
     const dirtyWorkspace = path.join(clonesDir, 'dirty-workspace');
-    const cleanWorkspace = path.join(clonesDir, 'clean-workspace');
     await fs.mkdir(dirtyWorkspace, { recursive: true });
-    await fs.mkdir(cleanWorkspace, { recursive: true });
     await initGitRepository(dirtyWorkspace, bareRemoteDir);
-    await initGitRepository(cleanWorkspace, bareRemoteDir);
 
-    // Make the dirty workspace actually dirty
+    // Leave both an untracked file and a change to a tracked file.
     await fs.writeFile(path.join(dirtyWorkspace, 'uncommitted.txt'), 'dirty content');
+    await fs.appendFile(path.join(dirtyWorkspace, 'README.md'), '\nleftover edit\n');
 
-    // Register both workspaces
     const dirtyEntry: WorkspaceInfo = {
       taskId: 'dirty-task',
       workspacePath: dirtyWorkspace,
       createdAt: new Date().toISOString(),
       repositoryId: 'test-repo-id',
     };
-    const cleanEntry: WorkspaceInfo = {
-      taskId: 'clean-task',
-      workspacePath: cleanWorkspace,
-      createdAt: new Date().toISOString(),
-      repositoryId: 'test-repo-id',
-    };
     await writeTrackingData({
       [dirtyWorkspace]: dirtyEntry,
-      [cleanWorkspace]: cleanEntry,
     });
 
     await createPlanFile(path.join(mainRepoDir, 'tasks'), 45, 'Test Plan');
@@ -591,15 +580,22 @@ describe.skipIf(!process.env.SLOW_TESTS)('workspace add --reuse and --try-reuse'
       },
     } as any);
 
-    // Verify the clean workspace was used (by checking which one is locked)
-    const cleanLockInfo = await WorkspaceLock.getLockInfo(cleanWorkspace);
-    expect(cleanLockInfo).not.toBeNull();
+    expect(await WorkspaceLock.getLockInfo(dirtyWorkspace)).not.toBeNull();
+    await expect(fs.access(path.join(dirtyWorkspace, 'uncommitted.txt'))).rejects.toThrow();
 
-    const dirtyLockInfo = await WorkspaceLock.getLockInfo(dirtyWorkspace);
-    expect(dirtyLockInfo).toBeNull();
+    const stashList = await runGit(dirtyWorkspace, ['stash', 'list']);
+    expect(stashList.stdout).toContain('tim: leftover changes before workspace reuse');
+    const stashedFiles = await runGit(dirtyWorkspace, [
+      'stash',
+      'show',
+      '--include-untracked',
+      '--name-only',
+      'stash@{0}',
+    ]);
+    expect(stashedFiles.stdout).toContain('uncommitted.txt');
+    expect(stashedFiles.stdout).toContain('README.md');
 
-    // Clean up lock
-    await WorkspaceLock.releaseLock(cleanWorkspace, { force: true });
+    await WorkspaceLock.releaseLock(dirtyWorkspace, { force: true });
   });
 
   test('tries another workspace when preparation fails', async () => {

@@ -15,6 +15,7 @@ import {
   getUsingJj,
   hasUncommittedChanges,
   isInGitRepository,
+  stashUncommittedGitChanges,
 } from '../../common/git.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { readPlanFile, setPlanStatusById, writePlanToDb } from '../plans.js';
@@ -727,12 +728,12 @@ async function restoreWorkspaceState(
 }
 
 /**
- * Attempts to find and reuse an existing unlocked, clean workspace.
+ * Attempts to find and reuse an existing unlocked workspace.
  *
  * This function:
  * 1. Finds available workspaces for the same repository
- * 2. Filters out locked workspaces and those with uncommitted changes
- * 3. Acquires a lock on the workspace
+ * 2. Filters out locked workspaces
+ * 3. Acquires a lock on the workspace and stashes uncommitted Git changes
  * 4. Prepares the selected workspace (fetch, checkout base, create new branch)
  * 5. Updates workspace metadata
  *
@@ -773,7 +774,7 @@ async function tryReuseExistingWorkspace(
   }
 
   // Check each unlocked workspace for uncommitted changes, attempt to lock, and prepare
-  let foundCleanWorkspace = false;
+  let foundExistingWorkspace = false;
   let lastFailureReason: string | undefined;
 
   for (const workspace of unlockedWorkspaces) {
@@ -782,16 +783,7 @@ async function tryReuseExistingWorkspace(
       continue;
     }
 
-    const [isJjWorkspace, hasChanges] = await Promise.all([
-      getUsingJj(workspace.workspacePath),
-      hasUncommittedChanges(workspace.workspacePath),
-    ]);
-    if (hasChanges && !isJjWorkspace) {
-      log(`Skipping workspace ${workspace.workspacePath}: has uncommitted changes`);
-      continue;
-    }
-
-    foundCleanWorkspace = true;
+    foundExistingWorkspace = true;
 
     // Acquire lock on the workspace before making any changes
     let lockInfo: Awaited<ReturnType<typeof WorkspaceLock.acquireLock>> | null = null;
@@ -808,6 +800,31 @@ async function tryReuseExistingWorkspace(
     } catch (error) {
       warn(`Failed to acquire workspace lock: ${error as Error}`);
       continue;
+    }
+
+    // Leftover changes from an earlier session must not block reuse. Stash them while the
+    // lock is held so that they can still be recovered.
+    const [isJjWorkspace, hasChanges] = await Promise.all([
+      getUsingJj(workspace.workspacePath),
+      hasUncommittedChanges(workspace.workspacePath),
+    ]);
+    if (hasChanges && !isJjWorkspace) {
+      try {
+        const stashMessage = await stashUncommittedGitChanges(
+          workspace.workspacePath,
+          'leftover changes before workspace reuse'
+        );
+        if (stashMessage) {
+          warn(
+            `Stashed uncommitted changes in workspace at ${workspace.workspacePath} before reuse: "${stashMessage}". Use \`git stash list\` to find them.`
+          );
+        }
+      } catch (error) {
+        warn(`Skipping workspace ${workspace.workspacePath}: ${error as Error}`);
+        await WorkspaceLock.releaseLock(workspace.workspacePath, { force: true });
+        lastFailureReason = `Failed to stash uncommitted changes in ${workspace.workspacePath}`;
+        continue;
+      }
     }
 
     const restoreState = await captureWorkspaceRestoreState(workspace.workspacePath);
@@ -964,8 +981,8 @@ async function tryReuseExistingWorkspace(
     }
   }
 
-  if (!foundCleanWorkspace) {
-    log('No clean, unlocked workspaces found for reuse');
+  if (!foundExistingWorkspace) {
+    log('No unlocked workspaces found for reuse');
   } else {
     log('No available workspace could be prepared for reuse');
   }
@@ -1120,7 +1137,7 @@ export async function handleWorkspaceAddCommand(
       if (options.reuse) {
         const reuseFailureReason = reuseResult.error
           ? `Last reuse attempt failed: ${reuseResult.error}`
-          : 'All workspaces are either locked or have uncommitted changes.';
+          : 'All workspaces are locked.';
         throw new Error(`No available workspace found for reuse. ${reuseFailureReason}`);
       }
       // --try-reuse: fall through to normal workspace creation

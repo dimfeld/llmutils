@@ -9,6 +9,7 @@ import {
   getUsingJj,
   getWorkingCopyStatus,
   remoteBranchExists,
+  stashUncommittedGitChanges,
 } from '../../common/git.js';
 import { logSpawn } from '../../common/process.js';
 import { error, log, sendStructured, warn } from '../../logging.js';
@@ -527,9 +528,17 @@ export async function setupWorkspace(
 
         const workspaceIsJj = await getUsingJj(workspace.path);
         if (status.hasChanges && !workspaceIsJj) {
-          throw new Error(
-            `Workspace at ${workspace.path} has uncommitted changes. Please commit or stash them before reuse.`
+          // Leftover changes from an earlier session must not block reuse. Stash them so
+          // that they can still be recovered.
+          const stashMessage = await stashUncommittedGitChanges(
+            workspace.path,
+            'leftover changes before workspace reuse'
           );
+          if (stashMessage) {
+            warn(
+              `Stashed uncommitted changes in workspace at ${workspace.path} before reuse: "${stashMessage}". Use \`git stash list\` to find them.`
+            );
+          }
         }
 
         let branchName = branchContext.branchName ?? workspace.taskId;

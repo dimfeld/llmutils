@@ -1201,7 +1201,7 @@ describe('setupWorkspace', () => {
     expect(prepareSpy).not.toHaveBeenCalled();
   });
 
-  test('throws hard failure when existing workspace has uncommitted changes', async () => {
+  test('stashes uncommitted Git changes and reuses the existing workspace', async () => {
     const existingWorkspacePath = path.join(tempDir, 'workspace-existing-dirty');
     await fs.mkdir(existingWorkspacePath, { recursive: true });
     await seedWorkspace(existingWorkspacePath, 'task-existing-dirty');
@@ -1211,8 +1211,14 @@ describe('setupWorkspace', () => {
       checkFailed: false,
       output: ' M file.ts',
     });
-    const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace');
-    const updateSpy = vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands');
+    vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+    const stashSpy = vi
+      .spyOn(git, 'stashUncommittedGitChanges')
+      .mockResolvedValue('tim: leftover changes before workspace reuse');
+    const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
 
     await expect(
       setupWorkspace(
@@ -1224,10 +1230,47 @@ describe('setupWorkspace', () => {
         config,
         'tim generate'
       )
-    ).rejects.toThrow('has uncommitted changes');
+    ).resolves.toMatchObject({
+      baseDir: existingWorkspacePath,
+      workspaceTaskId: 'task-existing-dirty',
+    });
+
+    expect(stashSpy).toHaveBeenCalledWith(
+      existingWorkspacePath,
+      'leftover changes before workspace reuse'
+    );
+    expect(stashSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      prepareSpy.mock.invocationCallOrder[0]
+    );
+  });
+
+  test('releases the lock when stashing uncommitted Git changes fails', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-stash-fail');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-stash-fail');
+
+    vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: true,
+      checkFailed: false,
+      output: ' M file.ts',
+    });
+    vi.spyOn(git, 'getUsingJj').mockResolvedValue(false);
+    vi.spyOn(git, 'stashUncommittedGitChanges').mockRejectedValue(new Error('stash failed'));
+    const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace');
+
+    await expect(
+      setupWorkspace(
+        {
+          workspace: 'task-existing-stash-fail',
+        },
+        baseDir,
+        planFile,
+        config,
+        'tim generate'
+      )
+    ).rejects.toThrow('stash failed');
 
     expect(prepareSpy).not.toHaveBeenCalled();
-    expect(updateSpy).not.toHaveBeenCalled();
     expect(await WorkspaceLock.getLockInfo(existingWorkspacePath)).toBeNull();
   });
 

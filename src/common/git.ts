@@ -150,6 +150,43 @@ export async function hasUncommittedChanges(cwd?: string): Promise<boolean> {
   return status.hasChanges;
 }
 
+/** Abort a Git rebase, merge, cherry-pick, or revert that is in progress, if there is one. */
+async function abortInProgressGitOperations(cwd: string): Promise<void> {
+  for (const operation of ['rebase', 'merge', 'cherry-pick', 'revert']) {
+    await $`git ${operation} --abort`.cwd(cwd).quiet().nothrow();
+  }
+}
+
+/**
+ * Stash uncommitted changes, including untracked files, in a Git working copy so that the
+ * working copy can be reused. If a stash fails because an operation such as a rebase is in
+ * progress, this aborts the operation and tries again. Ignored files are not stashed.
+ *
+ * @returns The stash message when changes were stashed, or null when there was nothing to stash.
+ */
+export async function stashUncommittedGitChanges(
+  cwd: string,
+  reason: string
+): Promise<string | null> {
+  const message = `tim: ${reason} (${new Date().toISOString()})`;
+  const stash = async () =>
+    $`git stash push --include-untracked --message ${message}`.cwd(cwd).quiet().nothrow();
+
+  let result = await stash();
+  if (result.exitCode !== 0) {
+    await abortInProgressGitOperations(cwd);
+    result = await stash();
+  }
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Failed to stash uncommitted changes in ${cwd}: ${result.stderr.toString().trim()}`
+    );
+  }
+
+  // `git stash push` exits 0 and prints this message when the working copy is clean.
+  return result.stdout.toString().includes('No local changes to save') ? null : message;
+}
+
 export interface WorkingCopyStatus {
   hasChanges: boolean;
   output?: string;
