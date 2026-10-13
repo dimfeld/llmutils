@@ -329,3 +329,155 @@ describe('runPostExecutionWorkspaceSync integration', () => {
     }
   );
 });
+
+describe('runPostExecutionWorkspaceSync ref guard', () => {
+  const pushWorkspaceRefToRemoteMock = vi.mocked(pushWorkspaceRefToRemote);
+  const setWorkspaceBookmarkToCurrentMock = vi.mocked(setWorkspaceBookmarkToCurrent);
+  let remoteDir: string;
+  let workspaceDir: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    clearAllGitCaches();
+    remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-guard-remote-'));
+    workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-guard-work-'));
+    await seedBareRemoteWithMain(remoteDir);
+  });
+
+  afterEach(async () => {
+    clearAllGitCaches();
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+    await fs.rm(remoteDir, { recursive: true, force: true });
+  });
+
+  async function setUpGitWorkspace(): Promise<void> {
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+    expect(
+      (await runGit(path.dirname(workspaceDir), ['clone', remoteDir, workspaceDir])).exitCode
+    ).toBe(0);
+    await runGit(workspaceDir, ['config', 'user.email', 'test@example.com']);
+    await runGit(workspaceDir, ['config', 'user.name', 'Test User']);
+    expect((await runGit(workspaceDir, ['checkout', '-b', 'chat/one'])).exitCode).toBe(0);
+  }
+
+  async function setUpJjWorkspace(): Promise<void> {
+    expect((await runJj(workspaceDir, ['git', 'init'])).exitCode).toBe(0);
+    await runJj(workspaceDir, ['config', 'set', '--repo', 'user.email', 'test@example.com']);
+    await runJj(workspaceDir, ['config', 'set', '--repo', 'user.name', 'Test User']);
+    expect(
+      (await runJj(workspaceDir, ['git', 'remote', 'add', 'origin', remoteDir])).exitCode
+    ).toBe(0);
+    expect((await runJj(workspaceDir, ['git', 'fetch'])).exitCode).toBe(0);
+    expect(
+      (await runJj(workspaceDir, ['bookmark', 'track', 'main', '--remote', 'origin'])).exitCode
+    ).toBe(0);
+    expect((await runJj(workspaceDir, ['new', 'main'])).exitCode).toBe(0);
+    expect(
+      (await runJj(workspaceDir, ['bookmark', 'create', 'chat/one', '-r', 'main'])).exitCode
+    ).toBe(0);
+  }
+
+  async function jjCommitFile(name: string, message: string): Promise<void> {
+    await fs.writeFile(path.join(workspaceDir, name), `${name}\n`);
+    expect((await runJj(workspaceDir, ['commit', '-m', message])).exitCode).toBe(0);
+  }
+
+  async function sync(): Promise<void> {
+    await runPostExecutionWorkspaceSync(
+      { executionWorkspacePath: workspaceDir, refName: 'chat/one' },
+      'sync workspace',
+      { requireRefCheckedOut: true }
+    );
+  }
+
+  test('git: pushes when the chat branch is still checked out', async () => {
+    await setUpGitWorkspace();
+    await fs.writeFile(path.join(workspaceDir, 'work.txt'), 'work\n');
+
+    await sync();
+
+    expect(pushWorkspaceRefToRemoteMock).toHaveBeenCalledWith(
+      expect.objectContaining({ refName: 'chat/one' })
+    );
+  });
+
+  test('git: does not commit or push after the agent moved to another branch', async () => {
+    await setUpGitWorkspace();
+    expect((await runGit(workspaceDir, ['checkout', '-b', 'plan-x'])).exitCode).toBe(0);
+    await fs.writeFile(path.join(workspaceDir, 'work.txt'), 'work\n');
+    const headBefore = (await runGit(workspaceDir, ['rev-parse', 'HEAD'])).stdout;
+
+    await expect(sync()).rejects.toThrow('The workspace is on branch "plan-x", not on "chat/one"');
+
+    expect(pushWorkspaceRefToRemoteMock).not.toHaveBeenCalled();
+    expect((await runGit(workspaceDir, ['rev-parse', 'HEAD'])).stdout).toBe(headBefore);
+    expect(await hasUncommittedChanges(workspaceDir)).toBe(true);
+  });
+
+  test('git: does not push from a detached HEAD', async () => {
+    await setUpGitWorkspace();
+    expect((await runGit(workspaceDir, ['checkout', '--detach'])).exitCode).toBe(0);
+
+    await expect(sync()).rejects.toThrow('a detached HEAD');
+    expect(pushWorkspaceRefToRemoteMock).not.toHaveBeenCalled();
+  });
+
+  test.skipIf(!HAS_JJ)('jj: pushes chat work on top of the chat bookmark', async () => {
+    await setUpJjWorkspace();
+    await jjCommitFile('work.txt', 'chat work');
+    await fs.writeFile(path.join(workspaceDir, 'more.txt'), 'more\n');
+
+    await sync();
+
+    expect(setWorkspaceBookmarkToCurrentMock).toHaveBeenCalledWith(workspaceDir, 'chat/one', '@-');
+    expect(pushWorkspaceRefToRemoteMock).toHaveBeenCalled();
+  });
+
+  test.skipIf(!HAS_JJ)(
+    'jj: does not move the chat bookmark onto a rebased plan branch',
+    async () => {
+      await setUpJjWorkspace();
+      // The plan branch descends from the chat's start commit, as it does after a rebase
+      // onto the latest trunk.
+      await jjCommitFile('plan.txt', 'plan work');
+      expect(
+        (await runJj(workspaceDir, ['bookmark', 'create', 'plan-x', '-r', '@-'])).exitCode
+      ).toBe(0);
+      await fs.writeFile(path.join(workspaceDir, 'leftover.txt'), 'leftover\n');
+
+      await expect(sync()).rejects.toThrow('on top of other bookmarks (plan-x)');
+
+      expect(setWorkspaceBookmarkToCurrentMock).not.toHaveBeenCalled();
+      expect(pushWorkspaceRefToRemoteMock).not.toHaveBeenCalled();
+      expect(await hasUncommittedChanges(workspaceDir)).toBe(true);
+    }
+  );
+
+  test.skipIf(!HAS_JJ)(
+    'jj: does not push when the working copy left the chat bookmark',
+    async () => {
+      await setUpJjWorkspace();
+      await jjCommitFile('chat.txt', 'chat work');
+      expect(
+        (await runJj(workspaceDir, ['bookmark', 'set', 'chat/one', '-r', '@-'])).exitCode
+      ).toBe(0);
+      expect((await runJj(workspaceDir, ['new', 'main'])).exitCode).toBe(0);
+
+      await expect(sync()).rejects.toThrow('no longer on top of bookmark "chat/one"');
+      expect(pushWorkspaceRefToRemoteMock).not.toHaveBeenCalled();
+    }
+  );
+
+  test.skipIf(!HAS_JJ)('jj: allows chat work rebased onto a newer trunk', async () => {
+    await setUpJjWorkspace();
+    // Move trunk forward with a new commit that carries the main bookmark.
+    expect((await runJj(workspaceDir, ['new', 'main'])).exitCode).toBe(0);
+    await jjCommitFile('trunk.txt', 'new trunk work');
+    expect((await runJj(workspaceDir, ['bookmark', 'set', 'main', '-r', '@-'])).exitCode).toBe(0);
+    await jjCommitFile('work.txt', 'chat work on new trunk');
+
+    await sync();
+
+    expect(pushWorkspaceRefToRemoteMock).toHaveBeenCalled();
+  });
+});

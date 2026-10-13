@@ -24,6 +24,7 @@ vi.mock('../../common/git.js', () => ({
   ensureJjPublishedCommitsHaveDescriptions: vi.fn(async () => []),
   getUsingJj: vi.fn(async () => true),
   getCurrentBranchName: vi.fn(async () => 'task-123'),
+  getCurrentGitBranch: vi.fn(async () => 'task-123'),
   getTrunkBranch: vi.fn(async () => 'main'),
   hasUncommittedChanges: vi.fn(async () => false),
 }));
@@ -664,6 +665,47 @@ describe('wipeMaterializedPlans', () => {
     } finally {
       await realRm(workspaceDir, { force: true, recursive: true });
     }
+  });
+});
+
+describe('prepareWorkspaceWithoutRoundTrip', () => {
+  const mockFindPrimaryWorkspaceForRepository = vi.mocked(findPrimaryWorkspaceForRepository);
+  const mockGetWorkspaceInfoByPath = vi.mocked(getWorkspaceInfoByPath);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFindPrimaryWorkspaceForRepository.mockReturnValue(null);
+    mockGetWorkspaceInfoByPath.mockReturnValue(null);
+  });
+
+  test('links local configs from the primary workspace and creates the plans directory', async () => {
+    mockGetWorkspaceInfoByPath.mockReturnValue({
+      workspaceType: 'auto',
+      repositoryId: 'repo',
+    } as any);
+    mockFindPrimaryWorkspaceForRepository.mockReturnValue({
+      workspacePath: '/tmp/primary',
+    } as any);
+
+    const { prepareWorkspaceWithoutRoundTrip } = await import('./workspace_roundtrip.js');
+    await prepareWorkspaceWithoutRoundTrip('/tmp/workspace');
+
+    expect(symlinkLocalConfigs).toHaveBeenCalledWith('/tmp/primary', '/tmp/workspace');
+    expect(ensureMaterializeDir).toHaveBeenCalledWith('/tmp/workspace');
+    expect(commitAll).not.toHaveBeenCalled();
+  });
+
+  test('does not link configs into the primary workspace itself', async () => {
+    mockGetWorkspaceInfoByPath.mockReturnValue({
+      workspaceType: 'primary',
+      repositoryId: 'repo',
+    } as any);
+
+    const { prepareWorkspaceWithoutRoundTrip } = await import('./workspace_roundtrip.js');
+    await prepareWorkspaceWithoutRoundTrip('/tmp/primary');
+
+    expect(symlinkLocalConfigs).not.toHaveBeenCalled();
+    expect(ensureMaterializeDir).toHaveBeenCalledWith('/tmp/primary');
   });
 });
 

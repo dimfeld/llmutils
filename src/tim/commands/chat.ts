@@ -32,6 +32,7 @@ import { setupWorkspace } from '../workspace/workspace_setup.js';
 import {
   materializePlansForExecution,
   prepareWorkspaceRoundTrip,
+  prepareWorkspaceWithoutRoundTrip,
   runPostExecutionWorkspaceSync,
   runPreExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
@@ -348,7 +349,11 @@ export async function handleChatCommand(
           currentPlanFile = workspaceResult.planFile;
           touchedWorkspacePath = currentBaseDir;
 
-          if (path.resolve(currentBaseDir) !== path.resolve(configRepoRoot)) {
+          if (options.trunk) {
+            // A trunk chat often moves between branches, for example to rebase a plan. Never
+            // commit or push for it at the end; only the agent does that, when asked.
+            await prepareWorkspaceWithoutRoundTrip(currentBaseDir);
+          } else if (path.resolve(currentBaseDir) !== path.resolve(configRepoRoot)) {
             roundTripContext = await prepareWorkspaceRoundTrip({
               workspacePath: currentBaseDir,
               workspaceSyncEnabled: options.workspaceSync !== false,
@@ -453,7 +458,11 @@ export async function handleChatCommand(
         // It commits and pushes as part of the workspace lifecycle, independent of --commit.
         if (roundTripContext) {
           try {
-            await runPostExecutionWorkspaceSync(roundTripContext, 'workspace chat session');
+            // The agent can move to other branches during a chat. Do not commit or push
+            // unless the workspace is still on the chat's own branch.
+            await runPostExecutionWorkspaceSync(roundTripContext, 'workspace chat session', {
+              requireRefCheckedOut: true,
+            });
           } catch (err) {
             roundTripError = err;
           }

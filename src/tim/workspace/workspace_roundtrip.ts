@@ -1,7 +1,9 @@
+import { $ } from 'bun';
 import { readdir, rm } from 'node:fs/promises';
 import * as path from 'node:path';
 import {
   captureRepositoryState,
+  getCurrentGitBranch,
   compareRepositoryStates,
   ensureJjPublishedCommitsHaveDescriptions,
   getCurrentBranchName,
@@ -124,10 +126,110 @@ export async function materializePlansForExecution(
   return planFile;
 }
 
+/**
+ * Link the primary workspace's local config files into a workspace and create its materialized
+ * plans directory. Use this for sessions that must not run the workspace round trip, such as
+ * trunk chats, but that still run tim commands in the workspace.
+ */
+export async function prepareWorkspaceWithoutRoundTrip(workspacePath: string): Promise<void> {
+  const workspaceInfo = getWorkspaceInfoByPath(workspacePath);
+  if (workspaceInfo && workspaceInfo.workspaceType !== 'primary') {
+    const repositoryId =
+      workspaceInfo.repositoryId ??
+      (await getRepositoryIdentity({ cwd: workspacePath })).repositoryId;
+    const primaryWorkspace = findPrimaryWorkspaceForRepository(repositoryId);
+    if (primaryWorkspace && primaryWorkspace.workspacePath !== workspacePath) {
+      await symlinkLocalConfigs(primaryWorkspace.workspacePath, workspacePath);
+    }
+  }
+
+  await ensureMaterializeDir(workspacePath);
+}
+
+function jjStringLiteral(value: string): string {
+  return JSON.stringify(value);
+}
+
+/**
+ * Throw when the workspace no longer has the session's ref checked out, for example because
+ * the agent moved to another branch to rebase it. Committing and pushing in that state would
+ * commit to the wrong branch, or would move the session's bookmark onto another branch's
+ * commits and push it.
+ *
+ * In Git, the current branch must be the ref. In jj, the ref's bookmark must be an ancestor of
+ * the working copy, and the commits after the bookmark must not carry other bookmarks, except
+ * commits that are already on trunk.
+ */
+export async function verifyWorkspaceStillOnRef(context: WorkspaceRoundTripContext): Promise<void> {
+  const workspacePath = context.executionWorkspacePath;
+  const refName = context.refName;
+  const stopMessage =
+    'Nothing was committed or pushed. The changes stay in the workspace at ' + workspacePath + '.';
+
+  if (!(await getUsingJj(workspacePath))) {
+    const currentBranch = await getCurrentGitBranch(workspacePath);
+    if (currentBranch !== refName) {
+      throw new Error(
+        `The workspace is on ${currentBranch ? `branch "${currentBranch}"` : 'a detached HEAD'}, not on "${refName}". ${stopMessage}`
+      );
+    }
+    return;
+  }
+
+  const bookmark = `bookmarks(exact:${jjStringLiteral(refName)})`;
+  const ancestorResult =
+    await $`jj log -r ${`${bookmark} & ::@`} --no-graph -T ${'commit_id ++ "\n"'}`
+      .cwd(workspacePath)
+      .quiet()
+      .nothrow();
+  if (ancestorResult.exitCode !== 0) {
+    throw new Error(
+      `Could not check that the workspace is still on "${refName}": ${ancestorResult.stderr.toString().trim()}. ${stopMessage}`
+    );
+  }
+  if (!ancestorResult.stdout.toString().trim()) {
+    throw new Error(
+      `The working copy is no longer on top of bookmark "${refName}". ${stopMessage}`
+    );
+  }
+
+  const trunkBranch = await getTrunkBranch(workspacePath);
+  const trunk = `trunk() | bookmarks(exact:${jjStringLiteral(trunkBranch)}) | remote_bookmarks(exact:${jjStringLiteral(trunkBranch)})`;
+  const otherBookmarksResult =
+    await $`jj log -r ${`((${bookmark}..@) ~ ::(${trunk})) & bookmarks()`} --no-graph -T ${'local_bookmarks.map(|b| b.name()).join("\n") ++ "\n"'}`
+      .cwd(workspacePath)
+      .quiet()
+      .nothrow();
+  if (otherBookmarksResult.exitCode !== 0) {
+    throw new Error(
+      `Could not check that the workspace is still on "${refName}": ${otherBookmarksResult.stderr.toString().trim()}. ${stopMessage}`
+    );
+  }
+  const otherBookmarks = [
+    ...new Set(
+      otherBookmarksResult.stdout
+        .toString()
+        .split('\n')
+        .map((name) => name.trim())
+        .filter((name) => name && name !== refName)
+    ),
+  ];
+  if (otherBookmarks.length > 0) {
+    throw new Error(
+      `The working copy is on top of other bookmarks (${otherBookmarks.join(', ')}), not only on "${refName}". ${stopMessage}`
+    );
+  }
+}
+
 export async function runPostExecutionWorkspaceSync(
   context: WorkspaceRoundTripContext,
-  commitMessage: string
+  commitMessage: string,
+  options: { requireRefCheckedOut?: boolean } = {}
 ): Promise<void> {
+  if (options.requireRefCheckedOut) {
+    await verifyWorkspaceStillOnRef(context);
+  }
+
   const commitExitCode = await commitAll(commitMessage, context.executionWorkspacePath);
   if (commitExitCode !== 0) {
     throw new Error(

@@ -75,6 +75,7 @@ vi.mock('../workspace/workspace_setup.js', () => ({
 
 vi.mock('../workspace/workspace_roundtrip.js', () => ({
   prepareWorkspaceRoundTrip: vi.fn(),
+  prepareWorkspaceWithoutRoundTrip: vi.fn(async () => {}),
   runPreExecutionWorkspaceSync: vi.fn(),
   runPostExecutionWorkspaceSync: vi.fn(),
   materializePlansForExecution: vi.fn(async () => undefined),
@@ -103,6 +104,7 @@ import { commitAll } from '../../common/process.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
 import {
   prepareWorkspaceRoundTrip,
+  prepareWorkspaceWithoutRoundTrip,
   runPreExecutionWorkspaceSync,
   runPostExecutionWorkspaceSync,
 } from '../workspace/workspace_roundtrip.js';
@@ -539,6 +541,28 @@ describe('handleChatCommand', () => {
     });
   });
 
+  test('never runs the workspace round trip for a trunk chat', async () => {
+    vi.mocked(setupWorkspace).mockResolvedValueOnce({
+      baseDir: '/repo-root/workspaces/trunk',
+      planFile: '',
+      workspaceTaskId: 'trunk',
+      isNewWorkspace: false,
+    } as any);
+    // Even if a round trip were available, a trunk chat must not use it.
+    vi.mocked(prepareWorkspaceRoundTrip).mockResolvedValue({
+      executionWorkspacePath: '/repo-root/workspaces/trunk',
+      refName: 'some-branch',
+    });
+
+    await handleChatCommand('hello', { trunk: true }, {});
+
+    expect(prepareWorkspaceWithoutRoundTrip).toHaveBeenCalledWith('/repo-root/workspaces/trunk');
+    expect(prepareWorkspaceRoundTrip).not.toHaveBeenCalled();
+    expect(runPreExecutionWorkspaceSync).not.toHaveBeenCalled();
+    expect(runPostExecutionWorkspaceSync).not.toHaveBeenCalled();
+    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+  });
+
   test('rejects --trunk with plan or finish options', async () => {
     await expect(handleChatCommand('hello', { trunk: true, plan: 12 }, {})).rejects.toThrow(
       '--trunk cannot be combined'
@@ -866,7 +890,8 @@ describe('handleChatCommand', () => {
       expect.objectContaining({
         executionWorkspacePath: '/repo-root/workspaces/task-123',
       }),
-      'workspace chat session'
+      'workspace chat session',
+      { requireRefCheckedOut: true }
     );
     expect(vi.mocked(touchWorkspaceInfo)).toHaveBeenCalledWith('/repo-root/workspaces/task-123');
     expect(callOrder).toEqual(['setup', 'prepare', 'pre', 'execute', 'post', 'touch']);
