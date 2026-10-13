@@ -647,6 +647,7 @@ export const startPrChat = command(
   startPrReviewGuideSchema.extend({
     executor: z.enum(['claude', 'codex', 'claude-code', 'codex-cli']),
     model: z.string().min(1).optional(),
+    initialPrompt: z.string().max(100_000).optional(),
     returnTo: z
       .string()
       .refine(
@@ -656,13 +657,16 @@ export const startPrChat = command(
       )
       .optional(),
   }),
-  async ({ projectId, prNumber, executor, model, returnTo }) =>
+  async ({ projectId, prNumber, executor, model, returnTo, initialPrompt }) =>
     launchPrTimCommand('chat', projectId, prNumber, (prUrl, cwd, prStatus) => {
       const sessionEnv = {
         [TIM_LINKED_PR_NUMBER_ENV]: String(prStatus.status.pr_number),
         ...(prStatus.status.title ? { [TIM_LINKED_PR_TITLE_ENV]: prStatus.status.title } : {}),
         ...(returnTo ? { [TIM_SESSION_RETURN_TO_ENV]: returnTo } : {}),
       };
+      if (initialPrompt) {
+        return spawnChatForPrProcess(prUrl, cwd, executor, model, sessionEnv, initialPrompt);
+      }
       return model === undefined
         ? spawnChatForPrProcess(prUrl, cwd, executor, undefined, sessionEnv)
         : spawnChatForPrProcess(prUrl, cwd, executor, model, sessionEnv);

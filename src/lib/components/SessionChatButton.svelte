@@ -17,7 +17,7 @@
   export type ChatTarget =
     | { planUuid: string }
     | { projectId: string; prNumber: number }
-    | { projectId: string; projectChat: true };
+    | { projectId: string; projectChat: true; trunk?: boolean };
 
   let {
     target,
@@ -34,7 +34,16 @@
   } = $props();
 
   let subject = $derived(
-    'planUuid' in target ? 'plan' : 'projectChat' in target ? 'project' : 'PR'
+    'planUuid' in target
+      ? 'plan'
+      : 'projectChat' in target
+        ? target.trunk
+          ? 'trunk'
+          : 'project'
+        : 'PR'
+  );
+  let buttonLabel = $derived(
+    subject === 'project' ? 'New project chat' : subject === 'trunk' ? 'Trunk chat' : 'Chat'
   );
   const sessions = useSessionManager();
   const windows = useSessionWindows();
@@ -72,7 +81,10 @@
     }
   }
 
-  async function start(option: ChatExecutorOption): Promise<void> {
+  async function start(
+    option: ChatExecutorOption,
+    initialPrompt: string | undefined
+  ): Promise<void> {
     const optionKey = chatOptionKey(option);
     startingChat = optionKey;
     error = null;
@@ -84,12 +96,15 @@
               projectId: Number(launchTarget.projectId),
               executor: option.executor,
               model: option.model,
+              trunk: launchTarget.trunk,
+              initialPrompt,
             })
           : 'planUuid' in launchTarget
             ? await startChat({
                 planUuid: launchTarget.planUuid,
                 executor: option.executor,
                 model: option.model,
+                initialPrompt,
                 returnTo,
               })
             : await startPrChat({
@@ -97,6 +112,7 @@
                 prNumber: launchTarget.prNumber,
                 executor: option.executor,
                 model: option.model,
+                initialPrompt,
                 returnTo,
               });
       if (result.status === 'already_running') {
@@ -133,8 +149,8 @@
         chatDialogOpen = true;
       }}
       disabled={!!startingChat}
-      aria-label={`Chat with ${subject}`}
-      >{subject === 'project' ? 'New project chat' : 'Chat'}</Button
+      aria-label={subject === 'trunk' ? 'Start trunk chat' : `Chat with ${subject}`}
+      >{buttonLabel}</Button
     >
     {#if pending}
       <span role="status" class="text-sm text-muted-foreground">Waiting for session…</span>
@@ -146,6 +162,7 @@
     open={chatDialogOpen}
     options={chatExecutorOptions}
     startingKey={startingChat}
+    title={subject === 'trunk' ? 'Start Trunk Chat' : undefined}
     onOpenChange={(open) => (chatDialogOpen = open)}
     onselect={start}
   />

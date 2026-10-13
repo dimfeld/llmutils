@@ -176,4 +176,63 @@ describe('review guide chat button', () => {
     await expect.poll(() => vi.mocked(goto).mock.calls).toEqual([['/projects/7/sessions/new']]);
     expect(open).not.toHaveBeenCalled();
   });
+
+  test('sends an initial prompt and starts from the prompt field with Alt+number', async () => {
+    vi.mocked(startChat).mockResolvedValue({ status: 'started', planId: 42 });
+    render(SessionChatButton, {
+      props: {
+        target: { planUuid: 'plan-uuid' },
+        chatExecutorOptions: [
+          { executor: 'claude-code', model: 'sonnet-test' },
+          { executor: 'codex-cli', model: 'gpt-test' },
+        ],
+      },
+    });
+    await page.getByRole('button', { name: 'Chat with plan' }).click();
+    const promptField = page.getByRole('textbox', { name: 'Initial prompt' });
+    await promptField.click();
+    await userEvent.keyboard('What is left 2 do?');
+    expect(startChat).not.toHaveBeenCalled();
+    await userEvent.keyboard('{Alt>}2{/Alt}');
+    expect(startChat).toHaveBeenCalledWith({
+      planUuid: 'plan-uuid',
+      executor: 'codex-cli',
+      model: 'gpt-test',
+      initialPrompt: 'What is left 2 do?',
+    });
+  });
+
+  test('clears the initial prompt when the dialog opens again', async () => {
+    vi.mocked(startChat).mockResolvedValue({ status: 'started', planId: 42 });
+    render(SessionChatButton, { props: { target: { planUuid: 'plan-uuid' } } });
+    await page.getByRole('button', { name: 'Chat with plan' }).click();
+    await page.getByRole('textbox', { name: 'Initial prompt' }).fill('Old prompt');
+    await userEvent.keyboard('{Escape}');
+    await page.getByRole('button', { name: 'Chat with plan' }).click();
+    await expect.element(page.getByRole('textbox', { name: 'Initial prompt' })).toHaveValue('');
+    await userEvent.keyboard('1');
+    expect(startChat).toHaveBeenCalledWith(expect.objectContaining({ initialPrompt: undefined }));
+  });
+
+  test('starts a trunk chat with an initial prompt', async () => {
+    const chatId = '11111111-1111-4111-8111-111111111111';
+    vi.mocked(startProjectChat).mockResolvedValue({ status: 'started', chatId });
+    render(SessionChatButton, {
+      props: { target: { projectId: '7', projectChat: true, trunk: true } },
+    });
+    await expect
+      .element(page.getByRole('button', { name: 'Start trunk chat' }))
+      .toHaveTextContent('Trunk chat');
+    await page.getByRole('button', { name: 'Start trunk chat' }).click();
+    await expect.element(page.getByRole('heading', { name: 'Start Trunk Chat' })).toBeVisible();
+    await page.getByRole('textbox', { name: 'Initial prompt' }).fill('Rebase plan 12');
+    await page.getByRole('button', { name: /Claude Code/ }).click();
+    expect(startProjectChat).toHaveBeenCalledWith({
+      projectId: 7,
+      executor: 'claude-code',
+      model: undefined,
+      trunk: true,
+      initialPrompt: 'Rebase plan 12',
+    });
+  });
 });

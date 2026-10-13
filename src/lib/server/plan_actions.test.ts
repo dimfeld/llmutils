@@ -38,7 +38,11 @@ vi.mock('$common/env.js', () => ({
 }));
 
 import {
+  buildPlanChatPrompt,
+  buildPrChatPrompt,
   buildProjectChatFinishPrompt,
+  buildProjectChatPrompt,
+  buildTrunkChatPrompt,
   formatLogFileName,
   spawnAgentMultiProcess,
   spawnAgentProcess,
@@ -534,6 +538,84 @@ describe('lib/server/plan_actions', () => {
       chatId,
       '--no-terminal-input',
     ]);
+  });
+
+  test('spawnProjectChatProcess launches a trunk chat with an initial prompt', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+    const chatId = '11111111-1111-4111-8111-111111111111';
+
+    const resultPromise = spawnProjectChatProcess(
+      chatId,
+      '/tmp/primary-workspace',
+      'claude',
+      'opus',
+      {
+        trunk: true,
+        initialPrompt: 'Rebase plan 12',
+      }
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await resultPromise).toEqual({ success: true });
+    const workerCommand = daemonPayload(spawnSpy.mock.calls[0][1] as never).workerCommand;
+    expect(workerCommand).toEqual([
+      'tim',
+      'chat',
+      expect.stringContaining('trunk branch'),
+      '--executor',
+      'claude',
+      '--auto-workspace',
+      '--project-chat-id',
+      chatId,
+      '--trunk',
+      '--model',
+      'opus',
+      '--no-terminal-input',
+    ]);
+    expect(workerCommand[2]).toContain('Rebase plan 12');
+    expect(workerCommand[2]).not.toContain("Wait for the user's first question");
+  });
+
+  describe('chat prompts', () => {
+    const builders = [
+      ['plan', (initialPrompt?: string) => buildPlanChatPrompt(5, initialPrompt)],
+      ['PR', (initialPrompt?: string) => buildPrChatPrompt('https://x/pull/1', initialPrompt)],
+      ['project', buildProjectChatPrompt],
+      ['trunk', buildTrunkChatPrompt],
+    ] as const;
+
+    test.each(builders)('%s chat waits for the first question without a prompt', (_, build) => {
+      expect(build()).toContain("Wait for the user's first question before doing anything");
+      expect(build('   ')).toContain("Wait for the user's first question before doing anything");
+    });
+
+    test.each(builders)('%s chat includes the initial prompt instead of waiting', (_, build) => {
+      const prompt = build('  What is left to do?\n');
+      expect(prompt).not.toContain("Wait for the user's first question");
+      expect(prompt).toContain("The user's first request:\n\nWhat is left to do?");
+      expect(prompt.endsWith('What is left to do?')).toBe(true);
+    });
+  });
+
+  test('spawnChatProcess passes an initial prompt to tim chat', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const resultPromise = spawnChatProcess(
+      192,
+      '/tmp/primary-workspace',
+      'claude',
+      undefined,
+      undefined,
+      'Summarize the plan'
+    );
+    await vi.advanceTimersByTimeAsync(2000);
+    await resultPromise;
+
+    const workerCommand = daemonPayload(spawnSpy.mock.calls[0][1] as never).workerCommand;
+    expect(workerCommand[2]).toContain('plan 192');
+    expect(workerCommand[2]).toContain('Summarize the plan');
+    expect(workerCommand).not.toContain('--model');
   });
 
   test('starts Codex Luna on the existing chat branch to finish it', async () => {

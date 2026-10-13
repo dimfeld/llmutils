@@ -80,6 +80,10 @@ Session windows hide lifecycle command output and tool calls by default. Use the
 
 Open a project's **Sessions** page and select **New project chat** to work without a plan. The chat starts in an auto workspace on a new `chat/<id>` branch based on the remote trunk branch. The branch is pushed to `origin` when the chat ends if it contains changes.
 
+Select **Trunk chat** to start a chat in an auto workspace on the remote trunk branch, with no new branch. Use it for project tasks such as rebasing a plan, without opening the plan first. Tim does not push a trunk chat when it ends and does not show **Finish work** for it. From the command line, use `tim chat --trunk`.
+
+The chat start dialog for plans, PRs, project chats, and trunk chats has an optional **Initial prompt** field. When you enter a prompt, the agent starts on it immediately and does not wait for your first message. Press a model's number to start, or press Alt+number while the prompt field has focus.
+
 After the chat ends, select **Finish work** in the session. This starts a Codex Luna session on the chat branch. The project `developmentWorkflow` setting controls its task: `pr-based` creates a pull request, while `trunk-based` and `squash-rebase` squash the chat commits, rebase the new commit, and push it to trunk. The `squash-rebase` workflow also removes the chat branch after the push. The agent resolves rebase conflicts and runs relevant checks. Trunk pushes use fast-forward updates.
 
 ## Configure a Project

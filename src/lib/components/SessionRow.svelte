@@ -3,6 +3,7 @@
   import { getPlanTaskCounts } from '$lib/remote/plan_task_counts.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { formatCompactRelativeTime, formatRelativeTime } from '$lib/utils/time.js';
+  import { projectChatLabel } from '$lib/utils/session_window_title.js';
 
   let {
     session,
@@ -59,7 +60,8 @@
   });
 
   let displayCommand = $derived.by(() => {
-    if (session.sessionInfo.projectChatId) return 'Project Chat';
+    const chatLabel = projectChatLabel(session.sessionInfo);
+    if (chatLabel) return chatLabel;
     const cmd = session.sessionInfo.command;
     if (cmd === 'unknown') {
       return 'connecting...';

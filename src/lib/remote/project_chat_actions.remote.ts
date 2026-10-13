@@ -21,17 +21,22 @@ const startProjectChatSchema = z.object({
   projectId: z.number().int().positive(),
   executor: z.enum(['claude', 'codex', 'claude-code', 'codex-cli']),
   model: z.string().min(1).optional(),
+  trunk: z.boolean().optional(),
+  initialPrompt: z.string().max(100_000).optional(),
 });
 
 export const startProjectChat = command(
   startProjectChatSchema,
-  async ({ projectId, executor, model }) => {
+  async ({ projectId, executor, model, trunk, initialPrompt }) => {
     const { db } = await getServerContext();
     const cwd = getPrimaryWorkspacePath(db, projectId);
     if (!cwd) error(400, 'Project has no primary workspace');
 
     const chatId = randomUUID();
-    const result = await spawnProjectChatProcess(chatId, cwd, executor, model);
+    const result = await spawnProjectChatProcess(chatId, cwd, executor, model, {
+      trunk,
+      initialPrompt,
+    });
     if (!result.success) error(500, result.error);
     return { status: 'started' as const, chatId };
   }

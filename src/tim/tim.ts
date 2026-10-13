@@ -1100,6 +1100,7 @@ program
   .option('--plan <planId>', 'Associate chat with a plan for branch/workspace assignment')
   .option('--project-chat-id <id>', 'Start a project chat on a new branch from trunk')
   .option('--project-chat-finish', 'Open the existing project chat branch to finish its work')
+  .option('--trunk', 'Run the chat in an auto-selected workspace on the trunk branch')
   .option('--non-interactive', 'Disable interactive terminal input')
   .option('--no-terminal-input', 'Disable terminal input forwarding')
   .option(

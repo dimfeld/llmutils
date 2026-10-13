@@ -48,6 +48,10 @@
         target={{ projectId, projectChat: true }}
         chatExecutorOptions={data.chatExecutorOptions}
       />
+      <SessionChatButton
+        target={{ projectId, projectChat: true, trunk: true }}
+        chatExecutorOptions={data.chatExecutorOptions}
+      />
     {/if}
   </div>
   <SessionList

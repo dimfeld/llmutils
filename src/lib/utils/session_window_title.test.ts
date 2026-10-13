@@ -1,5 +1,22 @@
 import { describe, expect, test } from 'vitest';
-import { formatSessionWindowTitle } from './session_window_title.js';
+import { formatSessionWindowTitle, projectChatLabel } from './session_window_title.js';
+
+describe('projectChatLabel', () => {
+  test('labels chats with a chat branch as project chats', () => {
+    expect(projectChatLabel({ projectChatId: 'abc', projectChatBranch: 'chat/abc' })).toBe(
+      'Project Chat'
+    );
+  });
+
+  test('labels chats without a chat branch as trunk chats', () => {
+    expect(projectChatLabel({ projectChatId: 'abc' })).toBe('Trunk Chat');
+    expect(formatSessionWindowTitle({ command: 'chat', projectChatId: 'abc' })).toBe('Trunk Chat');
+  });
+
+  test('returns null for other sessions', () => {
+    expect(projectChatLabel({})).toBeNull();
+  });
+});
 
 describe('formatSessionWindowTitle', () => {
   test('includes the plan ID and title', () => {

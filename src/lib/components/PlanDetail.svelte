@@ -913,7 +913,7 @@
     }
   }
 
-  async function handleChat(option: ChatExecutorOption) {
+  async function handleChat(option: ChatExecutorOption, initialPrompt: string | undefined) {
     const actionPlanUuid = plan.uuid;
     const optionKey = chatOptionKey(option);
     startingChat = optionKey;
@@ -924,6 +924,7 @@
         planUuid: actionPlanUuid,
         executor: option.executor,
         model: option.model,
+        initialPrompt,
       });
       applyStartResult(actionPlanUuid, result, 'Chat started');
       await navigateToChatSession(actionPlanUuid, result);

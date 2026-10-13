@@ -10,7 +10,19 @@ type SessionWindowTitleInfo = Pick<
   | 'linkedPrNumber'
   | 'linkedPrTitle'
   | 'projectChatId'
+  | 'projectChatBranch'
 >;
+
+/**
+ * Label for a project-level chat session, or null when the session is not one. Trunk chats
+ * have a chat ID but no chat branch.
+ */
+export function projectChatLabel(
+  sessionInfo: Pick<HeadlessSessionInfo, 'projectChatId' | 'projectChatBranch'>
+): string | null {
+  if (!sessionInfo.projectChatId) return null;
+  return sessionInfo.projectChatBranch ? 'Project Chat' : 'Trunk Chat';
+}
 
 /** Format the title used by a floating session window and its minimized button. */
 export function formatSessionWindowTitle(sessionInfo: SessionWindowTitleInfo): string {
@@ -32,7 +44,7 @@ export function formatSessionWindowTitle(sessionInfo: SessionWindowTitleInfo): s
 
   return (
     [plan, pr].filter(Boolean).join(' · ') ||
-    (sessionInfo.projectChatId ? 'Project Chat' : sessionInfo.command) ||
+    (projectChatLabel(sessionInfo) ?? sessionInfo.command) ||
     'Session'
   );
 }

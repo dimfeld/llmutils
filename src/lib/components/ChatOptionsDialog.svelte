@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { ClaudeCodeExecutorName } from '$tim/executors/schemas.js';
   import { chatExecutorLabel, chatOptionKey } from '$lib/utils/chat_executor_options.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
+  import { Textarea } from '$lib/components/ui/textarea/index.js';
   import Loader2Icon from '@lucide/svelte/icons/loader-2';
 
   let {
@@ -11,14 +13,33 @@
     startingKey,
     onOpenChange,
     onselect,
+    title = 'Start Chat Session',
   }: {
     open: boolean;
     options: ChatExecutorOption[];
     /** Key of the option that is starting, from chatOptionKey, or false when idle. */
     startingKey: string | false;
     onOpenChange: (open: boolean) => void;
-    onselect: (option: ChatExecutorOption) => void;
+    /** Called with the chosen option and the trimmed initial prompt, if the user entered one. */
+    onselect: (option: ChatExecutorOption, initialPrompt: string | undefined) => void;
+    title?: string;
   } = $props();
+
+  let initialPrompt = $state('');
+  let contentRef = $state<HTMLElement | null>(null);
+
+  // Start each opening of the dialog with an empty prompt.
+  $effect(() => {
+    if (open) {
+      untrack(() => {
+        initialPrompt = '';
+      });
+    }
+  });
+
+  function select(option: ChatExecutorOption): void {
+    onselect(option, initialPrompt.trim() || undefined);
+  }
 
   interface OptionGroup {
     executor: ChatExecutorOption['executor'];
@@ -42,22 +63,23 @@
   });
   let displayedOptions = $derived(groups.flatMap((group) => group.entries.map((e) => e.option)));
 
+  // Plain number keys start an option. Inside a text field, Alt+number does the same so that
+  // the user can type a prompt and start without leaving the keyboard.
   function handleKeydown(event: KeyboardEvent): void {
-    if (startingKey || event.altKey || event.ctrlKey || event.metaKey || event.repeat) {
+    if (startingKey || event.ctrlKey || event.metaKey || event.shiftKey || event.repeat) {
       return;
     }
-    if (!/^[1-9]$/.test(event.key)) return;
-    if (
+    const digit = /^(?:Digit|Numpad)([1-9])$/.exec(event.code)?.[1];
+    if (!digit) return;
+    const inTextField =
       event.target instanceof HTMLElement &&
-      event.target.closest('input, textarea, select, [contenteditable="true"]')
-    ) {
-      return;
-    }
+      event.target.closest('input, textarea, select, [contenteditable="true"]') !== null;
+    if (event.altKey !== inTextField) return;
 
-    const option = displayedOptions[Number(event.key) - 1];
+    const option = displayedOptions[Number(digit) - 1];
     if (!option) return;
     event.preventDefault();
-    onselect(option);
+    select(option);
   }
 
   function executorDotClass(executor: ChatExecutorOption['executor']): string {
@@ -72,11 +94,29 @@
     onOpenChange(next);
   }}
 >
-  <Dialog.Content class="gap-3 sm:max-w-md" onkeydown={handleKeydown}>
+  <Dialog.Content
+    bind:ref={contentRef}
+    class="gap-3 sm:max-w-md"
+    onkeydown={handleKeydown}
+    onOpenAutoFocus={(event) => {
+      // Keep focus off the prompt field so that the number shortcuts work right away.
+      event.preventDefault();
+      contentRef?.focus();
+    }}
+  >
     <Dialog.Header>
-      <Dialog.Title>Start Chat Session</Dialog.Title>
-      <Dialog.Description>Choose a model. Press its number to start quickly.</Dialog.Description>
+      <Dialog.Title>{title}</Dialog.Title>
+      <Dialog.Description>
+        Choose a model. Press its number to start quickly, or Alt+number from the prompt field.
+      </Dialog.Description>
     </Dialog.Header>
+    <Textarea
+      bind:value={initialPrompt}
+      aria-label="Initial prompt"
+      placeholder="Initial prompt (optional)"
+      disabled={!!startingKey}
+      class="max-h-48 text-sm"
+    />
     <div class="flex max-h-[60vh] flex-col gap-3 overflow-y-auto">
       {#each groups as group (group.executor)}
         <section class="flex flex-col gap-1" aria-label={chatExecutorLabel(group.executor)}>
@@ -91,7 +131,7 @@
               {@const isStarting = startingKey === chatOptionKey(option)}
               <button
                 type="button"
-                onclick={() => onselect(option)}
+                onclick={() => select(option)}
                 disabled={!!startingKey}
                 aria-label={`${option.model ?? 'Default model'}, ${chatExecutorLabel(option.executor)}`}
                 class={[

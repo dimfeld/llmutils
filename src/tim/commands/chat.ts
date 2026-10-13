@@ -66,6 +66,7 @@ export interface ChatCommandOptions {
   plan?: number;
   projectChatId?: string;
   projectChatFinish?: boolean;
+  trunk?: boolean;
 }
 
 export interface ChatGlobalOptions {
@@ -189,22 +190,32 @@ export async function handleChatCommand(
   globalOpts: ChatGlobalOptions
 ): Promise<void> {
   const config = await loadEffectiveConfig(globalOpts.config);
+  if (options.trunk) {
+    if (options.plan !== undefined || options.workspace !== undefined || options.newWorkspace) {
+      throw new Error('--trunk cannot be combined with --plan, --workspace, or --new-workspace');
+    }
+    if (options.projectChatFinish) {
+      throw new Error('--trunk cannot be combined with --project-chat-finish');
+    }
+  }
+  // Trunk chats run in an auto-selected workspace that has the trunk branch checked out.
+  const autoWorkspace = options.autoWorkspace === true || options.trunk === true;
   const workspaceMode =
     options.workspace !== undefined ||
-    options.autoWorkspace === true ||
+    autoWorkspace ||
     options.newWorkspace === true ||
     options.plan !== undefined;
 
   const projectChatId = options.projectChatId
     ? z.string().uuid().parse(options.projectChatId)
     : undefined;
-  if (projectChatId && (!options.autoWorkspace || options.plan !== undefined)) {
+  if (projectChatId && (!autoWorkspace || options.plan !== undefined)) {
     throw new Error('--project-chat-id requires --auto-workspace and no --plan');
   }
   if (options.projectChatFinish && !projectChatId) {
     throw new Error('--project-chat-finish requires --project-chat-id');
   }
-  const projectChatBranch = projectChatId ? `chat/${projectChatId}` : undefined;
+  const projectChatBranch = projectChatId && !options.trunk ? `chat/${projectChatId}` : undefined;
 
   // Validate that workspace-modifier flags require workspace mode
   if (!workspaceMode) {
@@ -284,12 +295,14 @@ export async function handleChatCommand(
 
           // --plan implies auto-workspace selection when no explicit workspace option is set
           const useAutoWorkspace =
-            options.autoWorkspace === true ||
+            autoWorkspace ||
             (options.plan !== undefined && !options.workspace && !options.newWorkspace);
 
           // When --plan is provided, derive branch from plan data.
           let checkoutBranch: string | undefined;
-          if (projectChatId) {
+          if (options.trunk) {
+            checkoutBranch = await getRemoteTrunkBranch(configRepoRoot);
+          } else if (projectChatId) {
             checkoutBranch = options.projectChatFinish
               ? projectChatBranch
               : await getRemoteTrunkBranch(configRepoRoot);
@@ -315,12 +328,13 @@ export async function handleChatCommand(
               autoWorkspace: useAutoWorkspace,
               newWorkspace: options.newWorkspace,
               nonInteractive: options.nonInteractive,
-              requireWorkspace: !!projectChatId,
+              requireWorkspace: !!projectChatId || options.trunk === true,
               planId: currentPlanData?.id,
               planUuid: currentPlanData?.uuid,
               checkoutBranch,
               ...(projectChatBranch ? { branchName: projectChatBranch, createBranch: true } : {}),
-              allowPrimaryWorkspaceWhenLocked: !projectChatId,
+              ...(options.trunk ? { createBranch: false } : {}),
+              allowPrimaryWorkspaceWhenLocked: !projectChatId && !options.trunk,
             },
             currentBaseDir,
             currentPlanFile || undefined,

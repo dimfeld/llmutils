@@ -70,16 +70,46 @@ function describeTarget(kind: 'plan' | 'pr', id: number | string): string {
 const CHAT_WAIT_INSTRUCTION =
   "This is an interactive chat session. Wait for the user's first question before doing anything. Until the user sends that question, do not read files, inspect the repository, run commands, query GitHub, or perform any other inspection or action.";
 
-function buildPlanChatPrompt(planId: number): string {
-  return `${CHAT_WAIT_INSTRUCTION} This chat is about plan ${planId}. After the user's first question, use the plan and repository context as needed to answer it. Do not change files unless the user explicitly asks you to.`;
+const CHAT_INITIAL_PROMPT_INSTRUCTION = 'This is an interactive chat session.';
+
+/**
+ * Build a chat prompt. Without an initial prompt, the model waits for the user's first
+ * question. With one, the model gets the user's first request immediately.
+ */
+function buildChatPrompt(context: string, initialPrompt: string | undefined): string {
+  const trimmed = initialPrompt?.trim();
+  if (!trimmed) {
+    return `${CHAT_WAIT_INSTRUCTION} ${context}`;
+  }
+  return `${CHAT_INITIAL_PROMPT_INSTRUCTION} ${context}\n\nThe user's first request:\n\n${trimmed}`;
 }
 
-function buildPrChatPrompt(prUrl: string): string {
-  return `${CHAT_WAIT_INSTRUCTION} This chat is about pull request ${prUrl}. After the user's first question, answer it using the repository context as needed. You may use gh to read the pull request's diff and description or read any stored tim review guide for this PR if that additional context would help, but do not assume that either is needed. Do not change files unless the user explicitly asks you to.`;
+export function buildPlanChatPrompt(planId: number, initialPrompt?: string): string {
+  return buildChatPrompt(
+    `This chat is about plan ${planId}. Use the plan and repository context as needed to answer the user's questions. Do not change files unless the user explicitly asks you to.`,
+    initialPrompt
+  );
 }
 
-function buildProjectChatPrompt(): string {
-  return `${CHAT_WAIT_INSTRUCTION} This chat is about the current project. After the user's first question, use the repository context as needed. Do not change files unless the user explicitly asks you to.`;
+export function buildPrChatPrompt(prUrl: string, initialPrompt?: string): string {
+  return buildChatPrompt(
+    `This chat is about pull request ${prUrl}. Answer the user's questions using the repository context as needed. You may use gh to read the pull request's diff and description or read any stored tim review guide for this PR if that additional context would help, but do not assume that either is needed. Do not change files unless the user explicitly asks you to.`,
+    initialPrompt
+  );
+}
+
+export function buildProjectChatPrompt(initialPrompt?: string): string {
+  return buildChatPrompt(
+    "This chat is about the current project. Use the repository context as needed to answer the user's questions. Do not change files unless the user explicitly asks you to.",
+    initialPrompt
+  );
+}
+
+export function buildTrunkChatPrompt(initialPrompt?: string): string {
+  return buildChatPrompt(
+    'This chat is about the current project and runs in a workspace on the trunk branch. The user will usually ask you to do project management tasks, such as running tim commands for plans. Use the repository context as needed. Do not change files, commit, or push unless the user explicitly asks you to.',
+    initialPrompt
+  );
 }
 
 export function buildProjectChatFinishPrompt(input: {
@@ -286,11 +316,12 @@ export async function spawnChatProcess(
   cwd: string,
   executor: string,
   model?: string,
-  sessionEnv?: Record<string, string>
+  sessionEnv?: Record<string, string>,
+  initialPrompt?: string
 ): Promise<SpawnProcessResult> {
   const args = [
     'chat',
-    buildPlanChatPrompt(planId),
+    buildPlanChatPrompt(planId, initialPrompt),
     '--plan',
     String(planId),
     '--executor',
@@ -310,9 +341,10 @@ export async function spawnChatForPrProcess(
   cwd: string,
   executor: string,
   model?: string,
-  sessionEnv: Record<string, string> = {}
+  sessionEnv: Record<string, string> = {},
+  initialPrompt?: string
 ): Promise<SpawnTargetProcessResult> {
-  const prompt = buildPrChatPrompt(prUrl);
+  const prompt = buildPrChatPrompt(prUrl, initialPrompt);
   const args = ['chat', prompt, '--executor', executor, '--auto-workspace'];
   if (model !== undefined) args.push('--model', model);
   args.push('--no-terminal-input');
@@ -327,20 +359,24 @@ export async function spawnProjectChatProcess(
   chatId: string,
   cwd: string,
   executor: string,
-  model?: string
+  model?: string,
+  options: { trunk?: boolean; initialPrompt?: string } = {}
 ): Promise<SpawnTargetProcessResult> {
   const args = [
     'chat',
-    buildProjectChatPrompt(),
+    options.trunk
+      ? buildTrunkChatPrompt(options.initialPrompt)
+      : buildProjectChatPrompt(options.initialPrompt),
     '--executor',
     executor,
     '--auto-workspace',
     '--project-chat-id',
     chatId,
   ];
+  if (options.trunk) args.push('--trunk');
   if (model !== undefined) args.push('--model', model);
   args.push('--no-terminal-input');
-  return spawnTimProcess(`project chat ${chatId}`, null, args, cwd);
+  return spawnTimProcess(`${options.trunk ? 'trunk' : 'project'} chat ${chatId}`, null, args, cwd);
 }
 
 export async function spawnProjectChatFinishProcess(

@@ -520,6 +520,43 @@ describe('handleChatCommand', () => {
     });
   });
 
+  test('starts trunk chat on the trunk branch without creating a branch', async () => {
+    const chatId = '11111111-1111-4111-8111-111111111111';
+    await handleChatCommand('hello', { projectChatId: chatId, trunk: true }, {});
+
+    expect(getRemoteTrunkBranch).toHaveBeenCalledWith('/repo-root');
+    const setupOptions = vi.mocked(setupWorkspace).mock.calls[0]?.[0];
+    expect(setupOptions).toMatchObject({
+      autoWorkspace: true,
+      checkoutBranch: 'main',
+      createBranch: false,
+      requireWorkspace: true,
+      allowPrimaryWorkspaceWhenLocked: false,
+    });
+    expect(setupOptions?.branchName).toBeUndefined();
+    expect(vi.mocked(runWithHeadlessAdapterIfEnabled).mock.calls[0]?.[0]).toMatchObject({
+      sessionInfo: { projectChatId: chatId, projectChatBranch: undefined },
+    });
+  });
+
+  test('rejects --trunk with plan or finish options', async () => {
+    await expect(handleChatCommand('hello', { trunk: true, plan: 12 }, {})).rejects.toThrow(
+      '--trunk cannot be combined'
+    );
+    await expect(
+      handleChatCommand(
+        'hello',
+        {
+          trunk: true,
+          projectChatId: '11111111-1111-4111-8111-111111111111',
+          projectChatFinish: true,
+        },
+        {}
+      )
+    ).rejects.toThrow('--trunk cannot be combined with --project-chat-finish');
+    expect(setupWorkspace).not.toHaveBeenCalled();
+  });
+
   test('opens the existing project chat branch for finish work', async () => {
     const chatId = '11111111-1111-4111-8111-111111111111';
     await handleChatCommand(

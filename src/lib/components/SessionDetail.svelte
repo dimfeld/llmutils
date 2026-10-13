@@ -16,6 +16,7 @@
   import { useUIState } from '$lib/stores/ui_state.svelte.js';
   import SessionMessage from './SessionMessage.svelte';
   import { formatMessageTimestamp } from '$lib/utils/message_formatting.js';
+  import { projectChatLabel } from '$lib/utils/session_window_title.js';
   import { summarizeHiddenToolCalls } from '$lib/utils/session_message_visibility.js';
   import { mergeConsecutiveOutputMessages } from '$lib/utils/merge_output_messages.js';
   import PromptRenderer from './PromptRenderer.svelte';
@@ -411,7 +412,7 @@
           role="img"
         ></span>
         <h2 class="truncate text-lg font-semibold text-foreground">
-          {session.sessionInfo.projectChatId ? 'Project Chat' : session.sessionInfo.command}
+          {projectChatLabel(session.sessionInfo) ?? session.sessionInfo.command}
         </h2>
         {#if displayPlan.title || displayPlan.id != null}
           {#snippet planText()}
@@ -472,7 +473,7 @@
       </div>
 
       <div class="ml-auto flex shrink-0 items-center gap-2">
-        {#if session.status === 'offline' && session.sessionInfo.projectChatId}
+        {#if session.status === 'offline' && session.sessionInfo.projectChatId && session.sessionInfo.projectChatBranch}
           <ProjectChatFinish {session} />
         {/if}
         {#if showEndSession}
