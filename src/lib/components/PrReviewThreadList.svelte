@@ -516,6 +516,12 @@
               class="min-h-24 w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-900"
               bind:value={replyBody}
               disabled={threadActionSubmitting !== null}
+              onkeydown={(event) => {
+                if (!(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return;
+                event.preventDefault();
+                if (replyBody.trim().length === 0) return;
+                void handleReplyToThread(thread);
+              }}
             ></textarea>
             <div class="mt-2 flex items-center justify-end gap-2">
               <button
