@@ -9,6 +9,7 @@ import {
   getPlanDetail,
   type FinishConfig,
 } from '$lib/server/db_queries.js';
+import { isLocalReturnPath } from '$lib/utils/local_return_path.js';
 import { getServerContext } from '$lib/server/init.js';
 import { clearLaunchLock, isPlanLaunching, setLaunchLock } from '$lib/server/launch_lock.js';
 import {
@@ -370,14 +371,7 @@ const startChatSchema = z.object({
   executor: z.enum(['claude', 'codex', 'claude-code', 'codex-cli']),
   model: z.string().min(1).optional(),
   initialPrompt: z.string().max(100_000).optional(),
-  returnTo: z
-    .string()
-    .refine(
-      (value) =>
-        value.startsWith('/') && !value.startsWith('//') && !/[\\\u0000-\u001f]/.test(value),
-      'Must be a local path'
-    )
-    .optional(),
+  returnTo: z.string().refine(isLocalReturnPath, 'Must be a local path').optional(),
 });
 
 export const startChat = command(

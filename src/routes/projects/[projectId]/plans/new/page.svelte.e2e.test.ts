@@ -35,10 +35,16 @@ function renderPage() {
 }
 
 describe('new plan page interaction', () => {
+  test('renders the form actions above and below the fields', async () => {
+    renderPage();
+
+    await expect.poll(() => page.getByRole('button', { name: 'Create' }).elements().length).toBe(2);
+  });
+
   test('submit button is disabled when title is empty', async () => {
     renderPage();
 
-    const submitButton = page.getByRole('button', { name: 'Create' });
+    const submitButton = page.getByRole('button', { name: 'Create' }).first();
     await expect.element(submitButton).toBeDisabled();
   });
 
@@ -48,7 +54,7 @@ describe('new plan page interaction', () => {
     const titleInput = page.getByPlaceholder('Plan title');
     await titleInput.fill('My new plan');
 
-    const submitButton = page.getByRole('button', { name: 'Create' });
+    const submitButton = page.getByRole('button', { name: 'Create' }).first();
     await expect.element(submitButton).toBeEnabled();
   });
 
@@ -58,7 +64,7 @@ describe('new plan page interaction', () => {
     const titleInput = page.getByPlaceholder('Plan title');
     await titleInput.fill('Temporary title');
 
-    const submitButton = page.getByRole('button', { name: 'Create' });
+    const submitButton = page.getByRole('button', { name: 'Create' }).first();
     await expect.element(submitButton).toBeEnabled();
 
     await titleInput.fill('');
@@ -78,7 +84,7 @@ describe('new plan page interaction', () => {
     renderPage();
 
     await page.getByPlaceholder('Plan title').fill('Integration test plan');
-    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByRole('button', { name: 'Create' }).first().click();
 
     await vi.waitFor(() => {
       expect(createPlan).toHaveBeenCalledWith(
@@ -106,11 +112,11 @@ describe('new plan page interaction', () => {
     renderPage();
 
     await page.getByPlaceholder('Plan title').fill('Plan with bad tag');
-    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByRole('button', { name: 'Create' }).first().click();
 
-    await expect.element(page.getByText('Invalid tag: blocked')).toBeVisible();
+    await expect.element(page.getByText('Invalid tag: blocked').first()).toBeVisible();
     await expect.element(page.getByPlaceholder('Plan title')).toHaveValue('Plan with bad tag');
-    await expect.element(page.getByRole('button', { name: 'Create' })).toBeEnabled();
+    await expect.element(page.getByRole('button', { name: 'Create' }).first()).toBeEnabled();
   });
 
   test('submit button shows loading state during submission', async () => {
@@ -125,9 +131,9 @@ describe('new plan page interaction', () => {
     renderPage();
 
     await page.getByPlaceholder('Plan title').fill('Slow plan');
-    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByRole('button', { name: 'Create' }).first().click();
 
-    await expect.element(page.getByRole('button', { name: 'Create...' })).toBeDisabled();
+    await expect.element(page.getByRole('button', { name: 'Create...' }).first()).toBeDisabled();
 
     resolveCreate!({ planUuid: 'uuid', projectId: 7, planId: 1 });
   });
@@ -153,7 +159,7 @@ describe('new plan page interaction', () => {
     statusSelect.value = 'in_progress';
     statusSelect.dispatchEvent(new Event('change', { bubbles: true }));
 
-    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByRole('button', { name: 'Create' }).first().click();
 
     await vi.waitFor(() => {
       expect(createPlan).toHaveBeenCalledWith(
@@ -179,7 +185,7 @@ describe('new plan page interaction', () => {
 
     await page.getByPlaceholder('Plan title').fill('Tagged plan');
     await page.getByPlaceholder('e.g. frontend, bugfix, urgent').fill('Frontend, BUGFIX');
-    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByRole('button', { name: 'Create' }).first().click();
 
     await vi.waitFor(() => {
       expect(createPlan).toHaveBeenCalledWith(
@@ -199,10 +205,10 @@ describe('new plan page interaction', () => {
     renderPage();
 
     await page.getByPlaceholder('Plan title').fill('Failing plan');
-    await page.getByRole('button', { name: 'Create' }).click();
+    await page.getByRole('button', { name: 'Create' }).first().click();
 
     await vi.waitFor(async () => {
-      await expect.element(page.getByText('Server error')).toBeVisible();
+      await expect.element(page.getByText('Server error').first()).toBeVisible();
     });
     expect(goto).not.toHaveBeenCalled();
   });

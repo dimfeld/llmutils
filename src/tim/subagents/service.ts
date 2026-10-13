@@ -168,7 +168,7 @@ export async function prepareSubagentExecution(
 ): Promise<PreparedSubagentExecution> {
   const difficulty = request.difficulty ?? 'high';
   if (difficulty !== 'low' && difficulty !== 'high') {
-    throw new Error(`Invalid subagent difficulty: ${difficulty}. Expected low or high.`);
+    throw new Error(`Invalid subagent difficulty: ${String(difficulty)}. Expected low or high.`);
   }
   const config = await loadEffectiveConfig(request.configPath);
   const repoRoot =

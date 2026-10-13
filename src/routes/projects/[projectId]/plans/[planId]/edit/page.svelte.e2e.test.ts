@@ -70,7 +70,7 @@ describe('edit plan page interaction', () => {
     await expect
       .element(page.getByPlaceholder('What should this plan accomplish?'))
       .toHaveValue('Current edit goal');
-    await expect.element(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await expect.element(page.getByRole('button', { name: 'Save' }).first()).toBeDisabled();
 
     const prioritySelect = document.getElementById('plan-priority') as HTMLSelectElement;
     const statusSelect = document.getElementById('plan-status') as HTMLSelectElement;
@@ -89,7 +89,7 @@ describe('edit plan page interaction', () => {
     renderPage();
 
     await page.getByPlaceholder('Plan title').fill('Updated edit title');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save' }).first().click();
 
     await vi.waitFor(() => {
       expect(updatePlanMetadata).toHaveBeenCalledWith(
@@ -151,7 +151,7 @@ describe('edit plan page interaction', () => {
     });
 
     await page.getByPlaceholder('Plan title').fill('All-project edit title');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save' }).first().click();
 
     await vi.waitFor(() => {
       expect(updatePlanMetadata).toHaveBeenCalledWith(
@@ -176,13 +176,13 @@ describe('edit plan page interaction', () => {
     renderPage();
 
     await page.getByPlaceholder('Plan title').fill('Edited title with invalid tag');
-    await page.getByRole('button', { name: 'Save' }).click();
+    await page.getByRole('button', { name: 'Save' }).first().click();
 
-    await expect.element(page.getByText('Invalid tag: blocked')).toBeVisible();
+    await expect.element(page.getByText('Invalid tag: blocked').first()).toBeVisible();
     await expect
       .element(page.getByPlaceholder('Plan title'))
       .toHaveValue('Edited title with invalid tag');
-    await expect.element(page.getByRole('button', { name: 'Save' })).toBeEnabled();
+    await expect.element(page.getByRole('button', { name: 'Save' }).first()).toBeEnabled();
     expect(goto).not.toHaveBeenCalled();
   });
 });

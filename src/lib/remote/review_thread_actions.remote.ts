@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit';
 import type { Database } from 'bun:sqlite';
 import * as z from 'zod';
 
+import { isLocalReturnPath } from '$lib/utils/local_return_path.js';
 import { getServerContext } from '$lib/server/init.js';
 import {
   categorizePrUrls,
@@ -648,14 +649,7 @@ export const startPrChat = command(
     executor: z.enum(['claude', 'codex', 'claude-code', 'codex-cli']),
     model: z.string().min(1).optional(),
     initialPrompt: z.string().max(100_000).optional(),
-    returnTo: z
-      .string()
-      .refine(
-        (value) =>
-          value.startsWith('/') && !value.startsWith('//') && !/[\\\u0000-\u001f]/.test(value),
-        'Must be a local path'
-      )
-      .optional(),
+    returnTo: z.string().refine(isLocalReturnPath, 'Must be a local path').optional(),
   }),
   async ({ projectId, prNumber, executor, model, returnTo, initialPrompt }) =>
     launchPrTimCommand('chat', projectId, prNumber, (prUrl, cwd, prStatus) => {
