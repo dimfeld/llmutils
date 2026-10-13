@@ -23,7 +23,11 @@ const sessionManager = {
   hasActiveSessionForPr: vi.fn((_url: string): { active: boolean } => ({ active: false })),
   sessions: new Map<
     string,
-    { status: string; sessionInfo: { planUuid?: string; command?: string } }
+    {
+      connectionId?: string;
+      status: string;
+      sessionInfo: { planUuid?: string; command?: string };
+    }
   >(),
   onEvent: vi.fn(() => () => {}),
 };
@@ -1054,6 +1058,36 @@ describe('PrStatusSection', () => {
     expect(body).toContain('Session Active');
     expect(body).toContain('aria-label="Fix failing CI checks"');
     expect(body).toContain('<button disabled=""');
+  });
+
+  test('links Session Active to the active plan session', async () => {
+    sessionManager.sessions.set('conn-plan', {
+      connectionId: 'conn-plan',
+      status: 'active',
+      sessionInfo: { planUuid: 'plan-linked', command: 'ci-fix' },
+    });
+
+    const detail = makePrDetail({
+      status: { author: 'testuser', check_rollup_state: 'failure' },
+      checks: [makeCheck({ conclusion: 'failure' })],
+      reviewThreads: [
+        makeReviewThreadDetail({
+          thread: { thread_id: 'thread-linked', path: 'src/a.ts', line: 3, is_resolved: 0 },
+        }),
+      ],
+    });
+
+    const { body } = await renderSection({
+      planUuid: 'plan-linked',
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    const links = body.match(/<a href="\/projects\/1\/sessions\/conn-plan"/g) ?? [];
+    expect(links).toHaveLength(2);
+    expect(body).not.toContain('aria-label="Fix failing CI checks"');
+    expect(body).not.toContain('aria-label="Fix all unresolved review threads"');
   });
 
   test('does not show Session Active for an active non-CI session on the plan', async () => {

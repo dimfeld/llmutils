@@ -17,7 +17,8 @@ const sessionManager = {
     { status: string; sessionInfo: { planUuid?: string; command?: string } }
   >(),
   hasActiveSessionForPr: vi.fn(
-    (_url: string, _command?: string | string[]) => ({ active: false }) as { active: boolean }
+    (_url: string, _command?: string | string[]) =>
+      ({ active: false }) as { active: boolean; connectionId?: string }
   ),
 };
 
@@ -280,6 +281,57 @@ describe('PrDetail', () => {
     expect(body).toMatch(
       /<button[^>]*\sdisabled=""[^>]*aria-label="Fix all unresolved review threads"/
     );
+  });
+
+  test('links Session Active on the fix button to the active session', async () => {
+    sessionManager.hasActiveSessionForPr.mockReturnValue({ active: true, connectionId: 'conn-pr' });
+    const pr = createPr();
+    pr.linkedPlans = [];
+    pr.reviewThreads = [createReviewThread()];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'alice',
+      },
+    });
+
+    expect(body).toMatch(/<a href="\/projects\/123\/sessions\/conn-pr"[^>]*>.*Session Active/s);
+    expect(body).not.toContain('aria-label="Fix all unresolved review threads"');
+  });
+
+  test('links Session Active on the Fix CI button to the ci-fix session', async () => {
+    sessionManager.hasActiveSessionForPr.mockImplementation(
+      (_url: string, command?: string | string[]) =>
+        command === 'ci-fix' ? { active: true, connectionId: 'conn-ci' } : { active: false }
+    );
+    const pr = createPr();
+    pr.status.check_rollup_state = 'failure';
+    pr.checks = [
+      {
+        id: 1,
+        pr_status_id: 1,
+        name: 'CI / build',
+        source: 'check_run',
+        status: 'completed',
+        conclusion: 'failure',
+        details_url: 'https://github.com/example/repo/actions/runs/1',
+        started_at: '2026-03-18T10:00:00.000Z',
+        completed_at: '2026-03-18T10:01:00.000Z',
+      },
+    ];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        username: 'alice',
+      },
+    });
+
+    expect(body).toMatch(/<a href="\/projects\/123\/sessions\/conn-ci"[^>]*>.*Session Active/s);
+    expect(body).not.toContain('aria-label="Fix failing CI checks"');
   });
 
   test('does not show Convert to Task in the review thread list when no plan is linked', async () => {

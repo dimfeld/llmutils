@@ -6,18 +6,22 @@ export interface FixButtonStateInput {
   fixStarting: boolean;
   fixLaunched: boolean;
   sessionActive: boolean;
+  /** Connection ID of the active session, used to link to it. */
+  activeSessionId?: string | null;
 }
 
 export interface FixButtonState {
   disabled: boolean;
   label: 'Starting...' | 'Fix Started' | 'Session Active' | 'Fix Unresolved' | 'Fix CI';
+  /** Set when the label is 'Session Active' and the session connection ID is known. */
+  activeSessionId?: string;
 }
 
 export function getFixButtonState(
   input: FixButtonStateInput,
   defaultLabel: FixButtonState['label'] = 'Fix Unresolved'
 ): FixButtonState {
-  const { fixStarting, fixLaunched, sessionActive, refreshing } = input;
+  const { fixStarting, fixLaunched, sessionActive, refreshing, activeSessionId } = input;
 
   if (fixStarting) {
     return { disabled: true, label: 'Starting...' };
@@ -28,7 +32,9 @@ export function getFixButtonState(
   }
 
   if (sessionActive) {
-    return { disabled: true, label: 'Session Active' };
+    return activeSessionId
+      ? { disabled: true, label: 'Session Active', activeSessionId }
+      : { disabled: true, label: 'Session Active' };
   }
 
   return {

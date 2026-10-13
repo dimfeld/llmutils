@@ -1,6 +1,7 @@
 <script lang="ts">
   import SessionChatButton from './SessionChatButton.svelte';
   import ExecutorChoiceDropdown from './ExecutorChoiceDropdown.svelte';
+  import ActiveSessionLink from './ActiveSessionLink.svelte';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import {
     stateBadgeColor,
@@ -184,26 +185,31 @@
   let canFixUnresolvedThreads = $derived(isOwnPr && unresolvedReviewThreadCount > 0);
   let showFixCi = $derived(canFixCi({ isOwnPr, status: pr.status }));
   let canonicalPrUrl = $derived(tryCanonicalizePrUrl(pr.status.pr_url));
-  let sessionActive = $derived.by(() => {
+  let activeSessionId = $derived.by(() => {
     if (!canonicalPrUrl) {
-      return false;
+      return null;
     }
 
-    return sessionManager.hasActiveSessionForPr(canonicalPrUrl).active;
+    const result = sessionManager.hasActiveSessionForPr(canonicalPrUrl);
+    return result.active ? (result.connectionId ?? '') : null;
   });
-  let ciFixSessionActive = $derived.by(() => {
+  let ciFixActiveSessionId = $derived.by(() => {
     if (!canonicalPrUrl) {
-      return false;
+      return null;
     }
 
-    return sessionManager.hasActiveSessionForPr(canonicalPrUrl, 'ci-fix').active;
+    const result = sessionManager.hasActiveSessionForPr(canonicalPrUrl, 'ci-fix');
+    return result.active ? (result.connectionId ?? '') : null;
   });
+  let sessionActive = $derived(activeSessionId !== null);
+  let ciFixSessionActive = $derived(ciFixActiveSessionId !== null);
   let fixButtonState = $derived(
     getFixButtonState({
       refreshing,
       fixStarting,
       fixLaunched,
       sessionActive,
+      activeSessionId,
     })
   );
   let ciFixButtonState = $derived(
@@ -213,6 +219,7 @@
         fixStarting: ciFixStarting,
         fixLaunched: ciFixLaunched,
         sessionActive: ciFixSessionActive,
+        activeSessionId: ciFixActiveSessionId,
       },
       'Fix CI'
     )
@@ -835,14 +842,22 @@
         <div class="mt-1.5 pl-2">
           {#if showFixCi}
             <div class="mb-2 flex justify-end">
-              <button
-                onclick={handleStartCiFix}
-                disabled={ciFixButtonState.disabled}
-                class="rounded-md px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
-                aria-label="Fix failing CI checks"
-              >
-                {ciFixButtonState.label}
-              </button>
+              {#if ciFixButtonState.activeSessionId}
+                <ActiveSessionLink
+                  {projectId}
+                  connectionId={ciFixButtonState.activeSessionId}
+                  class="rounded-md px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-900 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                />
+              {:else}
+                <button
+                  onclick={handleStartCiFix}
+                  disabled={ciFixButtonState.disabled}
+                  class="rounded-md px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                  aria-label="Fix failing CI checks"
+                >
+                  {ciFixButtonState.label}
+                </button>
+              {/if}
             </div>
           {/if}
           {#if pr.checks.length === 0}
@@ -975,14 +990,22 @@
         <div class="mt-1.5 pl-2">
           {#if canFixUnresolvedThreads}
             <div class="mb-2 flex justify-end">
-              <ExecutorChoiceDropdown
-                label={fixButtonState.label}
-                options={prFixExecutorOptions}
-                disabled={fixButtonState.disabled}
-                onselect={handleStartFix}
-                buttonClass="rounded-md px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 hover:text-amber-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
-                ariaLabel="Fix all unresolved review threads"
-              />
+              {#if fixButtonState.activeSessionId}
+                <ActiveSessionLink
+                  {projectId}
+                  connectionId={fixButtonState.activeSessionId}
+                  class="rounded-md px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 hover:text-amber-900 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
+                />
+              {:else}
+                <ExecutorChoiceDropdown
+                  label={fixButtonState.label}
+                  options={prFixExecutorOptions}
+                  disabled={fixButtonState.disabled}
+                  onselect={handleStartFix}
+                  buttonClass="rounded-md px-2 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 hover:text-amber-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
+                  ariaLabel="Fix all unresolved review threads"
+                />
+              {/if}
             </div>
           {/if}
           <PrReviewThreadList

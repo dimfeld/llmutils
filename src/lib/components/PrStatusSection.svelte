@@ -34,6 +34,7 @@
 
   import CopyButton from './CopyButton.svelte';
   import ExecutorChoiceDropdown from './ExecutorChoiceDropdown.svelte';
+  import ActiveSessionLink from './ActiveSessionLink.svelte';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
   import PrCheckRunList from './PrCheckRunList.svelte';
@@ -174,27 +175,29 @@
     });
   });
 
-  let sessionActiveForPlan = $derived.by(() => {
+  let activeSessionIdForPlan = $derived.by(() => {
     for (const session of sessionManager.sessions.values()) {
       if (session.status === 'active' && session.sessionInfo.planUuid === planUuid) {
-        return true;
+        return session.connectionId;
       }
     }
-    return false;
+    return null;
   });
 
-  let ciFixSessionActiveForPlan = $derived.by(() => {
+  let ciFixActiveSessionIdForPlan = $derived.by(() => {
     for (const session of sessionManager.sessions.values()) {
       if (
         session.status === 'active' &&
         session.sessionInfo.planUuid === planUuid &&
         session.sessionInfo.command === 'ci-fix'
       ) {
-        return true;
+        return session.connectionId;
       }
     }
-    return false;
+    return null;
   });
+  let sessionActiveForPlan = $derived(activeSessionIdForPlan !== null);
+  let ciFixSessionActiveForPlan = $derived(ciFixActiveSessionIdForPlan !== null);
 
   let refreshError = $state<string | null>(null);
   const autoreviewStarting = new SvelteSet<string>();
@@ -234,7 +237,13 @@
   let ciFixStarting = $state(false);
   let ciFixLaunched = $state(false);
   let fixButtonState = $derived(
-    getFixButtonState({ refreshing, fixStarting, fixLaunched, sessionActive: sessionActiveForPlan })
+    getFixButtonState({
+      refreshing,
+      fixStarting,
+      fixLaunched,
+      sessionActive: sessionActiveForPlan,
+      activeSessionId: activeSessionIdForPlan,
+    })
   );
   let ciFixButtonState = $derived(
     getFixButtonState(
@@ -243,6 +252,7 @@
         fixStarting: ciFixStarting,
         fixLaunched: ciFixLaunched,
         sessionActive: ciFixSessionActiveForPlan,
+        activeSessionId: ciFixActiveSessionIdForPlan,
       },
       'Fix CI'
     )
@@ -394,24 +404,40 @@
     </h3>
     <div class="flex items-center gap-1.5">
       {#if hasFailingOwnPr}
-        <button
-          onclick={handleStartCiFix}
-          disabled={ciFixButtonState.disabled}
-          class="rounded px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 hover:text-red-900 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
-          aria-label="Fix failing CI checks"
-        >
-          {ciFixButtonState.label}
-        </button>
+        {#if ciFixButtonState.activeSessionId}
+          <ActiveSessionLink
+            {projectId}
+            connectionId={ciFixButtonState.activeSessionId}
+            class="rounded px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 hover:text-red-900 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+          />
+        {:else}
+          <button
+            onclick={handleStartCiFix}
+            disabled={ciFixButtonState.disabled}
+            class="rounded px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 hover:text-red-900 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+            aria-label="Fix failing CI checks"
+          >
+            {ciFixButtonState.label}
+          </button>
+        {/if}
       {/if}
       {#if hasUnresolvedThreads}
-        <ExecutorChoiceDropdown
-          label={fixButtonState.label}
-          options={prFixExecutorOptions}
-          disabled={fixButtonState.disabled}
-          onselect={handleStartFix}
-          buttonClass="rounded px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
-          ariaLabel="Fix all unresolved review threads"
-        />
+        {#if fixButtonState.activeSessionId}
+          <ActiveSessionLink
+            {projectId}
+            connectionId={fixButtonState.activeSessionId}
+            class="rounded px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-900 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
+          />
+        {:else}
+          <ExecutorChoiceDropdown
+            label={fixButtonState.label}
+            options={prFixExecutorOptions}
+            disabled={fixButtonState.disabled}
+            onselect={handleStartFix}
+            buttonClass="rounded px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-900 disabled:opacity-50 dark:text-amber-400 dark:hover:bg-amber-950/30 dark:hover:text-amber-300"
+            ariaLabel="Fix all unresolved review threads"
+          />
+        {/if}
       {/if}
       {#if tokenConfigured}
         <button

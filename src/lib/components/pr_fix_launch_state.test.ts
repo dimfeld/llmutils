@@ -50,6 +50,34 @@ describe('pr_fix_launch_state', () => {
     });
   });
 
+  test('getFixButtonState returns the active session ID for Session Active', () => {
+    expect(
+      getFixButtonState({
+        refreshing: false,
+        fixStarting: false,
+        fixLaunched: false,
+        sessionActive: true,
+        activeSessionId: 'conn-1',
+      })
+    ).toEqual({
+      disabled: true,
+      label: 'Session Active',
+      activeSessionId: 'conn-1',
+    });
+  });
+
+  test('getFixButtonState omits the active session ID while a launch is starting', () => {
+    expect(
+      getFixButtonState({
+        refreshing: false,
+        fixStarting: true,
+        fixLaunched: false,
+        sessionActive: true,
+        activeSessionId: 'conn-1',
+      })
+    ).toEqual({ disabled: true, label: 'Starting...' });
+  });
+
   test('getFixButtonState shows Session Active when an agent session is discovered', () => {
     expect(
       getFixButtonState({
