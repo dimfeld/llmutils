@@ -5,6 +5,7 @@
   import type { PrAttentionItem } from '$lib/utils/dashboard_attention.js';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
+  import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
 
   let {
     item,
@@ -95,7 +96,11 @@
           aria-label="Approved by a reviewer"
         />
       {/if}
-      {#if reasonStyle}
+      {#if pr.needsReviewRequest}
+        <NeedsReviewerBadge />
+      {/if}
+      <!-- The flag replaces the plain "Open" badge, which adds no information. -->
+      {#if reasonStyle && !(pr.needsReviewRequest && pr.actionReason === 'open')}
         <span
           class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reasonStyle.classes}"
         >

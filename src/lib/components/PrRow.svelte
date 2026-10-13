@@ -6,6 +6,7 @@
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
   import PrStatusIndicator from './PrStatusIndicator.svelte';
+  import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
   import {
     checkRollupToSummaryStatus,
     reviewDecisionBadgeColor,
@@ -97,6 +98,8 @@
             </span>
           {/if}
         </span>
+      {:else if pr.currentUserNeedsReviewRequest}
+        <NeedsReviewerBadge />
       {:else if pr.status.review_decision}
         <span
           class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs leading-none font-medium {reviewDecisionBadgeColor(

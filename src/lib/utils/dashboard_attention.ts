@@ -49,6 +49,8 @@ export interface ActionablePr {
   hasApprovingReview: boolean;
   /** Count of review comment threads that have not been marked resolved. */
   unresolvedReviewThreadCount: number;
+  /** True for the user's own open PRs that have no human reviewer requested yet. */
+  needsReviewRequest: boolean;
 }
 
 // --- Attention item types ---

@@ -556,6 +556,7 @@ describe('buildActionablePrsForRepo', () => {
         reviewRequestedStacked: false,
         hasApprovingReview: false,
         unresolvedReviewThreadCount: 0,
+        needsReviewRequest: false,
       },
     ]);
   });
@@ -605,8 +606,49 @@ describe('buildActionablePrsForRepo', () => {
         reviewRequestedStacked: false,
         hasApprovingReview: false,
         unresolvedReviewThreadCount: 0,
+        needsReviewRequest: false,
       },
     ]);
+  });
+
+  test('flags own open PRs that have no human reviewer requested', () => {
+    const botOnly = makePrDetail(
+      { pr_url: 'https://github.com/owner/repo/pull/12', pr_number: 12, author: 'TestUser' },
+      {
+        reviews: [
+          {
+            id: 1,
+            pr_status_id: 1,
+            author: 'coderabbitai[bot]',
+            state: 'COMMENTED',
+            body: null,
+            submitted_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+      }
+    );
+    const requested = makePrDetail(
+      {
+        pr_url: 'https://github.com/owner/repo/pull/13',
+        pr_number: 13,
+        author: 'testuser',
+        requested_reviewers: '["reviewer"]',
+      },
+      {}
+    );
+
+    const result = buildActionablePrsForRepo(7, [botOnly, requested], new Map(), 'testuser');
+    expect(result.map((pr) => [pr.prNumber, pr.needsReviewRequest])).toEqual([
+      [12, true],
+      [13, false],
+    ]);
+  });
+
+  test('does not flag PRs by other authors that need a review request', () => {
+    const pr = makePrDetail({ author: 'someone-else', requested_reviewers: '["testuser"]' }, {});
+    expect(buildActionablePrsForRepo(7, [pr], new Map(), 'testuser')[0]?.needsReviewRequest).toBe(
+      false
+    );
   });
 
   test('marks a review-requested PR as stacked when its base is another review-requested PR', () => {

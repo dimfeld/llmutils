@@ -36,6 +36,33 @@ function createItem(prOverrides: Partial<ActionablePr> = {}): PrAttentionItem {
 }
 
 describe('PrAttentionCard', () => {
+  test('replaces the open badge with a no reviewer badge', () => {
+    const { body } = render(PrAttentionCard, {
+      props: { item: createItem({ actionReason: 'open', needsReviewRequest: true }) },
+    });
+
+    expect(body).toContain('No reviewer');
+    expect(body).not.toMatch(/>\s*Open\s*</);
+  });
+
+  test('keeps other reason badges next to the no reviewer badge', () => {
+    const { body } = render(PrAttentionCard, {
+      props: { item: createItem({ actionReason: 'approved', needsReviewRequest: true }) },
+    });
+
+    expect(body).toContain('No reviewer');
+    expect(body).toContain('Approved');
+  });
+
+  test('does not render a no reviewer badge when a reviewer is requested', () => {
+    const { body } = render(PrAttentionCard, {
+      props: { item: createItem({ actionReason: 'open', needsReviewRequest: false }) },
+    });
+
+    expect(body).not.toContain('No reviewer');
+    expect(body).toMatch(/>\s*Open\s*</);
+  });
+
   test('renders PR title and number', () => {
     const { body } = render(PrAttentionCard, {
       props: {

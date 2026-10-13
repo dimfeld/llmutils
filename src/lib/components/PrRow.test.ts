@@ -46,6 +46,27 @@ function createPr(): EnrichedProjectPr {
 }
 
 describe('PrRow', () => {
+  test('renders a no reviewer badge in place of the review decision', () => {
+    const pr = createPr();
+    pr.status.review_decision = 'REVIEW_REQUIRED';
+    pr.currentUserNeedsReviewRequest = true;
+
+    const { body } = render(PrRow, {
+      props: { pr, href: '/projects/123/prs/42', itemId: '123:42' },
+    });
+
+    expect(body).toContain('No reviewer');
+    expect(body).not.toContain('Review Required');
+  });
+
+  test('does not render a no reviewer badge by default', () => {
+    const { body } = render(PrRow, {
+      props: { pr: createPr(), href: '/projects/123/prs/42', itemId: '123:42' },
+    });
+
+    expect(body).not.toContain('No reviewer');
+  });
+
   test('renders a button to open the PR in a new window', () => {
     const { body } = render(PrRow, {
       props: {

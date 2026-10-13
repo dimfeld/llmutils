@@ -1,3 +1,4 @@
+import { needsHumanReviewRequest } from '$common/github/review_requests.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
 import type { ActionablePr } from '$lib/utils/dashboard_attention.js';
 import type { LinkedPlanSummary, PrReviewRequestRow, PrStatusDetail } from '$tim/db/pr_status.js';
@@ -214,6 +215,7 @@ export function buildActionablePrsForRepo(
             pr.status.base_branch !== null && openHeadBranches.has(pr.status.base_branch),
           hasApprovingReview,
           unresolvedReviewThreadCount,
+          needsReviewRequest: needsHumanReviewRequest(pr),
         });
       }
     } else if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
@@ -238,6 +240,7 @@ export function buildActionablePrsForRepo(
           pr.status.base_branch !== null && reviewRequestedHeadBranches.has(pr.status.base_branch),
         hasApprovingReview,
         unresolvedReviewThreadCount,
+        needsReviewRequest: false,
       });
     }
   }

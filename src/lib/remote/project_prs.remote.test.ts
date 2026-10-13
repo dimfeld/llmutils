@@ -67,10 +67,6 @@ vi.mock('$common/github/user.js', () => ({
   getGitHubUsername,
 }));
 
-vi.mock('$common/github/username.js', () => ({
-  normalizeGitHubUsername: (value: string | null | undefined) => value?.toLowerCase() ?? '',
-}));
-
 vi.mock('$common/github/token.js', () => ({
   resolveGitHubToken,
 }));
@@ -490,6 +486,58 @@ describe('project_prs remote functions', () => {
     expect(byNumber.get(30)?.currentUserReviewRequestStacked).toBe(false);
     expect(byNumber.get(31)?.currentUserReviewRequestLabel).toBe('Review Requested');
     expect(byNumber.get(31)?.currentUserReviewRequestStacked).toBe(true);
+  });
+
+  test('getProjectPrs flags own open PRs without a human reviewer request', async () => {
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/40',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 40,
+      title: 'Bot reviewed only',
+      state: 'open',
+      draft: false,
+      author: 'dimfeld',
+      requestedReviewers: ['Copilot'],
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    const requested = upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/41',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 41,
+      title: 'Human requested',
+      state: 'open',
+      draft: false,
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+    upsertPrReviewRequestByReviewer(currentDb, requested.status.id, {
+      reviewer: 'teammate',
+      action: 'requested',
+      eventAt: '2026-03-30T11:00:00.000Z',
+    });
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/42',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 42,
+      title: 'Draft',
+      state: 'open',
+      draft: true,
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    const result = await invokeQuery(getProjectPrs, { projectId: String(projectId) });
+
+    const flags = new Map(
+      result.authored.map((pr) => [pr.status.pr_number, pr.currentUserNeedsReviewRequest])
+    );
+    expect(flags.get(40)).toBe(true);
+    expect(flags.get(41)).toBe(false);
+    expect(flags.get(42)).toBe(false);
   });
 
   test('getProjectPrs aggregates all project PRs when projectId is all', async () => {

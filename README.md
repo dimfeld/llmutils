@@ -74,6 +74,10 @@ Queue a plan after generation with `tim generate <id> --queue`, or queue an exis
 
 Set `generate.queueWhenDone: true` in the project config to queue generated plans by default. You can still use `--queue` to queue a plan when this setting is off.
 
+### PRs that need a reviewer
+
+The **My PRs** lists on the Active Work page and on the PRs page show a **No reviewer** badge on your open, non-draft PRs that have no human reviewer yet. A PR gets the badge when it has no active human review request, no submitted review from someone other than you, and no GitHub review decision of approved or changes requested. Bot reviewers such as `*[bot]` and `Copilot` do not count. Use the badge to find PRs that got bot review but still need a human review request.
+
 ### Project chats
 
 Session windows hide lifecycle command output and tool calls by default. Use the wrench button to open the message visibility pop-up and change either option. Tim agent tool calls and results always stay visible.

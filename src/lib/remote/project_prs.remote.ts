@@ -7,6 +7,7 @@ import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
 import { getReviewerPredicate, parseRequestedReviewers } from '$common/github/pr_relevance.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
+import { needsHumanReviewRequest } from '$common/github/review_requests.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import {
   refreshProjectPrs as refreshProjectPrsService,
@@ -54,6 +55,8 @@ export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
   currentUserReviewRequestStacked: boolean;
   /** True when this PR's base branch is the head branch of another open PR in the same repo. */
   isStackedOnOpenPr: boolean;
+  /** True for the current user's own open PRs that have no human reviewer requested yet. */
+  currentUserNeedsReviewRequest: boolean;
 }
 
 interface RefreshResult {
@@ -79,6 +82,16 @@ function getCurrentUserPushedAfterReview(pr: PrStatusDetail, username: string | 
   return pr.status.latest_commit_pushed_at > latestReviewAt;
 }
 
+function getCurrentUserNeedsReviewRequest(pr: PrStatusDetail, username: string | null): boolean {
+  if (!username || !pr.status.author) {
+    return false;
+  }
+  return (
+    normalizeGitHubUsername(pr.status.author) === normalizeGitHubUsername(username) &&
+    needsHumanReviewRequest(pr)
+  );
+}
+
 function enrichProjectPrs(
   projectId: number,
   prs: PrStatusDetailWithRequiredChecks[],
@@ -94,6 +107,7 @@ function enrichProjectPrs(
     currentUserPushedAfterReview: getCurrentUserPushedAfterReview(pr, username),
     currentUserReviewRequestStacked: false,
     isStackedOnOpenPr: false,
+    currentUserNeedsReviewRequest: getCurrentUserNeedsReviewRequest(pr, username),
   }));
 }
 

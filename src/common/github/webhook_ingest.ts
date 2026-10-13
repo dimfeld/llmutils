@@ -42,12 +42,8 @@ import {
 import { checkAndMarkParentDone } from '../../tim/plans/parent_cascade.js';
 import { invertPlanIdToUuidMap, planRowToSchemaInput } from '../../tim/plans_db.js';
 import { loadEffectiveConfig } from '../../tim/configLoader.js';
-import { isBotLogin } from './username.js';
-import {
-  getPrStatusByRepoAndNumber,
-  getPrStatusForPlan,
-  type PrStatusDetail,
-} from '../../tim/db/pr_status.js';
+import { hasHumanReviewRequest } from './review_requests.js';
+import { getPrStatusByRepoAndNumber, getPrStatusForPlan } from '../../tim/db/pr_status.js';
 import { getProjectUuidForId, routeSyncOperation } from '../../tim/sync/write_router.js';
 import { setPlanScalarOperation } from '../../tim/sync/operations.js';
 import type { TimConfig } from '../../tim/configSchema.js';
@@ -143,38 +139,6 @@ function parseCanonicalPlanPrUrls(value: string | null): string[] {
 }
 
 /**
- * Returns whether a requested reviewer is a bot. Most bots use the `[bot]` login suffix, but the
- * Copilot reviewer appears in review requests as plain `Copilot`. We store only logins, not the
- * GitHub account type, so this check must use the login.
- */
-function isBotReviewer(login: string): boolean {
-  return isBotLogin(login) || login.toLowerCase() === 'copilot';
-}
-
-/** True when the PR has an active review request from a human reviewer. */
-function hasReviewRequest(detail: PrStatusDetail): boolean {
-  if (
-    detail.reviewRequests.some(
-      (request) => request.requested_at && !request.removed_at && !isBotReviewer(request.reviewer)
-    )
-  ) {
-    return true;
-  }
-
-  try {
-    const requestedReviewers: unknown = JSON.parse(detail.status.requested_reviewers ?? '[]');
-    return (
-      Array.isArray(requestedReviewers) &&
-      requestedReviewers.some(
-        (reviewer) => typeof reviewer === 'string' && !isBotReviewer(reviewer)
-      )
-    );
-  } catch {
-    return false;
-  }
-}
-
-/**
  * True when every linked PR is non-draft and every open linked PR has a review request.
  * Closed and merged PRs do not need a review request.
  */
@@ -190,7 +154,7 @@ function areAllPlanPrsReadyAndRequested(
     linkedPrs.length > 0 &&
     explicitPrUrls.every((prUrl) => linkedPrUrls.has(prUrl)) &&
     linkedPrs.every((detail) => detail.status.draft === 0) &&
-    linkedPrs.every((detail) => detail.status.state !== 'open' || hasReviewRequest(detail))
+    linkedPrs.every((detail) => detail.status.state !== 'open' || hasHumanReviewRequest(detail))
   );
 }
 
