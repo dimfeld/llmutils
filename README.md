@@ -206,7 +206,7 @@ export TIM_WEBHOOK_POLL_INTERVAL="30"
 
 Webhook ingestion updates the local PR cache by default and may also update linked plan statuses:
 linked plans move from `needs_review` to `reviewed` when a PR becomes ready or gets a review request,
-but only when all linked PRs are ready and every open linked PR has a requested reviewer. Draft conversions move
+but only when all linked PRs are ready and every open linked PR has a requested human reviewer (bot reviewers such as `*[bot]` and `Copilot` do not count). Draft conversions move
 `reviewed` plans back to `needs_review`, and merged PRs can mark fully finished linked plans `done`.
 Set this in the global config (`~/.config/tim/config.yml`) to keep webhook PR cache updates but disable
 those automatic plan status changes:

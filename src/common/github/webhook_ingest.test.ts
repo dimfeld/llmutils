@@ -919,6 +919,69 @@ describe('common/github/webhook_ingest', () => {
     expect(getPlanByUuid(db, planUuid)?.status).toBe('reviewed');
   });
 
+  test.each(['Copilot', 'review-helper[bot]'])(
+    'ingestWebhookEvents keeps a plan in needs_review when only bot reviewer %s is requested',
+    async (botReviewer) => {
+      const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+      const pr = upsertPrStatus(db, {
+        prUrl: 'https://github.com/example/repo/pull/95',
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 95,
+        title: 'Ready PR',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-03-30T09:00:00.000Z',
+      });
+      const planUuid = '00000000-0000-4000-8000-000000000095';
+      nonSyncedUpsertPlan(db, projectId, {
+        uuid: planUuid,
+        planId: 95,
+        title: 'Bot review requested',
+        branch: 'feature/bot-review-requested',
+        filename: '95.plan.md',
+        status: 'needs_review',
+      });
+      linkPlanToPr(planUuid, pr.status.id);
+
+      enqueuePullRequestEvent({
+        id: 95,
+        deliveryId: `delivery-bot-review-requested-${botReviewer}`,
+        action: 'review_requested',
+        prNumber: 95,
+        title: 'Ready PR',
+        draft: false,
+        headRef: 'feature/bot-review-requested',
+        requestedReviewers: [botReviewer],
+        requestedReviewer: botReviewer,
+      });
+      mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+
+      const firstResult = await ingestWebhookEvents(db);
+
+      expect(firstResult.errors).toEqual([]);
+      expect(getPlanByUuid(db, planUuid)?.status).toBe('needs_review');
+
+      enqueuePullRequestEvent({
+        id: 96,
+        deliveryId: `delivery-human-review-requested-${botReviewer}`,
+        action: 'review_requested',
+        prNumber: 95,
+        title: 'Ready PR',
+        draft: false,
+        headRef: 'feature/bot-review-requested',
+        requestedReviewers: [botReviewer, 'bob'],
+        requestedReviewer: 'bob',
+        updatedAt: '2026-03-30T10:05:00.000Z',
+      });
+
+      const secondResult = await ingestWebhookEvents(db);
+
+      expect(secondResult.errors).toEqual([]);
+      expect(getPlanByUuid(db, planUuid)?.status).toBe('reviewed');
+    }
+  );
+
   test('ingestWebhookEvents keeps a plan in needs_review when a review is requested on a draft PR', async () => {
     const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
     const pr = upsertPrStatus(db, {
