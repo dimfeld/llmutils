@@ -7,12 +7,34 @@
   import InfoIcon from '@lucide/svelte/icons/info';
   import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 
-  let { ...restProps }: SonnerProps = $props();
+  let { toastOptions, ...restProps }: SonnerProps = $props();
+
+  // svelte-sonner has no click-to-dismiss option. The Toaster renders a hidden
+  // close button on each toast, and a click anywhere else on the toast triggers it.
+  // Clicks on interactive content (action buttons, links, inputs) keep their own
+  // behavior, and selecting text does not close the toast.
+  function handleDocumentClick(event: MouseEvent): void {
+    if (!(event.target instanceof Element)) return;
+    const toastElement = event.target.closest('[data-sonner-toast]');
+    if (!toastElement || toastElement.getAttribute('data-removed') === 'true') return;
+    if (event.target.closest('button, a, input, select, textarea, [role="button"]')) return;
+    if ((window.getSelection()?.toString().length ?? 0) > 0) return;
+
+    toastElement.querySelector<HTMLButtonElement>(':scope > [data-close-button]')?.click();
+  }
 </script>
+
+<svelte:document onclick={handleDocumentClick} />
 
 <Sonner
   theme={mode.current}
   class="toaster group"
+  closeButton
+  toastOptions={{
+    ...toastOptions,
+    class: `cursor-pointer ${toastOptions?.class ?? ''}`,
+    classes: { ...toastOptions?.classes, closeButton: 'hidden' },
+  }}
   style="--normal-bg: var(--color-popover); --normal-text: var(--color-popover-foreground); --normal-border: var(--color-border);"
   {...restProps}
 >
