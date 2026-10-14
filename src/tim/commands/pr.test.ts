@@ -1630,6 +1630,7 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain('tim pr comment <PR URL or owner/repo#number> "explanation of fix"');
     expect(prompt).toContain('## User Feedback');
     expect(prompt).toContain('Show the whole contents of each issue/comment');
+    expect(prompt).toContain('name the other item(s) that it duplicates');
     expect(prompt).toContain(
       'Ask the user for feedback on which review comments to address and how.'
     );

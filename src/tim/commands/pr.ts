@@ -1170,6 +1170,8 @@ export function buildReviewThreadFixInstructions(
     '',
     'List the review threads, review summaries, and conversation comments above for the user before making code changes. Show the whole contents of each issue/comment, including enough context to distinguish each item, such as author, file, and line. You may omit purely informational items that are not actual review feedback (for example, status updates, acknowledgements, or automated notices), and focus the list on actionable feedback.',
     '',
+    'Different items often report the same issue, for example when several reviewers reviewed the PR. When two or more items describe the same underlying issue, say so in the list: on each duplicate item, name the other item(s) that it duplicates (for example, "Duplicate of #2"). This makes the list easier for the user to read. When you reply about a duplicated issue, reply on each of the duplicate threads or comments.',
+    '',
     'Ask the user for feedback on which review comments to address and how. If the user has already given clear instructions, follow those instructions; otherwise wait for direction before implementing fixes.',
     '',
     '## Responsibilities',
