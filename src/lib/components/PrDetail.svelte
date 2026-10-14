@@ -713,7 +713,7 @@
             <li
               class="flex min-w-0 items-baseline gap-1.5 rounded px-1.5 py-1 text-xs {entry.isCurrent
                 ? 'bg-gray-100 dark:bg-gray-800'
-                : ''}"
+                : 'hover:bg-gray-100/50 dark:hover:bg-gray-800/50'}"
             >
               <span class="shrink-0 text-muted-foreground">
                 {entry.isCurrent ? '→' : i < currentIndex ? '↑' : '↓'}
