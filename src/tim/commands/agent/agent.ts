@@ -29,6 +29,7 @@ import { loadEffectiveConfig, loadGlobalConfigForNotifications } from '../../con
 import { getDefaultConfig, type TimConfig } from '../../configSchema.js';
 import { getDatabase } from '../../db/database.js';
 import { getPlanByUuid } from '../../db/plan.js';
+import { retryOnSqliteBusy } from '../../db/sqlite_retry.js';
 import { getProjectUuidForId, writePlanSetScalar } from '../../sync/write_router.js';
 import { getCombinedTitleFromSummary } from '../../display_utils.js';
 import {
@@ -1631,10 +1632,14 @@ export async function timAgent(
           await writePlanFile(currentPlanFile, updatedPlan, { skipDb: true });
         }
         lastKnownPlan = updatedPlan;
-        await writePlanToDb(updatedPlan, {
-          cwdForIdentity: currentBaseDir,
-          config,
-        });
+        await retryOnSqliteBusy(
+          () =>
+            writePlanToDb(updatedPlan, {
+              cwdForIdentity: currentBaseDir,
+              config,
+            }),
+          { label: 'post-execution plan sync' }
+        );
       } catch (err) {
         const syncError = err instanceof Error ? err : new Error(String(err));
         if (!executionError) {
@@ -1719,7 +1724,8 @@ export async function timAgent(
             terminalInput: false,
           });
         } catch (err) {
-          warn(`Failed to auto-create PR: ${err as Error}`);
+          // Include the stack so the log shows which step failed.
+          warn(`Failed to auto-create PR: ${(err as Error)?.stack ?? String(err)}`);
         }
       }
 

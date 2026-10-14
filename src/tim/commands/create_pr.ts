@@ -11,6 +11,7 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import type { TimConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
 import { getDatabase } from '../db/database.js';
+import { retryOnSqliteBusy } from '../db/sqlite_retry.js';
 import { buildExecutorAndLog } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
@@ -301,23 +302,31 @@ async function persistPrUrl(
   if (planId == null) {
     throw new Error(`Plan ${planUuid ?? '(unknown)'} is missing a numeric ID`);
   }
-  const { plan: freshPlan, planPath: freshPlanPath } = await resolvePlanByNumericId(
-    planId,
-    baseDir
+
+  // Other tim processes can hold the write lock for longer than busy_timeout.
+  // The PR already exists at this point, so retry instead of losing the link.
+  await retryOnSqliteBusy(
+    async () => {
+      const { plan: freshPlan, planPath: freshPlanPath } = await resolvePlanByNumericId(
+        planId,
+        baseDir
+      );
+
+      const actualPlanPath = freshPlanPath ?? planPath;
+      const nextPullRequests = [...new Set([...(freshPlan.pullRequest ?? []), prUrl])];
+      const updatedPlan: PlanSchema = {
+        ...freshPlan,
+        pullRequest: nextPullRequests,
+      };
+      if (actualPlanPath) {
+        await writePlanFile(actualPlanPath, updatedPlan, { cwdForIdentity: baseDir });
+      }
+
+      const db = getDatabase();
+      await syncPlanPrLinks(db, planUuid, nextPullRequests);
+    },
+    { label: `persist PR URL for plan ${planId}` }
   );
-
-  const actualPlanPath = freshPlanPath ?? planPath;
-  const nextPullRequests = [...new Set([...(freshPlan.pullRequest ?? []), prUrl])];
-  const updatedPlan: PlanSchema = {
-    ...freshPlan,
-    pullRequest: nextPullRequests,
-  };
-  if (actualPlanPath) {
-    await writePlanFile(actualPlanPath, updatedPlan, { cwdForIdentity: baseDir });
-  }
-
-  const db = getDatabase();
-  await syncPlanPrLinks(db, planUuid, nextPullRequests);
 }
 
 export async function detectAndStorePrUrl(
@@ -412,7 +421,10 @@ async function runPrCreationExecutor(
   }
   const issueRef = plan.issue?.[0];
   if (planPath && plan.id) {
-    await materializeRelatedPlans(plan.id, options.baseDir);
+    const planId = plan.id;
+    await retryOnSqliteBusy(() => materializeRelatedPlans(planId, options.baseDir), {
+      label: `materialize plans related to ${planId}`,
+    });
   }
   const siblingPlans = await collectSiblingPlanScope(plan, options.baseDir, options.repoPath);
   const prPrompt = buildPrCreationPrompt({
