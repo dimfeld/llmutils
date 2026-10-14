@@ -35,6 +35,7 @@
     parsedSegments,
     heading,
     isSegmentHidden,
+    openExternalLinksInNewTab = false,
   }: {
     content: string;
     class?: string;
@@ -54,9 +55,13 @@
     heading?: Snippet<[Extract<MarkdownSegment, { type: 'heading' }>]>;
     /** Hide segments, for example those inside a collapsed section. */
     isSegmentHidden?: (segment: MarkdownSegment, index: number) => boolean;
+    /** Open absolute links in a new tab (outside the app when running as a PWA). */
+    openExternalLinksInNewTab?: boolean;
   } = $props();
 
-  let segments = $derived(parsedSegments ?? parseMarkdownWithDiffs(content));
+  let segments = $derived(
+    parsedSegments ?? parseMarkdownWithDiffs(content, { openExternalLinksInNewTab })
+  );
 </script>
 
 <div class={['plan-rendered-content', className].filter(Boolean).join(' ')}>

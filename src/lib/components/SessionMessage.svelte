@@ -152,7 +152,11 @@
     </div>
   {:else if renderBody?.type === 'text'}
     {#if isLlmOutput}
-      <MarkdownContent content={displayText} class="inline-block align-top" />
+      <MarkdownContent
+        content={displayText}
+        class="inline-block align-top"
+        openExternalLinksInNewTab
+      />
     {:else}
       <span class="whitespace-pre-wrap">{displayText}</span>
     {/if}

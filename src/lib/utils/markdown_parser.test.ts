@@ -57,3 +57,53 @@ describe('parseMarkdownWithDiffs unified-diff segments carry filename', () => {
     expect(diffSegments[0].filename).toBeNull();
   });
 });
+
+describe('parseMarkdownWithDiffs openExternalLinksInNewTab', () => {
+  const content =
+    'See [docs](https://example.com/docs), <https://example.com/auto>, https://example.com/bare and [ref][r].\n\n[r]: https://example.com/ref\n';
+
+  function html(source: string, options?: { openExternalLinksInNewTab?: boolean }): string {
+    return parseMarkdownWithDiffs(source, options)
+      .map((s) => (s.type === 'html' ? s.content : ''))
+      .join('');
+  }
+
+  it('adds target and rel to every absolute link when enabled', () => {
+    const out = html(content, { openExternalLinksInNewTab: true });
+    expect(out.match(/<a /g)).toHaveLength(4);
+    expect(out.match(/target="_blank" rel="noopener noreferrer"/g)).toHaveLength(4);
+  });
+
+  it('treats protocol-relative URLs as absolute', () => {
+    const out = html('[x](//example.com/x)', { openExternalLinksInNewTab: true });
+    expect(out).toContain('target="_blank"');
+  });
+
+  it('leaves relative links unchanged', () => {
+    const out = html(
+      '[a](/projects/1/plans/2), [b](../sessions), [c](#section), [d](plans?x=1) and [e][rel].\n\n[rel]: /projects/1\n',
+      { openExternalLinksInNewTab: true }
+    );
+    expect(out.match(/<a /g)).toHaveLength(5);
+    expect(out).not.toContain('target=');
+    expect(out).not.toContain('rel=');
+  });
+
+  it('leaves links unchanged by default', () => {
+    const out = html(content);
+    expect(out).not.toContain('target=');
+    expect(out).not.toContain('rel=');
+  });
+
+  it('applies to links in html segments next to diff segments', () => {
+    const segments = parseMarkdownWithDiffs(
+      '[a](https://example.com/a)\n\n```unified-diff\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n```\n\n[b](https://example.com/b)\n',
+      { openExternalLinksInNewTab: true }
+    );
+    const htmlSegments = segments.filter((s) => s.type === 'html');
+    expect(htmlSegments).toHaveLength(2);
+    for (const segment of htmlSegments) {
+      expect(segment.content).toContain('target="_blank"');
+    }
+  });
+});

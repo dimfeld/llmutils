@@ -195,6 +195,12 @@ export interface ParseMarkdownWithDiffsOptions {
    * `data-line` attributes and the `guide-file-link` class.
    */
   fileLinkPaths?: ReadonlySet<string>;
+  /**
+   * Add `target="_blank"` and `rel="noopener noreferrer"` to links with an
+   * absolute URL, so they open outside the app (for example in the regular
+   * browser from the PWA). Relative links stay in the app.
+   */
+  openExternalLinksInNewTab?: boolean;
 }
 
 const FENCE_ATTRIBUTE_REGEX = /([a-zA-Z-]+)=("(?:[^"\\]|\\.)*"|'[^']*')/g;
@@ -286,6 +292,54 @@ function applyFileLinks(tree: Root, paths: ReadonlySet<string>): void {
       for (const child of node.children) visit(child as RootContent);
     }
   }
+  visit(tree);
+}
+
+/** True for URLs with a scheme (`https:`, `mailto:`, ...) or protocol-relative `//host` URLs. */
+function isAbsoluteUrl(url: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('//');
+}
+
+function applyExternalLinkTargets(tree: Root): void {
+  const definitions = new Map<string, string>();
+  function collectDefinitions(node: Root | RootContent): void {
+    if (node.type === 'definition') {
+      // The first definition wins, which matches how references resolve.
+      if (!definitions.has(node.identifier)) definitions.set(node.identifier, node.url);
+      return;
+    }
+    if ('children' in node && Array.isArray(node.children)) {
+      for (const child of node.children) collectDefinitions(child as RootContent);
+    }
+  }
+
+  function visit(node: Root | RootContent): void {
+    const url =
+      node.type === 'link'
+        ? node.url
+        : node.type === 'linkReference'
+          ? definitions.get(node.identifier)
+          : undefined;
+    if (
+      url != null &&
+      isAbsoluteUrl(url) &&
+      (node.type === 'link' || node.type === 'linkReference')
+    ) {
+      node.data = {
+        ...node.data,
+        hProperties: {
+          ...node.data?.hProperties,
+          target: '_blank',
+          rel: ['noopener', 'noreferrer'],
+        },
+      };
+    }
+    if ('children' in node && Array.isArray(node.children)) {
+      for (const child of node.children) visit(child as RootContent);
+    }
+  }
+
+  collectDefinitions(tree);
   visit(tree);
 }
 
@@ -586,6 +640,9 @@ export function parseMarkdownWithDiffsAndToc(
   if (options.fileLinkPaths && options.fileLinkPaths.size > 0) {
     applyFileLinks(tree, options.fileLinkPaths);
   }
+  if (options.openExternalLinksInNewTab) {
+    applyExternalLinkTargets(tree);
+  }
   const toc = collectHeadings(tree);
   const cursor = { i: 0 };
 
@@ -662,6 +719,9 @@ export function parseMarkdownWithDiffsAndToc(
   return { segments, toc };
 }
 
-export function parseMarkdownWithDiffs(content: string): MarkdownSegment[] {
-  return parseMarkdownWithDiffsAndToc(content).segments;
+export function parseMarkdownWithDiffs(
+  content: string,
+  options: ParseMarkdownWithDiffsOptions = {}
+): MarkdownSegment[] {
+  return parseMarkdownWithDiffsAndToc(content, options).segments;
 }
