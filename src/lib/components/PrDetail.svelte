@@ -708,6 +708,8 @@
         <ul class="space-y-0.5">
           {#each prChain as entry, i (entry.pr.status.pr_number)}
             {@const entryApproved = isApprovedByAnyone(entry.pr)}
+            {@const entryUnresolvedThreads =
+              entry.pr.reviewThreads?.filter((t) => !t.thread.is_resolved).length ?? 0}
             <li
               class="flex min-w-0 items-baseline gap-1.5 rounded px-1.5 py-1 text-xs {entry.isCurrent
                 ? 'bg-gray-100 dark:bg-gray-800'
@@ -780,6 +782,17 @@
                   class="shrink-0 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
                 >
                   Open
+                </span>
+              {/if}
+              {#if entryUnresolvedThreads > 0}
+                <span
+                  class="shrink-0 rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-medium text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+                  title="{entryUnresolvedThreads} unresolved review thread{entryUnresolvedThreads ===
+                  1
+                    ? ''
+                    : 's'}"
+                >
+                  {entryUnresolvedThreads} unresolved
                 </span>
               {/if}
               <span class="shrink-0 font-mono text-[10px] text-muted-foreground/70">

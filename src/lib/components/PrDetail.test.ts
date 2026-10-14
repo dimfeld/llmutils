@@ -477,6 +477,45 @@ describe('PrDetail', () => {
     expect(body).toContain('bg-green-100');
   });
 
+  test('shows unresolved review thread counts on PR stack entries', async () => {
+    const pr = createPr();
+    pr.status.base_branch = 'feature-parent';
+
+    const parentPr = createPr();
+    parentPr.status.pr_number = 41;
+    parentPr.status.title = 'Parent PR';
+    parentPr.status.head_branch = 'feature-parent';
+    parentPr.reviewThreads = [
+      createReviewThread(),
+      createReviewThread({ thread: { ...createReviewThread().thread, id: 2, thread_id: 't2' } }),
+      createReviewThread({
+        thread: { ...createReviewThread().thread, id: 3, thread_id: 't3', is_resolved: 1 },
+      }),
+    ];
+
+    const childPr = createPr();
+    childPr.status.pr_number = 43;
+    childPr.status.title = 'Child PR';
+    childPr.status.base_branch = 'feature-x';
+    childPr.status.head_branch = 'feature-child';
+    childPr.reviewThreads = [
+      createReviewThread({ thread: { ...createReviewThread().thread, is_resolved: 1 } }),
+    ];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        allPrs: [parentPr, pr, childPr],
+      },
+    });
+
+    expect(body).toContain('2 unresolved review threads');
+    expect(body).toContain('>2 unresolved<');
+    expect(body).not.toContain('>1 unresolved<');
+    expect(body).not.toContain('>0 unresolved<');
+  });
+
   test('shows Approved for stack entries approved by another reviewer', async () => {
     const pr = createPr();
     pr.currentUserReviewRequestLabel = null;
