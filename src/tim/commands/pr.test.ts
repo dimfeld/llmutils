@@ -1656,7 +1656,12 @@ describe('tim/commands/pr', () => {
     expect(prompt).toContain(
       'Every comment posted to the PR, including review-thread replies and standalone PR comments, must start with `AI Response: `'
     );
-    expect(prompt).toContain('Do not mark review comments or threads resolved.');
+    expect(prompt).not.toContain('Do not mark review comments or threads resolved.');
+    expect(prompt).toContain('## Resolving Review Threads');
+    expect(prompt).toContain('`tim pr resolve <PRRT thread ID>`');
+    expect(prompt).toContain(
+      'only when every issue in that thread was actually fixed or was intentionally not fixed'
+    );
     expect(prompt).not.toContain('tim pr reply');
     expect(prompt).not.toContain('tim pr resolve <Thread ID>');
     expect(prompt).not.toContain('gh pr view');
@@ -1744,7 +1749,7 @@ describe('tim/commands/pr', () => {
     expect(context).toContain('src/user.ts:88');
     expect(context).toContain('Add a null check.');
     expect(context).toContain('Handle the empty state.');
-    expect(context).not.toContain('tim pr resolve');
+    expect(context).toContain('tim pr resolve <PRRT thread ID>');
   });
 
   test('pr fix uses all unresolved threads without prompting in non-interactive mode', async () => {
@@ -2301,7 +2306,7 @@ describe('tim/commands/pr', () => {
     expect(sharedOptions.model).not.toBe('gpt-5-codex');
   });
 
-  test('buildReviewThreadFixPrompt follows address-review guidance without resolving threads', () => {
+  test('buildReviewThreadFixPrompt follows address-review guidance and resolves fully handled threads', () => {
     const prompt = buildReviewThreadFixPrompt(
       {
         id: 248,
@@ -2323,11 +2328,16 @@ describe('tim/commands/pr', () => {
     );
 
     expect(prompt).toContain('**Branch:** 248-pr-status-monitoring');
-    expect(prompt).toContain('Do not mark review comments or threads resolved.');
+    expect(prompt).not.toContain('Do not mark review comments or threads resolved.');
+    expect(prompt).toContain('## Resolving Review Threads');
+    expect(prompt).toContain('`tim pr resolve <PRRT thread ID>`');
+    expect(prompt).toContain(
+      'only when every issue in that thread was actually fixed or was intentionally not fixed'
+    );
     expect(prompt).toContain('one pending GraphQL review per PR');
     expect(prompt).toContain('submitPullRequestReview');
     expect(prompt).not.toContain('tim pr reply');
-    expect(prompt).not.toContain('tim pr resolve');
+    expect(prompt).toContain('tim pr resolve <PRRT thread ID>');
     expect(prompt).toContain('https://linear.review');
   });
 
@@ -2998,7 +3008,12 @@ describe('tim/commands/pr', () => {
     test('includes no-resolve and no-request-review restrictions', () => {
       const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
 
-      expect(prompt).toContain('Do not mark review comments or threads resolved.');
+      expect(prompt).not.toContain('Do not mark review comments or threads resolved.');
+      expect(prompt).toContain('## Resolving Review Threads');
+      expect(prompt).toContain('`tim pr resolve <PRRT thread ID>`');
+      expect(prompt).toContain(
+        'only when every issue in that thread was actually fixed or was intentionally not fixed'
+      );
       expect(prompt).toContain('Do not update the status of the issue or PR.');
       expect(prompt).toContain('Do not request or re-request reviews.');
     });
