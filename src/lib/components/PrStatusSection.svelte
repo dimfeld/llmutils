@@ -19,6 +19,7 @@
     getFixStartResultState,
   } from '$lib/components/pr_fix_launch_state.js';
   import { normalizeGitHubUsername } from '$common/github/username.js';
+  import { getEffectiveReviewDecision } from '$common/github/review_requests.js';
   import { canFixCi } from '$lib/utils/ci_fix_eligibility.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { hasRelevantPrUpdate } from '$lib/utils/pr_update_events.js';
@@ -579,13 +580,13 @@
           >
             {checksLabel(pr.status.check_rollup_state)}
           </span>
-          {#if pr.status.review_decision}
+          {#if getEffectiveReviewDecision(pr)}
             <span
               class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reviewDecisionBadgeColor(
-                pr.status.review_decision
+                getEffectiveReviewDecision(pr)
               )}"
             >
-              {reviewDecisionLabel(pr.status.review_decision)}
+              {reviewDecisionLabel(getEffectiveReviewDecision(pr))}
             </span>
           {/if}
           {#if pr.status.mergeable === 'CONFLICTING'}

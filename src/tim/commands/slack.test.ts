@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
@@ -45,7 +46,9 @@ import { getProjectSetting, setProjectSetting } from '../db/project_settings.js'
 import {
   upsertPrReviewByAuthor,
   upsertPrReviewRequestByReviewer,
-  upsertPrStatus,
+  upsertPrStatus as upsertPrStatusBase,
+  type PrStatusDetail,
+  type UpsertPrStatusInput,
   getPrStatusByUrl,
 } from '../db/pr_status.js';
 import { upsertSlackDailyDigestMessage } from '../db/slack_daily_digest_message.js';
@@ -70,6 +73,21 @@ import type {
   SlackUpdateSenderArgs,
 } from '../../common/slack/slack_client.js';
 import { setDebug } from '../../common/process_state.js';
+
+/**
+ * Approved PRs only count as approved when a non-bot reviewer approved them, so give APPROVED
+ * fixtures a human approval unless the test sets its own reviews.
+ */
+function upsertPrStatus(database: Database, input: UpsertPrStatusInput): PrStatusDetail {
+  return upsertPrStatusBase(database, {
+    ...input,
+    reviews:
+      input.reviews ??
+      (input.reviewDecision === 'APPROVED'
+        ? [{ author: 'human-approver', state: 'APPROVED', submittedAt: '2026-01-01T00:00:00.000Z' }]
+        : undefined),
+  });
+}
 
 const OWNER = 'testowner';
 const REPO = 'testrepo';

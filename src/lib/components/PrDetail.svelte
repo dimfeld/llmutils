@@ -17,6 +17,7 @@
   import PrReviewThreadList from './PrReviewThreadList.svelte';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { normalizeGitHubUsername } from '$common/github/username.js';
+  import { getEffectiveReviewDecision, isPrApproved } from '$common/github/review_requests.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
   import {
     refreshSinglePrStatus,
@@ -70,14 +71,6 @@
   interface ChainEntry {
     pr: EnrichedProjectPr;
     isCurrent: boolean;
-  }
-
-  /** True when GitHub reports the PR as approved or any reviewer has submitted an approval. */
-  function isApprovedByAnyone(entryPr: EnrichedProjectPr): boolean {
-    return (
-      entryPr.status.review_decision === 'APPROVED' ||
-      entryPr.reviews.some((review) => review.state === 'APPROVED')
-    );
   }
 
   function buildPrChain(currentPr: EnrichedProjectPr, prs: EnrichedProjectPr[]): ChainEntry[] {
@@ -177,6 +170,7 @@
 
   // Get planUuid if there's exactly one linked plan, otherwise undefined
   let planUuid = $derived(pr.linkedPlans.length === 1 ? pr.linkedPlans[0].planUuid : undefined);
+  let effectiveReviewDecision = $derived(getEffectiveReviewDecision(pr));
   let unresolvedReviewThreadCount = $derived(
     pr.reviewThreads?.filter((t) => !t.thread.is_resolved).length ?? 0
   );
@@ -682,13 +676,13 @@
         >
           {pr.currentUserReviewRequestLabel}
         </span>
-      {:else if pr.status.review_decision}
+      {:else if effectiveReviewDecision}
         <span
           class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {reviewDecisionBadgeColor(
-            pr.status.review_decision
+            effectiveReviewDecision
           )}"
         >
-          {reviewDecisionLabel(pr.status.review_decision)}
+          {reviewDecisionLabel(effectiveReviewDecision)}
         </span>
       {/if}
       {#if pr.status.mergeable === 'CONFLICTING'}
@@ -756,7 +750,7 @@
         </h3>
         <ul class="space-y-0.5">
           {#each prChain as entry, i (entry.pr.status.pr_number)}
-            {@const entryApproved = isApprovedByAnyone(entry.pr)}
+            {@const entryApproved = isPrApproved(entry.pr)}
             {@const entryUnresolvedThreads =
               entry.pr.reviewThreads?.filter((t) => !t.thread.is_resolved).length ?? 0}
             <li

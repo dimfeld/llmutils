@@ -16,7 +16,9 @@ import { setProjectSetting } from '$tim/db/project_settings.js';
 import {
   getPrStatusByUrl,
   upsertPrReviewRequestByReviewer,
-  upsertPrStatus,
+  upsertPrStatus as upsertPrStatusBase,
+  type PrStatusDetail,
+  type UpsertPrStatusInput,
 } from '$tim/db/pr_status.js';
 
 vi.mock('$common/github/pr_status_service.js', () => ({
@@ -33,6 +35,21 @@ import {
 } from './daily_digest.js';
 
 type UpsertPrStatusResult = ReturnType<typeof upsertPrStatus>;
+
+/**
+ * Approved PRs only count as approved when a non-bot reviewer approved them, so give APPROVED
+ * fixtures a human approval unless the test sets its own reviews.
+ */
+function upsertPrStatus(database: Database, input: UpsertPrStatusInput): PrStatusDetail {
+  return upsertPrStatusBase(database, {
+    ...input,
+    reviews:
+      input.reviews ??
+      (input.reviewDecision === 'APPROVED'
+        ? [{ author: 'human-approver', state: 'APPROVED', submittedAt: '2026-01-01T00:00:00.000Z' }]
+        : undefined),
+  });
+}
 
 interface FakeSender {
   sender: (args: SlackPostSenderArgs) => Promise<{ ok: boolean; error?: string }>;

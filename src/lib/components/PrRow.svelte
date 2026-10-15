@@ -7,6 +7,7 @@
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
   import PrStatusIndicator from './PrStatusIndicator.svelte';
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
+  import { getEffectiveReviewDecision, hasHumanApproval } from '$common/github/review_requests.js';
   import {
     checkRollupToSummaryStatus,
     reviewDecisionBadgeColor,
@@ -37,12 +38,13 @@
       prNumber: pr.status.pr_number,
     }) ?? pr.status.pr_url
   );
+  let effectiveReviewDecision = $derived(getEffectiveReviewDecision(pr));
   let reviewRequestedAge = $derived(
     pr.currentUserReviewRequestedAt
       ? formatCompactRelativeTime(pr.currentUserReviewRequestedAt)
       : ''
   );
-  let hasApprovingReview = $derived(pr.reviews.some((review) => review.state === 'APPROVED'));
+  let hasApprovingReview = $derived(hasHumanApproval(pr.reviews));
   let unresolvedReviewThreadCount = $derived(
     pr.reviewThreads?.filter((t) => !t.thread.is_resolved).length ?? 0
   );
@@ -100,14 +102,14 @@
         </span>
       {:else if pr.currentUserNeedsReviewRequest}
         <NeedsReviewerBadge />
-      {:else if pr.status.review_decision}
+      {:else if effectiveReviewDecision}
         <span
           class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs leading-none font-medium {reviewDecisionBadgeColor(
-            pr.status.review_decision
+            effectiveReviewDecision
           )}"
         >
-          {reviewDecisionLabel(pr.status.review_decision)}
-          {#if pr.status.review_decision === 'APPROVED' && pr.isStackedOnOpenPr}
+          {reviewDecisionLabel(effectiveReviewDecision)}
+          {#if effectiveReviewDecision === 'APPROVED' && pr.isStackedOnOpenPr}
             <span
               class="ml-1 border-l border-green-300 pl-1 text-green-700 dark:border-green-700 dark:text-green-300"
             >

@@ -76,7 +76,9 @@ Set `generate.queueWhenDone: true` in the project config to queue generated plan
 
 ### PRs that need a reviewer
 
-The **My PRs** lists on the Active Work page and on the PRs page show a **No reviewer** badge on your open, non-draft PRs that have no human reviewer yet. A PR gets the badge when it has no active human review request, no submitted review from someone other than you, and no GitHub review decision of approved or changes requested. Bot reviewers such as `*[bot]` and `Copilot` do not count. Use the badge to find PRs that got bot review but still need a human review request.
+tim treats a PR as approved only when GitHub reports the review decision as approved **and** at least one non-bot reviewer approved it. This applies to the PR badges and stack view in the web interface, PR sorting, `tim pr status`, and the Slack daily digest. For example, a stacked PR without branch protection can get an approved review decision from a bot approval alone; tim does not show that PR as approved.
+
+The **My PRs** lists on the Active Work page and on the PRs page show a **No reviewer** badge on your open, non-draft PRs that have no human reviewer yet. A PR gets the badge when it has no active human review request, no submitted review from someone other than you, and no GitHub review decision of changes requested or approved (an approval counts only when a non-bot reviewer approved). Bot reviewers such as `*[bot]` and `Copilot` do not count. Use the badge to find PRs that got bot review but still need a human review request.
 
 ### Project chats
 

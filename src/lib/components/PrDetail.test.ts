@@ -488,6 +488,16 @@ describe('PrDetail', () => {
     approvedPr.status.title = 'Approved PR';
     approvedPr.status.head_branch = 'feature-approved';
     approvedPr.status.review_decision = 'APPROVED';
+    approvedPr.reviews = [
+      {
+        id: 30,
+        pr_status_id: 2,
+        author: 'bob',
+        state: 'APPROVED',
+        body: null,
+        submitted_at: '2026-03-18T11:00:00.000Z',
+      },
+    ];
 
     const { body } = await renderWithTooltipProvider(PrDetail, {
       props: {
@@ -497,8 +507,7 @@ describe('PrDetail', () => {
       },
     });
 
-    expect(body).toContain('Approved');
-    expect(body).toContain('bg-green-100');
+    expect(body).toMatch(/bg-green-100[^>]*>\s*Approved\s*</);
   });
 
   test('shows unresolved review thread counts on PR stack entries', async () => {
@@ -540,14 +549,47 @@ describe('PrDetail', () => {
     expect(body).not.toContain('>0 unresolved<');
   });
 
-  test('shows Approved for stack entries approved by another reviewer', async () => {
+  test('does not show Approved for stack entries approved only by bots', async () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = null;
+    pr.status.base_branch = 'feature-approved';
+
+    const approvedPr = createPr();
+    approvedPr.currentUserReviewRequestLabel = null;
+    approvedPr.status.pr_number = 41;
+    approvedPr.status.title = 'Bot reviewed PR';
+    approvedPr.status.head_branch = 'feature-approved';
+    approvedPr.status.review_decision = 'APPROVED';
+    approvedPr.reviews = [
+      {
+        id: 31,
+        pr_status_id: 2,
+        author: 'df-reviewflow[bot]',
+        state: 'APPROVED',
+        body: null,
+        submitted_at: '2026-03-18T11:00:00.000Z',
+      },
+    ];
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        allPrs: [approvedPr],
+      },
+    });
+
+    expect(body).not.toMatch(/>\s*Approved\s*</);
+  });
+
+  test('does not show Approved for stack entries when GitHub does not report approval', async () => {
     const pr = createPr();
     pr.currentUserReviewRequestLabel = null;
     pr.status.base_branch = 'feature-approved';
 
     const approvedPr = createPr();
     approvedPr.status.pr_number = 41;
-    approvedPr.status.title = 'Approved PR';
+    approvedPr.status.title = 'Human reviewed PR';
     approvedPr.status.head_branch = 'feature-approved';
     approvedPr.status.review_decision = null;
     approvedPr.currentUserReviewRequestLabel = 'Review Requested';
@@ -570,8 +612,7 @@ describe('PrDetail', () => {
       },
     });
 
-    expect(body).toContain('Approved');
-    expect(body).toContain('bg-green-100');
+    expect(body).not.toMatch(/>\s*Approved\s*</);
     expect(body).toContain('Review Requested');
   });
 

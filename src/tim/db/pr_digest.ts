@@ -66,6 +66,12 @@ export interface AwaitingReviewResponseRow {
 }
 
 /**
+ * SQL condition that is true when `pr_review.author` is not a bot. This matches `isBotReviewer`:
+ * `[bot]`-suffixed logins and the `Copilot` reviewer are bots.
+ */
+const NON_BOT_REVIEW_AUTHOR_SQL = `(pr_review.author NOT LIKE '%[bot]' AND LOWER(pr_review.author) != 'copilot')`;
+
+/**
  * SQL fragment that resolves to 1 when the surrounding `pr_status` row is stacked on another open
  * PR — i.e. its base branch is the head branch of a different open PR in the same repo. Correlates
  * on `pr_status.owner`/`pr_status.repo`, so it only works where `pr_status` is in scope.
@@ -133,12 +139,20 @@ export function getApprovedUnmergedRows(
             WHERE pr_review.pr_status_id = pr_status.id
               AND pr_review.state = 'APPROVED'
               AND pr_review.submitted_at IS NOT NULL
+              AND ${NON_BOT_REVIEW_AUTHOR_SQL}
           ) AS approved_at
         FROM pr_status
         WHERE pr_status.owner = ?
           AND pr_status.repo = ?
           AND pr_status.state = 'open'
           AND pr_status.review_decision = 'APPROVED'
+          AND EXISTS (
+            SELECT 1
+            FROM pr_review
+            WHERE pr_review.pr_status_id = pr_status.id
+              AND pr_review.state = 'APPROVED'
+              AND ${NON_BOT_REVIEW_AUTHOR_SQL}
+          )
           AND pr_status.draft = 0
         ORDER BY pr_status.pr_number ASC, pr_status.id ASC
       `

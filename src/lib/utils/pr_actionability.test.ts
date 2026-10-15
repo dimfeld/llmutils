@@ -54,10 +54,25 @@ function makePrDetail(
     reviewThreads?: PrReviewThreadDetail[];
   } = {}
 ): PrStatusDetail {
+  const status = makePrStatus(statusOverrides);
+  // An APPROVED decision needs a non-bot approval to count, so default to one for APPROVED PRs.
+  const defaultReviews: PrReviewRow[] =
+    status.review_decision === 'APPROVED'
+      ? [
+          {
+            id: 1000,
+            pr_status_id: status.id,
+            author: 'human-approver',
+            state: 'APPROVED',
+            body: null,
+            submitted_at: '2026-01-01T00:00:00Z',
+          },
+        ]
+      : [];
   return {
-    status: makePrStatus(statusOverrides),
+    status,
     checks: [],
-    reviews: extras.reviews ?? [],
+    reviews: extras.reviews ?? defaultReviews,
     reviewRequests: extras.reviewRequests ?? [],
     labels: [],
     reviewThreads: extras.reviewThreads,
@@ -199,6 +214,37 @@ describe('classifyOwnPr', () => {
       mergeable: 'CONFLICTING',
     });
     expect(classifyOwnPr(pr)).toEqual({ actionReason: 'approved', checkStatus: 'passing' });
+  });
+
+  test('returns open when GitHub reports approved but only bots approved', () => {
+    const pr = makePrDetail(
+      {
+        check_rollup_state: 'SUCCESS',
+        review_decision: 'APPROVED',
+        mergeable: 'MERGEABLE',
+      },
+      {
+        reviews: [
+          {
+            id: 1,
+            pr_status_id: 1,
+            author: 'df-reviewflow[bot]',
+            state: 'APPROVED',
+            body: null,
+            submitted_at: '2026-01-01T00:00:00Z',
+          },
+          {
+            id: 2,
+            pr_status_id: 1,
+            author: 'Copilot',
+            state: 'APPROVED',
+            body: null,
+            submitted_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+      }
+    );
+    expect(classifyOwnPr(pr)).toEqual({ actionReason: 'open', checkStatus: 'passing' });
   });
 
   test('returns open when no actionable status', () => {
@@ -554,7 +600,7 @@ describe('buildActionablePrsForRepo', () => {
         changedFiles: null,
         reviewRequestedAt: null,
         reviewRequestedStacked: false,
-        hasApprovingReview: false,
+        hasApprovingReview: true,
         unresolvedReviewThreadCount: 0,
         needsReviewRequest: false,
       },

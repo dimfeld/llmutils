@@ -1,4 +1,4 @@
-import type { PrStatusDetail } from '../../tim/db/pr_status.js';
+import type { PrReviewRow, PrStatusDetail } from '../../tim/db/pr_status.js';
 import { isBotLogin, normalizeGitHubUsername } from './username.js';
 
 /**
@@ -55,8 +55,38 @@ export function needsHumanReviewRequest(detail: PrStatusDetail): boolean {
   const { state, draft, review_decision } = detail.status;
   // An approval or a change request from GitHub means that a reviewer already looked at the PR,
   // even if the review rows are not stored.
-  if (review_decision === 'APPROVED' || review_decision === 'CHANGES_REQUESTED') {
+  if (isPrApproved(detail) || review_decision === 'CHANGES_REQUESTED') {
     return false;
   }
   return state === 'open' && !draft && !hasHumanReviewRequest(detail) && !hasHumanReview(detail);
+}
+
+/** True when at least one non-bot reviewer has a submitted approval. */
+export function hasHumanApproval(
+  reviews: ReadonlyArray<Pick<PrReviewRow, 'author' | 'state'>>
+): boolean {
+  return reviews.some((review) => review.state === 'APPROVED' && !isBotReviewer(review.author));
+}
+
+/**
+ * True when GitHub reports the PR as approved and at least one non-bot reviewer approved it.
+ * Repositories or stacked PRs without branch protection can report APPROVED from a bot approval
+ * alone, so the review decision by itself is not sufficient.
+ */
+export function isPrApproved(detail: Pick<PrStatusDetail, 'status' | 'reviews'>): boolean {
+  return detail.status.review_decision === 'APPROVED' && hasHumanApproval(detail.reviews);
+}
+
+/**
+ * The review decision to show for a PR. This is GitHub's review decision, except that an APPROVED
+ * decision without a non-bot approval is treated as no decision.
+ */
+export function getEffectiveReviewDecision(
+  detail: Pick<PrStatusDetail, 'status' | 'reviews'>
+): string | null {
+  const decision = detail.status.review_decision;
+  if (decision === 'APPROVED' && !isPrApproved(detail)) {
+    return null;
+  }
+  return decision;
 }

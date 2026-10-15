@@ -1,4 +1,8 @@
-import { needsHumanReviewRequest } from '$common/github/review_requests.js';
+import {
+  hasHumanApproval,
+  isPrApproved,
+  needsHumanReviewRequest,
+} from '$common/github/review_requests.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
 import type { ActionablePr } from '$lib/utils/dashboard_attention.js';
 import type { LinkedPlanSummary, PrReviewRequestRow, PrStatusDetail } from '$tim/db/pr_status.js';
@@ -44,15 +48,13 @@ export function classifyOwnPr(pr: PrStatusDetail): ClassifiedPr | null {
     return { actionReason: 'changes_requested', checkStatus };
   }
 
-  if (
-    check_rollup_state === 'SUCCESS' &&
-    review_decision === 'APPROVED' &&
-    mergeable === 'MERGEABLE'
-  ) {
+  const approved = isPrApproved(pr);
+
+  if (check_rollup_state === 'SUCCESS' && approved && mergeable === 'MERGEABLE') {
     return { actionReason: 'ready_to_merge', checkStatus };
   }
 
-  if (review_decision === 'APPROVED') {
+  if (approved) {
     return { actionReason: 'approved', checkStatus };
   }
 
@@ -182,7 +184,7 @@ export function buildActionablePrsForRepo(
       pr.status;
     const linkedPlans = linkedPlansByPrUrl.get(pr_url) ?? [];
     const firstLinkedPlan = linkedPlans[0] ?? null;
-    const hasApprovingReview = pr.reviews.some((review) => review.state === 'APPROVED');
+    const hasApprovingReview = hasHumanApproval(pr.reviews);
     const unresolvedReviewThreadCount =
       pr.reviewThreads?.filter((t) => !t.thread.is_resolved).length ?? 0;
 

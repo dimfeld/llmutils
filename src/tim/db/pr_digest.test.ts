@@ -56,37 +56,58 @@ describe('tim db/pr_digest', () => {
       ]);
     });
 
-    test('returns null approval time when local approval review rows are missing', () => {
+    test('excludes PRs that have no non-bot approval', () => {
+      // GitHub reports APPROVED but no approval rows are stored.
       insertPr(10, { reviewDecision: 'APPROVED' });
+      // Only bots approved.
+      const botOnly = insertPr(11, { reviewDecision: 'APPROVED' });
+      review(botOnly.status.id, 'df-reviewflow[bot]', 'APPROVED', '2026-01-01T09:00:00.000Z');
+      review(botOnly.status.id, 'Copilot', 'APPROVED', '2026-01-01T09:30:00.000Z');
+      // A human approved, and a bot approved later. The approval time comes from the human.
+      const mixed = insertPr(12, { reviewDecision: 'APPROVED' });
+      review(mixed.status.id, 'reviewer', 'APPROVED', '2026-01-01T09:00:00.000Z');
+      review(mixed.status.id, 'df-reviewflow[bot]', 'APPROVED', '2026-01-01T11:00:00.000Z');
 
       const rows = getApprovedUnmergedRows(db, 'octocat', 'hello-world');
 
       expect(rows).toEqual([
         expect.objectContaining({
-          pr_number: 10,
-          approved_at: null,
+          pr_number: 12,
+          approved_at: '2026-01-01T09:00:00.000Z',
         }),
       ]);
     });
 
     test('marks PRs stacked on another open PR and exposes the base branch', () => {
       // Base PR whose head branch is the stacked PR's base.
-      insertPr(20, { reviewDecision: 'APPROVED', headBranch: 'feature-base', baseBranch: 'main' });
+      const pr20 = insertPr(20, {
+        reviewDecision: 'APPROVED',
+        headBranch: 'feature-base',
+        baseBranch: 'main',
+      });
       // Stacked PR: its base is the open base PR's head branch.
-      insertPr(21, {
+      const pr21 = insertPr(21, {
         reviewDecision: 'APPROVED',
         baseBranch: 'feature-base',
         headBranch: 'feature-top',
       });
       // Targets default branch -> not stacked.
-      insertPr(22, { reviewDecision: 'APPROVED', baseBranch: 'main', headBranch: 'feature-solo' });
+      const pr22 = insertPr(22, {
+        reviewDecision: 'APPROVED',
+        baseBranch: 'main',
+        headBranch: 'feature-solo',
+      });
       // Base branch matches a closed PR's head branch -> not stacked (only open PRs count).
       insertPr(23, { reviewDecision: 'APPROVED', state: 'closed', headBranch: 'old-base' });
-      insertPr(24, {
+      const pr24 = insertPr(24, {
         reviewDecision: 'APPROVED',
         baseBranch: 'old-base',
         headBranch: 'feature-on-closed',
       });
+
+      for (const pr of [pr20, pr21, pr22, pr24]) {
+        review(pr.status.id, 'reviewer', 'APPROVED', '2026-01-01T09:00:00.000Z');
+      }
 
       const rows = getApprovedUnmergedRows(db, 'octocat', 'hello-world');
       const byNumber = new Map(rows.map((row) => [row.pr_number, row]));

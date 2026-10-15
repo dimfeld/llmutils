@@ -7,7 +7,7 @@ import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
 import { getReviewerPredicate, parseRequestedReviewers } from '$common/github/pr_relevance.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
-import { needsHumanReviewRequest } from '$common/github/review_requests.js';
+import { isPrApproved, needsHumanReviewRequest } from '$common/github/review_requests.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import {
   refreshProjectPrs as refreshProjectPrsService,
@@ -165,7 +165,7 @@ function sortProjectPrsByPrNumberDesc(prs: EnrichedProjectPr[]): EnrichedProject
 
 function getPrSortPriority(pr: EnrichedProjectPr): number {
   // Approved PRs get highest priority (2)
-  if (pr.status.review_decision === 'APPROVED') {
+  if (isPrApproved(pr)) {
     return 2;
   }
   // Draft PRs get lowest priority (0)

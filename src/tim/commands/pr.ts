@@ -20,6 +20,7 @@ import {
 } from '../../common/github/pull_requests.js';
 import { refreshPrStatus, syncPlanPrLinks } from '../../common/github/pr_status_service.js';
 import { fetchPrIssueComments, type PrIssueComment } from '../../common/github/pr_status.js';
+import { isPrApproved } from '../../common/github/review_requests.js';
 import { ingestWebhookEventsWithInbox } from '../../lib/server/webhook_ingest_orchestrator.js';
 import { log, warn } from '../../logging.js';
 import { getLoggerAdapter } from '../../logging/adapter.js';
@@ -599,9 +600,7 @@ function formatCheckStatus(check: PrCheckRunRow): string {
 
 export function formatReviewSummary(reviews: PrReviewRow[], reviewDecision: string | null): string {
   if (reviews.length === 0) {
-    if (reviewDecision === 'APPROVED') {
-      return chalk.green('approved');
-    }
+    // An approval needs a stored non-bot approval, so APPROVED with no reviews is not shown.
     if (reviewDecision === 'CHANGES_REQUESTED') {
       return chalk.red('changes requested');
     }
@@ -669,7 +668,7 @@ export function getMergeReadiness(detail: PrStatusDetail): string {
     return chalk.yellow('mergeability unknown');
   }
 
-  if (status.review_decision === 'REVIEW_REQUIRED' || status.review_decision === null) {
+  if (!isPrApproved(detail)) {
     return chalk.yellow('awaiting review');
   }
 
@@ -677,7 +676,7 @@ export function getMergeReadiness(detail: PrStatusDetail): string {
     return chalk.yellow('checks pending');
   }
 
-  if (status.mergeable === 'MERGEABLE' && status.review_decision === 'APPROVED') {
+  if (status.mergeable === 'MERGEABLE') {
     return chalk.green('ready');
   }
 

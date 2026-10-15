@@ -7,9 +7,12 @@ import type {
   PrStatusRow,
 } from '../../tim/db/pr_status.js';
 import {
+  getEffectiveReviewDecision,
+  hasHumanApproval,
   hasHumanReview,
   hasHumanReviewRequest,
   isBotReviewer,
+  isPrApproved,
   needsHumanReviewRequest,
 } from './review_requests.js';
 
@@ -153,7 +156,14 @@ describe('needsHumanReviewRequest', () => {
   });
 
   test('does not flag PRs that GitHub reports as approved or with changes requested', () => {
-    expect(needsHumanReviewRequest(makeDetail({ review_decision: 'APPROVED' }))).toBe(false);
+    expect(
+      needsHumanReviewRequest(
+        makeDetail(
+          { review_decision: 'APPROVED' },
+          { reviewRequests: [], reviews: [{ author: 'bob', state: 'APPROVED' }] }
+        )
+      )
+    ).toBe(false);
     expect(needsHumanReviewRequest(makeDetail({ review_decision: 'CHANGES_REQUESTED' }))).toBe(
       false
     );
@@ -166,5 +176,76 @@ describe('needsHumanReviewRequest', () => {
     );
     // A reviewer drops off the requested list after reviewing, so a review also counts.
     expect(needsHumanReviewRequest(makeDetail({}, { reviews: [{ author: 'bob' }] }))).toBe(false);
+  });
+});
+
+describe('isPrApproved', () => {
+  test('requires both an APPROVED decision and a non-bot approval', () => {
+    expect(
+      isPrApproved(
+        makeDetail(
+          { review_decision: 'APPROVED' },
+          { reviews: [{ author: 'bob', state: 'APPROVED' }] }
+        )
+      )
+    ).toBe(true);
+    expect(isPrApproved(makeDetail({ review_decision: 'APPROVED' }))).toBe(false);
+    expect(
+      isPrApproved(
+        makeDetail(
+          { review_decision: 'APPROVED' },
+          {
+            reviews: [
+              { author: 'df-reviewflow[bot]', state: 'APPROVED' },
+              { author: 'Copilot', state: 'APPROVED' },
+              { author: 'bob', state: 'COMMENTED' },
+            ],
+          }
+        )
+      )
+    ).toBe(false);
+    expect(
+      isPrApproved(
+        makeDetail({ review_decision: null }, { reviews: [{ author: 'bob', state: 'APPROVED' }] })
+      )
+    ).toBe(false);
+  });
+
+  test('hasHumanApproval ignores bot approvals', () => {
+    expect(hasHumanApproval([{ author: 'some-app[bot]', state: 'APPROVED' }])).toBe(false);
+    expect(hasHumanApproval([{ author: 'bob', state: 'APPROVED' }])).toBe(true);
+  });
+
+  test('flags a bot-only approved PR that has no human review or request', () => {
+    expect(
+      needsHumanReviewRequest(
+        makeDetail(
+          { review_decision: 'APPROVED' },
+          { reviews: [{ author: 'df-reviewflow[bot]', state: 'APPROVED' }] }
+        )
+      )
+    ).toBe(true);
+  });
+
+  test('getEffectiveReviewDecision hides a bot-only APPROVED decision', () => {
+    expect(
+      getEffectiveReviewDecision(
+        makeDetail(
+          { review_decision: 'APPROVED' },
+          { reviews: [{ author: 'df-reviewflow[bot]', state: 'APPROVED' }] }
+        )
+      )
+    ).toBeNull();
+    expect(
+      getEffectiveReviewDecision(
+        makeDetail(
+          { review_decision: 'APPROVED' },
+          { reviews: [{ author: 'bob', state: 'APPROVED' }] }
+        )
+      )
+    ).toBe('APPROVED');
+    expect(getEffectiveReviewDecision(makeDetail({ review_decision: 'CHANGES_REQUESTED' }))).toBe(
+      'CHANGES_REQUESTED'
+    );
   });
 });

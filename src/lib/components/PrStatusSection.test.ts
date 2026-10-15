@@ -455,12 +455,26 @@ describe('PrStatusSection', () => {
   });
 
   test('renders review decision badges', async () => {
-    const approved = makePrDetail({ status: { review_decision: 'APPROVED' } });
+    const approved = makePrDetail({
+      status: { review_decision: 'APPROVED' },
+      reviews: [makeReview({ author: 'alice', state: 'APPROVED' })],
+    });
     const { body: bodyApproved } = await renderSection({
       prUrls: [approved.status.pr_url],
       prStatuses: [approved],
     });
     expect(bodyApproved).toContain('Approved');
+
+    const botApproved = makePrDetail({
+      status: { review_decision: 'APPROVED' },
+      reviews: [makeReview({ author: 'df-reviewflow[bot]', state: 'APPROVED' })],
+    });
+    const { body: bodyBotApproved } = await renderSection({
+      prUrls: [botApproved.status.pr_url],
+      prStatuses: [botApproved],
+    });
+    // Only the bot's review row says Approved; the PR has no Approved badge.
+    expect(bodyBotApproved.match(/>Approved</g)).toHaveLength(1);
 
     const changesRequested = makePrDetail({
       status: {
