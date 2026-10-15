@@ -46,6 +46,18 @@ describe('common/github/pr_status', () => {
                 body: null,
                 submittedAt: '2026-03-20T00:01:00.000Z',
               },
+              {
+                author: { __typename: 'Bot', login: 'df-reviewflow' },
+                state: 'APPROVED',
+                body: null,
+                submittedAt: '2026-03-20T00:02:00.000Z',
+              },
+              {
+                author: { __typename: 'Bot', login: 'other-bot[bot]' },
+                state: 'COMMENTED',
+                body: null,
+                submittedAt: '2026-03-20T00:03:00.000Z',
+              },
             ],
           },
           commits: {
@@ -126,6 +138,18 @@ describe('common/github/pr_status', () => {
           state: 'APPROVED',
           body: 'Looks good\nfrom here.',
           submittedAt: '2026-03-20T00:00:00.000Z',
+        },
+        {
+          author: 'df-reviewflow[bot]',
+          state: 'APPROVED',
+          body: null,
+          submittedAt: '2026-03-20T00:02:00.000Z',
+        },
+        {
+          author: 'other-bot[bot]',
+          state: 'COMMENTED',
+          body: null,
+          submittedAt: '2026-03-20T00:03:00.000Z',
         },
       ],
       checks: [
@@ -1026,6 +1050,12 @@ describe('common/github/pr_status', () => {
                 body: 'Please fix',
                 submittedAt: '2026-03-21T00:00:00Z',
               },
+              {
+                author: { __typename: 'Bot', login: 'df-reviewflow' },
+                state: 'COMMENTED',
+                body: null,
+                submittedAt: '2026-03-21T00:01:00Z',
+              },
             ],
           },
         },
@@ -1047,6 +1077,12 @@ describe('common/github/pr_status', () => {
           state: 'CHANGES_REQUESTED',
           body: 'Please fix',
           submittedAt: '2026-03-21T00:00:00Z',
+        },
+        {
+          author: 'df-reviewflow[bot]',
+          state: 'COMMENTED',
+          body: null,
+          submittedAt: '2026-03-21T00:01:00Z',
         },
       ],
     });

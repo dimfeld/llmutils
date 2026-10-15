@@ -3,6 +3,7 @@ import type {
   StoredPrReviewThreadInput,
 } from '../../tim/db/pr_status.js';
 import { getOctokit } from './octokit.js';
+import { isBotLogin } from './username.js';
 
 // Casing convention:
 // - check/state rollup fields are normalized to lowercase for easier UI/status aggregation
@@ -113,7 +114,19 @@ export interface GitHubStatusFetchOptions {
 }
 
 interface GraphQlActor {
+  __typename?: string;
   login: string;
+}
+
+/**
+ * GraphQL returns bot logins without the `[bot]` suffix (for example `df-reviewflow`), but REST
+ * and webhook payloads include it. Add the suffix so stored logins match and bot checks work.
+ */
+function normalizeGraphQlActorLogin(actor: GraphQlActor): string {
+  if (actor.__typename === 'Bot' && !isBotLogin(actor.login)) {
+    return `${actor.login}[bot]`;
+  }
+  return actor.login;
 }
 
 interface GraphQlLabelNode {
@@ -362,6 +375,7 @@ const fullStatusQuery = `
         reviews(last: 50) {
           nodes {
             author {
+              __typename
               login
             }
             state
@@ -558,6 +572,7 @@ const mergeableStatusQuery = `
         reviews(last: 50) {
           nodes {
             author {
+              __typename
               login
             }
             state
@@ -1141,7 +1156,7 @@ export async function fetchPrFullStatus(
         (review): review is GraphQlReviewNode => review !== null && Boolean(review.author?.login)
       )
       .map((review) => ({
-        author: review.author!.login,
+        author: normalizeGraphQlActorLogin(review.author!),
         state: normalizeReviewState(review.state),
         body: normalizeMultilineText(review.body),
         submittedAt: review.submittedAt,
@@ -1412,7 +1427,7 @@ export async function fetchPrMergeableAndReviewDecision(
         (review): review is GraphQlReviewNode => review !== null && Boolean(review.author?.login)
       )
       .map((review) => ({
-        author: review.author!.login,
+        author: normalizeGraphQlActorLogin(review.author!),
         state: normalizeReviewState(review.state),
         body: normalizeMultilineText(review.body),
         submittedAt: review.submittedAt,
