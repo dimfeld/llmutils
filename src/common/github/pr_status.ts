@@ -335,6 +335,7 @@ const fullStatusQuery = `
       pullRequest(number: $prNumber) {
         number
         author {
+          __typename
           login
         }
         title
@@ -624,6 +625,7 @@ const reviewThreadsQuery = `
                 state
                 createdAt
                 author {
+                  __typename
                   login
                 }
               }
@@ -651,6 +653,7 @@ const issueCommentsQuery = `
           }
           nodes {
             author {
+              __typename
               login
             }
             body
@@ -680,6 +683,7 @@ const reviewThreadCommentsQuery = `
             state
             createdAt
             author {
+              __typename
               login
             }
           }
@@ -717,6 +721,7 @@ const reviewThreadQuery = `
             state
             createdAt
             author {
+              __typename
               login
             }
           }
@@ -1032,7 +1037,7 @@ function normalizeReviewThreadComment(
   return {
     commentId: comment.id,
     databaseId: comment.databaseId,
-    author: comment.author?.login ?? null,
+    author: comment.author ? normalizeGraphQlActorLogin(comment.author) : null,
     body: normalizeMultilineText(comment.body),
     diffHunk: comment.diffHunk,
     state: comment.state,
@@ -1168,7 +1173,7 @@ export async function fetchPrFullStatus(
 
   return {
     number: pullRequest.number,
-    author: pullRequest.author?.login ?? null,
+    author: pullRequest.author ? normalizeGraphQlActorLogin(pullRequest.author) : null,
     title: pullRequest.title,
     state: normalizePrState(pullRequest.state),
     isDraft: pullRequest.isDraft,
@@ -1323,7 +1328,7 @@ export async function fetchPrIssueComments(
       (node: GraphQlIssueCommentNode | null): node is GraphQlIssueCommentNode => node !== null
     )) {
       comments.push({
-        author: node.author?.login ?? null,
+        author: node.author ? normalizeGraphQlActorLogin(node.author) : null,
         body: normalizeMultilineText(node.body),
         createdAt: node.createdAt,
         url: node.url,

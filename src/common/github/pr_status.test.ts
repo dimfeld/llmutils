@@ -16,6 +16,7 @@ describe('common/github/pr_status', () => {
       repository: {
         pullRequest: {
           number: 42,
+          author: { __typename: 'Bot', login: 'dependabot' },
           title: 'Add PR status monitoring',
           state: 'OPEN',
           isDraft: false,
@@ -116,7 +117,7 @@ describe('common/github/pr_status', () => {
     expect(graphql.mock.calls[0]?.[0]).not.toContain('replyTo');
 
     expect(result).toEqual({
-      author: null,
+      author: 'dependabot[bot]',
       number: 42,
       title: 'Add PR status monitoring',
       state: 'open',
@@ -1125,6 +1126,12 @@ describe('common/github/pr_status', () => {
                   createdAt: '2026-03-20T01:00:00.000Z',
                   url: 'https://github.com/owner/repo/pull/12#issuecomment-2',
                 },
+                {
+                  author: { __typename: 'Bot', login: 'tim-task-implementation-machine' },
+                  body: 'Review guide',
+                  createdAt: '2026-03-20T02:00:00.000Z',
+                  url: 'https://github.com/owner/repo/pull/12#issuecomment-3',
+                },
               ],
             },
           },
@@ -1154,6 +1161,75 @@ describe('common/github/pr_status', () => {
         createdAt: '2026-03-20T01:00:00.000Z',
         url: 'https://github.com/owner/repo/pull/12#issuecomment-2',
       },
+      {
+        author: 'tim-task-implementation-machine[bot]',
+        body: 'Review guide',
+        createdAt: '2026-03-20T02:00:00.000Z',
+        url: 'https://github.com/owner/repo/pull/12#issuecomment-3',
+      },
+    ]);
+  });
+
+  test('fetchPrReviewThreads adds the bot suffix to bot comment authors', async () => {
+    const graphql = vi.fn(async () => ({
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [
+              {
+                id: 'thread-1',
+                isResolved: false,
+                isOutdated: false,
+                line: 10,
+                originalLine: 10,
+                originalStartLine: null,
+                path: 'src/index.ts',
+                diffSide: 'RIGHT',
+                startDiffSide: null,
+                startLine: null,
+                subjectType: 'LINE',
+                comments: {
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                  nodes: [
+                    {
+                      id: 'comment-1',
+                      databaseId: 1,
+                      body: 'Bot finding',
+                      diffHunk: '@@ -1 +1 @@',
+                      state: 'SUBMITTED',
+                      createdAt: '2026-03-20T00:00:00.000Z',
+                      author: { __typename: 'Bot', login: 'chatgpt-codex-connector' },
+                    },
+                    {
+                      id: 'comment-2',
+                      databaseId: 2,
+                      body: 'Human reply',
+                      diffHunk: '@@ -1 +1 @@',
+                      state: 'SUBMITTED',
+                      createdAt: '2026-03-20T00:01:00.000Z',
+                      author: { __typename: 'User', login: 'reviewer' },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    }));
+
+    const mockGetOctokit = vi.mocked(octokitModule.getOctokit);
+    mockGetOctokit.mockReturnValue({
+      graphql,
+    });
+
+    const { fetchPrReviewThreads } = await import('./pr_status.ts');
+    const threads = await fetchPrReviewThreads('owner', 'repo', 12);
+
+    expect(threads[0]?.comments.map((comment) => comment.author)).toEqual([
+      'chatgpt-codex-connector[bot]',
+      'reviewer',
     ]);
   });
 
