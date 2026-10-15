@@ -453,6 +453,30 @@ describe('PrDetail', () => {
     expect(body).toContain('bg-yellow-100');
   });
 
+  test('renders the No reviewer badge for PR stack entries that need a reviewer', async () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = null;
+
+    const childPr = createPr();
+    childPr.currentUserReviewRequestLabel = null;
+    childPr.currentUserNeedsReviewRequest = true;
+    childPr.status.pr_number = 43;
+    childPr.status.title = 'Needs reviewer PR';
+    childPr.status.base_branch = 'feature-x';
+    childPr.status.head_branch = 'feature-needs-reviewer';
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr,
+        projectId: '123',
+        allPrs: [childPr],
+      },
+    });
+
+    expect(body).toContain('Needs reviewer PR');
+    expect(body).toContain('No reviewer');
+  });
+
   test('keeps the Approved badge for approved PR stack entries', async () => {
     const pr = createPr();
     pr.currentUserReviewRequestLabel = null;

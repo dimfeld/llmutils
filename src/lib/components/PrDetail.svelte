@@ -37,6 +37,7 @@
   import { tryCanonicalizePrUrl } from '$common/github/identifier_urls.js';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import CopyButton from './CopyButton.svelte';
+  import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
   import { toLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
@@ -777,6 +778,8 @@
                 >
                   Draft
                 </span>
+              {:else if !entryApproved && entry.pr.currentUserNeedsReviewRequest}
+                <NeedsReviewerBadge compact />
               {:else if !entryApproved && entry.pr.status.state === 'open'}
                 <span
                   class="shrink-0 rounded-full bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
