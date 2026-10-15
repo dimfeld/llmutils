@@ -18,7 +18,12 @@
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import { normalizeGitHubUsername } from '$common/github/username.js';
   import { formatRelativeTime } from '$lib/utils/time.js';
-  import { refreshSinglePrStatus, togglePrDraftStatus } from '$lib/remote/pr_status.remote.js';
+  import {
+    refreshSinglePrStatus,
+    requestTimReviewLabel,
+    togglePrDraftStatus,
+  } from '$lib/remote/pr_status.remote.js';
+  import { REVIEW_LABEL_NAME } from '$common/github/review_command.js';
   import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
   import {
     startPrAutoreview,
@@ -130,6 +135,7 @@
 
   let refreshing = $state(false);
   let draftUpdating = $state(false);
+  let timReviewRequesting = $state(false);
   let reviewGuideRunning: 'full' | 'guide-only' | false = $state(false);
   let fixStarting = $state(false);
   let ciFixStarting = $state(false);
@@ -182,6 +188,10 @@
     return normalizeGitHubUsername(pr.status.author) === normalizeGitHubUsername(username);
   });
   let canToggleDraft = $derived(tokenConfigured && pr.status.state === 'open' && isOwnPr);
+  let hasTimReviewLabel = $derived(
+    pr.labels.some((label) => label.name.toLowerCase() === REVIEW_LABEL_NAME)
+  );
+  let canRequestTimReview = $derived(tokenConfigured && pr.status.state === 'open');
   let draftButtonLabel = $derived(pr.status.draft ? 'Mark ready for review' : 'Convert to draft');
   let canFixUnresolvedThreads = $derived(isOwnPr && unresolvedReviewThreadCount > 0);
   let showFixCi = $derived(canFixCi({ isOwnPr, status: pr.status }));
@@ -300,6 +310,28 @@
       actionError = err instanceof Error ? err.message : String(err);
     } finally {
       draftUpdating = false;
+    }
+  }
+
+  async function handleRequestTimReview() {
+    if (!canRequestTimReview || hasTimReviewLabel || timReviewRequesting) {
+      return;
+    }
+
+    actionError = null;
+    timReviewRequesting = true;
+    try {
+      await requestTimReviewLabel({
+        owner: pr.status.owner,
+        repo: pr.status.repo,
+        prNumber: pr.status.pr_number,
+        prUrl: pr.status.pr_url,
+      });
+      location.reload();
+    } catch (err) {
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      timReviewRequesting = false;
     }
   }
 
@@ -582,6 +614,22 @@
         >
           {shellStarting ? 'Starting...' : 'Shell'}
         </button>
+        {#if canRequestTimReview}
+          <button
+            onclick={handleRequestTimReview}
+            disabled={timReviewRequesting || hasTimReviewLabel}
+            class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+            title={hasTimReviewLabel
+              ? `The ${REVIEW_LABEL_NAME} label is on this PR. tim removes it after it posts the review.`
+              : `Add the ${REVIEW_LABEL_NAME} label to request an automatic tim review`}
+          >
+            {timReviewRequesting
+              ? 'Requesting...'
+              : hasTimReviewLabel
+                ? 'tim review requested'
+                : 'Request tim review'}
+          </button>
+        {/if}
         {#if canToggleDraft}
           <button
             onclick={handleToggleDraftStatus}

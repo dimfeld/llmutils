@@ -11,7 +11,8 @@ import {
 import { resolveGitHubToken } from '$common/github/token.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
-import { setPullRequestDraftState } from '$common/github/pull_requests.js';
+import { addIssueLabels, setPullRequestDraftState } from '$common/github/pull_requests.js';
+import { REVIEW_LABEL_NAME } from '$common/github/review_command.js';
 import { categorizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
 import { withRequiredCheckRollupStates } from '$lib/server/required_check_rollup.js';
@@ -39,6 +40,13 @@ const togglePrDraftStatusSchema = z.object({
   prNumber: z.number().int(),
   prUrl: z.string().url(),
   draft: z.boolean(),
+});
+
+const prTargetSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+  prNumber: z.number().int(),
+  prUrl: z.string().url(),
 });
 
 interface LatestReviewGuideSummary {
@@ -310,6 +318,38 @@ export const togglePrDraftStatus = command(
     const success = await setPullRequestDraftState(owner, repo, prNumber, draft);
     if (!success) {
       error(500, `Failed to update pull request #${prNumber}`);
+    }
+
+    try {
+      await refreshPrStatusFromApi(db, prUrl);
+    } catch (err) {
+      error(500, `Failed to refresh PR: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return { success: true };
+  }
+);
+
+/**
+ * Add the `tim-review` label to a PR with the user's GitHub token. The label webhook
+ * starts an automatic review on the machine that has review commands enabled.
+ */
+export const requestTimReviewLabel = command(
+  prTargetSchema,
+  async ({ owner, repo, prNumber, prUrl }) => {
+    const { db } = await getServerContext();
+
+    if (!resolveGitHubToken()) {
+      error(400, 'GITHUB_TOKEN not configured');
+    }
+
+    try {
+      await addIssueLabels(owner, repo, prNumber, [REVIEW_LABEL_NAME]);
+    } catch (err) {
+      error(
+        500,
+        `Failed to add the ${REVIEW_LABEL_NAME} label to pull request #${prNumber}: ${err instanceof Error ? err.message : String(err)}`
+      );
     }
 
     try {

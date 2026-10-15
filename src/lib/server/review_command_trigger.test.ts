@@ -30,8 +30,8 @@ const REQUEST: ReviewCommandRequest = {
   repo: 'repo',
   prNumber: 7,
   prUrl: 'https://github.com/example/repo/pull/7',
-  commentId: 9001,
-  commenter: 'dana',
+  trigger: { kind: 'comment', commentId: 9001 },
+  requester: 'dana',
   requestedAt: '2026-01-01T12:00:00.000Z',
 };
 
@@ -56,7 +56,11 @@ describe('triggerReviewCommands', () => {
     await triggerReviewCommands(fakeDb, [REQUEST]);
 
     expect(getProjectSetting).toHaveBeenCalledWith(fakeDb, 1, 'reviewCommand');
-    expect(spawnPrReviewCommandProcess).toHaveBeenCalledWith(7, 9001, '/workspaces/primary');
+    expect(spawnPrReviewCommandProcess).toHaveBeenCalledWith(
+      7,
+      { kind: 'comment', commentId: 9001 },
+      '/workspaces/primary'
+    );
   });
 
   test('does not spawn when the global config setting is off or absent', async () => {
@@ -67,7 +71,7 @@ describe('triggerReviewCommands', () => {
     }
 
     expect(consoleInfo).toHaveBeenCalledWith(
-      '[review-command] skipping /tim review on https://github.com/example/repo/pull/7: githubWebhooks.reviewCommands is not enabled on this machine'
+      '[review-command] skipping /tim review comment on https://github.com/example/repo/pull/7: githubWebhooks.reviewCommands is not enabled on this machine'
     );
     consoleInfo.mockRestore();
     expect(getProjectSetting).not.toHaveBeenCalled();
@@ -82,7 +86,7 @@ describe('triggerReviewCommands', () => {
     }
 
     expect(consoleInfo).toHaveBeenCalledWith(
-      '[review-command] skipping /tim review on https://github.com/example/repo/pull/7: the project has not enabled it (run `tim pr review-command enable`)'
+      '[review-command] skipping /tim review comment on https://github.com/example/repo/pull/7: the project has not enabled it (run `tim pr review-command enable`)'
     );
     consoleInfo.mockRestore();
 
@@ -95,7 +99,7 @@ describe('triggerReviewCommands', () => {
     vi.mocked(getProject).mockReturnValueOnce(null as never);
     await triggerReviewCommands(fakeDb, [REQUEST]);
     expect(consoleInfo).toHaveBeenCalledWith(
-      '[review-command] skipping /tim review on https://github.com/example/repo/pull/7: example/repo is not a known project'
+      '[review-command] skipping /tim review comment on https://github.com/example/repo/pull/7: example/repo is not a known project'
     );
     consoleInfo.mockRestore();
     vi.mocked(getPrimaryWorkspacePath).mockReturnValueOnce(null);
@@ -114,9 +118,16 @@ describe('triggerReviewCommands', () => {
       .mockResolvedValueOnce({ success: true, planId: 8 });
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    await triggerReviewCommands(fakeDb, [REQUEST, { ...REQUEST, prNumber: 8, commentId: 9002 }]);
+    await triggerReviewCommands(fakeDb, [
+      REQUEST,
+      { ...REQUEST, prNumber: 8, trigger: { kind: 'label', label: 'tim-review' } },
+    ]);
 
-    expect(spawnPrReviewCommandProcess).toHaveBeenLastCalledWith(8, 9002, '/workspaces/primary');
+    expect(spawnPrReviewCommandProcess).toHaveBeenLastCalledWith(
+      8,
+      { kind: 'label', label: 'tim-review' },
+      '/workspaces/primary'
+    );
     consoleError.mockRestore();
   });
 });

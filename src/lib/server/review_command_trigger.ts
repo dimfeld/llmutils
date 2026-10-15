@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 
 import { constructGitHubRepositoryId } from '$common/github/pull_requests.js';
 import {
+  describeReviewCommandTrigger,
   isReviewCommandEnabled,
   REVIEW_COMMAND_PROJECT_SETTING_KEY,
   type ReviewCommandRequest,
@@ -14,22 +15,23 @@ import { getPrimaryWorkspacePath } from './db_queries.js';
 import { spawnPrReviewCommandProcess } from './plan_actions.js';
 
 /**
- * For each `/tim review` PR comment, spawn a detached `tim pr review-guide-comment
- * --review-only` process in the project's primary workspace. The spawn is gated on the
- * global githubWebhooks.reviewCommands config (default false) and the project-level
- * reviewCommand setting. Webhook ingest has already checked the comment author and the
- * side-effect cutoff.
+ * For each `/tim review` PR comment or `tim-review` PR label, spawn a detached
+ * `tim pr review-guide-comment --review-only` process in the project's primary workspace.
+ * The spawn is gated on the global githubWebhooks.reviewCommands config (default false) and
+ * the project-level reviewCommand setting. Webhook ingest has already checked the requester
+ * and the side-effect cutoff.
  */
 export async function triggerReviewCommands(
   db: Database,
   requests: ReviewCommandRequest[]
 ): Promise<void> {
   for (const request of requests) {
+    const source = describeReviewCommandTrigger(request.trigger);
     try {
       const project = getProject(db, constructGitHubRepositoryId(request.owner, request.repo));
       if (!project) {
         console.info(
-          `[review-command] skipping /tim review on ${request.prUrl}: ${request.owner}/${request.repo} is not a known project`
+          `[review-command] skipping ${source} on ${request.prUrl}: ${request.owner}/${request.repo} is not a known project`
         );
         continue;
       }
@@ -45,7 +47,7 @@ export async function triggerReviewCommands(
       const config = await loadEffectiveConfig(undefined, { cwd: primaryWorkspacePath });
       if (config.githubWebhooks?.reviewCommands !== true) {
         console.info(
-          `[review-command] skipping /tim review on ${request.prUrl}: githubWebhooks.reviewCommands is not enabled on this machine`
+          `[review-command] skipping ${source} on ${request.prUrl}: githubWebhooks.reviewCommands is not enabled on this machine`
         );
         continue;
       }
@@ -56,19 +58,19 @@ export async function triggerReviewCommands(
         )
       ) {
         console.info(
-          `[review-command] skipping /tim review on ${request.prUrl}: the project has not enabled it (run \`tim pr review-command enable\`)`
+          `[review-command] skipping ${source} on ${request.prUrl}: the project has not enabled it (run \`tim pr review-command enable\`)`
         );
         continue;
       }
 
       const result = await spawnPrReviewCommandProcess(
         request.prNumber,
-        request.commentId,
+        request.trigger,
         primaryWorkspacePath
       );
       if (result.success) {
         console.info(
-          `[review-command] Started review for ${request.prUrl} requested by ${request.commenter}`
+          `[review-command] Started review for ${request.prUrl} requested by ${request.requester} with the ${source}`
         );
       } else {
         console.error(

@@ -2100,6 +2100,12 @@ const prReviewGuideCommentCommand = prCommand
       .argParser((value: string) => Number(value))
       .hideHelp()
   )
+  .addOption(
+    new Option(
+      '--trigger-label <name>',
+      'PR label that requested the review; it is removed when the review is posted'
+    ).hideHelp()
+  )
   .option('--no-terminal-input', 'Disable terminal input')
   .option('--non-interactive', 'No user prompts')
   .option('--verbose', 'Verbose output')

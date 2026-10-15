@@ -612,7 +612,7 @@ reviewGuideComments:
 
 The queue uses SQLite file locks in `review-queue.sqlite` under the tim configuration directory. The queue is local to the machine and is not synced between nodes.
 
-#### `/tim review` PR comments
+#### `/tim review` PR comments and the `tim-review` label
 
 You can also request an automatic review with a PR comment. Put `/tim review` on a line of its own in a PR conversation comment. tim adds 👀 to the comment, runs the same issue generation as the automatic review above, and posts a new `COMMENT` review from the GitHub App. If the run fails, tim adds 😕 to the comment. This works on draft PRs too. It does not post, check for, or edit the guide comment.
 
@@ -627,7 +627,9 @@ githubWebhooks:
 tim pr review-command enable   # Per project; also disable and status
 ```
 
-Requests arrive through webhook ingestion, so a review starts on the next webhook poll or PR refresh. The App must subscribe to the "Issue comment" webhook event. The command that runs is `tim pr review-guide-comment <pr> --review-only --trigger-comment-id <id>`. You can also run `tim pr review-guide-comment <pr> --review-only` manually.
+You can also add the `tim-review` label to an open PR. This starts the same review, with the same two switches. tim ignores the label when a bot adds it. GitHub lets only users with triage or write access add labels, so tim does not check the author association. tim removes the label after it posts the review, so you can add the label again to request another review. If the review fails, the label stays on the PR. To try again, remove the label and add it again. The PR detail page in the web interface has a "Request tim review" button that adds the label with your `GITHUB_TOKEN`.
+
+Requests arrive through webhook ingestion, so a review starts on the next webhook poll or PR refresh. The App must subscribe to the "Issue comment" and "Pull request" webhook events, and it needs write access to issues or pull requests to remove the label. The command that runs is `tim pr review-guide-comment <pr> --review-only --trigger-comment-id <id>` for a comment, or `--trigger-label tim-review` for the label. You can also run `tim pr review-guide-comment <pr> --review-only` manually.
 
 See the PR status and web interface notes in [`docs/web-interface.md`](docs/web-interface.md) for implementation details and edge cases.
 

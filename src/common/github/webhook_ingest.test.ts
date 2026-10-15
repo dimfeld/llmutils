@@ -2145,10 +2145,10 @@ describe('common/github/webhook_ingest', () => {
       consoleInfo.mockRestore();
 
       expect(infoLines).toContain(
-        '[review-command] found /tim review from member-user on https://github.com/example/repo/pull/80 (comment 5001)'
+        '[review-command] found /tim review comment from member-user on https://github.com/example/repo/pull/80 (comment 5001)'
       );
       expect(infoLines).toContain(
-        '[review-command] ignored /tim review from outsider on example/repo#80: author association CONTRIBUTOR is not OWNER, MEMBER, or COLLABORATOR'
+        '[review-command] ignored /tim review comment from outsider on example/repo#80: author association CONTRIBUTOR is not OWNER, MEMBER, or COLLABORATOR'
       );
       // Comments without the command are not logged.
       expect(infoLines.filter((line) => line.startsWith('[review-command]'))).toHaveLength(2);
@@ -2158,8 +2158,8 @@ describe('common/github/webhook_ingest', () => {
           repo: 'repo',
           prNumber: 80,
           prUrl: 'https://github.com/example/repo/pull/80',
-          commentId: 5001,
-          commenter: 'member-user',
+          trigger: { kind: 'comment', commentId: 5001 },
+          requester: 'member-user',
           requestedAt: '2026-03-30T10:05:00.000Z',
         },
       ]);
@@ -2189,8 +2189,71 @@ describe('common/github/webhook_ingest', () => {
 
       expect(result.reviewCommands).toEqual([]);
       expect(infoLines).toContain(
-        '[review-command] ignored /tim review from member-user on https://github.com/example/repo/pull/80: received at 2026-03-30T09:00:00.000Z, before githubWebhooks.ignoreSideEffectsBefore'
+        '[review-command] ignored /tim review comment from member-user on https://github.com/example/repo/pull/80: received at 2026-03-30T09:00:00.000Z, before githubWebhooks.ignoreSideEffectsBefore'
       );
+    });
+
+    test('collects one review request per PR from tim-review label events', async () => {
+      const labelEvent = (
+        id: number,
+        label: string,
+        senderType = 'User'
+      ): Record<string, unknown> => ({
+        id,
+        deliveryId: `review-label-${id}`,
+        eventType: 'pull_request',
+        action: 'labeled',
+        repositoryFullName: 'example/repo',
+        receivedAt: '2026-03-30T10:05:00.000Z',
+        payloadJson: JSON.stringify({
+          action: 'labeled',
+          repository: { full_name: 'example/repo' },
+          label: { name: label },
+          sender: { login: 'member-user', type: senderType },
+          pull_request: {
+            number: 81,
+            title: 'Label PR',
+            state: 'open',
+            draft: false,
+            merged_at: null,
+            user: { login: 'alice' },
+            head: { sha: 'sha-81', ref: 'feature' },
+            base: { ref: 'main' },
+            labels: [{ name: label }],
+            requested_reviewers: [],
+            updated_at: '2026-03-30T10:05:00.000Z',
+          },
+        }),
+      });
+      mocks.fetchWebhookEvents.mockResolvedValueOnce([
+        labelEvent(94, 'tim-review'),
+        labelEvent(95, 'tim-review'),
+        labelEvent(96, 'bug'),
+        labelEvent(97, 'tim-review', 'Bot'),
+      ]);
+
+      const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => {});
+      const result = await ingestWebhookEvents(db);
+      const infoLines = consoleInfo.mock.calls.map((call) => String(call[0]));
+      consoleInfo.mockRestore();
+
+      expect(infoLines).toContain(
+        '[review-command] found tim-review label from member-user on https://github.com/example/repo/pull/81'
+      );
+      expect(infoLines).toContain(
+        '[review-command] ignored tim-review label from member-user on example/repo#81: the label was added by a bot'
+      );
+      expect(result.reviewCommands).toEqual([
+        {
+          owner: 'example',
+          repo: 'repo',
+          prNumber: 81,
+          prUrl: 'https://github.com/example/repo/pull/81',
+          trigger: { kind: 'label', label: 'tim-review' },
+          requester: 'member-user',
+          requestedAt: '2026-03-30T10:05:00.000Z',
+        },
+      ]);
     });
 
     test('dispatches issue_comment events to the handler and populates inboxSignals', async () => {

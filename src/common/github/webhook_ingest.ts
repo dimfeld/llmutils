@@ -9,7 +9,12 @@ import {
   fetchAndUpdatePrReviewThreads,
 } from './pr_status_service.js';
 import { tryCanonicalizePrUrl } from './identifiers.js';
-import { parseReviewCommandEvent, type ReviewCommandRequest } from './review_command.js';
+import {
+  describeReviewCommandTrigger,
+  parseReviewCommandEvent,
+  parseReviewLabelEvent,
+  type ReviewCommandRequest,
+} from './review_command.js';
 import {
   handleCheckRunEvent,
   handleIssueCommentEvent,
@@ -373,7 +378,10 @@ export interface IngestResult {
   prsReadyForReview: ReadyForReviewPr[];
   /** Reviews submitted on known PRs during this run (side-effect cutoff already applied). */
   reviewsSubmitted: SubmittedPrReview[];
-  /** `/tim review` PR comments from allowed authors (side-effect cutoff already applied). */
+  /**
+   * Review requests from `/tim review` PR comments by allowed authors and from the
+   * `tim-review` PR label (side-effect cutoff already applied).
+   */
   reviewCommands: ReviewCommandRequest[];
   /** Raw inbox signals emitted by handlers during this run. */
   inboxSignals: InboxSignal[];
@@ -441,8 +449,8 @@ export async function ingestWebhookEvents(
   const prsReadyForReview = new Map<string, ReadyForReviewPr>();
   /** Deduplicated submitted reviews, keyed by "prUrl:author:state". */
   const reviewsSubmitted = new Map<string, SubmittedPrReview>();
-  /** `/tim review` requests, keyed by comment ID. */
-  const reviewCommands = new Map<number, ReviewCommandRequest>();
+  /** Review requests, keyed by comment ID for comments and by PR for labels. */
+  const reviewCommands = new Map<string, ReviewCommandRequest>();
   /** Deduplicated inbox signals, keyed by kind, PR, actor/target, and event time. */
   const inboxSignals = new Map<string, InboxSignal>();
   const errors: string[] = [];
@@ -554,28 +562,36 @@ export async function ingestWebhookEvents(
           }
         }
 
-        if (event.eventType === 'issue_comment') {
-          const parsed = parseReviewCommandEvent(
-            payload,
-            event.repositoryFullName,
-            event.receivedAt
+        const parsedReviewCommand =
+          event.eventType === 'issue_comment'
+            ? parseReviewCommandEvent(payload, event.repositoryFullName, event.receivedAt)
+            : event.eventType === 'pull_request'
+              ? parseReviewLabelEvent(payload, event.repositoryFullName, event.receivedAt)
+              : null;
+        if (parsedReviewCommand?.kind === 'ignored') {
+          const source =
+            event.eventType === 'issue_comment' ? '/tim review comment' : 'tim-review label';
+          console.info(
+            `[review-command] ignored ${source} from ${parsedReviewCommand.requester ?? 'unknown user'} on ${parsedReviewCommand.target}: ${parsedReviewCommand.reason}`
           );
-          if (parsed.kind === 'ignored') {
+        } else if (parsedReviewCommand?.kind === 'request') {
+          const request = parsedReviewCommand.request;
+          const source = describeReviewCommandTrigger(request.trigger);
+          if (!isWebhookSideEffectAllowed(config, event.receivedAt)) {
             console.info(
-              `[review-command] ignored /tim review from ${parsed.commenter ?? 'unknown user'} on ${parsed.target}: ${parsed.reason}`
+              `[review-command] ignored ${source} from ${request.requester} on ${request.prUrl}: received at ${event.receivedAt}, before githubWebhooks.ignoreSideEffectsBefore`
             );
-          } else if (
-            parsed.kind === 'request' &&
-            !isWebhookSideEffectAllowed(config, event.receivedAt)
-          ) {
+          } else {
+            const key =
+              request.trigger.kind === 'comment'
+                ? `comment:${request.trigger.commentId}`
+                : `label:${request.prUrl}`;
+            const detail =
+              request.trigger.kind === 'comment' ? ` (comment ${request.trigger.commentId})` : '';
             console.info(
-              `[review-command] ignored /tim review from ${parsed.request.commenter} on ${parsed.request.prUrl}: received at ${event.receivedAt}, before githubWebhooks.ignoreSideEffectsBefore`
+              `[review-command] found ${source} from ${request.requester} on ${request.prUrl}${detail}`
             );
-          } else if (parsed.kind === 'request') {
-            console.info(
-              `[review-command] found /tim review from ${parsed.request.commenter} on ${parsed.request.prUrl} (comment ${parsed.request.commentId})`
-            );
-            reviewCommands.set(parsed.request.commentId, parsed.request);
+            reviewCommands.set(key, request);
           }
         }
 

@@ -778,6 +778,40 @@ export async function addIssueCommentReaction(
   });
 }
 
+/** Adds labels to a PR or issue. GitHub creates labels that do not exist in the repository. */
+export async function addIssueLabels(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  labels: string[],
+  options: GitHubRequestAuthOptions = {}
+): Promise<void> {
+  const octokit = getOctokit(options.authToken);
+  await octokit.rest.issues.addLabels({
+    owner,
+    repo,
+    issue_number: issueNumber,
+    labels,
+  });
+}
+
+/** Removes a label from a PR or issue. */
+export async function removeIssueLabel(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  label: string,
+  options: GitHubRequestAuthOptions = {}
+): Promise<void> {
+  const octokit = getOctokit(options.authToken);
+  await octokit.rest.issues.removeLabel({
+    owner,
+    repo,
+    issue_number: issueNumber,
+    name: label,
+  });
+}
+
 /**
  * Posts an immediate reply to an existing top-level pull request review comment.
  * Unlike addPullRequestReviewThreadReply without a review ID, this REST endpoint

@@ -10,6 +10,7 @@ import {
 import { buildWorkspaceCommandEnv } from '$common/env.js';
 import { TIM_LINKED_PR_URL_ENV } from '$tim/headless.js';
 import { loadEffectiveConfig } from '$tim/configLoader.js';
+import type { ReviewCommandTrigger } from '$common/github/review_command.js';
 import {
   createLogFile as createLogFileImpl,
   formatLogFileName as formatLogFileNameImpl,
@@ -657,7 +658,7 @@ export async function spawnPrReviewGuideCommentProcess(
 
 export async function spawnPrReviewCommandProcess(
   prNumber: number,
-  triggerCommentId: number,
+  trigger: ReviewCommandTrigger,
   cwd: string
 ): Promise<SpawnProcessResult> {
   return spawnPlanTimProcess(
@@ -668,8 +669,9 @@ export async function spawnPrReviewCommandProcess(
       'review-guide-comment',
       String(prNumber),
       '--review-only',
-      '--trigger-comment-id',
-      String(triggerCommentId),
+      ...(trigger.kind === 'comment'
+        ? ['--trigger-comment-id', String(trigger.commentId)]
+        : ['--trigger-label', trigger.label]),
       '--auto-workspace',
       '--no-terminal-input',
       '--non-interactive',

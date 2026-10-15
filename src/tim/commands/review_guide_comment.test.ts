@@ -31,6 +31,7 @@ vi.mock('../../common/github/pull_requests.js', () => ({
   findPullRequestCommentByMarker: vi.fn(),
   parseOwnerRepoFromRepositoryId: vi.fn(),
   postPullRequestComment: vi.fn(),
+  removeIssueLabel: vi.fn(),
   updatePullRequestComment: vi.fn(),
 }));
 
@@ -106,6 +107,7 @@ import {
   findPullRequestCommentByMarker,
   parseOwnerRepoFromRepositoryId,
   postPullRequestComment,
+  removeIssueLabel,
   updatePullRequestComment,
 } from '../../common/github/pull_requests.js';
 import { loadEffectiveConfig } from '../configLoader.js';
@@ -133,6 +135,7 @@ const mockIsTunnelActive = vi.mocked(isTunnelActive);
 const mockGetGitHubAppInstallationTokenForOwner = vi.mocked(getGitHubAppInstallationTokenForOwner);
 const mockParsePrOrIssueNumber = vi.mocked(parsePrOrIssueNumber);
 const mockAddIssueCommentReaction = vi.mocked(addIssueCommentReaction);
+const mockRemoveIssueLabel = vi.mocked(removeIssueLabel);
 const mockFindPullRequestCommentByMarker = vi.mocked(findPullRequestCommentByMarker);
 const mockParseOwnerRepoFromRepositoryId = vi.mocked(parseOwnerRepoFromRepositoryId);
 const mockPostPullRequestComment = vi.mocked(postPullRequestComment);
@@ -859,6 +862,52 @@ describe('review_guide_comment', () => {
     expect(mockRunAutomaticPrReview).toHaveBeenCalled();
   });
 
+  test('review-only mode removes the trigger label after the review is posted', async () => {
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', reviewOnly: true, triggerLabel: 'tim-review' },
+      makeCommand()
+    );
+
+    expect(mockRunAutomaticPrReview).toHaveBeenCalled();
+    expect(mockAddIssueCommentReaction).not.toHaveBeenCalled();
+    expect(mockRemoveIssueLabel).toHaveBeenCalledWith('acme', 'repo', 42, 'tim-review', {
+      authToken: 'app-installation-token',
+    });
+  });
+
+  test('review-only mode keeps the trigger label when the review fails or is a dry run', async () => {
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', reviewOnly: true, triggerLabel: 'tim-review', dryRun: true },
+      makeCommand()
+    );
+    mockRunAutomaticPrReview.mockRejectedValue(new Error('review exploded'));
+    await expect(
+      handlePrReviewGuideCommentCommand(
+        '42',
+        { executor: 'codex-cli', reviewOnly: true, triggerLabel: 'tim-review' },
+        makeCommand()
+      )
+    ).rejects.toThrow('review exploded');
+
+    expect(mockRemoveIssueLabel).not.toHaveBeenCalled();
+  });
+
+  test('a failed label removal is only a warning', async () => {
+    mockRemoveIssueLabel.mockRejectedValue(new Error('label not found'));
+
+    await handlePrReviewGuideCommentCommand(
+      '42',
+      { executor: 'codex-cli', reviewOnly: true, triggerLabel: 'tim-review' },
+      makeCommand()
+    );
+
+    expect(mockWarn).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to remove the tim-review label from')
+    );
+  });
+
   test('rejects conflicting and invalid review-only options before any work', async () => {
     await expect(
       handlePrReviewGuideCommentCommand(
@@ -874,6 +923,9 @@ describe('review_guide_comment', () => {
         makeCommand()
       )
     ).rejects.toThrow('--trigger-comment-id must be a positive integer.');
+    await expect(
+      handlePrReviewGuideCommentCommand('42', { triggerLabel: 'tim-review' }, makeCommand())
+    ).rejects.toThrow('--trigger-label requires --review-only.');
 
     expect(mockGatherPrContext).not.toHaveBeenCalled();
   });

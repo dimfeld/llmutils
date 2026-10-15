@@ -18,6 +18,7 @@ import {
 } from '../../common/github/review_guide_comment_setting.js';
 import {
   addIssueCommentReaction,
+  removeIssueLabel,
   findPullRequestCommentByMarker,
   type IssueCommentReaction,
   parseOwnerRepoFromRepositoryId,
@@ -87,6 +88,11 @@ export interface PrReviewGuideCommentOptions {
   reviewOnly?: boolean;
   /** PR comment that requested the review. It gets 👀 at the start and 😕 on failure. */
   triggerCommentId?: number;
+  /**
+   * PR label that requested the review. It is removed after the review is posted, so adding
+   * it again requests another review. It stays on the PR if the review fails.
+   */
+  triggerLabel?: string;
   verbose?: boolean;
 }
 
@@ -492,6 +498,9 @@ export async function handlePrReviewGuideCommentCommand(
   ) {
     throw new Error('--trigger-comment-id must be a positive integer.');
   }
+  if (options.triggerLabel !== undefined && options.reviewOnly !== true) {
+    throw new Error('--trigger-label requires --review-only.');
+  }
 
   const globalOpts = getRootOptions(command);
   const db: Database = getDatabase();
@@ -664,6 +673,21 @@ export async function handlePrReviewGuideCommentCommand(
                 filesReviewed: prContext.prStatus.changed_files ?? 0,
               }),
           });
+          if (options.triggerLabel !== undefined && options.dryRun !== true) {
+            try {
+              await removeIssueLabel(
+                prContext.owner,
+                prContext.repo,
+                prContext.prNumber,
+                options.triggerLabel,
+                { authToken: appToken }
+              );
+            } catch (err) {
+              warn(
+                `Failed to remove the ${options.triggerLabel} label from ${prContext.prUrl}: ${err instanceof Error ? err.message : String(err)}`
+              );
+            }
+          }
           return;
         }
 

@@ -1,6 +1,7 @@
 /**
- * `/tim review` PR comment command: a comment on a PR asks tim to run an automatic
- * review and post it as a new review from the GitHub App.
+ * `/tim review` PR comment command and `tim-review` PR label: a comment on a PR, or the
+ * label added to a PR, asks tim to run an automatic review and post it as a new review
+ * from the GitHub App.
  */
 
 export const REVIEW_COMMAND_PROJECT_SETTING_KEY = 'reviewCommand';
@@ -36,15 +37,29 @@ export function hasReviewCommand(body: string): boolean {
   return REVIEW_COMMAND_PATTERN.test(body);
 }
 
-/** A `/tim review` request from a PR comment. */
+/** Adding this label to a PR requests a review, the same as a `/tim review` comment. */
+export const REVIEW_LABEL_NAME = 'tim-review';
+
+/** What requested the review: a `/tim review` comment or the `tim-review` label. */
+export type ReviewCommandTrigger =
+  | { kind: 'comment'; commentId: number }
+  | { kind: 'label'; label: string };
+
+/** A review request from a `/tim review` PR comment or the `tim-review` PR label. */
 export interface ReviewCommandRequest {
   owner: string;
   repo: string;
   prNumber: number;
   prUrl: string;
-  commentId: number;
-  commenter: string;
+  trigger: ReviewCommandTrigger;
+  /** Login of the user who wrote the comment or added the label. */
+  requester: string;
   requestedAt: string;
+}
+
+/** Text for log lines, such as `/tim review comment` or `tim-review label`. */
+export function describeReviewCommandTrigger(trigger: ReviewCommandTrigger): string {
+  return trigger.kind === 'comment' ? '/tim review comment' : `${trigger.label} label`;
 }
 
 interface IssueCommentPayload {
@@ -62,7 +77,7 @@ export type ReviewCommandParseResult =
   /** The event is not a comment that contains the command. */
   | { kind: 'none' }
   /** The comment contains the command, but tim must not act on it. */
-  | { kind: 'ignored'; reason: string; target: string; commenter: string | null }
+  | { kind: 'ignored'; reason: string; target: string; requester: string | null }
   | { kind: 'request'; request: ReviewCommandRequest };
 
 /**
@@ -91,7 +106,7 @@ export function parseReviewCommandEvent(
     kind: 'ignored',
     reason,
     target,
-    commenter: login,
+    requester: login,
   });
 
   if (action !== 'created') {
@@ -123,8 +138,77 @@ export function parseReviewCommandEvent(
       repo,
       prNumber: issueNumber,
       prUrl: `https://github.com/${owner}/${repo}/pull/${issueNumber}`,
-      commentId: comment.id,
-      commenter: login,
+      trigger: { kind: 'comment', commentId: comment.id },
+      requester: login,
+      requestedAt: receivedAt,
+    },
+  };
+}
+
+interface PullRequestLabeledPayload {
+  action?: unknown;
+  label?: { name?: unknown };
+  pull_request?: { number?: unknown; state?: unknown };
+  sender?: { login?: unknown; type?: unknown };
+}
+
+/**
+ * Classify a `pull_request` webhook payload. Only a `labeled` event that adds the
+ * `tim-review` label to an open PR, from a user who is not a bot, gives a request. Adding a
+ * label needs triage or write access to the repository, so the sender is not checked
+ * further.
+ */
+export function parseReviewLabelEvent(
+  payload: unknown,
+  repositoryFullName: string | null,
+  receivedAt: string
+): ReviewCommandParseResult {
+  if (!payload || typeof payload !== 'object') {
+    return { kind: 'none' };
+  }
+
+  const { action, label, pull_request: pullRequest, sender } = payload as PullRequestLabeledPayload;
+  if (
+    action !== 'labeled' ||
+    typeof label?.name !== 'string' ||
+    label.name.toLowerCase() !== REVIEW_LABEL_NAME
+  ) {
+    return { kind: 'none' };
+  }
+
+  const login = typeof sender?.login === 'string' ? sender.login : null;
+  const prNumber = typeof pullRequest?.number === 'number' ? pullRequest.number : null;
+  const target = `${repositoryFullName ?? 'unknown repository'}#${prNumber ?? '?'}`;
+  const ignore = (reason: string): ReviewCommandParseResult => ({
+    kind: 'ignored',
+    reason,
+    target,
+    requester: login,
+  });
+
+  const [owner, repo] = repositoryFullName?.split('/') ?? [];
+  if (!owner || !repo || prNumber === null) {
+    return ignore('the payload has no repository or PR number');
+  }
+  if (pullRequest?.state !== 'open') {
+    return ignore('the pull request is not open');
+  }
+  if (login === null) {
+    return ignore('the label event has no sender login');
+  }
+  if (sender?.type === 'Bot') {
+    return ignore('the label was added by a bot');
+  }
+
+  return {
+    kind: 'request',
+    request: {
+      owner,
+      repo,
+      prNumber,
+      prUrl: `https://github.com/${owner}/${repo}/pull/${prNumber}`,
+      trigger: { kind: 'label', label: label.name },
+      requester: login,
       requestedAt: receivedAt,
     },
   };

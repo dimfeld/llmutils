@@ -4,6 +4,7 @@ import {
   hasReviewCommand,
   isReviewCommandEnabled,
   parseReviewCommandEvent,
+  parseReviewLabelEvent,
 } from './review_command.js';
 
 function payload(overrides: {
@@ -54,8 +55,8 @@ describe('parseReviewCommandEvent', () => {
         repo: 'repo',
         prNumber: 12,
         prUrl: 'https://github.com/acme/repo/pull/12',
-        commentId: 345,
-        commenter: 'dana',
+        trigger: { kind: 'comment', commentId: 345 },
+        requester: 'dana',
         requestedAt: '2026-10-09T10:00:00Z',
       },
     });
@@ -93,7 +94,69 @@ describe('parseReviewCommandEvent', () => {
         kind: 'ignored',
         reason,
         target: `${repositoryFullName ?? 'unknown repository'}#12`,
-        commenter: 'dana',
+        requester: 'dana',
+      });
+    }
+  });
+});
+
+function labelPayload(overrides: {
+  action?: string;
+  label?: string;
+  state?: string;
+  senderType?: string;
+}): unknown {
+  return {
+    action: overrides.action ?? 'labeled',
+    label: { name: overrides.label ?? 'tim-review' },
+    pull_request: { number: 12, state: overrides.state ?? 'open' },
+    sender: { login: 'dana', type: overrides.senderType ?? 'User' },
+  };
+}
+
+describe('parseReviewLabelEvent', () => {
+  test('returns a request when a user adds the tim-review label to an open PR', () => {
+    expect(parseReviewLabelEvent(labelPayload({}), 'acme/repo', '2026-10-09T10:00:00Z')).toEqual({
+      kind: 'request',
+      request: {
+        owner: 'acme',
+        repo: 'repo',
+        prNumber: 12,
+        prUrl: 'https://github.com/acme/repo/pull/12',
+        trigger: { kind: 'label', label: 'tim-review' },
+        requester: 'dana',
+        requestedAt: '2026-10-09T10:00:00Z',
+      },
+    });
+    expect(
+      parseReviewLabelEvent(labelPayload({ label: 'Tim-Review' }), 'acme/repo', 't')
+    ).toMatchObject({ kind: 'request', request: { trigger: { label: 'Tim-Review' } } });
+  });
+
+  test('returns none for other labels, other actions, and bad payloads', () => {
+    for (const value of [
+      labelPayload({ label: 'bug' }),
+      labelPayload({ action: 'unlabeled' }),
+      labelPayload({ action: 'opened' }),
+      null,
+      'not an object',
+    ]) {
+      expect(parseReviewLabelEvent(value, 'acme/repo', 't')).toEqual({ kind: 'none' });
+    }
+  });
+
+  test('gives the reason when it ignores the label', () => {
+    const cases: Array<[unknown, string | null, string]> = [
+      [labelPayload({ senderType: 'Bot' }), 'acme/repo', 'the label was added by a bot'],
+      [labelPayload({ state: 'closed' }), 'acme/repo', 'the pull request is not open'],
+      [labelPayload({}), null, 'the payload has no repository or PR number'],
+    ];
+    for (const [value, repositoryFullName, reason] of cases) {
+      expect(parseReviewLabelEvent(value, repositoryFullName, 't')).toEqual({
+        kind: 'ignored',
+        reason,
+        target: `${repositoryFullName ?? 'unknown repository'}#12`,
+        requester: 'dana',
       });
     }
   });

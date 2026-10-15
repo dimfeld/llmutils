@@ -21,7 +21,8 @@ const refreshPrStatusFromApi = vi.fn();
 const ingestWebhookEvents = vi.fn();
 const mockEmitPrUpdatesForIngestResult = vi.fn();
 const mockSessionManager = { emitPrUpdate: vi.fn() };
-const { setPullRequestDraftState } = vi.hoisted(() => ({
+const { addIssueLabels, setPullRequestDraftState } = vi.hoisted(() => ({
+  addIssueLabels: vi.fn(),
   setPullRequestDraftState: vi.fn(),
 }));
 
@@ -45,6 +46,7 @@ vi.mock('$common/github/pull_requests.js', async () => {
 
   return {
     ...actual,
+    addIssueLabels,
     setPullRequestDraftState,
   };
 });
@@ -124,6 +126,7 @@ describe('pr_status remote functions', () => {
     ensurePrStatusFresh.mockReset();
     refreshPrStatusFromApi.mockReset();
     setPullRequestDraftState.mockReset();
+    addIssueLabels.mockReset();
     ingestWebhookEvents.mockReset();
     mockEmitPrUpdatesForIngestResult.mockReset();
     mockSessionManager.emitPrUpdate.mockReset();
@@ -306,6 +309,45 @@ describe('pr_status remote functions', () => {
       currentDb,
       'https://github.com/example/repo/pull/1'
     );
+  });
+
+  test('requestTimReviewLabel adds the tim-review label and refreshes the cache', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    addIssueLabels.mockResolvedValueOnce(undefined);
+    refreshPrStatusFromApi.mockResolvedValueOnce(undefined);
+
+    const { requestTimReviewLabel } = await import('./pr_status.remote.js');
+
+    const result = await invokeCommand(requestTimReviewLabel, {
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1,
+      prUrl: 'https://github.com/example/repo/pull/1',
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(addIssueLabels).toHaveBeenCalledWith('example', 'repo', 1, ['tim-review']);
+    expect(refreshPrStatusFromApi).toHaveBeenCalledWith(
+      currentDb,
+      'https://github.com/example/repo/pull/1'
+    );
+  });
+
+  test('requestTimReviewLabel reports a failure to add the label', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    addIssueLabels.mockRejectedValueOnce(new Error('forbidden'));
+
+    const { requestTimReviewLabel } = await import('./pr_status.remote.js');
+
+    await expect(
+      invokeCommand(requestTimReviewLabel, {
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 1,
+        prUrl: 'https://github.com/example/repo/pull/1',
+      })
+    ).rejects.toMatchObject({ status: 500 });
+    expect(refreshPrStatusFromApi).not.toHaveBeenCalled();
   });
 
   test('getPrStatus returns cached PR status matched directly from plan URLs when plan_pr is missing', async () => {
