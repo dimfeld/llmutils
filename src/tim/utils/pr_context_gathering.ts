@@ -1,5 +1,5 @@
 import { $ } from 'bun';
-import { log } from '../../logging.ts';
+import { log, warn } from '../../logging.ts';
 import type { Database } from 'bun:sqlite';
 import {
   canonicalizePrUrl,
@@ -210,6 +210,7 @@ export interface BranchCheckoutDependencies {
   getWorkingCopyStatus: (cwd: string) => Promise<WorkingCopyStatus>;
   getUsingJj: typeof getUsingJj;
   runCommand: (args: string[], cwd: string) => Promise<{ exitCode: number; stderr: string }>;
+  readHeadSha: (cwd: string) => Promise<string>;
 }
 
 const defaultBranchCheckoutDependencies: BranchCheckoutDependencies = {
@@ -223,12 +224,27 @@ const defaultBranchCheckoutDependencies: BranchCheckoutDependencies = {
       stderr: result.stderr.toString().trim(),
     };
   },
+  readHeadSha: async (cwd: string) => {
+    const result = await $`git rev-parse HEAD`.cwd(cwd).quiet().nothrow();
+    const sha = result.stdout.toString().trim();
+    if (result.exitCode !== 0 || !sha) {
+      throw new Error(
+        `Failed to resolve the checked-out PR head commit: ${result.stderr.toString().trim() || 'git rev-parse HEAD failed.'}`
+      );
+    }
+    return sha;
+  },
 };
 
+/**
+ * Check out the PR head as a detached HEAD and fetch the base branch.
+ *
+ * Returns the SHA of the checked-out PR head commit.
+ */
 export async function checkoutPrBranch(
   options: CheckoutPrBranchOptions,
   deps: BranchCheckoutDependencies = defaultBranchCheckoutDependencies
-): Promise<void> {
+): Promise<string> {
   const cwd = options.cwd ?? process.cwd();
 
   if (!options.skipDirtyCheck) {
@@ -252,6 +268,7 @@ export async function checkoutPrBranch(
   } else {
     await checkoutGitBranch(options.branch, options.prNumber, cwd, deps);
   }
+  const headSha = await deps.readHeadSha(cwd);
 
   // Fetch the base branch so agents can compute diffs against it.
   // Prompts instruct agents to diff against origin/<base> / <base>@origin,
@@ -266,6 +283,55 @@ export async function checkoutPrBranch(
         `Failed to fetch base branch "${options.baseBranch}": ${fetchResult.stderr || 'unknown error'}`
       );
     }
+  }
+
+  if (await deps.getUsingJj(cwd)) {
+    await pinJjToCheckedOutHead(headSha, cwd, deps);
+  }
+
+  return headSha;
+}
+
+/**
+ * In a colocated jj repository, the first jj command after a Git fetch imports the fetched refs.
+ * If a fetched remote bookmark was rewritten (for example, a stacked PR's base branch was rebased
+ * and pushed without its children), that import rebases the checked-out PR commits onto the new
+ * versions. This creates local-only commits and moves Git HEAD to them, so the review would no
+ * longer match the PR head on GitHub. Run the import now, and if HEAD moved, put the working copy
+ * back on the original PR head.
+ */
+async function pinJjToCheckedOutHead(
+  headSha: string,
+  cwd: string,
+  deps: BranchCheckoutDependencies
+): Promise<void> {
+  const importResult = await deps.runCommand(['jj', 'git', 'import'], cwd);
+  if (importResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to import Git refs into jj after PR checkout: ${importResult.stderr || 'unknown error'}`
+    );
+  }
+
+  const importedHeadSha = await deps.readHeadSha(cwd);
+  if (importedHeadSha === headSha) {
+    return;
+  }
+
+  warn(
+    `jj rewrote the checked-out PR head ${headSha} to ${importedHeadSha} while importing Git refs. Restoring the original PR head.`
+  );
+  const newResult = await deps.runCommand(['jj', 'new', headSha], cwd);
+  if (newResult.exitCode !== 0) {
+    throw new Error(
+      `Failed to restore PR head ${headSha} with jj new: ${newResult.stderr || 'unknown error'}`
+    );
+  }
+
+  const restoredHeadSha = await deps.readHeadSha(cwd);
+  if (restoredHeadSha !== headSha) {
+    throw new Error(
+      `Failed to restore PR head ${headSha}: Git HEAD is ${restoredHeadSha} after jj new.`
+    );
   }
 }
 

@@ -234,8 +234,9 @@ describe('review_guide_comment', () => {
     mockParseOwnerRepoFromRepositoryId.mockReturnValue({ owner: 'acme', repo: 'repo' });
     mockFindPullRequestCommentByMarker.mockResolvedValue(null);
     mockAddIssueCommentReaction.mockResolvedValue(undefined);
-    mockCheckoutPrBranch.mockImplementation(async (): Promise<void> => {
+    mockCheckoutPrBranch.mockImplementation(async (): Promise<string> => {
       await $`git checkout -q --detach feature/review-guide`.cwd(tempDir);
+      return (await $`git rev-parse HEAD`.cwd(tempDir).text()).trim();
     });
     mockLoadCustomReviewInstructions.mockResolvedValue('');
     mockPostPullRequestComment.mockResolvedValue({ id: 123, htmlUrl: 'https://comment/123' });

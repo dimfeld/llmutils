@@ -206,7 +206,7 @@ describe('review_pr diff repair', () => {
     mockGetOrCreateProject.mockReturnValue({ id: 7 } as any);
     mockCreateReview.mockReturnValue({ id: 501 } as any);
     mockGetReviewIssues.mockReturnValue([]);
-    mockCheckoutPrBranch.mockResolvedValue(undefined);
+    mockCheckoutPrBranch.mockResolvedValue(headSha);
 
     mockBuildExecutorAndLog.mockImplementation((name, sharedOptions) => {
       if (name === 'claude-code' && (sharedOptions as any)?.model === 'sonnet') {

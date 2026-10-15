@@ -1,5 +1,9 @@
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { $ } from 'bun';
 import type { Database } from 'bun:sqlite';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { PrStatusDetail } from '../db/pr_status.js';
 import {
   checkoutPrBranch,
@@ -295,6 +299,7 @@ describe('checkoutPrBranch', () => {
       })),
       getUsingJj: vi.fn(async () => false),
       runCommand: vi.fn(async () => ({ exitCode: 0, stderr: '' })),
+      readHeadSha: vi.fn(async () => 'head-sha'),
       ...overrides,
     };
   }
@@ -583,5 +588,185 @@ describe('checkoutPrBranch', () => {
       ['git', 'checkout', '--detach', 'origin/fork-feature'],
       '/tmp/repo'
     );
+  });
+
+  test('returns the checked-out PR head SHA', async () => {
+    const deps = makeBranchDeps({ readHeadSha: vi.fn(async () => 'pr-head') });
+
+    const headSha = await checkoutPrBranch(
+      { branch: 'feature/pr-123', baseBranch: 'main', skipDirtyCheck: true, cwd: '/tmp/repo' },
+      deps
+    );
+
+    expect(headSha).toBe('pr-head');
+  });
+
+  test('does not run jj commands in a git repository', async () => {
+    const runCommand = vi.fn(async () => ({ exitCode: 0, stderr: '' }));
+    const deps = makeBranchDeps({ runCommand });
+
+    await checkoutPrBranch(
+      { branch: 'feature/pr-123', baseBranch: 'main', skipDirtyCheck: true, cwd: '/tmp/repo' },
+      deps
+    );
+
+    expect(runCommand.mock.calls.some(([args]) => args[0] === 'jj')).toBe(false);
+  });
+
+  test('imports Git refs into jj after the base fetch and keeps an unchanged HEAD', async () => {
+    const runCommand = vi.fn(async () => ({ exitCode: 0, stderr: '' }));
+    const deps = makeBranchDeps({
+      getUsingJj: vi.fn(async () => true),
+      runCommand,
+      readHeadSha: vi.fn(async () => 'pr-head'),
+    });
+
+    const headSha = await checkoutPrBranch(
+      { branch: 'feature/pr-123', baseBranch: 'main', skipDirtyCheck: true, cwd: '/tmp/repo' },
+      deps
+    );
+
+    expect(headSha).toBe('pr-head');
+    expect(runCommand).toHaveBeenNthCalledWith(3, ['git', 'fetch', 'origin', 'main'], '/tmp/repo');
+    expect(runCommand).toHaveBeenNthCalledWith(4, ['jj', 'git', 'import'], '/tmp/repo');
+    expect(runCommand).toHaveBeenCalledTimes(4);
+  });
+
+  test('restores the PR head when the jj import rewrites it', async () => {
+    const runCommand = vi.fn(async () => ({ exitCode: 0, stderr: '' }));
+    const readHeadSha = vi
+      .fn<(cwd: string) => Promise<string>>()
+      .mockResolvedValueOnce('pr-head')
+      .mockResolvedValueOnce('rewritten-head')
+      .mockResolvedValueOnce('pr-head');
+    const deps = makeBranchDeps({
+      getUsingJj: vi.fn(async () => true),
+      runCommand,
+      readHeadSha,
+    });
+
+    const headSha = await checkoutPrBranch(
+      { branch: 'feature/pr-123', baseBranch: 'main', skipDirtyCheck: true, cwd: '/tmp/repo' },
+      deps
+    );
+
+    expect(headSha).toBe('pr-head');
+    expect(runCommand).toHaveBeenNthCalledWith(4, ['jj', 'git', 'import'], '/tmp/repo');
+    expect(runCommand).toHaveBeenNthCalledWith(5, ['jj', 'new', 'pr-head'], '/tmp/repo');
+  });
+
+  test('throws when HEAD is still wrong after restoring the PR head', async () => {
+    const readHeadSha = vi
+      .fn<(cwd: string) => Promise<string>>()
+      .mockResolvedValueOnce('pr-head')
+      .mockResolvedValue('rewritten-head');
+    const deps = makeBranchDeps({
+      getUsingJj: vi.fn(async () => true),
+      readHeadSha,
+    });
+
+    await expect(
+      checkoutPrBranch({ branch: 'feature/pr-123', skipDirtyCheck: true, cwd: '/tmp/repo' }, deps)
+    ).rejects.toThrow('Failed to restore PR head pr-head: Git HEAD is rewritten-head');
+  });
+
+  test('throws when jj new fails while restoring the PR head', async () => {
+    const runCommand = vi.fn(async (args: string[]) =>
+      args[0] === 'jj' && args[1] === 'new'
+        ? { exitCode: 1, stderr: 'Revision not found' }
+        : { exitCode: 0, stderr: '' }
+    );
+    const readHeadSha = vi
+      .fn<(cwd: string) => Promise<string>>()
+      .mockResolvedValueOnce('pr-head')
+      .mockResolvedValue('rewritten-head');
+    const deps = makeBranchDeps({
+      getUsingJj: vi.fn(async () => true),
+      runCommand,
+      readHeadSha,
+    });
+
+    await expect(
+      checkoutPrBranch({ branch: 'feature/pr-123', skipDirtyCheck: true, cwd: '/tmp/repo' }, deps)
+    ).rejects.toThrow('Failed to restore PR head pr-head with jj new: Revision not found');
+  });
+
+  test('throws when the jj import fails', async () => {
+    const runCommand = vi.fn(async (args: string[]) =>
+      args[0] === 'jj' ? { exitCode: 1, stderr: 'jj exploded' } : { exitCode: 0, stderr: '' }
+    );
+    const deps = makeBranchDeps({
+      getUsingJj: vi.fn(async () => true),
+      runCommand,
+    });
+
+    await expect(
+      checkoutPrBranch({ branch: 'feature/pr-123', skipDirtyCheck: true, cwd: '/tmp/repo' }, deps)
+    ).rejects.toThrow('Failed to import Git refs into jj after PR checkout: jj exploded');
+  });
+});
+
+describe.skipIf(!Bun.which('jj'))('checkoutPrBranch in a colocated jj repository', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-pr-checkout-jj-'));
+    vi.stubEnv('JJ_USER', 'Test User');
+    vi.stubEnv('JJ_EMAIL', 'test@example.com');
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  async function headCommit(cwd: string): Promise<string> {
+    return (await $`git rev-parse HEAD`.cwd(cwd).quiet().text()).trim();
+  }
+
+  test('keeps the PR head when the base branch was rewritten and pushed without its child', async () => {
+    const remote = path.join(tempDir, 'remote.git');
+    const author = path.join(tempDir, 'author');
+    const workspace = path.join(tempDir, 'workspace');
+    await $`git init -q --bare ${remote}`.quiet();
+
+    // The author pushes a base branch and a stacked child branch with jj, so the commits carry
+    // jj change IDs.
+    await $`jj git init --colocate ${author}`.quiet();
+    await $`git remote add origin ${remote}`.cwd(author).quiet();
+    await fs.writeFile(path.join(author, 'a.txt'), 'base\n');
+    await $`jj commit -m base`.cwd(author).quiet();
+    await $`jj bookmark set base -r @-`.cwd(author).quiet();
+    await fs.writeFile(path.join(author, 'b.txt'), 'child\n');
+    await $`jj commit -m child`.cwd(author).quiet();
+    await $`jj bookmark set child -r @-`.cwd(author).quiet();
+    await $`jj git push -b base -b child`.cwd(author).quiet();
+
+    // A reused review workspace already tracks both bookmarks.
+    await $`git clone -q ${remote} ${workspace}`.quiet();
+    await $`jj git init --colocate`.cwd(workspace).quiet();
+    await $`jj bookmark track base --remote origin`.cwd(workspace).quiet();
+    await $`jj bookmark track child --remote origin`.cwd(workspace).quiet();
+    const childHead = (await $`git rev-parse origin/child`.cwd(workspace).quiet().text()).trim();
+
+    // The author rewrites the base and pushes only the base.
+    await $`jj edit base`.cwd(author).quiet();
+    await fs.writeFile(path.join(author, 'a.txt'), 'base v2\n');
+    await $`jj new`.cwd(author).quiet();
+    await $`jj git push -b base`.cwd(author).quiet();
+
+    const headSha = await checkoutPrBranch({
+      branch: 'child',
+      baseBranch: 'base',
+      skipDirtyCheck: true,
+      cwd: workspace,
+    });
+
+    expect(headSha).toBe(childHead);
+    expect(await headCommit(workspace)).toBe(childHead);
+
+    // Later jj commands must not move HEAD again.
+    await $`jj status`.cwd(workspace).quiet();
+    expect(await headCommit(workspace)).toBe(childHead);
   });
 });

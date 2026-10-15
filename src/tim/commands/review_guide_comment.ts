@@ -303,17 +303,6 @@ export async function handlePrReviewCommandStatusCommand(): Promise<void> {
   );
 }
 
-async function resolveHeadSha(baseDir: string): Promise<string> {
-  const result = await $`git rev-parse HEAD`.cwd(baseDir).quiet().nothrow();
-  const sha = result.stdout.toString().trim();
-  if (result.exitCode !== 0 || !sha) {
-    throw new Error(
-      `Failed to resolve the checked-out PR head commit: ${result.stderr.toString().trim() || 'git rev-parse failed.'}`
-    );
-  }
-  return sha;
-}
-
 /** State of the automatic review that runs next to the guide comment. */
 export type AutoReviewState =
   | { kind: 'queued' }
@@ -636,7 +625,7 @@ export async function handlePrReviewGuideCommentCommand(
           updateHeadlessSessionInfo({ workspacePath: baseDir });
         }
 
-        await checkoutPrBranch({
+        const reviewedSha = await checkoutPrBranch({
           branch: prContext.headBranch,
           baseBranch: prContext.baseBranch,
           prNumber: prContext.prNumber,
@@ -668,7 +657,7 @@ export async function handlePrReviewGuideCommentCommand(
                 prStatusId: prContext.prStatus.id,
                 metadata: buildPrMetadata(prContext, baseSha),
                 baseSha,
-                reviewedSha: await resolveHeadSha(baseDir),
+                reviewedSha,
                 customInstructions: await loadCustomReviewInstructions(config, baseDir),
                 authToken: appToken,
                 dryRun: options.dryRun,
@@ -725,7 +714,6 @@ export async function handlePrReviewGuideCommentCommand(
           });
         };
         if (postReview) {
-          const reviewedSha = await resolveHeadSha(baseDir);
           reviewState = { kind: 'queued' };
           reviewPromise = withReviewQueue({
             concurrency: config.reviewGuideComments?.reviewConcurrency ?? 2,
