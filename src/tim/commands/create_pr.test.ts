@@ -176,6 +176,12 @@ describe('create_pr command helpers', () => {
       expect(prompt).toContain('Plan ID: 317');
       expect(prompt).toContain('Issue reference: DF-123');
       expect(prompt).toContain('latest(ancestors(trunk()) & ancestors(@))');
+      // The base commit must be excluded from the history and diff ranges.
+      expect(prompt).toContain(
+        "jj log -r 'latest(ancestors(trunk()) & ancestors(@))..@' --summary"
+      );
+      expect(prompt).toContain("jj diff -r 'latest(ancestors(trunk()) & ancestors(@))..@' -s");
+      expect(prompt).not.toContain('ancestors(@))::@');
       expect(prompt).toContain('omit this section when the plan details do not contain');
       expect(prompt).toContain('include an "Out of scope" subsection');
       expect(prompt).toContain('Be very careful with shell quoting and backslash escaping');

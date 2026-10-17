@@ -162,11 +162,11 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
       : 'git add -A && git commit -m "<message>"';
   const diffSummaryCommand =
     options.vcsType === 'jj'
-      ? `jj diff -r '${baseRef}::@' -s | grep '^[MA]' | nl`
+      ? `jj diff -r '${baseRef}..@' -s | grep '^[MA]' | nl`
       : `git diff --name-status ${baseRef}...HEAD | grep '^[AM]' | nl`;
   const historyCommand =
     options.vcsType === 'jj'
-      ? `jj log -r '${baseRef}::@' --summary`
+      ? `jj log -r '${baseRef}..@' --summary`
       : `git log --oneline ${baseRef}..HEAD`;
   const pushCommand =
     options.vcsType === 'jj'
@@ -210,7 +210,7 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     `List the files that will be included in the PR: run \`${diffSummaryCommand}\``,
     '',
     'Group the files by functional area and examine each file diff carefully. Use per-file diff commands as needed. Do not run any lint or tests, you are only trying to figure out what the changes do.',
-    `For each file, use ${options.vcsType === 'jj' ? "`jj diff -r '" + baseRef + "::@' <file>`" : '`git diff ' + baseRef + '...HEAD -- <file>`'}.`,
+    `For each file, use ${options.vcsType === 'jj' ? "`jj diff -r '" + baseRef + "..@' <file>`" : '`git diff ' + baseRef + '...HEAD -- <file>`'}.`,
     'If you find an issue tracker reference in plan files or code comments, include it in the PR title/body where appropriate.',
     '',
     '## Step 3: Commit New Changes (if needed)',
