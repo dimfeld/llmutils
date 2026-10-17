@@ -19,7 +19,7 @@ import type { PlanSchema } from '../planSchema.js';
 import { type PendingTaskResult, findPendingTask, findNextActionableItem } from './find_next.js';
 import { removePlanAssignment } from '../assignments/remove_plan_assignment.js';
 import { resolveWritablePath } from './resolve_writable_path.js';
-import { getCompletionStatus, isWorkComplete } from './plan_state_utils.js';
+import { getCompletionStatus, isWorkComplete, isWorkCompleteStatus } from './plan_state_utils.js';
 
 type MarkDoneResult = {
   planComplete: boolean;
@@ -319,11 +319,7 @@ async function finalizeTaskMutation(
   if (planComplete && planData.parent && config) {
     try {
       const parentPlan = await checkAndMarkParentDone(planData.parent, config, repoRoot);
-      if (
-        parentPlan &&
-        (parentPlan.status === 'done' || parentPlan.status === 'needs_review') &&
-        options.commit
-      ) {
+      if (parentPlan && isWorkCompleteStatus(parentPlan.status) && options.commit) {
         const title = parentPlan.title ? ` "${parentPlan.title}"` : '';
         await commitAll(
           `Mark plan${title} as ${parentPlan.status} (ID: ${parentPlan.id})`,

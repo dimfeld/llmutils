@@ -607,6 +607,75 @@ describe('common/github/webhook_ingest', () => {
     }
   });
 
+  test('ingestWebhookEvents advances an epic parent to reviewed and then done as its child PR moves forward', async () => {
+    const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
+    const pr = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/90',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 90,
+      title: 'Child PR',
+      state: 'open',
+      draft: true,
+      lastFetchedAt: '2026-03-30T09:00:00.000Z',
+    });
+    const epicUuid = '00000000-0000-4000-8000-000000000090';
+    const childUuid = '00000000-0000-4000-8000-000000000091';
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: epicUuid,
+      planId: 90,
+      title: 'Epic',
+      filename: '90.plan.md',
+      status: 'needs_review',
+      epic: true,
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: childUuid,
+      planId: 91,
+      title: 'Child',
+      branch: 'feature/epic-child',
+      filename: '91.plan.md',
+      status: 'needs_review',
+      parentUuid: epicUuid,
+      tasks: [{ title: 'Task 1', description: 'Done', done: true }],
+    });
+    linkPlanToPr(childUuid, pr.status.id);
+    mocks.fetchAndUpdatePrMergeableStatus.mockResolvedValue(undefined);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    enqueuePullRequestEvent({
+      id: 90,
+      deliveryId: 'delivery-epic-child-ready',
+      action: 'ready_for_review',
+      prNumber: 90,
+      title: 'Child PR',
+      draft: false,
+      headRef: 'feature/epic-child',
+      requestedReviewers: ['bob'],
+    });
+    expect((await ingestWebhookEvents(db)).errors).toEqual([]);
+    expect(getPlanByUuid(db, childUuid)?.status).toBe('reviewed');
+    expect(getPlanByUuid(db, epicUuid)?.status).toBe('reviewed');
+
+    enqueuePullRequestEvent({
+      id: 91,
+      deliveryId: 'delivery-epic-child-merged',
+      action: 'closed',
+      prNumber: 90,
+      title: 'Child PR',
+      draft: false,
+      state: 'closed',
+      mergedAt: '2026-03-30T11:00:00.000Z',
+      headRef: 'feature/epic-child',
+      receivedAt: '2026-03-30T11:00:00.000Z',
+      updatedAt: '2026-03-30T11:00:00.000Z',
+    });
+    expect((await ingestWebhookEvents(db)).errors).toEqual([]);
+    logSpy.mockRestore();
+    expect(getPlanByUuid(db, childUuid)?.status).toBe('done');
+    expect(getPlanByUuid(db, epicUuid)?.status).toBe('done');
+  });
+
   test('ingestWebhookEvents keeps a plan in needs_review until all linked PRs are ready', async () => {
     const projectId = getOrCreateProject(db, 'github.com__example__repo').id;
     const firstPr = upsertPrStatus(db, {

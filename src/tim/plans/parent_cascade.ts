@@ -15,7 +15,7 @@ import type { PlanSchema } from '../planSchema.js';
 import { invertPlanIdToUuidMap, planRowForTransaction } from '../plans_db.js';
 import { writePlanFile } from '../plans.js';
 import { findNextActionableItem } from './find_next.js';
-import { getCompletionStatus, isWorkCompleteStatus } from './plan_state_utils.js';
+import { getCompletionStatus, isWorkCompleteStatus, type PlanStatus } from './plan_state_utils.js';
 import { getProjectUuidForId, writePlanListAdd, writePlanSetStatus } from '../sync/write_router.js';
 
 type ParentCascadeOptions = {
@@ -32,6 +32,65 @@ async function getRepoRoot(baseDir?: string): Promise<string> {
   }
 
   return (await getGitRoot()) ?? process.cwd();
+}
+
+/** Rank of each auto-completed status, from least to most advanced. */
+const COMPLETION_STATUS_RANK: Partial<Record<PlanStatus, number>> = {
+  needs_review: 0,
+  review_deferred: 1,
+  reviewed: 2,
+  done: 3,
+};
+
+/**
+ * Determines the status an epic parent should move to based on its children.
+ * The parent takes the least advanced completion status of its non-cancelled children, so it
+ * moves to `reviewed` when all children are reviewed and to `done` when all children are done.
+ * The parent only moves forward; this returns undefined when no status change is needed.
+ */
+function getParentCascadeStatus(
+  parentPlan: PlanSchema,
+  childStatuses: string[],
+  config: TimConfig
+): PlanStatus | undefined {
+  const parentStatus = parentPlan.status ?? 'pending';
+  if (parentStatus === 'done' || parentStatus === 'cancelled' || parentStatus === 'deferred') {
+    return undefined;
+  }
+
+  if (
+    !parentPlan.epic ||
+    childStatuses.length === 0 ||
+    !childStatuses.every((status) => isWorkCompleteStatus(status)) ||
+    findNextActionableItem(parentPlan) !== null
+  ) {
+    return undefined;
+  }
+
+  const completionStatus = getCompletionStatus(config);
+  const activeChildStatuses = childStatuses.filter((status) => status !== 'cancelled');
+  let targetStatus: PlanStatus = completionStatus;
+  if (completionStatus !== 'done' && activeChildStatuses.length > 0) {
+    targetStatus = 'done';
+    for (const status of activeChildStatuses) {
+      const rank = COMPLETION_STATUS_RANK[status as PlanStatus] ?? 0;
+      if (rank < COMPLETION_STATUS_RANK[targetStatus]!) {
+        targetStatus = status as PlanStatus;
+      }
+    }
+  }
+
+  const currentRank = COMPLETION_STATUS_RANK[parentStatus];
+  if (currentRank !== undefined && currentRank >= COMPLETION_STATUS_RANK[targetStatus]!) {
+    return undefined;
+  }
+
+  return targetStatus;
+}
+
+/** Parents in these statuses are not changed by the cascade and are not returned to callers. */
+function isSkippedParentStatus(status: PlanSchema['status']): boolean {
+  return status === 'deferred' || isWorkCompleteStatus(status);
 }
 
 async function materializedPathOrNull(repoRoot: string, planId: number): Promise<string | null> {
@@ -67,23 +126,14 @@ async function checkAndMarkParentDoneInDb(
   }
 
   const parentPlan = planRowForTransaction(parentRow, uuidToPlanId);
-  if (
-    parentPlan.status === 'done' ||
-    parentPlan.status === 'cancelled' ||
-    parentPlan.status === 'needs_review' ||
-    parentPlan.status === 'review_deferred' ||
-    parentPlan.status === 'reviewed' ||
-    parentPlan.status === 'deferred'
-  ) {
-    return undefined;
-  }
-
   const childRows = getPlansByParentUuid(db, projectId, parentRow.uuid);
-  const allChildrenDone = childRows.every((row) => isWorkCompleteStatus(row.status));
-  const hasUnfinishedTasks = findNextActionableItem(parentPlan) !== null;
-
-  if (!(allChildrenDone && childRows.length > 0 && parentPlan.epic) || hasUnfinishedTasks) {
-    return parentPlan;
+  const targetStatus = getParentCascadeStatus(
+    parentPlan,
+    childRows.map((row) => row.status),
+    config
+  );
+  if (!targetStatus) {
+    return isSkippedParentStatus(parentPlan.status) ? undefined : parentPlan;
   }
 
   const children = childRows.map((row) => planRowForTransaction(row, uuidToPlanId));
@@ -94,7 +144,7 @@ async function checkAndMarkParentDoneInDb(
 
   const updatedParent: PlanSchema = {
     ...parentPlan,
-    status: getCompletionStatus(config),
+    status: targetStatus,
     updatedAt: new Date().toISOString(),
     changedFiles:
       allChangedFiles.size > 0 ? Array.from(allChangedFiles).toSorted() : parentPlan.changedFiles,
@@ -134,7 +184,7 @@ export async function checkAndMarkParentDone(
       options
     );
 
-    if (result && (result.status === 'done' || result.status === 'needs_review')) {
+    if (result && isWorkCompleteStatus(result.status)) {
       if (result.status === 'done') {
         if (result.uuid) {
           removeAssignment(options.db, options.projectId, result.uuid);
@@ -162,23 +212,14 @@ export async function checkAndMarkParentDone(
     }
 
     const parentPlan = planRowForTransaction(parentRow, context.uuidToPlanId);
-    if (
-      parentPlan.status === 'done' ||
-      parentPlan.status === 'cancelled' ||
-      parentPlan.status === 'needs_review' ||
-      parentPlan.status === 'review_deferred' ||
-      parentPlan.status === 'reviewed' ||
-      parentPlan.status === 'deferred'
-    ) {
-      return undefined;
-    }
-
     const childRows = getPlansByParentUuid(db, context.projectId, parentRow.uuid);
-    const allChildrenDone = childRows.every((row) => isWorkCompleteStatus(row.status));
-    const hasUnfinishedTasks = findNextActionableItem(parentPlan) !== null;
-
-    if (!(allChildrenDone && childRows.length > 0 && parentPlan.epic) || hasUnfinishedTasks) {
-      return parentPlan;
+    const targetStatus = getParentCascadeStatus(
+      parentPlan,
+      childRows.map((row) => row.status),
+      config
+    );
+    if (!targetStatus) {
+      return isSkippedParentStatus(parentPlan.status) ? undefined : parentPlan;
     }
 
     const children = childRows.map((row) => planRowForTransaction(row, context.uuidToPlanId));
@@ -189,7 +230,7 @@ export async function checkAndMarkParentDone(
 
     const updatedParent: PlanSchema = {
       ...parentPlan,
-      status: getCompletionStatus(config),
+      status: targetStatus,
       updatedAt: new Date().toISOString(),
       changedFiles:
         allChangedFiles.size > 0 ? Array.from(allChangedFiles).toSorted() : parentPlan.changedFiles,
@@ -201,7 +242,7 @@ export async function checkAndMarkParentDone(
     return updatedParent;
   });
 
-  if (result && (result.status === 'done' || result.status === 'needs_review')) {
+  if (result && isWorkCompleteStatus(result.status)) {
     if (result.status === 'done') {
       await removePlanAssignment(result, options.baseDir);
     }

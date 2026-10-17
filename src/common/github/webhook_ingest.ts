@@ -313,6 +313,7 @@ async function applyDraftReadyStatusToLinkedPlans(
     quiet: true,
   });
 
+  const updatedParentIds = new Set<number>();
   for (const planUuid of linkedPlanUuids) {
     const planRow = getPlanByUuid(db, planUuid);
     if (!planRow || planRow.status !== sourceStatus) {
@@ -345,6 +346,17 @@ async function applyDraftReadyStatusToLinkedPlans(
     console.log(
       `[webhook-ingest] auto-updated plan ${planRow.plan_id ?? planUuid} status ${sourceStatus} -> ${targetStatus} after PR ${owner}/${repo}#${prNumber} ${transition}`
     );
+
+    const parentRow = planRow.parent_uuid ? getPlanByUuid(db, planRow.parent_uuid) : null;
+    if (parentRow) {
+      updatedParentIds.add(parentRow.plan_id);
+    }
+  }
+
+  if (transition === 'became_ready') {
+    for (const parentId of updatedParentIds) {
+      await checkAndMarkParentDone(parentId, config, { db, projectId: project.id });
+    }
   }
 }
 

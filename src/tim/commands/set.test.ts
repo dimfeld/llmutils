@@ -285,7 +285,7 @@ describe('tim set command', () => {
     ).toBe(true);
   });
 
-  test('marks epic parent done when last incomplete child is set to cancelled', async () => {
+  test('marks epic parent done when last incomplete child is set to cancelled and the rest are done', async () => {
     const parentPlanPath = await createTestPlan(114, {
       epic: true,
       status: 'in_progress',
@@ -313,10 +313,10 @@ describe('tim set command', () => {
 
     expect(updatedLastChild.status).toBe('cancelled');
     expect(doneChild.status).toBe('done');
-    expect(updatedParent.status).toBe('needs_review');
+    expect(updatedParent.status).toBe('done');
   });
 
-  test('marks epic parent needs_review when last incomplete child is set to reviewed', async () => {
+  test('marks epic parent reviewed when last incomplete child is set to reviewed', async () => {
     const parentPlanPath = await createTestPlan(119, {
       epic: true,
       status: 'in_progress',
@@ -344,7 +344,88 @@ describe('tim set command', () => {
 
     expect(updatedLastChild.status).toBe('reviewed');
     expect(doneChild.status).toBe('done');
-    expect(updatedParent.status).toBe('needs_review');
+    expect(updatedParent.status).toBe('reviewed');
+  });
+
+  test('advances a needs_review epic parent to reviewed and then done as children advance', async () => {
+    await createTestPlan(140, {
+      epic: true,
+      status: 'needs_review',
+    });
+    await createTestPlan(141, {
+      parent: 140,
+      status: 'needs_review',
+    });
+    await createTestPlan(142, {
+      parent: 140,
+      status: 'needs_review',
+    });
+
+    await handleSetCommand(141, { status: 'reviewed' }, globalOpts);
+    expect((await resolvePlanByNumericId(140, tempDir)).plan.status).toBe('needs_review');
+
+    await handleSetCommand(142, { status: 'reviewed' }, globalOpts);
+    expect((await resolvePlanByNumericId(140, tempDir)).plan.status).toBe('reviewed');
+
+    await handleSetCommand(141, { status: 'done' }, globalOpts);
+    expect((await resolvePlanByNumericId(140, tempDir)).plan.status).toBe('reviewed');
+
+    await handleSetCommand(142, { status: 'done' }, globalOpts);
+    expect((await resolvePlanByNumericId(140, tempDir)).plan.status).toBe('done');
+  });
+
+  test('keeps epic parent at the least advanced child completion status', async () => {
+    await createTestPlan(143, {
+      epic: true,
+      status: 'in_progress',
+    });
+    await createTestPlan(144, {
+      parent: 143,
+      status: 'done',
+    });
+    await createTestPlan(145, {
+      parent: 143,
+      status: 'in_progress',
+    });
+
+    await handleSetCommand(145, { status: 'needs_review' }, globalOpts);
+
+    expect((await resolvePlanByNumericId(143, tempDir)).plan.status).toBe('needs_review');
+  });
+
+  test('does not move a reviewed epic parent back when a child moves back to needs_review', async () => {
+    await createTestPlan(146, {
+      epic: true,
+      status: 'reviewed',
+    });
+    await createTestPlan(147, {
+      parent: 146,
+      status: 'reviewed',
+    });
+
+    await handleSetCommand(147, { status: 'needs_review' }, globalOpts);
+
+    expect((await resolvePlanByNumericId(146, tempDir)).plan.status).toBe('reviewed');
+  });
+
+  test('marks epic parent done directly when planAutocompleteStatus is done', async () => {
+    await createTestPlan(148, {
+      epic: true,
+      status: 'in_progress',
+    });
+    await createTestPlan(149, {
+      parent: 148,
+      status: 'in_progress',
+    });
+
+    await Bun.file(configPath).write(
+      yaml.stringify({ paths: { tasks: tasksDir }, planAutocompleteStatus: 'done' })
+    );
+    clearAllTimCaches();
+
+    await handleSetCommand(149, { status: 'needs_review' }, globalOpts);
+
+    expect((await resolvePlanByNumericId(148, tempDir)).plan.status).toBe('done');
   });
 
   test('should add dependencies', async () => {

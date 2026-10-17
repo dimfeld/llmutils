@@ -196,7 +196,7 @@ describe('Parent Plan Completion', () => {
       title: 'Child Plan',
       goal: 'Child goal',
       details: 'Child details',
-      status: 'done',
+      status: 'needs_review',
       parent: 1,
       tasks: [
         {
@@ -233,17 +233,17 @@ describe('Parent Plan Completion', () => {
     const parentPath = path.join(tasksDir, 'parent-cancelled.yaml');
     await writeDbBackedPlan(parentPath, parentPlan);
 
-    const doneChild: PlanSchemaInput = {
+    const reviewChild: PlanSchemaInput = {
       id: 2,
-      title: 'Done Child',
-      goal: 'Done child goal',
-      details: 'Done child details',
-      status: 'done',
+      title: 'Review Child',
+      goal: 'Review child goal',
+      details: 'Review child details',
+      status: 'needs_review',
       parent: 1,
       tasks: [],
       updatedAt: new Date().toISOString(),
     };
-    await writeDbBackedPlan(path.join(tasksDir, 'done-child.yaml'), doneChild);
+    await writeDbBackedPlan(path.join(tasksDir, 'review-child.yaml'), reviewChild);
 
     const cancelledChild: PlanSchemaInput = {
       id: 3,

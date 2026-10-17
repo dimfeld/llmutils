@@ -631,7 +631,7 @@ describe('write_router integration: parent cascade no double-emit', () => {
     expect(nonParentSeq).toHaveLength(0);
   });
 
-  test('cascade preserves an already reviewed epic parent', async () => {
+  test('cascade advances an already reviewed epic parent to done when all children are done', async () => {
     upsertPlanForSyncTest(db, projectId, {
       uuid: PARENT_UUID,
       planId: 1,
@@ -651,9 +651,46 @@ describe('write_router integration: parent cascade no double-emit', () => {
 
     const result = await checkAndMarkParentDone(1, config, { db, projectId });
 
-    expect(result).toBeUndefined();
+    expect(result?.status).toBe('done');
     const parent = getPlanByUuid(db, PARENT_UUID)!;
-    expect(parent.status).toBe('reviewed');
+    expect(parent.status).toBe('done');
+
+    const parentSeqRows = db
+      .prepare('SELECT target_key FROM sync_sequence WHERE target_key = ?')
+      .all(`plan:${PARENT_UUID}`);
+    expect(parentSeqRows).toHaveLength(1);
+  });
+
+  test('cascade preserves an already reviewed epic parent when a child is still in needs_review', async () => {
+    upsertPlanForSyncTest(db, projectId, {
+      uuid: PARENT_UUID,
+      planId: 1,
+      title: 'Reviewed Parent Epic',
+      status: 'reviewed',
+      epic: true,
+      forceOverwrite: true,
+    });
+    upsertPlanForSyncTest(db, projectId, {
+      uuid: CHILD2_UUID,
+      planId: 3,
+      title: 'Child 2',
+      status: 'needs_review',
+      parentUuid: PARENT_UUID,
+      forceOverwrite: true,
+    });
+
+    const config: TimConfig = {
+      sync: {
+        role: 'main',
+        nodeId: NODE_ID,
+        allowedNodes: [],
+      },
+    } as TimConfig;
+
+    const result = await checkAndMarkParentDone(1, config, { db, projectId });
+
+    expect(result).toBeUndefined();
+    expect(getPlanByUuid(db, PARENT_UUID)!.status).toBe('reviewed');
 
     const parentSeqRows = db
       .prepare('SELECT target_key FROM sync_sequence WHERE target_key = ?')

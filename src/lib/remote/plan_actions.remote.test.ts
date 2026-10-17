@@ -2171,9 +2171,7 @@ describe('plan remote actions', () => {
         getAssignment(currentDb, projectId, '11111111-1111-4111-8111-111111111101')
       ).toBeNull();
       expect(getPlanByUuid(currentDb, '11111111-1111-4111-8111-111111111101')?.status).toBe('done');
-      expect(getPlanByUuid(currentDb, '11111111-1111-4111-8111-111111111106')?.status).toBe(
-        'needs_review'
-      );
+      expect(getPlanByUuid(currentDb, '11111111-1111-4111-8111-111111111106')?.status).toBe('done');
     });
 
     test('uses per-project config for quick-finish eligibility', async () => {

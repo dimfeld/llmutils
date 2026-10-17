@@ -111,7 +111,7 @@ describe('tim set DB-first command', () => {
     const updatedParent = await resolvePlanByNumericId(10, tempDir);
     const updatedChild = await resolvePlanByNumericId(12, tempDir);
     expect(updatedChild.plan.status).toBe('cancelled');
-    expect(updatedParent.plan.status).toBe('needs_review');
+    expect(updatedParent.plan.status).toBe('done');
   });
 
   test('re-materializes a parent copy after reassigning a child', async () => {

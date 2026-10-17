@@ -326,7 +326,7 @@ describe('plan metadata remote commands', () => {
     });
 
     expect(getPlanByUuid(currentDb, cascadeChildUuid)?.status).toBe('done');
-    expect(getPlanByUuid(currentDb, cascadeParentUuid)?.status).toBe('needs_review');
+    expect(getPlanByUuid(currentDb, cascadeParentUuid)?.status).toBe('done');
     expect(assignmentCount(cascadeChildUuid)).toBe(0);
     expect(syncOperationRows().map((row) => row.operation_type)).toEqual([
       'plan.set_scalar',

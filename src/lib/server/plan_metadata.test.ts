@@ -793,7 +793,7 @@ describe('updatePlanMetadataFromWeb', () => {
     });
 
     expect(getPlanByUuid(db, cascadeChildUuid)?.status).toBe('done');
-    expect(getPlanByUuid(db, cascadeParentUuid)?.status).toBe('needs_review');
+    expect(getPlanByUuid(db, cascadeParentUuid)?.status).toBe('done');
   });
 
   function seedPlan(options: {
@@ -1031,7 +1031,7 @@ describe('plan metadata materialized file consistency', () => {
 
     const refreshedParent = await readPlanFile(parentPath);
     expect(refreshedParent.details).toBe('Parent local materialized edit before cascade');
-    expect(refreshedParent.status).toBe('needs_review');
+    expect(refreshedParent.status).toBe('done');
   });
 
   function seedPlan(options: {
