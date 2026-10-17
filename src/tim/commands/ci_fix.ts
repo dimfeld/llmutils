@@ -37,6 +37,11 @@ import { LifecycleManager } from '../lifecycle.js';
 import { isShuttingDown } from '../shutdown_state.js';
 import { TMP_DIR } from '../plan_materialize.js';
 import {
+  buildRebaseInstructions,
+  detectPrFixRebaseStatus,
+  type PrFixRebaseStatus,
+} from './pr_fix_rebase.js';
+import {
   ensurePrFixHeadBranchPushableOnOrigin,
   fetchPrFixBaseBranch,
   resolvePrFixTarget,
@@ -67,6 +72,8 @@ export type CiFixCommandOptions = PrFixCommandOptions;
 
 export interface CiFixPromptOptions {
   noRequiredConfig?: boolean;
+  /** Set when the PR branch is behind its base branch, so the agent offers a rebase first. */
+  rebaseStatus?: PrFixRebaseStatus;
 }
 
 function resolveStringOption(value: unknown): string | undefined {
@@ -326,11 +333,20 @@ export function buildCiFixPrompt(
     });
   }
 
+  if (options.rebaseStatus) {
+    prompt.push(...buildRebaseInstructions(options.rebaseStatus, 'ci'));
+  }
+
   prompt.push(
     '## Responsibilities',
     '',
     '1. Read every available log and diagnose the root cause of every failing check, whether the check is required or not. For checks without logs, investigate using the provided details URL.',
     '2. Present a numbered summary of every failure with its diagnosis and a proposed fix. Ask the user what to do about each one, waiting for direction before making changes.',
+    ...(options.rebaseStatus
+      ? [
+          '   In the same message, also ask the user if they want to rebase this branch onto the updated base branch before you apply the fixes. See "Base Branch Updates" above.',
+        ]
+      : []),
     '3. Apply fixes for the REQUIRED failures only. Apply fixes for not-required failures only if the user asks. When a failure is environmental or flaky, propose re-running the check instead of changing code when that is the appropriate action.',
     '4. Run the relevant local checks and tests to verify the fixes.',
     '5. Commit the code changes and push them to the pull request branch. If the repository uses jj, update the current bookmark to the commit you created before pushing, for example `jj bookmark set <current-bookmark> -r @-`.',
@@ -526,8 +542,11 @@ export async function executeCiFixCommand({
       destDir: ciFixLogDirectory,
     });
 
+    // The base branch was already fetched during workspace setup.
+    const rebaseStatus = await detectPrFixRebaseStatus(currentBaseDir, currentTarget.baseBranch);
     const fixPrompt = buildCiFixPrompt(currentTarget, manifest, {
       noRequiredConfig: selectedChecks.noRequiredConfig,
+      rebaseStatus,
     });
     const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
       config,

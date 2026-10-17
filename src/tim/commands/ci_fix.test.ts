@@ -136,6 +136,11 @@ vi.mock('../workspace/workspace_roundtrip.js', () => ({
   runPostExecutionWorkspaceSync: vi.fn(),
 }));
 
+vi.mock('./pr_fix_rebase.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./pr_fix_rebase.js')>()),
+  detectPrFixRebaseStatus: vi.fn(),
+}));
+
 vi.mock('./pr.js', () => ({
   ensurePrFixHeadBranchPushableOnOrigin: vi.fn(),
   fetchPrFixBaseBranch: vi.fn(),
@@ -166,6 +171,7 @@ import {
   runPreExecutionWorkspaceSync as mockRunPreExecutionWorkspaceSyncFn,
 } from '../workspace/workspace_roundtrip.js';
 import { touchWorkspaceInfo as mockTouchWorkspaceInfoFn } from '../workspace/workspace_info.js';
+import { detectPrFixRebaseStatus as mockDetectPrFixRebaseStatusFn } from './pr_fix_rebase.js';
 import {
   ensurePrFixHeadBranchPushableOnOrigin as mockEnsurePrFixHeadBranchPushableOnOriginFn,
   fetchPrFixBaseBranch as mockFetchPrFixBaseBranchFn,
@@ -194,6 +200,7 @@ const mockEnsurePrFixHeadBranchPushableOnOrigin = vi.mocked(
   mockEnsurePrFixHeadBranchPushableOnOriginFn
 );
 const mockFetchPrFixBaseBranch = vi.mocked(mockFetchPrFixBaseBranchFn);
+const mockDetectPrFixRebaseStatus = vi.mocked(mockDetectPrFixRebaseStatusFn);
 const mockResolvePrFixTarget = vi.mocked(mockResolvePrFixTargetFn);
 const mockResolvePrFixTargetIntent = vi.mocked(mockResolvePrFixTargetIntentFn);
 
@@ -397,6 +404,8 @@ describe('tim/commands/ci_fix', () => {
     mockTouchWorkspaceInfo.mockImplementation(() => {});
     mockEnsurePrFixHeadBranchPushableOnOrigin.mockResolvedValue(undefined);
     mockFetchPrFixBaseBranch.mockResolvedValue(undefined);
+    mockDetectPrFixRebaseStatus.mockReset();
+    mockDetectPrFixRebaseStatus.mockResolvedValue(undefined);
     mockGetOctokit.mockReturnValue({} as never);
   });
 
@@ -480,6 +489,44 @@ describe('tim/commands/ci_fix', () => {
     expect(prompt).toContain(
       'No required-check configuration was found in branch protection or rulesets; all failing checks are in scope.'
     );
+  });
+
+  test('omits rebase instructions when no rebase is needed', () => {
+    const prompt = buildCiFixPrompt(makeTarget(), []);
+    expect(prompt).not.toContain('## Base Branch Updates');
+    expect(prompt).not.toContain('rebase this branch');
+  });
+
+  test('asks the user about rebasing before CI fixes when the branch is behind its base', () => {
+    const prompt = buildCiFixPrompt(makeTarget(), [], { rebaseStatus: { baseBranch: 'main' } });
+
+    expect(prompt).toContain('## Base Branch Updates');
+    expect(prompt).toContain(
+      'Before you apply any CI fixes, ask the user if they want to rebase this branch onto the latest `main` from origin and fix any conflicts.'
+    );
+    expect(prompt).toContain('jj rebase -b @ -d main@origin');
+    expect(prompt).toContain('the downloaded logs show the results from before the rebase');
+    expect(prompt).toContain('In the same message, also ask the user if they want to rebase');
+    expect(prompt.indexOf('## Base Branch Updates')).toBeLessThan(
+      prompt.indexOf('## Responsibilities')
+    );
+  });
+
+  test('passes the detected rebase status into the executor prompt', async () => {
+    mockDetectPrFixRebaseStatus.mockResolvedValueOnce({ baseBranch: 'main' });
+
+    await executeCiFixCommand({
+      target: state.target as never,
+      options: {},
+      config: state.config as never,
+      noninteractive: false,
+      terminalInputEnabled: true,
+    });
+
+    expect(mockDetectPrFixRebaseStatus).toHaveBeenCalledWith(state.workspaceDir, 'main');
+    const prompt = String(state.executorExecute.mock.calls[0]?.[0] ?? '');
+    expect(prompt).toContain('## Base Branch Updates');
+    expect(prompt).toContain('Before you apply any CI fixes');
   });
 
   test('returns before workspace and executor allocation when no checks fail', async () => {
