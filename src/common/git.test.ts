@@ -14,6 +14,7 @@ import {
   getCurrentJujutsuBranch,
   getGitRepository,
   getMergeBase,
+  isBranchBehindRemoteBase,
   fetchRemoteBranch,
   remoteBranchExists,
   remoteBranchExistsGit,
@@ -523,6 +524,44 @@ describe('Git Utilities', () => {
       }
     });
 
+    it('detects when a git branch is behind origin/<baseBranch>', async () => {
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-remote-'));
+      const sourceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'git-source-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initGitRepository(sourceDir);
+        await fs.writeFile(path.join(sourceDir, 'file.txt'), 'base');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'base']);
+        await runGit(sourceDir, ['remote', 'add', 'origin', remoteDir]);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'main']);
+
+        await runGit(sourceDir, ['checkout', '-b', 'feature/behind']);
+        await fs.writeFile(path.join(sourceDir, 'feature.txt'), 'feature');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'feature commit']);
+        await runGit(sourceDir, ['push', '-u', 'origin', 'feature/behind']);
+
+        await runGit(tempDir, ['clone', remoteDir, '.']);
+        await runGit(tempDir, ['checkout', 'feature/behind']);
+        expect(await isBranchBehindRemoteBase(tempDir, 'main')).toBe(false);
+
+        await runGit(sourceDir, ['checkout', 'main']);
+        await fs.writeFile(path.join(sourceDir, 'main.txt'), 'main update');
+        await runGit(sourceDir, ['add', '.']);
+        await runGit(sourceDir, ['commit', '-m', 'main update']);
+        await runGit(sourceDir, ['push', 'origin', 'main']);
+
+        expect(await fetchRemoteBranch(tempDir, 'main')).toBe(true);
+        expect(await isBranchBehindRemoteBase(tempDir, 'main')).toBe(true);
+        expect(await isBranchBehindRemoteBase(tempDir, 'missing-branch')).toBeNull();
+      } finally {
+        await fs.rm(sourceDir, { recursive: true, force: true });
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
     it('returns null merge-base when base branch does not exist', async () => {
       await initGitRepository(tempDir);
       await fs.writeFile(path.join(tempDir, 'file.txt'), 'content');
@@ -701,6 +740,43 @@ describe('Git Utilities', () => {
 
         const mergeBaseFromExplicitSource = await getMergeBase(tempDir, 'main', 'feature/base');
         expect(mergeBaseFromExplicitSource).toBe(mainCommit);
+      } finally {
+        await fs.rm(remoteDir, { recursive: true, force: true });
+      }
+    });
+
+    it('detects when a JJ working copy is behind <baseBranch>@origin', async () => {
+      if (!(await isJjAvailable())) {
+        return;
+      }
+
+      const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jj-remote-'));
+
+      try {
+        await runGit(remoteDir, ['init', '--bare']);
+        await initJjColocatedRepository(tempDir);
+        await runJj(tempDir, ['git', 'remote', 'add', 'origin', remoteDir]);
+
+        await fs.writeFile(path.join(tempDir, 'base.txt'), 'base');
+        await runJj(tempDir, ['commit', '-m', 'base']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'main']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'main']);
+
+        await fs.writeFile(path.join(tempDir, 'feature.txt'), 'feature');
+        await runJj(tempDir, ['commit', '-m', 'feature']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'feature/behind']);
+        expect(await isBranchBehindRemoteBase(tempDir, 'main')).toBe(false);
+
+        await runJj(tempDir, ['new', 'main']);
+        await fs.writeFile(path.join(tempDir, 'main.txt'), 'main update');
+        await runJj(tempDir, ['commit', '-m', 'main update']);
+        await runJj(tempDir, ['bookmark', 'set', '-r', '@-', 'main']);
+        await runJj(tempDir, ['git', 'push', '--bookmark', 'main']);
+        await runJj(tempDir, ['new', 'feature/behind']);
+
+        expect(await isBranchBehindRemoteBase(tempDir, 'main')).toBe(true);
+        expect(await isBranchBehindRemoteBase(tempDir, 'main', 'main')).toBe(false);
+        expect(await isBranchBehindRemoteBase(tempDir, 'missingbase')).toBeNull();
       } finally {
         await fs.rm(remoteDir, { recursive: true, force: true });
       }

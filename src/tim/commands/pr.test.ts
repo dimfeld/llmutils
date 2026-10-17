@@ -139,6 +139,7 @@ vi.mock('../../common/git.js', () => ({
   getGitRepository: vi.fn(async () => 'example/repo'),
   getGitRoot: vi.fn(async () => process.cwd()),
   getUsingJj: vi.fn(async () => false),
+  isBranchBehindRemoteBase: vi.fn(async () => false),
   remoteBranchExists: vi.fn(async () => true),
   getWorkingCopyStatus: vi.fn(async () => ({
     clean: true,
@@ -329,6 +330,7 @@ import {
 import {
   fetchRemoteBranch as mockFetchRemoteBranchFn,
   getGitRepository as mockGetGitRepositoryFn,
+  isBranchBehindRemoteBase as mockIsBranchBehindRemoteBaseFn,
   remoteBranchExists as mockRemoteBranchExistsFn,
 } from '../../common/git.js';
 import { getRepositoryIdentity as mockGetRepositoryIdentityFn } from '../assignments/workspace_identifier.js';
@@ -386,6 +388,7 @@ const mockValidatePrIdentifier = vi.mocked(mockValidatePrIdentifierFn);
 const mockFetchRemoteBranch = vi.mocked(mockFetchRemoteBranchFn);
 const mockGetGitRepository = vi.mocked(mockGetGitRepositoryFn);
 const mockRemoteBranchExists = vi.mocked(mockRemoteBranchExistsFn);
+const mockIsBranchBehindRemoteBase = vi.mocked(mockIsBranchBehindRemoteBaseFn);
 const mockGetRepositoryIdentity = vi.mocked(mockGetRepositoryIdentityFn);
 const mockGetLinkedPlansByPrUrl = vi.mocked(mockGetLinkedPlansByPrUrlFn);
 const mockGetPrStatusByUrl = vi.mocked(mockGetPrStatusByUrlFn);
@@ -514,6 +517,8 @@ describe('tim/commands/pr', () => {
     mockGetGitRepository.mockReset();
     mockRemoteBranchExists.mockReset();
     mockRemoteBranchExists.mockResolvedValue(true);
+    mockIsBranchBehindRemoteBase.mockReset();
+    mockIsBranchBehindRemoteBase.mockResolvedValue(false);
     mockGetRepositoryIdentity.mockReset();
     mockGetLinkedPlansByPrUrl.mockReset();
     mockGetLinkedPlansByPrUrl.mockReturnValue(new Map());
@@ -1669,6 +1674,14 @@ describe('tim/commands/pr', () => {
     expect(prompt).not.toContain('gh pr view');
   });
 
+  test('buildReviewThreadFixPrompt includes rebase instructions when given a rebase status', () => {
+    const prompt = buildReviewThreadFixPrompt({ id: 1, title: 'Test' } as any, [], [], {
+      baseBranch: 'main',
+    });
+    expect(prompt).toContain('## Base Branch Updates');
+    expect(prompt).toContain('git rebase origin/main');
+  });
+
   test('buildReviewThreadFixPrompt handles no PR URLs', () => {
     const prompt = buildReviewThreadFixPrompt(
       {
@@ -2789,6 +2802,49 @@ describe('tim/commands/pr', () => {
       );
       expect(mockExecutorExecute.mock.calls[0]?.[1]).not.toHaveProperty('planFilePath');
       expect(logs).not.toContain('Plan 248 has no unresolved PR review threads.');
+      expect(mockIsBranchBehindRemoteBase).toHaveBeenCalledWith('/tmp/workspace', 'main');
+      expect(String(mockExecutorExecute.mock.calls[0]?.[0])).not.toContain(
+        '## Base Branch Updates'
+      );
+    });
+
+    test('tells the agent to offer a rebase when the PR branch is behind its base', async () => {
+      setupPrModeTarget([
+        createReviewThreadDetail({
+          threadId: 'thread-1',
+          path: 'src/file.ts',
+          line: 1,
+          comments: [{ body: 'Fix this.' }],
+        }),
+      ]);
+      mockIsBranchBehindRemoteBase.mockResolvedValueOnce(true);
+
+      await handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand());
+
+      expect(mockFetchRemoteBranch).toHaveBeenCalledWith('/tmp/workspace', 'main');
+      expect(mockIsBranchBehindRemoteBase).toHaveBeenCalledWith('/tmp/workspace', 'main');
+      const prompt = String(mockExecutorExecute.mock.calls[0]?.[0] ?? '');
+      expect(prompt).toContain('## Base Branch Updates');
+      expect(prompt).toContain('ask the user if they want to rebase this branch');
+    });
+
+    test('continues without rebase instructions when the rebase check fails', async () => {
+      setupPrModeTarget([
+        createReviewThreadDetail({
+          threadId: 'thread-1',
+          path: 'src/file.ts',
+          line: 1,
+          comments: [{ body: 'Fix this.' }],
+        }),
+      ]);
+      mockIsBranchBehindRemoteBase.mockRejectedValueOnce(new Error('jj failed'));
+
+      await handlePrFixCommand(undefined, { pr: '42' }, createNestedCommand());
+
+      expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
+      expect(String(mockExecutorExecute.mock.calls[0]?.[0])).not.toContain(
+        '## Base Branch Updates'
+      );
     });
 
     test('defaults bare PR target to auto workspace and logs why', async () => {
@@ -2918,6 +2974,15 @@ describe('tim/commands/pr', () => {
         ...overrides,
       };
     }
+
+    test('passes rebase status through to the instructions', () => {
+      expect(buildPrReviewThreadFixPrompt(makePrTarget(), [])).not.toContain(
+        '## Base Branch Updates'
+      );
+      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), [], [], { baseBranch: 'main' });
+      expect(prompt).toContain('## Base Branch Updates');
+      expect(prompt).toContain('jj rebase -b @ -d main@origin');
+    });
 
     test('includes Pull Request Context section with all fields', () => {
       const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
@@ -3061,6 +3126,31 @@ describe('tim/commands/pr', () => {
       const joined = lines.join('\n');
       expect(joined).toContain('- PRRT thread ID: shared-thread');
       expect(joined).toContain('Shared comment.');
+    });
+
+    test('omits rebase instructions when no rebase is needed', () => {
+      const joined = buildReviewThreadFixInstructions([]).join('\n');
+      expect(joined).not.toContain('## Base Branch Updates');
+      expect(joined).not.toContain('rebase this branch');
+    });
+
+    test('asks the user about rebasing before fixes when the branch is behind its base', () => {
+      const joined = buildReviewThreadFixInstructions([], [], { baseBranch: 'release' }).join('\n');
+      expect(joined).toContain('## Base Branch Updates');
+      expect(joined).toContain('The base branch `release` has new commits');
+      expect(joined).toContain(
+        'Before you apply any review fixes, ask the user if they want to rebase this branch onto the latest `release` from origin and fix any conflicts.'
+      );
+      expect(joined).toContain('jj rebase -b @ -d release@origin');
+      expect(joined).toContain('git rebase origin/release');
+      expect(joined).toContain('git push --force-with-lease');
+      expect(joined).toContain('If the user declines the rebase');
+      expect(joined).toContain(
+        'In the same message, also ask the user if they want to rebase this branch'
+      );
+      expect(joined.indexOf('## Base Branch Updates')).toBeLessThan(
+        joined.indexOf('## User Feedback')
+      );
     });
 
     test('reports when no additional feedback is provided', () => {

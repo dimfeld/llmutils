@@ -861,6 +861,41 @@ export async function getMergeBase(
   return commitId.length > 0 ? commitId : null;
 }
 
+/**
+ * Check whether the remote base branch has commits that `sourceRef` does not contain,
+ * meaning `sourceRef` must be rebased to include the latest base branch changes.
+ * Compares against `origin/<baseBranch>` (Git) or `<baseBranch>@origin` (jj), so fetch
+ * the base branch first. Returns null when the check cannot be done.
+ */
+export async function isBranchBehindRemoteBase(
+  gitRoot: string,
+  baseBranch: string,
+  sourceRef: string = 'HEAD'
+): Promise<boolean | null> {
+  if (await getUsingJj(gitRoot)) {
+    const jjRef = sourceRef === 'HEAD' ? '@' : sourceRef;
+    const revset = `${baseBranch}@origin ~ ::${jjRef}`;
+    const result = await $`jj log -r ${revset} --no-graph -T commit_id --limit 1`
+      .cwd(gitRoot)
+      .quiet()
+      .nothrow();
+    if (result.exitCode !== 0) {
+      return null;
+    }
+    return result.stdout.toString().trim().length > 0;
+  }
+
+  const result = await $`git merge-base --is-ancestor origin/${baseBranch} ${sourceRef}`
+    .cwd(gitRoot)
+    .quiet()
+    .nothrow();
+  if (result.exitCode === 0) {
+    return false;
+  }
+  // Exit code 1 means the base tip is not an ancestor; other codes are errors.
+  return result.exitCode === 1 ? true : null;
+}
+
 export async function getJjChangeId(
   gitRoot: string,
   revision: string = '@'
