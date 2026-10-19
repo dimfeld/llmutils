@@ -51,6 +51,8 @@ export interface ActionablePr {
   unresolvedReviewThreadCount: number;
   /** True for the user's own open PRs that have no human reviewer requested yet. */
   needsReviewRequest: boolean;
+  /** True when GitHub reports merge conflicts with the base branch. */
+  hasConflicts: boolean;
 }
 
 // --- Attention item types ---

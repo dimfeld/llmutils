@@ -24,6 +24,9 @@ function createActionablePr(overrides: Partial<ActionablePr> = {}): ActionablePr
     reviewRequestedAt: null,
     reviewRequestedStacked: false,
     hasApprovingReview: false,
+    unresolvedReviewThreadCount: 0,
+    needsReviewRequest: false,
+    hasConflicts: false,
     ...overrides,
   };
 }
@@ -187,6 +190,22 @@ describe('PrAttentionCard', () => {
     });
 
     expect(body).not.toContain('Approved by a reviewer');
+  });
+
+  test('renders a conflicts badge when the PR has merge conflicts', () => {
+    const { body } = render(PrAttentionCard, {
+      props: { item: createItem({ actionReason: 'approved', hasConflicts: true }) },
+    });
+
+    expect(body).toContain('Conflicts');
+  });
+
+  test('does not render a conflicts badge when the PR has no conflicts', () => {
+    const { body } = render(PrAttentionCard, {
+      props: { item: createItem({ actionReason: 'approved', hasConflicts: false }) },
+    });
+
+    expect(body).not.toContain('Conflicts');
   });
 
   test('keeps the approved badge when checks fail', () => {

@@ -603,6 +603,7 @@ describe('buildActionablePrsForRepo', () => {
         hasApprovingReview: true,
         unresolvedReviewThreadCount: 0,
         needsReviewRequest: false,
+        hasConflicts: false,
       },
     ]);
   });
@@ -653,6 +654,7 @@ describe('buildActionablePrsForRepo', () => {
         hasApprovingReview: false,
         unresolvedReviewThreadCount: 0,
         needsReviewRequest: false,
+        hasConflicts: false,
       },
     ]);
   });
@@ -807,6 +809,50 @@ describe('buildActionablePrsForRepo', () => {
     expect(result).toHaveLength(1);
     expect(result[0]?.actionReason).toBe('review_requested');
     expect(result[0]?.hasApprovingReview).toBe(true);
+  });
+
+  test('sets hasConflicts for own and review-requested PRs with merge conflicts', () => {
+    const own = makePrDetail({
+      pr_url: 'https://github.com/owner/repo/pull/30',
+      pr_number: 30,
+      mergeable: 'CONFLICTING',
+    });
+    const reviewRequested = makePrDetail(
+      {
+        pr_url: 'https://github.com/owner/repo/pull/31',
+        pr_number: 31,
+        author: 'someone-else',
+        mergeable: 'CONFLICTING',
+      },
+      {
+        reviewRequests: [
+          {
+            id: 1,
+            pr_status_id: 1,
+            reviewer: 'testuser',
+            requested_at: '2026-01-01T00:00:00Z',
+            removed_at: null,
+            last_event_at: '2026-01-01T00:00:00Z',
+            request_version: 0,
+          },
+        ],
+      }
+    );
+    const clean = makePrDetail({
+      pr_url: 'https://github.com/owner/repo/pull/32',
+      pr_number: 32,
+      mergeable: 'MERGEABLE',
+    });
+
+    const result = buildActionablePrsForRepo(
+      7,
+      [own, reviewRequested, clean],
+      new Map(),
+      'testuser'
+    );
+    expect(result.find((pr) => pr.prNumber === 30)?.hasConflicts).toBe(true);
+    expect(result.find((pr) => pr.prNumber === 31)?.hasConflicts).toBe(true);
+    expect(result.find((pr) => pr.prNumber === 32)?.hasConflicts).toBe(false);
   });
 
   test('counts unresolved review threads and ignores resolved ones', () => {

@@ -187,6 +187,7 @@ export function buildActionablePrsForRepo(
     const hasApprovingReview = hasHumanApproval(pr.reviews);
     const unresolvedReviewThreadCount =
       pr.reviewThreads?.filter((t) => !t.thread.is_resolved).length ?? 0;
+    const hasConflicts = pr.status.mergeable === 'CONFLICTING';
 
     const isAuthored =
       normalizedUsername !== null &&
@@ -218,6 +219,7 @@ export function buildActionablePrsForRepo(
           hasApprovingReview,
           unresolvedReviewThreadCount,
           needsReviewRequest: needsHumanReviewRequest(pr),
+          hasConflicts,
         });
       }
     } else if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
@@ -243,6 +245,7 @@ export function buildActionablePrsForRepo(
         hasApprovingReview,
         unresolvedReviewThreadCount,
         needsReviewRequest: false,
+        hasConflicts,
       });
     }
   }

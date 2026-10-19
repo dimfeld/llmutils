@@ -7,6 +7,7 @@
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
   import PrStatusIndicator from './PrStatusIndicator.svelte';
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
+  import PrConflictsBadge from './PrConflictsBadge.svelte';
   import { getEffectiveReviewDecision, hasHumanApproval } from '$common/github/review_requests.js';
   import {
     checkRollupToSummaryStatus,
@@ -117,6 +118,9 @@
             </span>
           {/if}
         </span>
+      {/if}
+      {#if pr.status.state === 'open' && pr.status.mergeable === 'CONFLICTING'}
+        <PrConflictsBadge />
       {/if}
       {#if unresolvedReviewThreadCount > 0}
         <span

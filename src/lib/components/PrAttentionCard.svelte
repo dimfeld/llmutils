@@ -6,6 +6,7 @@
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
+  import PrConflictsBadge from './PrConflictsBadge.svelte';
 
   let {
     item,
@@ -121,6 +122,9 @@
             </span>
           {/if}
         </span>
+      {/if}
+      {#if pr.hasConflicts}
+        <PrConflictsBadge />
       {/if}
       {#if pr.unresolvedReviewThreadCount > 0}
         <span
