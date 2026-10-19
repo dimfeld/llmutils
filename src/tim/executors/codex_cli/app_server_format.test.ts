@@ -979,6 +979,13 @@ describe('createAppServerFormatter', () => {
     });
     expect(diff).toEqual({ type: 'turn/diff/updated' });
 
+    expect(
+      formatter.handleNotification('llm/turn/moderationMetadata', { turnId: 'turn-1' })
+    ).toEqual({ type: 'llm/turn/moderationMetadata' });
+    expect(
+      formatter.handleNotification('llm/thread/readState/changed', { threadId: 'thread-1' })
+    ).toEqual({ type: 'llm/thread/readState/changed' });
+
     const plan = formatter.handleNotification('turn/plan/updated', {
       turnId: 'turn-1',
       explanation: 'Updated plan after inspection',

@@ -882,7 +882,11 @@ export function createAppServerFormatter(model?: string) {
         return { type: method };
       }
 
-      if (method === 'turn/diff/updated') {
+      if (
+        method === 'turn/diff/updated' ||
+        lowerMethod === 'llm/turn/moderationmetadata' ||
+        lowerMethod === 'llm/thread/readstate/changed'
+      ) {
         return { type: method };
       }
 
