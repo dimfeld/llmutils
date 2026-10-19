@@ -216,7 +216,7 @@
 
 <li
   class="flex flex-col gap-1.5 py-2.5 pr-3 {shepherded ? '' : 'opacity-70'}"
-  style="padding-left: {0.75 + depth * 1.25}rem"
+  style="padding-left: {depth > 0 ? 2 : 0.75}rem"
 >
   <div class="flex min-w-0 items-center gap-2">
     {#if depth > 0}
