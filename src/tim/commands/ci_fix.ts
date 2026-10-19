@@ -134,7 +134,7 @@ export function buildCiFixExecutorOptions(
   return undefined;
 }
 
-function getTargetSessionInfo(target: PrFixTarget):
+export function getTargetSessionInfo(target: PrFixTarget):
   | {
       linkedPrUrl?: string;
       linkedPrNumber?: number;
@@ -161,20 +161,23 @@ function getTargetSessionInfo(target: PrFixTarget):
   };
 }
 
-function resolveCiFixPullRequestTarget(target: PrFixTarget): PullRequestFixTarget {
+export function resolveSinglePullRequestTarget(
+  target: PrFixTarget,
+  commandName: string = 'tim pr fix-ci'
+): PullRequestFixTarget {
   if (target.kind === 'pr') {
     return target;
   }
 
   if (target.prStatuses.length === 0) {
     throw new Error(
-      `tim pr fix-ci requires one linked pull request for plan ${target.plan.id}, but the plan has no linked pull requests; pass --pr <url-or-number>.`
+      `${commandName} requires one linked pull request for plan ${target.plan.id}, but the plan has no linked pull requests; pass --pr <url-or-number>.`
     );
   }
 
   if (target.prStatuses.length > 1) {
     throw new Error(
-      `tim pr fix-ci requires exactly one linked pull request for plan ${target.plan.id}, but the plan has multiple linked pull requests; pass --pr <url-or-number>.`
+      `${commandName} requires exactly one linked pull request for plan ${target.plan.id}, but the plan has multiple linked pull requests; pass --pr <url-or-number>.`
     );
   }
 
@@ -200,7 +203,7 @@ function resolveCiFixPullRequestTarget(target: PrFixTarget): PullRequestFixTarge
   };
 }
 
-function updateCiFixHeadlessSessionInfo(
+export function updateCiFixHeadlessSessionInfo(
   db: ReturnType<typeof getDatabase>,
   target: PullRequestFixTarget,
   workspacePath: string
@@ -416,7 +419,7 @@ export async function executeCiFixCommand({
   noninteractive: boolean;
   terminalInputEnabled: boolean;
 }): Promise<void> {
-  const prTarget = resolveCiFixPullRequestTarget(target);
+  const prTarget = resolveSinglePullRequestTarget(target);
   const db = getDatabase();
   const refreshedStatus = await refreshPrCheckStatus(db, prTarget.canonicalPrUrl);
   const requiredCheckNames = getRequiredCheckNames(db, refreshedStatus.status);

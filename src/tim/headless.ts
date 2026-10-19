@@ -54,6 +54,7 @@ export type HeadlessCommand =
   | 'pr-stack'
   | 'pr-fix'
   | 'ci-fix'
+  | 'pr-rebase'
   | 'shell';
 
 interface RunWithHeadlessOptions<T> {

@@ -123,6 +123,7 @@ const AGENT_FINISHED_COMMANDS = new Set([
   'pr-stack',
   'pr-fix',
   'ci-fix',
+  'pr-rebase',
 ]);
 
 const RUNNING_NOW_INCLUDED_NONINTERACTIVE_COMMANDS = new Set([
@@ -134,6 +135,7 @@ const RUNNING_NOW_INCLUDED_NONINTERACTIVE_COMMANDS = new Set([
   'pr-stack',
   'pr-fix',
   'ci-fix',
+  'pr-rebase',
 ]);
 
 const RUNNING_NOW_EXCLUDED_INTERACTIVE_COMMANDS = new Set(['review-guide', 'show']);

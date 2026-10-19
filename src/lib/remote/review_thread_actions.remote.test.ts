@@ -56,6 +56,7 @@ const {
   spawnAutoreviewForPrProcessMock,
   spawnCiFixForPrProcessMock,
   spawnCiFixProcessMock,
+  spawnPrRebaseForPrProcessMock,
   spawnPrFixForPrProcessMock,
   spawnPrFixProcessMock,
   spawnPrReviewGuideProcessMock,
@@ -83,6 +84,16 @@ const {
     }>
   >(),
   spawnCiFixForPrProcessMock: vi.fn<
+    (
+      prUrlOrNumber: string,
+      cwd: string
+    ) => Promise<{
+      success: boolean;
+      error?: string;
+      earlyExit?: boolean;
+    }>
+  >(),
+  spawnPrRebaseForPrProcessMock: vi.fn<
     (
       prUrlOrNumber: string,
       cwd: string
@@ -155,6 +166,8 @@ vi.mock('$lib/server/plan_actions.js', () => ({
     spawnCiFixForPrProcessMock(...args),
   spawnCiFixProcess: (...args: Parameters<typeof spawnCiFixProcessMock>) =>
     spawnCiFixProcessMock(...args),
+  spawnPrRebaseForPrProcess: (...args: Parameters<typeof spawnPrRebaseForPrProcessMock>) =>
+    spawnPrRebaseForPrProcessMock(...args),
   spawnPrFixForPrProcess: (...args: Parameters<typeof spawnPrFixForPrProcessMock>) =>
     spawnPrFixForPrProcessMock(...args),
   spawnPrFixProcess: (...args: Parameters<typeof spawnPrFixProcessMock>) =>
@@ -175,6 +188,7 @@ import {
   startPrChat,
   startPrAutoreview,
   startPrCiFix,
+  startPrRebase,
   startPrReviewGuide,
   startPrShell,
 } from './review_thread_actions.remote.js';
@@ -2416,5 +2430,120 @@ describe('ci-fix launch commands', () => {
       body: { message: 'binary not found' },
     });
     expect(isPlanLaunching('ci-fix-plan-failed')).toBe(false);
+  });
+});
+
+describe('startPrRebase', () => {
+  let tempDir: string;
+  let projectId: number;
+
+  const PR_URL = 'https://github.com/owner/repo/pull/42';
+
+  function seedPr(options: { state?: string; mergeable?: string | null } = {}): void {
+    upsertPrStatus(currentDb, {
+      prUrl: PR_URL,
+      owner: 'owner',
+      repo: 'repo',
+      prNumber: 42,
+      author: 'configured-user',
+      title: 'Conflicting PR',
+      state: options.state ?? 'open',
+      draft: false,
+      mergeable: options.mergeable === undefined ? 'CONFLICTING' : options.mergeable,
+      lastFetchedAt: new Date().toISOString(),
+    });
+  }
+
+  beforeAll(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-pr-rebase-remote-test-'));
+  });
+
+  beforeEach(() => {
+    currentDb = openDatabase(path.join(tempDir, `${crypto.randomUUID()}-${DATABASE_FILENAME}`));
+    currentManager = new SessionManager(currentDb);
+    currentConfig = defaultConfig();
+    projectId = getOrCreateProject(currentDb, 'github.com__owner__repo').id;
+    spawnPrRebaseForPrProcessMock.mockReset();
+  });
+
+  afterEach(() => {
+    resetLaunchLockState();
+    currentDb.close(false);
+  });
+
+  afterAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  test('starts a rebase session for an open PR with conflicts', async () => {
+    seedPr();
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-rebase-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrRebaseForPrProcessMock.mockResolvedValue({ success: true });
+
+    const result = await invokeCommand(startPrRebase, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'started', prUrl: PR_URL });
+    expect(spawnPrRebaseForPrProcessMock).toHaveBeenCalledWith(
+      PR_URL,
+      '/tmp/pr-rebase-workspace',
+      expect.objectContaining({ status: expect.objectContaining({ pr_url: PR_URL }) })
+    );
+    expect(isPrLaunching(PR_URL)).toBe(true);
+  });
+
+  test('rejects a PR without merge conflicts', async () => {
+    seedPr({ mergeable: 'MERGEABLE' });
+
+    await expect(invokeCommand(startPrRebase, { projectId, prNumber: 42 })).rejects.toMatchObject({
+      status: 400,
+      body: { message: 'PR has no merge conflicts to resolve' },
+    });
+    expect(spawnPrRebaseForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('rejects a closed PR even when it has conflicts', async () => {
+    seedPr({ state: 'closed' });
+
+    await expect(invokeCommand(startPrRebase, { projectId, prNumber: 42 })).rejects.toMatchObject({
+      status: 400,
+    });
+    expect(spawnPrRebaseForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('returns already_running for an active PR session', async () => {
+    seedPr();
+    currentManager.handleWebSocketConnect('pr-rebase-active', () => {});
+    currentManager.handleWebSocketMessage('pr-rebase-active', {
+      type: 'session_info',
+      command: 'pr-rebase',
+      interactive: true,
+      linkedPrUrl: PR_URL,
+      workspacePath: '/tmp/pr-rebase-workspace',
+    });
+
+    const result = await invokeCommand(startPrRebase, { projectId, prNumber: 42 });
+
+    expect(result).toEqual({ status: 'already_running', connectionId: 'pr-rebase-active' });
+    expect(spawnPrRebaseForPrProcessMock).not.toHaveBeenCalled();
+  });
+
+  test('clears the launch lock when spawning fails', async () => {
+    seedPr();
+    recordWorkspace(currentDb, {
+      projectId,
+      workspacePath: '/tmp/pr-rebase-workspace',
+      workspaceType: 'primary',
+    });
+    spawnPrRebaseForPrProcessMock.mockResolvedValue({ success: false, error: 'binary not found' });
+
+    await expect(invokeCommand(startPrRebase, { projectId, prNumber: 42 })).rejects.toMatchObject({
+      status: 500,
+      body: { message: 'binary not found' },
+    });
+    expect(isPrLaunching(PR_URL)).toBe(false);
   });
 });

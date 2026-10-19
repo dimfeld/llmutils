@@ -26,6 +26,7 @@ import {
   spawnAutoreviewForPrProcess,
   spawnChatForPrProcess,
   spawnCiFixForPrProcess,
+  spawnPrRebaseForPrProcess,
   spawnCiFixProcess,
   spawnPrFixForPrProcess,
   spawnPrFixProcess,
@@ -35,6 +36,7 @@ import {
 } from '$lib/server/plan_actions.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { isCiFixEligibleForUsername } from '$lib/server/ci_fix_eligibility.js';
+import { isPrRebaseEligible } from '$lib/utils/pr_rebase_eligibility.js';
 import {
   createPullRequestReviewCommentReply,
   resolveReviewThread,
@@ -554,7 +556,8 @@ async function launchPrTimCommand(
     cwd: string,
     prStatus: PrStatusDetail
   ) => Promise<SpawnTargetProcessResult>,
-  eligibilityCheck?: (prStatus: PrStatusDetail) => Promise<boolean>
+  eligibilityCheck?: (prStatus: PrStatusDetail) => Promise<boolean>,
+  ineligibleMessage: string = 'PR is not eligible for CI fix'
 ): Promise<
   { status: 'started'; prUrl: string } | { status: 'already_running'; connectionId?: string }
 > {
@@ -571,7 +574,7 @@ async function launchPrTimCommand(
   }
 
   if (eligibilityCheck && !(await eligibilityCheck(prStatus))) {
-    error(400, 'PR is not eligible for CI fix');
+    error(400, ineligibleMessage);
   }
 
   const activeSession = getSessionManager().hasActiveSessionForPr(canonicalPrUrl);
@@ -627,6 +630,17 @@ export const startPrCiFix = command(startPrReviewGuideSchema, async ({ projectId
     const username = await getGitHubUsername({ githubUsername: config.githubUsername });
     return isCiFixEligibleForUsername(db, prStatus, username);
   })
+);
+
+export const startPrRebase = command(startPrReviewGuideSchema, async ({ projectId, prNumber }) =>
+  launchPrTimCommand(
+    'pr-rebase',
+    projectId,
+    prNumber,
+    spawnPrRebaseForPrProcess,
+    async (prStatus) => isPrRebaseEligible(prStatus),
+    'PR has no merge conflicts to resolve'
+  )
 );
 
 export const startPrReviewGuide = command(

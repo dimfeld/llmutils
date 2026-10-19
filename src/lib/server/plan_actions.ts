@@ -489,6 +489,19 @@ export async function spawnCiFixForPrProcess(
   );
 }
 
+export async function spawnPrRebaseForPrProcess(
+  prUrlOrNumber: string,
+  cwd: string
+): Promise<SpawnTargetProcessResult> {
+  return spawnTimProcess(
+    describeTarget('pr', prUrlOrNumber),
+    null,
+    ['pr', 'rebase', '--pr', prUrlOrNumber, '--auto-workspace', '--no-terminal-input'],
+    cwd,
+    { [TIM_LINKED_PR_URL_ENV]: prUrlOrNumber }
+  );
+}
+
 export async function spawnAutoreviewProcess(
   planId: number,
   cwd: string

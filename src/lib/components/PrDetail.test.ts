@@ -301,6 +301,54 @@ describe('PrDetail', () => {
     expect(body).not.toContain('aria-label="Fix all unresolved review threads"');
   });
 
+  test('shows Fix Conflicts button for an open PR with merge conflicts', async () => {
+    const pr = createPr();
+    pr.status.mergeable = 'CONFLICTING';
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: { pr, projectId: '123', username: 'alice' },
+    });
+
+    expect(body).toContain('aria-label="Fix merge conflicts"');
+    expect(body).toContain('Fix Conflicts');
+  });
+
+  test('hides Fix Conflicts button when the PR has no conflicts', async () => {
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: { pr: createPr(), projectId: '123', username: 'alice' },
+    });
+
+    expect(body).not.toContain('aria-label="Fix merge conflicts"');
+  });
+
+  test('hides Fix Conflicts button when a conflicting PR is closed', async () => {
+    const pr = createPr();
+    pr.status.mergeable = 'CONFLICTING';
+    pr.status.state = 'closed';
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: { pr, projectId: '123', username: 'alice' },
+    });
+
+    expect(body).not.toContain('aria-label="Fix merge conflicts"');
+  });
+
+  test('links Session Active on the Fix Conflicts button to the pr-rebase session', async () => {
+    sessionManager.hasActiveSessionForPr.mockImplementation(
+      (_url: string, command?: string | string[]) =>
+        command === 'pr-rebase' ? { active: true, connectionId: 'conn-rebase' } : { active: false }
+    );
+    const pr = createPr();
+    pr.status.mergeable = 'CONFLICTING';
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: { pr, projectId: '123', username: 'alice' },
+    });
+
+    expect(body).toMatch(/<a href="\/projects\/123\/sessions\/conn-rebase"[^>]*>.*Session Active/s);
+    expect(body).not.toContain('aria-label="Fix merge conflicts"');
+  });
+
   test('links Session Active on the Fix CI button to the ci-fix session', async () => {
     sessionManager.hasActiveSessionForPr.mockImplementation(
       (_url: string, command?: string | string[]) =>

@@ -393,6 +393,7 @@ Useful web actions:
 - Expand unresolved PR review threads and reply, resolve, or convert them to plan tasks.
 - Use **Fix Unresolved** to spawn `tim pr fix` for review thread cleanup.
 - Use **Fix CI** to spawn `tim pr fix-ci` when the required checks of your own PR fail. The button is in the Check Runs section of the PR detail page and in the plan detail page's PR section; it is hidden for PRs you did not author and for PRs whose required checks pass.
+- Use **Fix Conflicts** to spawn `tim pr rebase` when an open PR has merge conflicts with its base branch. The button is in the action row of the PR detail page. PR lists and dashboard cards show a **Conflicts** badge for these PRs.
 - Open stored PR review guides from project PR pages when standalone review has been run. On a PR detail page, select **Generate Full Guide** for a full review, or **Generate Guide Only** to skip issue extraction (`tim pr review-guide --guide-only`).
 - **Generate Full Guide** from the plan detail page to run a plan-only review (no PR required), or **Generate Guide Only** to skip issue extraction and only generate the guide; past review guides for the plan are listed with status badges and link to a viewer route.
 - Use **Project Settings → Virtualize Review Guide Diffs** to enable or disable lazy mounting of review-guide diff blocks. This preference is saved in the current browser only.
@@ -445,6 +446,7 @@ tim review-issues clear 123 --all                     # Clear all saved review i
 tim pr fix 123 --auto-workspace --executor codex-cli --model gpt-5-codex --effort high
 tim pr fix --pr 456 --auto-workspace                 # Fix review threads on a PR with no linked plan
 tim pr fix-ci --pr 456 --auto-workspace              # Diagnose and fix the failing CI checks of a PR
+tim pr rebase --pr 456 --auto-workspace              # Rebase a PR onto its base branch and resolve conflicts
 tim pr comment https://github.com/owner/repo/pull/456 "Fixed the related feedback"
 tim rebase 123 --auto-workspace
 ```
@@ -544,6 +546,8 @@ prFix:
 ```
 
 `tim pr fix-ci --pr <pr-url-or-number>` diagnoses failing CI checks for a pull request. It downloads available GitHub Actions logs into the selected workspace, asks the agent to diagnose each failure and confirm the proposed actions, then applies the requested fixes and pushes them to the PR branch. Configure defaults with `ciFix.executor`, `ciFix.model`, and `ciFix.effort`; CLI flags override these values.
+
+`tim pr rebase --pr <pr-url-or-number>` checks out the PR branch in a managed workspace, fetches the base branch, and asks the agent to rebase onto the latest base branch from origin, resolve the conflicts, run the relevant checks, and force-push the result. The agent asks the user when a conflict has no clear resolution. It uses `defaultExecutor` and `models.execution`; CLI flags override these values.
 
 Target resolution matches `tim pr fix`: `--pr` wins, then `--plan`, then the positional argument (a number means a plan ID, a URL means a PR), and with no argument the plan is inferred from the workspace. A plan target must have exactly one linked pull request. The command refreshes the check status from GitHub first; when no check is failing it prints `No failing checks for PR #n` and exits before it takes a workspace. Otherwise it always prepares a managed workspace on the PR head branch, and it refuses fork PRs whose head branch is not on `origin`. Logs go to `.tim/tmp/ci-fix/pr-<number>-<short-sha>/` in that workspace and are deleted when the command exits, including on Ctrl-C. The agent must present a numbered diagnosis of every failure and wait for your direction; by default it fixes only the required checks. Like `tim pr fix`, it checks if the PR branch is behind its base branch. If so, the agent asks you if you want to rebase and fix conflicts before it applies the CI fixes. The web UI starts the same command from the **Fix CI** buttons on the PR detail page and on a plan's PR section. See `docs/ci-check-logs.md` for details.
 

@@ -12,7 +12,13 @@ export interface FixButtonStateInput {
 
 export interface FixButtonState {
   disabled: boolean;
-  label: 'Starting...' | 'Fix Started' | 'Session Active' | 'Fix Unresolved' | 'Fix CI';
+  label:
+    | 'Starting...'
+    | 'Fix Started'
+    | 'Session Active'
+    | 'Fix Unresolved'
+    | 'Fix CI'
+    | 'Fix Conflicts';
   /** Set when the label is 'Session Active' and the session connection ID is known. */
   activeSessionId?: string;
 }

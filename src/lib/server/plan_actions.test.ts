@@ -57,6 +57,7 @@ import {
   spawnPlanReviewGuideProcess,
   spawnPrFixForPrProcess,
   spawnPrFixProcess,
+  spawnPrRebaseForPrProcess,
   spawnPrReviewGuideProcess,
   spawnRebaseProcess,
   spawnShellProcess,
@@ -1034,6 +1035,31 @@ describe('lib/server/plan_actions', () => {
     });
     expect(result).toEqual({ success: true });
     expect((result as { planId?: number }).planId).toBeUndefined();
+  });
+
+  test('spawnPrRebaseForPrProcess spawns tim pr rebase --pr with the PR URL and auto-workspace flags', async () => {
+    const proc = createFakeProcess({ exitCode: null });
+    const spawnSpy = vi.spyOn(Bun, 'spawn').mockReturnValue(proc as never);
+
+    const prUrl = 'https://github.com/owner/repo/pull/5';
+    const resultPromise = spawnPrRebaseForPrProcess(prUrl, '/tmp/primary-workspace');
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+    const [args, options] = spawnSpy.mock.calls[0];
+    expect(args).toEqual(['tim', '__daemon-launch']);
+    expect(daemonPayload(options as never).workerCommand).toEqual([
+      'tim',
+      'pr',
+      'rebase',
+      '--pr',
+      prUrl,
+      '--auto-workspace',
+      '--no-terminal-input',
+    ]);
+    expect(options).toMatchObject({ cwd: '/tmp/primary-workspace', detached: true });
+    expect(result).toEqual({ success: true });
   });
 
   test('spawnPrFixForPrProcess returns earlyExit true when process exits with code 0', async () => {

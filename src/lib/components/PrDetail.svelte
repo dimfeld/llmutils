@@ -30,10 +30,12 @@
     startPrAutoreview,
     startFixPrThreads,
     startPrCiFix,
+    startPrRebase,
     startPrShell,
     startPrReviewGuide,
   } from '$lib/remote/review_thread_actions.remote.js';
   import { canFixCi } from '$lib/utils/ci_fix_eligibility.js';
+  import { isPrRebaseEligible } from '$lib/utils/pr_rebase_eligibility.js';
   import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
   import {
     getFixButtonState,
@@ -132,10 +134,12 @@
   let reviewGuideRunning: 'full' | 'guide-only' | false = $state(false);
   let fixStarting = $state(false);
   let ciFixStarting = $state(false);
+  let rebaseStarting = $state(false);
   let autoreviewStarting = $state(false);
   let shellStarting = $state(false);
   let fixLaunched = $state(false);
   let ciFixLaunched = $state(false);
+  let rebaseLaunched = $state(false);
   let actionError = $state<string | null>(null);
   // let graphitePrUrl = $derived(
   //   `https://app.graphite.com/github/pr/${pr.status.owner}/${pr.status.repo}/${pr.status.pr_number}`
@@ -189,6 +193,7 @@
   let draftButtonLabel = $derived(pr.status.draft ? 'Mark ready for review' : 'Convert to draft');
   let canFixUnresolvedThreads = $derived(isOwnPr && unresolvedReviewThreadCount > 0);
   let showFixCi = $derived(canFixCi({ isOwnPr, status: pr.status }));
+  let showFixConflicts = $derived(isPrRebaseEligible(pr));
   let canonicalPrUrl = $derived(tryCanonicalizePrUrl(pr.status.pr_url));
   let activeSessionId = $derived.by(() => {
     if (!canonicalPrUrl) {
@@ -206,8 +211,17 @@
     const result = sessionManager.hasActiveSessionForPr(canonicalPrUrl, 'ci-fix');
     return result.active ? (result.connectionId ?? '') : null;
   });
+  let rebaseActiveSessionId = $derived.by(() => {
+    if (!canonicalPrUrl) {
+      return null;
+    }
+
+    const result = sessionManager.hasActiveSessionForPr(canonicalPrUrl, 'pr-rebase');
+    return result.active ? (result.connectionId ?? '') : null;
+  });
   let sessionActive = $derived(activeSessionId !== null);
   let ciFixSessionActive = $derived(ciFixActiveSessionId !== null);
+  let rebaseSessionActive = $derived(rebaseActiveSessionId !== null);
   let fixButtonState = $derived(
     getFixButtonState({
       refreshing,
@@ -229,6 +243,18 @@
       'Fix CI'
     )
   );
+  let rebaseButtonState = $derived(
+    getFixButtonState(
+      {
+        refreshing,
+        fixStarting: rebaseStarting,
+        fixLaunched: rebaseLaunched,
+        sessionActive: rebaseSessionActive,
+        activeSessionId: rebaseActiveSessionId,
+      },
+      'Fix Conflicts'
+    )
+  );
 
   $effect(() => {
     if (sessionActive && fixLaunched) {
@@ -242,6 +268,12 @@
     }
   });
 
+  $effect(() => {
+    if (rebaseSessionActive && rebaseLaunched) {
+      rebaseLaunched = false;
+    }
+  });
+
   // Reset optimistic launch state when navigating to a different PR.
   $effect(() => {
     void pr.status.pr_number;
@@ -249,6 +281,8 @@
     fixStarting = false;
     ciFixLaunched = false;
     ciFixStarting = false;
+    rebaseLaunched = false;
+    rebaseStarting = false;
     autoreviewStarting = false;
     shellStarting = false;
     actionError = null;
@@ -266,6 +300,14 @@
     if (!ciFixLaunched) return;
     const timer = setTimeout(() => {
       ciFixLaunched = false;
+    }, 30_000);
+    return () => clearTimeout(timer);
+  });
+
+  $effect(() => {
+    if (!rebaseLaunched) return;
+    const timer = setTimeout(() => {
+      rebaseLaunched = false;
     }, 30_000);
     return () => clearTimeout(timer);
   });
@@ -381,6 +423,33 @@
     } finally {
       if (pr.status.pr_number === requestPrNumber) {
         ciFixStarting = false;
+      }
+    }
+  }
+
+  async function handleStartRebase() {
+    if (!showFixConflicts || rebaseStarting || rebaseLaunched || rebaseSessionActive) {
+      return;
+    }
+
+    const requestPrNumber = pr.status.pr_number;
+    actionError = null;
+    rebaseStarting = true;
+    try {
+      const result = await startPrRebase({
+        projectId: Number(projectId),
+        prNumber: requestPrNumber,
+      });
+      if (pr.status.pr_number !== requestPrNumber) return;
+      const fixResultState = getFixStartResultState(result.status, 'pr');
+      rebaseLaunched = fixResultState.fixLaunched;
+      actionError = fixResultState.message;
+    } catch (err) {
+      if (pr.status.pr_number !== requestPrNumber) return;
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      if (pr.status.pr_number === requestPrNumber) {
+        rebaseStarting = false;
       }
     }
   }
@@ -586,6 +655,25 @@
           >
             View in Linear
           </a>
+        {/if}
+        {#if showFixConflicts}
+          {#if rebaseButtonState.activeSessionId}
+            <ActiveSessionLink
+              {projectId}
+              connectionId={rebaseButtonState.activeSessionId}
+              class="rounded-md px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-900 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+            />
+          {:else}
+            <button
+              onclick={handleStartRebase}
+              disabled={rebaseButtonState.disabled}
+              class="rounded-md px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 hover:text-red-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+              title="Start a session that rebases this PR onto its base branch and resolves the conflicts"
+              aria-label="Fix merge conflicts"
+            >
+              {rebaseButtonState.label}
+            </button>
+          {/if}
         {/if}
         <button
           onclick={handleStartAutoreview}
