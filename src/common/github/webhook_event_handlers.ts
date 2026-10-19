@@ -5,6 +5,7 @@ import { constructGitHubRepositoryId } from './pull_requests.js';
 import { classifyCheckRun, getRequiredCheckNames } from './required_check_rollup.js';
 import type { BranchMergeRequirementsDetail } from '../../tim/db/branch_merge_requirements.js';
 import { getProject } from '../../tim/db/project.js';
+import { findOpenShepherdedPrsByBranch } from '../../tim/db/pr_shepherd.js';
 import {
   clearPrCheckRuns,
   getKnownRepoFullNames,
@@ -1194,6 +1195,75 @@ export function handleCheckRunEvent(
     updated: prUrls.size > 0,
     prUrls: [...prUrls],
     ...(inboxSignals.length > 0 ? { inboxSignals } : {}),
+  };
+}
+
+function parsePushPayload(
+  payload: unknown
+): { repository: ParsedRepoInfo; branch: string; deleted: boolean } | null {
+  const repository = parseRepository(payload);
+  if (!repository || !payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const ref = (payload as { ref?: unknown }).ref;
+  if (typeof ref !== 'string' || !ref.startsWith('refs/heads/')) {
+    return null;
+  }
+
+  const branch = ref.slice('refs/heads/'.length);
+  if (!branch) {
+    return null;
+  }
+
+  return {
+    repository,
+    branch,
+    deleted: (payload as { deleted?: unknown }).deleted === true,
+  };
+}
+
+/**
+ * A push to a branch can change the mergeable state and the "behind base" count of the
+ * PRs that use the branch as their base or head. GitHub sends no pull_request event when
+ * only the base branch moves, so this is the only signal for new conflicts on a quiet PR.
+ *
+ * To keep the GitHub API cost low, only PRs in the shepherd list are refreshed.
+ */
+export function handlePushEvent(
+  db: Database,
+  payload: unknown,
+  options?: WebhookHandlerOptions
+): WebhookHandlerResult {
+  const parsed = parsePushPayload(payload);
+  if (
+    !parsed ||
+    parsed.deleted ||
+    !isKnownRepository(db, parsed.repository.fullName, options?.knownRepos)
+  ) {
+    return { updated: false };
+  }
+
+  const { owner, repo } = parsed.repository;
+  const shepherdedPrs = findOpenShepherdedPrsByBranch(db, {
+    owner,
+    repo,
+    branch: parsed.branch,
+  });
+  if (shepherdedPrs.length === 0) {
+    return { updated: false };
+  }
+
+  return {
+    updated: false,
+    prUrls: shepherdedPrs.map((pr) => pr.status.pr_url),
+    apiRefreshTargets: shepherdedPrs.map((pr) => ({
+      owner: pr.status.owner,
+      repo: pr.status.repo,
+      prNumber: pr.status.pr_number,
+      operation: `mergeable refresh after push to ${parsed.branch}`,
+      type: 'mergeable',
+    })),
   };
 }
 

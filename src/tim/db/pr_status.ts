@@ -29,6 +29,8 @@ export interface PrStatusRow {
   pr_updated_at: string | null;
   latest_commit_pushed_at: string | null;
   ready_at: string | null;
+  /** Commits on the base branch that the head branch does not have. Only tracked for shepherded PRs. */
+  behind_by: number | null;
   last_fetched_at: string;
   created_at: string;
   updated_at: string;
@@ -1075,6 +1077,17 @@ export function updatePrMergeableAndReviewDecision(
   );
 
   return updateInTransaction.immediate(prStatusId, mergeable, reviewDecision, lastFetchedAt);
+}
+
+export function updatePrBehindBy(db: Database, prStatusId: number, behindBy: number | null): void {
+  db.prepare(
+    `
+      UPDATE pr_status
+      SET behind_by = ?,
+          updated_at = ${SQL_NOW_ISO_UTC}
+      WHERE id = ?
+    `
+  ).run(behindBy, prStatusId);
 }
 
 export function getPrStatusByRepoAndNumber(

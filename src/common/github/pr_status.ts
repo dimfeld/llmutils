@@ -1402,6 +1402,53 @@ export async function fetchPrReviewThread(
   return normalizeReviewThread(thread);
 }
 
+interface BranchComparisonGraphQlResponse {
+  repository: {
+    ref: {
+      compare: {
+        behindBy: number;
+      } | null;
+    } | null;
+  } | null;
+}
+
+const branchComparisonQuery = `
+  query GetBranchComparison($owner: String!, $repo: String!, $baseRef: String!, $headRef: String!) {
+    repository(owner: $owner, name: $repo) {
+      ref(qualifiedName: $baseRef) {
+        compare(headRef: $headRef) {
+          behindBy
+        }
+      }
+    }
+  }
+`;
+
+/**
+ * Returns how many commits on `baseBranch` are missing from `headBranch`, or null when
+ * GitHub cannot compare the two branches (for example, one of them was deleted).
+ */
+export async function fetchBranchBehindBy(
+  owner: string,
+  repo: string,
+  baseBranch: string,
+  headBranch: string,
+  options: GitHubStatusFetchOptions = {}
+): Promise<number | null> {
+  const response = await getOctokit(options.authToken).graphql<BranchComparisonGraphQlResponse>(
+    branchComparisonQuery,
+    {
+      owner,
+      repo,
+      baseRef: `refs/heads/${baseBranch}`,
+      headRef: `refs/heads/${headBranch}`,
+    }
+  );
+
+  const behindBy = response.repository?.ref?.compare?.behindBy;
+  return typeof behindBy === 'number' ? behindBy : null;
+}
+
 export async function fetchPrMergeableAndReviewDecision(
   owner: string,
   repo: string,

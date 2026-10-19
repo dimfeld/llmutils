@@ -10,6 +10,7 @@ export const BASE_TABS: readonly TabDescriptor[] = [
   { label: 'Pull Requests', slug: 'prs' },
   { label: 'Activity', slug: 'activity' },
   { label: 'Inbox', slug: 'inbox' },
+  { label: 'Shepherd', slug: 'shepherd' },
 ] as const;
 
 const SETTINGS_TAB: TabDescriptor = { label: 'Settings', slug: 'settings' };

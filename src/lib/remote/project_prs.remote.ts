@@ -1,3 +1,4 @@
+import type { Database } from 'bun:sqlite';
 import { command, query } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
@@ -28,6 +29,11 @@ import {
   type LinkedPlanSummary,
   type PrStatusDetail,
 } from '$tim/db/pr_status.js';
+import {
+  getActivePrShepherdsByPrStatusIds,
+  type PrShepherdRow,
+  type PrShepherdSource,
+} from '$tim/db/pr_shepherd.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
 import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
 
@@ -57,6 +63,13 @@ export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
   isStackedOnOpenPr: boolean;
   /** True for the current user's own open PRs that have no human reviewer requested yet. */
   currentUserNeedsReviewRequest: boolean;
+  /** Set when the PR is in the shepherd list. */
+  shepherd: PrShepherdSummary | null;
+}
+
+export interface PrShepherdSummary {
+  source: PrShepherdSource;
+  enrolledAt: string;
 }
 
 interface RefreshResult {
@@ -93,11 +106,16 @@ function getCurrentUserNeedsReviewRequest(pr: PrStatusDetail, username: string |
 }
 
 function enrichProjectPrs(
+  db: Database,
   projectId: number,
   prs: PrStatusDetailWithRequiredChecks[],
   linkedPlansByPrUrl: Map<string, LinkedPlanSummary[]>,
   username: string | null
 ): EnrichedProjectPr[] {
+  const shepherds = getActivePrShepherdsByPrStatusIds(
+    db,
+    prs.map((pr) => pr.status.id)
+  );
   return prs.map((pr) => ({
     ...pr,
     projectId,
@@ -108,7 +126,12 @@ function enrichProjectPrs(
     currentUserReviewRequestStacked: false,
     isStackedOnOpenPr: false,
     currentUserNeedsReviewRequest: getCurrentUserNeedsReviewRequest(pr, username),
+    shepherd: toShepherdSummary(shepherds.get(pr.status.id)),
   }));
+}
+
+function toShepherdSummary(row: PrShepherdRow | undefined): PrShepherdSummary | null {
+  return row ? { source: row.source, enrolledAt: row.enrolled_at } : null;
 }
 
 /**
@@ -349,6 +372,7 @@ async function getAllProjectPrsData() {
 
     allProjectPrs.push(
       ...enrichProjectPrs(
+        db,
         project.id,
         prs,
         new Map(projectPrUrls.map((url) => [url, [] as LinkedPlanSummary[]])),
@@ -542,7 +566,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
     db,
     prs.map((pr) => pr.status.pr_url)
   );
-  const enrichedPrs = enrichProjectPrs(Number(projectId), prs, linkedPlansByPrUrl, username);
+  const enrichedPrs = enrichProjectPrs(db, Number(projectId), prs, linkedPlansByPrUrl, username);
 
   if (enrichedPrs.length === 0) {
     return {

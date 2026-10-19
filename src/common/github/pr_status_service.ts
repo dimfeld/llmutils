@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { canonicalizePrUrl, parsePrOrIssueNumber } from './identifiers.js';
 import { ensureBranchMergeRequirementsFresh } from './branch_merge_requirements_service.js';
 import {
+  fetchBranchBehindBy,
   fetchPrCheckStatus,
   fetchPrDigestTimeline,
   fetchPrFullStatus,
@@ -14,15 +15,18 @@ import {
 import {
   getPrStatusByUrl,
   getPrStatusByRepoAndNumber,
+  updatePrBehindBy,
   updatePrMergeableAndReviewDecision,
   updatePrCheckRuns,
   upsertPrReviewThread,
   upsertPrReviewRequestByReviewer,
   upsertPrStatus,
   type PrStatusDetail,
+  type PrStatusRow,
   type StoredPrReviewThreadInput,
   type UpsertPrStatusInput,
 } from '../../tim/db/pr_status.js';
+import { isPrShepherded } from '../../tim/db/pr_shepherd.js';
 
 const BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS = 30 * 60 * 1000;
 
@@ -130,7 +134,7 @@ export async function refreshPrStatus(
     );
   }
 
-  return db
+  const updatedDetail = db
     .transaction((): PrStatusDetail => {
       const detail = upsertPrStatus(db, {
         prUrl: canonicalPrUrl,
@@ -220,6 +224,51 @@ export async function refreshPrStatus(
       return detail;
     })
     .immediate();
+
+  if (await refreshShepherdedPrBehindBy(db, updatedDetail.status, fetchOptions)) {
+    return getPrStatusByUrl(db, canonicalPrUrl) ?? updatedDetail;
+  }
+  return updatedDetail;
+}
+
+/**
+ * Update `behind_by` for an open PR that is in the shepherd list. The comparison costs an
+ * extra GitHub call, so the other PRs are skipped. Failures are logged and do not fail the
+ * caller, because the value is only a hint.
+ *
+ * Returns true when the row was updated.
+ */
+export async function refreshShepherdedPrBehindBy(
+  db: Database,
+  status: PrStatusRow,
+  options?: RefreshPrStatusOptions
+): Promise<boolean> {
+  if (
+    status.state !== 'open' ||
+    !status.base_branch ||
+    !status.head_branch ||
+    !isPrShepherded(db, status.id)
+  ) {
+    return false;
+  }
+
+  try {
+    const behindBy = await fetchBranchBehindBy(
+      status.owner,
+      status.repo,
+      status.base_branch,
+      status.head_branch,
+      ...(options ? [options] : [])
+    );
+    updatePrBehindBy(db, status.id, behindBy);
+    return true;
+  } catch (err) {
+    console.warn(
+      `[pr_status] Failed to compare ${status.head_branch} with ${status.base_branch} for ${status.pr_url}:`,
+      err
+    );
+    return false;
+  }
 }
 
 /** Lightweight refresh that only updates check runs and rollup state, not PR lifecycle fields.
@@ -300,7 +349,7 @@ export async function fetchAndUpdatePrMergeableStatus(
   }
 
   const mergeableStatus = await fetchPrMergeableAndReviewDecision(owner, repo, prNumber);
-  updatePrMergeableAndReviewDecision(
+  const detail = updatePrMergeableAndReviewDecision(
     db,
     existing.id,
     mergeableStatus.mergeable,
@@ -313,6 +362,7 @@ export async function fetchAndUpdatePrMergeableStatus(
       submittedAt: review.submittedAt,
     }))
   );
+  await refreshShepherdedPrBehindBy(db, detail.status);
 }
 
 export async function fetchAndUpdatePrReviewThreads(

@@ -80,6 +80,16 @@ tim treats a PR as approved only when GitHub reports the review decision as appr
 
 The **My PRs** lists on the Active Work page and on the PRs page show a **No reviewer** badge on your open, non-draft PRs that have no human reviewer yet. A PR gets the badge when it has no active human review request, no submitted review from someone other than you, and no GitHub review decision of changes requested or approved (an approval counts only when a non-bot reviewer approved). Bot reviewers such as `*[bot]` and `Copilot` do not count. Use the badge to find PRs that got bot review but still need a human review request.
 
+### PR shepherd
+
+The **Shepherd** tab (`/projects/{projectId}/shepherd`, or All Projects) monitors your own open PRs until they merge. It shows the next action for each PR and a button for that action. The shepherd never starts an action automatically.
+
+- **Adding PRs.** When one of your PRs becomes ready for review (it is opened as a non-draft PR, or it moves from draft to ready), tim adds it to the list. This uses webhook events, so it needs the webhook receiver. You can also add a PR with **Watch** on the PR page or on the Shepherd page, which also lists your other open PRs. If you remove a PR, tim does not add it again automatically.
+- **Status.** Each PR shows one of: **Needs attention**, **Ready to merge**, **Waiting for base PR** (a stacked PR whose base PR is still open), **Waiting for checks**, **Waiting for review**, or **Draft**. Stacked PRs show together as a stack, from the PR nearest to the trunk to the tip.
+- **Actions.** **Fix Conflicts** starts a `tim pr rebase` session. **Fix CI** starts a `tim pr fix-ci` session. **Fix Review Comments** starts a `tim pr fix` session for the unresolved review threads. When a PR is behind its base branch, **Rebase on Base** and **Merge Base In** update the branch through GitHub. These two buttons start new CI runs, so tim only shows them as a hint and does not block "Ready to merge". When a PR is ready, **Merge on GitHub** opens the PR.
+- **Notifications.** tim adds an inbox item when a watched PR gets merge conflicts (with a **Fix Conflicts** action) and when it becomes ready to merge. CI failures and review comments use the existing inbox items.
+- **Updates.** Webhook events update the watched PRs. A push to the base branch of a watched PR also refreshes its mergeable state and its "behind base" count, so new conflicts show without any PR activity. Add the **Push** event to your GitHub App or repository webhook for this. As a fallback, the web server checks watched PRs every 10 minutes with a small GitHub query, and does a full refresh only when something changed. Without webhooks, it does a full refresh of the watched PRs every 2 minutes.
+
 ### Project chats
 
 Session windows hide lifecycle command output and tool calls by default. Use the wrench button to open the message visibility pop-up and change either option. Tim agent tool calls and results always stay visible.
@@ -230,7 +240,7 @@ githubWebhooks:
 
 Webhook events also feed the PR inbox. An item is created when something needs your attention on a PR: a review request for you, a comment or approval on a PR you authored, a comment on a PR where you submitted a review, a required check failing on your PR, your PR being merged, or your PR leaving the merge queue without merging. Your own actions are ignored, except that your own PR merge events still create inbox items. Comment/review events from bot accounts are ignored, and events before `githubWebhooks.ignoreSideEffectsBefore` never create items. Repeated events on the same PR update one item instead of stacking up. Items need `githubUsername` (or a logged-in `gh`) to know which PRs are yours.
 
-Read the inbox in the web UI: the toolbar bell shows unread items from every project, and the **Inbox** tab (`/projects/{projectId}/inbox`, or All Projects) shows the full list with read and dismissed state. Rows carry an action where one makes sense — **Run Review Guide** for a review request, **Fix PR** for a comment on your PR, **Fix CI** for a failing check — which launches the same session the Pull Requests tab would. Items are marked read when you click a link or an action, never by just opening the page.
+Read the inbox in the web UI: the toolbar bell shows unread items from every project, and the **Inbox** tab (`/projects/{projectId}/inbox`, or All Projects) shows the full list with read and dismissed state. Rows carry an action where one makes sense — **Run Review Guide** for a review request, **Fix PR** for a comment on your PR, **Fix CI** for a failing check, **Fix Conflicts** for merge conflicts on a PR in the [PR shepherd](#pr-shepherd) list — which launches the same session the Pull Requests tab would. Items are marked read when you click a link or an action, never by just opening the page.
 
 Unlike `githubWebhooks`, the `inbox` block is repo-settable, so it can live in `~/.config/tim/config.yml`, `.tim/config/tim.yml`, or `.tim/config/tim.local.yml`:
 

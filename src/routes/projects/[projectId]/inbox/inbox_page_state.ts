@@ -35,6 +35,14 @@ const KIND_BADGE_CONFIG: Record<InboxItemKind, KindBadgeConfig> = {
     label: 'Merge Queue Removed',
     colorClasses: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
   },
+  pr_conflicts: {
+    label: 'Merge Conflicts',
+    colorClasses: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
+  },
+  pr_ready_to_merge: {
+    label: 'Ready to Merge',
+    colorClasses: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
+  },
 };
 
 export function getKindBadge(kind: InboxItemKind): KindBadgeConfig {
@@ -50,6 +58,7 @@ const ACTION_BUTTON_LABELS: Record<InboxActionType, ActionButtonConfig> = {
   'review-guide': { label: 'Run Review Guide', type: 'launch' },
   'pr-fix': { label: 'Fix PR', type: 'launch' },
   'ci-fix': { label: 'Fix CI', type: 'launch' },
+  'pr-rebase': { label: 'Fix Conflicts', type: 'launch' },
   github: { label: 'View on GitHub', type: 'external-link' },
 };
 
@@ -69,6 +78,8 @@ export function getEventCountLabel(item: EnrichedInboxItem): string | null {
     pr_merged: 'merge',
     ci_failure: 'failure',
     merge_queue_removed: 'removal',
+    pr_conflicts: 'conflict',
+    pr_ready_to_merge: 'update',
   };
   const noun = NOUNS[kind] ?? 'event';
   const plural = noun.endsWith('s') ? noun + 'es' : noun + 's';

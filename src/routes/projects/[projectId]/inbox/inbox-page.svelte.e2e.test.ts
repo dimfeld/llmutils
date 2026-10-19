@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => {
     startFixPrThreads: vi.fn(),
     startFixThreads: vi.fn(),
     startPrCiFix: vi.fn(),
+    startPrRebase: vi.fn(),
     startCiFix: vi.fn(),
     goto: vi.fn(async (): Promise<void> => undefined),
     toast: {
@@ -58,6 +59,7 @@ vi.mock('$lib/remote/review_thread_actions.remote.js', () => ({
   startFixPrThreads: mocks.startFixPrThreads,
   startFixThreads: mocks.startFixThreads,
   startPrCiFix: mocks.startPrCiFix,
+  startPrRebase: mocks.startPrRebase,
   startCiFix: mocks.startCiFix,
 }));
 
@@ -124,6 +126,7 @@ beforeEach(() => {
   mocks.startFixPrThreads.mockReset();
   mocks.startFixThreads.mockReset();
   mocks.startPrCiFix.mockReset();
+  mocks.startPrRebase.mockReset();
   mocks.startCiFix.mockReset();
   mocks.toast.error.mockReset();
   mocks.sessionCallbacks.length = 0;
@@ -341,6 +344,20 @@ describe('inbox full page', () => {
     await expect.poll(() => mocks.startCiFix.mock.calls.length).toBe(1);
     expect(mocks.startCiFix).toHaveBeenCalledWith({ planUuid: 'plan-xyz' });
     expect(mocks.startPrCiFix).not.toHaveBeenCalled();
+  });
+
+  test('pr_conflicts rows show a Fix Conflicts button using startPrRebase', async () => {
+    mocks.startPrRebase.mockResolvedValue({ status: 'started' });
+    const item = makeItem({
+      id: 16,
+      kind: 'pr_conflicts',
+      action: { type: 'pr-rebase', projectId: 7, prNumber: 42 },
+    });
+    renderPage(makeResponse({ items: [item], unreadCount: 1 }));
+
+    await page.getByRole('button', { name: 'Fix Conflicts' }).click();
+    await expect.poll(() => mocks.startPrRebase.mock.calls.length).toBe(1);
+    expect(mocks.startPrRebase).toHaveBeenCalledWith({ projectId: 7, prNumber: 42 });
   });
 
   test.each(['pr_approved', 'pr_merged', 'reviewed_pr_comment'] as const)(

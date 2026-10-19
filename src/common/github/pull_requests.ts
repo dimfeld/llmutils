@@ -718,6 +718,64 @@ export async function setPullRequestDraftState(
   }
 }
 
+export type PullRequestBranchUpdateMethod = 'rebase' | 'merge';
+
+/**
+ * Update a pull request branch with the latest commits from its base branch, the same as
+ * the "Update branch" button on GitHub. `rebase` rewrites the PR commits on top of the base;
+ * `merge` adds a merge commit. GitHub rejects the update when the head is no longer
+ * `expectedHeadSha` or when the update has conflicts.
+ *
+ * @throws {Error} If no token is configured, the PR is not found, or GitHub rejects the update
+ */
+export async function updatePullRequestBranch(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  options: { method: PullRequestBranchUpdateMethod; expectedHeadSha?: string | null }
+): Promise<void> {
+  if (!resolveGitHubToken()) {
+    throw new Error('GITHUB_TOKEN is not set. Cannot update the pull request branch.');
+  }
+
+  const octokit = getOctokit();
+  const response = await octokit.graphql<PullRequestDraftStateGraphQlResponse>(
+    pullRequestDraftStateQuery,
+    { owner, repo, prNumber }
+  );
+  const pullRequest = response.repository?.pullRequest;
+  if (!pullRequest) {
+    throw new Error(`Could not find pull request #${prNumber} in ${owner}/${repo}`);
+  }
+
+  await octokit.graphql(
+    `
+      mutation UpdatePullRequestBranch(
+        $pullRequestId: ID!
+        $expectedHeadOid: GitObjectID
+        $updateMethod: PullRequestBranchUpdateMethod
+      ) {
+        updatePullRequestBranch(
+          input: {
+            pullRequestId: $pullRequestId
+            expectedHeadOid: $expectedHeadOid
+            updateMethod: $updateMethod
+          }
+        ) {
+          pullRequest {
+            id
+          }
+        }
+      }
+    `,
+    {
+      pullRequestId: pullRequest.id,
+      expectedHeadOid: options.expectedHeadSha ?? null,
+      updateMethod: options.method === 'rebase' ? 'REBASE' : 'MERGE',
+    }
+  );
+}
+
 export interface PostedPullRequestComment {
   id: number;
   htmlUrl: string | null;

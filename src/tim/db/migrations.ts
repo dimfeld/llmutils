@@ -1514,6 +1514,28 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 58,
+    up: `SELECT 1;`,
+    afterUp: (db: Database): void => {
+      if (!tableExists(db, 'pr_status')) {
+        return;
+      }
+      if (!tableColumns(db, 'pr_status').has('behind_by')) {
+        db.exec('ALTER TABLE pr_status ADD COLUMN behind_by INTEGER');
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pr_shepherd (
+          pr_status_id INTEGER PRIMARY KEY REFERENCES pr_status(id) ON DELETE CASCADE,
+          source TEXT NOT NULL CHECK(source IN ('auto', 'manual')),
+          enrolled_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          removed_at TEXT,
+          notified_flags TEXT,
+          updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+        );
+      `);
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

@@ -9,7 +9,7 @@ import {
   type LinkedPlanSummary,
 } from '$tim/db/pr_status.js';
 
-export type InboxActionType = 'review-guide' | 'pr-fix' | 'ci-fix' | 'github';
+export type InboxActionType = 'review-guide' | 'pr-fix' | 'ci-fix' | 'pr-rebase' | 'github';
 
 export interface InboxActionDescriptor {
   type: InboxActionType | null;
@@ -35,7 +35,10 @@ function getActionType(kind: InboxItemKind): InboxActionType | null {
     case 'ci_failure':
       return 'ci-fix';
     case 'merge_queue_removed':
+    case 'pr_ready_to_merge':
       return 'github';
+    case 'pr_conflicts':
+      return 'pr-rebase';
     case 'pr_merged':
     case 'pr_approved':
       return null;

@@ -17,6 +17,7 @@ describe('tab_navigation', () => {
       'prs',
       'activity',
       'inbox',
+      'shepherd',
     ]);
   });
 
@@ -45,16 +46,21 @@ describe('tab_navigation', () => {
       expect(resolveTabSlugForIndex('1', 6)).toBe('inbox');
     });
 
-    test('Ctrl+7 resolves to settings for a specific project', () => {
-      expect(resolveTabSlugForIndex('1', 7)).toBe('settings');
+    test('Ctrl+7 resolves to the Shepherd tab in every context', () => {
+      expect(resolveTabSlugForIndex('1', 7)).toBe('shepherd');
+      expect(resolveTabSlugForIndex('all', 7)).toBe('shepherd');
     });
 
-    test('Ctrl+7 is out of range for the all-projects context (no settings tab)', () => {
-      expect(resolveTabSlugForIndex('all', 7)).toBeUndefined();
+    test('Ctrl+8 resolves to settings for a specific project', () => {
+      expect(resolveTabSlugForIndex('1', 8)).toBe('settings');
     });
 
-    test('Ctrl+8 is out of range even for a specific project', () => {
-      expect(resolveTabSlugForIndex('1', 8)).toBeUndefined();
+    test('Ctrl+8 is out of range for the all-projects context (no settings tab)', () => {
+      expect(resolveTabSlugForIndex('all', 8)).toBeUndefined();
+    });
+
+    test('Ctrl+9 is out of range even for a specific project', () => {
+      expect(resolveTabSlugForIndex('1', 9)).toBeUndefined();
     });
 
     test('index 0 is out of range', () => {

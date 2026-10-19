@@ -26,6 +26,7 @@
   } from '$lib/remote/pr_status.remote.js';
   import { REVIEW_LABEL_NAME } from '$common/github/review_command.js';
   import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
+  import { setPrShepherded } from '$lib/remote/pr_shepherd.remote.js';
   import {
     startPrAutoreview,
     startFixPrThreads,
@@ -130,6 +131,7 @@
 
   let refreshing = $state(false);
   let draftUpdating = $state(false);
+  let shepherdUpdating = $state(false);
   let timReviewRequesting = $state(false);
   let reviewGuideRunning: 'full' | 'guide-only' | false = $state(false);
   let fixStarting = $state(false);
@@ -186,6 +188,7 @@
     return normalizeGitHubUsername(pr.status.author) === normalizeGitHubUsername(username);
   });
   let canToggleDraft = $derived(tokenConfigured && pr.status.state === 'open' && isOwnPr);
+  let canToggleShepherd = $derived(pr.status.state === 'open' && isOwnPr);
   let hasTimReviewLabel = $derived(
     pr.labels.some((label) => label.name.toLowerCase() === REVIEW_LABEL_NAME)
   );
@@ -346,6 +349,26 @@
       actionError = err instanceof Error ? err.message : String(err);
     } finally {
       draftUpdating = false;
+    }
+  }
+
+  async function handleToggleShepherd() {
+    if (!canToggleShepherd || shepherdUpdating) {
+      return;
+    }
+
+    actionError = null;
+    shepherdUpdating = true;
+    try {
+      await setPrShepherded({
+        projectId: pr.projectId,
+        prNumber: pr.status.pr_number,
+        shepherded: pr.shepherd === null,
+      });
+    } catch (err) {
+      actionError = err instanceof Error ? err.message : String(err);
+    } finally {
+      shepherdUpdating = false;
     }
   }
 
@@ -712,6 +735,18 @@
                 : 'Request tim review'}
           </button>
         {/if}
+        {#if canToggleShepherd}
+          <button
+            onclick={handleToggleShepherd}
+            disabled={shepherdUpdating}
+            class="rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+            title={pr.shepherd
+              ? 'Remove this PR from the shepherd list'
+              : 'Watch this PR on the shepherd page until it merges'}
+          >
+            {shepherdUpdating ? 'Updating...' : pr.shepherd ? 'Stop Watching' : 'Watch'}
+          </button>
+        {/if}
         {#if canToggleDraft}
           <button
             onclick={handleToggleDraftStatus}
@@ -779,6 +814,20 @@
         >
           Conflicts
         </span>
+      {:else if (pr.status.behind_by ?? 0) > 0}
+        <span
+          class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+        >
+          {pr.status.behind_by} behind {pr.status.base_branch ?? 'base'}
+        </span>
+      {/if}
+      {#if pr.shepherd}
+        <a
+          href="/projects/{projectId}/shepherd"
+          class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 hover:underline dark:bg-blue-900/30 dark:text-blue-300"
+        >
+          Watched
+        </a>
       {/if}
       {#if pr.currentUserPushedAfterReview}
         <span

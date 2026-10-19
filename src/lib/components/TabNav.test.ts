@@ -68,6 +68,7 @@ describe('TabNav', () => {
       'prs',
       'activity',
       'inbox',
+      'shepherd',
       'settings',
     ]);
   });

@@ -23,7 +23,9 @@ import {
   handlePullRequestReviewEvent,
   handleCheckRunEvent,
   handlePullRequestReviewThreadEvent,
+  handlePushEvent,
 } from './webhook_event_handlers.js';
+import { enrollPrShepherd } from '../../tim/db/pr_shepherd.js';
 
 describe('common/github/webhook_event_handlers', () => {
   let tempDir: string;
@@ -2424,6 +2426,83 @@ describe('common/github/webhook_event_handlers', () => {
       });
 
       expect(result.inboxSignals).toBeUndefined();
+    });
+  });
+
+  describe('handlePushEvent', () => {
+    function addPr(prNumber: number, baseBranch: string, headBranch: string): number {
+      return upsertPrStatus(db, {
+        prUrl: `https://github.com/example/repo/pull/${prNumber}`,
+        owner: 'example',
+        repo: 'repo',
+        prNumber,
+        author: 'alice',
+        title: `PR ${prNumber}`,
+        state: 'open',
+        draft: false,
+        mergeable: 'MERGEABLE',
+        headSha: `sha-${prNumber}`,
+        baseSha: 'base',
+        baseBranch,
+        headBranch,
+        reviewDecision: null,
+        checkRollupState: null,
+        mergedAt: null,
+        lastFetchedAt: '2026-01-01T00:00:00.000Z',
+        checks: [],
+        reviews: [],
+        labels: [],
+      }).status.id;
+    }
+
+    function pushPayload(ref: string, overrides: Record<string, unknown> = {}) {
+      return { ref, repository: { full_name: 'example/repo' }, ...overrides };
+    }
+
+    test('queues a mergeable refresh for shepherded PRs on the pushed base or head branch', () => {
+      enrollPrShepherd(db, addPr(1, 'main', 'feature-a'), 'auto');
+      enrollPrShepherd(db, addPr(2, 'feature-a', 'feature-b'), 'auto');
+      addPr(3, 'main', 'not-watched');
+
+      const result = handlePushEvent(db, pushPayload('refs/heads/main'));
+      expect(result).toEqual({
+        updated: false,
+        prUrls: ['https://github.com/example/repo/pull/1'],
+        apiRefreshTargets: [
+          {
+            owner: 'example',
+            repo: 'repo',
+            prNumber: 1,
+            operation: 'mergeable refresh after push to main',
+            type: 'mergeable',
+          },
+        ],
+      });
+
+      expect(
+        handlePushEvent(db, pushPayload('refs/heads/feature-a')).apiRefreshTargets?.map(
+          (target) => target.prNumber
+        )
+      ).toEqual([1, 2]);
+    });
+
+    test('ignores tags, deleted branches, unknown repos, and branches without shepherded PRs', () => {
+      enrollPrShepherd(db, addPr(1, 'main', 'feature-a'), 'auto');
+
+      expect(handlePushEvent(db, pushPayload('refs/tags/v1'))).toEqual({ updated: false });
+      expect(handlePushEvent(db, pushPayload('refs/heads/main', { deleted: true }))).toEqual({
+        updated: false,
+      });
+      expect(
+        handlePushEvent(db, {
+          ref: 'refs/heads/main',
+          repository: { full_name: 'other/repo' },
+        })
+      ).toEqual({ updated: false });
+      expect(handlePushEvent(db, pushPayload('refs/heads/unrelated'))).toEqual({
+        updated: false,
+      });
+      expect(handlePushEvent(db, { ref: 'refs/heads/main' })).toEqual({ updated: false });
     });
   });
 });

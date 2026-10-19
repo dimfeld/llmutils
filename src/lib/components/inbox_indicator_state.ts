@@ -42,6 +42,8 @@ const KIND_CONFIG: Record<
     iconKey: 'list-x',
     countNoun: 'removal',
   },
+  pr_conflicts: { label: 'Merge conflicts', iconKey: 'circle-x', countNoun: 'conflict' },
+  pr_ready_to_merge: { label: 'Ready to merge', iconKey: 'check', countNoun: 'update' },
 };
 
 export function getInboxIndicatorState(

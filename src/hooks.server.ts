@@ -11,10 +11,12 @@ import {
 } from '$lib/server/daily_digest.js';
 import { getServerContext } from '$lib/server/init.js';
 import { AutoRunScheduler } from '$lib/server/auto_run.js';
+import { PrShepherdMonitor } from '$lib/server/pr_shepherd.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import {
   getDailyDigestScheduler,
   getAutoRunScheduler,
+  getPrShepherdMonitor,
   getSessionDiscoveryClient,
   getSessionInitPromise,
   getSessionManager,
@@ -25,6 +27,7 @@ import {
   setSessionDiscoveryClient,
   setDailyDigestScheduler,
   setAutoRunScheduler,
+  setPrShepherdMonitor,
   setSessionInitPromise,
   setSessionManager,
   setSlackNotifier,
@@ -82,6 +85,7 @@ function registerCurrentShutdownHandlers(): void {
   registerShutdownHandlers(() => {
     getSyncService()?.stop();
     getAutoRunScheduler()?.stop();
+    getPrShepherdMonitor()?.stop();
     getDailyDigestScheduler()?.stop();
     getSlackNotifier()?.stop();
     getWebhookPoller()?.stop();
@@ -99,12 +103,29 @@ function ensureAutoRunScheduler(db: Database, config: TimConfig): boolean {
   return true;
 }
 
+function ensurePrShepherdMonitor(db: Database): boolean {
+  if (getPrShepherdMonitor()) return false;
+  const monitor = new PrShepherdMonitor(db, {
+    getSessionManager: () => {
+      try {
+        return getSessionManager();
+      } catch {
+        return null;
+      }
+    },
+  });
+  monitor.start();
+  setPrShepherdMonitor(monitor);
+  return true;
+}
+
 export const init: ServerInit = async () => {
   const existingPromise = getSessionInitPromise();
   if (existingPromise) {
     await existingPromise;
     const { config, db } = await getServerContext();
     ensureAutoRunScheduler(db, config);
+    ensurePrShepherdMonitor(db);
     registerCurrentShutdownHandlers();
     // Handle poller state changes during HMR re-init.
     const existingPoller = getWebhookPoller();
@@ -163,6 +184,7 @@ export const init: ServerInit = async () => {
   if (existingServer && existingDiscoveryClient) {
     const { config, db } = await getServerContext();
     ensureAutoRunScheduler(db, config);
+    ensurePrShepherdMonitor(db);
     const shouldRunSync = shouldRunSyncService(config);
     const shouldRunSlack = shouldStartSlackNotifier(config);
     const shouldRunDigest = shouldStartDailyDigest(db, config);
@@ -204,12 +226,14 @@ export const init: ServerInit = async () => {
     slackNotifier: false,
     dailyDigestScheduler: false,
     autoRunScheduler: false,
+    prShepherdMonitor: false,
     syncService: false,
   };
 
   const initPromise = (async () => {
     const { config, db } = await getServerContext();
     createdResources.autoRunScheduler = ensureAutoRunScheduler(db, config);
+    createdResources.prShepherdMonitor = ensurePrShepherdMonitor(db);
     const sessionManager = existingServer
       ? getSessionManager()
       : new SessionManager(db, { retention: config.headless?.sessionRetention });
@@ -286,6 +310,10 @@ export const init: ServerInit = async () => {
     if (createdResources.autoRunScheduler) {
       getAutoRunScheduler()?.stop();
       setAutoRunScheduler(null);
+    }
+    if (createdResources.prShepherdMonitor) {
+      getPrShepherdMonitor()?.stop();
+      setPrShepherdMonitor(null);
     }
     if (createdResources.discoveryClient) {
       const discoveryClient = getSessionDiscoveryClient();

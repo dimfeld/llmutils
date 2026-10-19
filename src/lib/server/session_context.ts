@@ -3,6 +3,7 @@ import type { SessionDiscoveryClient } from './session_discovery.js';
 import type { SyncServiceHandle } from './sync_service.js';
 import type { WebSocketServerHandle } from './ws_server.js';
 import type { AutoRunScheduler } from './auto_run.js';
+import type { PrShepherdMonitor } from './pr_shepherd.js';
 
 export interface WebhookPollerHandle {
   stop: () => void;
@@ -26,6 +27,7 @@ interface SessionContextState {
   slackNotifier: SlackNotifierHandle | null;
   dailyDigestScheduler: DailyDigestSchedulerHandle | null;
   autoRunScheduler: AutoRunScheduler | null;
+  prShepherdMonitor: PrShepherdMonitor | null;
   syncService: SyncServiceHandle | null;
   initPromise: Promise<SessionManager> | null;
 }
@@ -45,6 +47,7 @@ function getState(): SessionContextState {
     slackNotifier: null,
     dailyDigestScheduler: null,
     autoRunScheduler: null,
+    prShepherdMonitor: null,
     syncService: null,
     initPromise: null,
   };
@@ -58,6 +61,14 @@ export function getAutoRunScheduler(): AutoRunScheduler | null {
 
 export function setAutoRunScheduler(scheduler: AutoRunScheduler | null): void {
   getState().autoRunScheduler = scheduler;
+}
+
+export function getPrShepherdMonitor(): PrShepherdMonitor | null {
+  return getState().prShepherdMonitor ?? null;
+}
+
+export function setPrShepherdMonitor(monitor: PrShepherdMonitor | null): void {
+  getState().prShepherdMonitor = monitor;
 }
 
 export function getSessionManager(): SessionManager {

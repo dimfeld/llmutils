@@ -11,6 +11,8 @@ export const INBOX_ITEM_KINDS = [
   'pr_approved',
   'ci_failure',
   'merge_queue_removed',
+  'pr_conflicts',
+  'pr_ready_to_merge',
 ] as const;
 
 export type InboxItemKind = (typeof INBOX_ITEM_KINDS)[number];

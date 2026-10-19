@@ -17,6 +17,7 @@
     startFixPrThreads,
     startFixThreads,
     startPrCiFix,
+    startPrRebase,
     startCiFix,
   } from '$lib/remote/review_thread_actions.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
@@ -160,6 +161,12 @@
               prNumber: action.prNumber,
             });
           }
+          break;
+        case 'pr-rebase':
+          result = await startPrRebase({
+            projectId: action.projectId,
+            prNumber: action.prNumber,
+          });
           break;
         default:
           return;

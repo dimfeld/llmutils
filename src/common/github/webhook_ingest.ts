@@ -21,6 +21,7 @@ import {
   handlePullRequestEvent,
   handlePullRequestReviewEvent,
   handlePullRequestReviewThreadEvent,
+  handlePushEvent,
   type InboxSignal,
   type PrDraftTransition,
   type PrRefreshTarget,
@@ -71,6 +72,7 @@ const WEBHOOK_EVENT_HANDLERS: ReadonlyMap<string, WebhookEventHandler> = new Map
   ['pull_request_review_thread', handlePullRequestReviewThreadEvent],
   ['pull_request_review_comment', handlePullRequestReviewThreadEvent],
   ['check_run', handleCheckRunEvent],
+  ['push', handlePushEvent],
 ]);
 
 type DelayFn = (ms: number) => Promise<void>;

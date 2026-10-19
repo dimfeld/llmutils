@@ -384,9 +384,9 @@ describe('handleGlobalShortcuts', () => {
       expect(event.preventDefault).toHaveBeenCalledOnce();
     });
 
-    test('Ctrl+7 resolves to settings for a numeric project', () => {
+    test('Ctrl+8 resolves to settings for a numeric project', () => {
       let resolvedSlug: string | undefined;
-      const event = makeKeyEvent('Digit7', { ctrlKey: true });
+      const event = makeKeyEvent('Digit8', { ctrlKey: true });
       handleGlobalShortcuts(event, {
         navigateTab(tabIndex) {
           resolvedSlug = resolveTabSlugForIndex('1', tabIndex);
@@ -397,25 +397,12 @@ describe('handleGlobalShortcuts', () => {
       expect(event.preventDefault).toHaveBeenCalledOnce();
     });
 
-    test('Ctrl+7 does nothing for all-projects (no settings tab)', () => {
-      let resolvedSlug: string | undefined = 'unset';
-      const event = makeKeyEvent('Digit7', { ctrlKey: true });
-      handleGlobalShortcuts(event, {
-        navigateTab(tabIndex) {
-          resolvedSlug = resolveTabSlugForIndex('all', tabIndex);
-          return !!resolvedSlug;
-        },
-      });
-      expect(resolvedSlug).toBeUndefined();
-      expect(event.preventDefault).not.toHaveBeenCalled();
-    });
-
-    test('Ctrl+8 does nothing (out of range for all contexts)', () => {
+    test('Ctrl+8 does nothing for all-projects (no settings tab)', () => {
       let resolvedSlug: string | undefined = 'unset';
       const event = makeKeyEvent('Digit8', { ctrlKey: true });
       handleGlobalShortcuts(event, {
         navigateTab(tabIndex) {
-          resolvedSlug = resolveTabSlugForIndex('1', tabIndex);
+          resolvedSlug = resolveTabSlugForIndex('all', tabIndex);
           return !!resolvedSlug;
         },
       });

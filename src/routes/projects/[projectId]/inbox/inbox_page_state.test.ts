@@ -45,6 +45,8 @@ describe('getKindBadge', () => {
     'pr_merged',
     'ci_failure',
     'merge_queue_removed',
+    'pr_conflicts',
+    'pr_ready_to_merge',
   ];
 
   test.each(ALL_KINDS)('returns a label and dark-mode color classes for %s', (kind) => {

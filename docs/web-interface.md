@@ -249,6 +249,16 @@ Shared overlap utilities live in `src/lib/utils/pr_update_events.ts`: `hasReleva
 
 **Design note**: `eventEmitter.listenerCount('pr:updated')` is used instead of `sseSubscriberCount` to guard DB lookups, because `sseSubscriberCount` is incremented after event subscriptions are attached in `createSessionEventsResponse()`, creating a race window where events could be dropped during SSE setup.
 
+## PR Shepherd
+
+The Shepherd tab (`src/routes/projects/[projectId]/shepherd/`) lists the user's own PRs that are in the `pr_shepherd` table. See [PR Shepherd](database.md#pr-shepherd) for the data model and the server logic.
+
+- **Data**: the page reuses `getProjectPrs` and its `authored` list. `EnrichedProjectPr.shepherd` is set for active shepherd rows. The page refreshes on `pr:updated`, like the PRs layout.
+- **Model**: `buildShepherdList()` in `src/lib/utils/pr_shepherd.ts` groups open PRs into stacks with `groupPrsIntoStacks()` (base branch of one PR = head branch of another, same repo). It keeps a stack when at least one member is shepherded, so unwatched stack members show dimmed with a **Watch** button. Other open PRs go in a collapsed "Your other open PRs" section. Groups sort by the most urgent member status.
+- **Status**: `evaluatePrShepherd()` is pure and is also used on the server for notifications, so the page and the inbox always agree. Blocking items (conflicts, failing CI, changes requested, unresolved threads) give `needs_attention`. Being behind the base branch is a non-blocking hint.
+- **Actions**: `ShepherdPrRow.svelte` shows a button for each attention item. It reuses `startPrRebase`, `startPrCiFix`, and `startFixPrThreads` with the shared `getFixButtonState()` labels. `updateShepherdedPrBranch` (`src/lib/remote/pr_shepherd.remote.ts`) calls GitHub's `updatePullRequestBranch` mutation with `REBASE` or `MERGE` and the cached head SHA as `expectedHeadOid`. `setPrShepherded` adds or removes a PR; both commands accept only the user's own open PRs.
+- `PrDetail.svelte` has a **Watch** / **Stop Watching** button for the user's own open PRs, a **Watched** badge, and a "N behind base" badge when `behind_by` is set.
+
 ## Inbox
 
 ### Push-Based Inbox Updates via SSE
@@ -333,7 +343,7 @@ Pure display and state helpers are extracted to `src/routes/projects/[projectId]
 
 Tab descriptors are defined once in `src/lib/utils/tab_navigation.ts` as `BASE_TABS` and `PROJECT_TABS` (base tabs plus Settings). Both `TabNav.svelte` and the keyboard shortcut layer import from this single source of truth. **To add a tab, add a `{ label, slug }` entry to `BASE_TABS`** — rendering order, `Ctrl+1..N` shortcuts, and `Ctrl+Shift+N` project-switch preservation all derive from it automatically.
 
-The current order is: Sessions (Ctrl+1), Active Work (Ctrl+2), Pull Requests (Ctrl+3), Activity (Ctrl+4), Inbox (Ctrl+5), Plans (Ctrl+6), Settings (Ctrl+7, numeric projects only). Ctrl+8/9 do nothing.
+The current order is: Sessions (Ctrl+1), Active Work (Ctrl+2), Plans (Ctrl+3), Pull Requests (Ctrl+4), Activity (Ctrl+5), Inbox (Ctrl+6), Shepherd (Ctrl+7), Settings (Ctrl+8, numeric projects only). Ctrl+9 does nothing.
 
 `handleGlobalShortcuts` forwards **all** of Ctrl+1..9 to the tab callback (`TAB_DIGIT_MAX = 9`) and lets `resolveTabSlugForIndex()` decide validity — it returns `undefined` for an out-of-range index and for Settings on the all-projects pseudo-project. A digit cap in the key handler is a second, easy-to-forget copy of the tab count: the cap used to be 5, which silently made the Settings tab unreachable by keyboard once the list grew past five entries.
 
@@ -755,11 +765,12 @@ The root layout (`+layout.svelte`) registers a `<svelte:window onkeydown>` handl
 | **Ctrl+/**                     | Focus the search input on the Plans tab    | Suppressed when focus is in a text input, textarea, select, or contenteditable element |
 | **Ctrl+1**                     | Navigate to Sessions tab                   | Always active, even in text inputs                                                     |
 | **Ctrl+2**                     | Navigate to Active Work tab                | Always active                                                                          |
-| **Ctrl+3**                     | Navigate to Pull Requests tab              | Always active                                                                          |
-| **Ctrl+4**                     | Navigate to Activity tab                   | Always active                                                                          |
-| **Ctrl+5**                     | Navigate to Inbox tab                      | Always active                                                                          |
-| **Ctrl+6**                     | Navigate to Plans tab                      | Always active                                                                          |
-| **Ctrl+7**                     | Navigate to Settings tab                   | Numeric projects only; does nothing on All Projects                                    |
+| **Ctrl+3**                     | Navigate to Plans tab                      | Always active                                                                          |
+| **Ctrl+4**                     | Navigate to Pull Requests tab              | Always active                                                                          |
+| **Ctrl+5**                     | Navigate to Activity tab                   | Always active                                                                          |
+| **Ctrl+6**                     | Navigate to Inbox tab                      | Always active                                                                          |
+| **Ctrl+7**                     | Navigate to Shepherd tab                   | Always active                                                                          |
+| **Ctrl+8**                     | Navigate to Settings tab                   | Numeric projects only; does nothing on All Projects                                    |
 
 Tab navigation uses `goto()` with `projectUrl()` to build the correct route for the current project context.
 
