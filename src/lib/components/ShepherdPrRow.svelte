@@ -2,6 +2,7 @@
   import X from '@lucide/svelte/icons/x';
   import ActiveSessionLink from './ActiveSessionLink.svelte';
   import ExecutorChoiceDropdown from './ExecutorChoiceDropdown.svelte';
+  import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import { setPrShepherded, updateShepherdedPrBranch } from '$lib/remote/pr_shepherd.remote.js';
   import {
@@ -236,6 +237,9 @@
       >
         Not watched
       </span>
+    {/if}
+    {#if pr.currentUserNeedsReviewRequest}
+      <NeedsReviewerBadge compact />
     {/if}
     <a
       href="/projects/{pr.projectId}/prs/{pr.status.pr_number}"
