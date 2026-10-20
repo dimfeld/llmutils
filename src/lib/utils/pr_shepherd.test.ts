@@ -170,10 +170,6 @@ describe('evaluatePrShepherd', () => {
         .status
     ).toBe('waiting_review');
   });
-
-  test('a ready PR stacked on another open PR waits for the base PR', () => {
-    expect(evaluatePrShepherd(makePr({}, { stackedOnOpenPr: true })).status).toBe('waiting_stack');
-  });
 });
 
 describe('getPrShepherdNotificationFlags', () => {
@@ -201,7 +197,6 @@ interface TestPr {
   reviews: PrReviewRow[];
   reviewThreads: PrReviewThreadDetail[];
   shepherd: { source: 'auto' } | null;
-  isStackedOnOpenPr?: boolean;
 }
 
 function stackPr(

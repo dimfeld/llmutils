@@ -71,27 +71,6 @@ async function resolveUsernameForPr(db: Database, status: PrStatusRow): Promise<
   return getGitHubUsername({ githubUsername: config.githubUsername });
 }
 
-function isOpenPrStackedOnOtherOpenPr(db: Database, status: PrStatusRow): boolean {
-  if (!status.base_branch) {
-    return false;
-  }
-  const row = db
-    .prepare(
-      `
-        SELECT 1
-        FROM pr_status
-        WHERE owner = ? COLLATE NOCASE
-          AND repo = ? COLLATE NOCASE
-          AND head_branch = ?
-          AND state = 'open'
-          AND id != ?
-        LIMIT 1
-      `
-    )
-    .get(status.owner, status.repo, status.base_branch, status.id);
-  return row !== null;
-}
-
 /**
  * Add the user's own PRs that became ready for review to the shepherd list.
  * PRs that the user removed before are not added again.
@@ -158,10 +137,7 @@ export function updatePrShepherdNotifications(
         continue;
       }
 
-      const evaluation = evaluatePrShepherd({
-        ...withRequiredCheckRollupState(db, detail),
-        stackedOnOpenPr: isOpenPrStackedOnOtherOpenPr(db, detail.status),
-      });
+      const evaluation = evaluatePrShepherd(withRequiredCheckRollupState(db, detail));
       const flags = getPrShepherdNotificationFlags(evaluation);
       const previousFlags = new Set(parseNotifiedFlags(shepherd.notified_flags));
       const newFlags = flags.filter((flag) => !previousFlags.has(flag));

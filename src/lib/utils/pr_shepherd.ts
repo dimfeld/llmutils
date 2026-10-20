@@ -13,7 +13,6 @@ export type PrShepherdStatus =
   | 'needs_attention'
   | 'waiting_checks'
   | 'waiting_review'
-  | 'waiting_stack'
   | 'ready'
   | 'in_merge_queue';
 
@@ -36,10 +35,7 @@ export interface PrShepherdEvaluation {
   attention: PrShepherdAttentionItem[];
 }
 
-export type PrShepherdInput = Pick<PrStatusDetail, 'status' | 'reviews' | 'reviewThreads'> & {
-  /** True when the PR's base branch is the head branch of another open PR. */
-  stackedOnOpenPr?: boolean;
-};
+export type PrShepherdInput = Pick<PrStatusDetail, 'status' | 'reviews' | 'reviewThreads'>;
 
 /**
  * Flags that produce a notification when they become true. Other states are reported
@@ -138,10 +134,8 @@ export function evaluatePrShepherd(pr: PrShepherdInput): PrShepherdEvaluation {
     return { status: 'waiting_review', attention };
   }
 
-  if (pr.stackedOnOpenPr) {
-    return { status: 'waiting_stack', attention };
-  }
-
+  // A stacked PR is ready even while its base PR is open, because the whole stack can go
+  // into the merge queue together.
   return { status: 'ready', attention };
 }
 
@@ -167,7 +161,6 @@ export const PR_SHEPHERD_STATUS_LABELS: Record<PrShepherdStatus, string> = {
   needs_attention: 'Needs attention',
   waiting_checks: 'Waiting for checks',
   waiting_review: 'Waiting for review',
-  waiting_stack: 'Waiting for base PR',
   ready: 'Ready to merge',
   in_merge_queue: 'In merge queue',
 };
@@ -177,11 +170,10 @@ export const PR_SHEPHERD_STATUS_ORDER: Record<PrShepherdStatus, number> = {
   needs_attention: 0,
   ready: 1,
   in_merge_queue: 2,
-  waiting_stack: 3,
-  waiting_checks: 4,
-  waiting_review: 5,
-  paused: 6,
-  done: 7,
+  waiting_checks: 3,
+  waiting_review: 4,
+  paused: 5,
+  done: 6,
 };
 
 export interface StackablePr {
@@ -271,7 +263,6 @@ export function groupPrsIntoStacks<T extends StackablePr>(prs: readonly T[]): Pr
 export type ShepherdListPr = StackablePr &
   PrShepherdInput & {
     shepherd: unknown;
-    isStackedOnOpenPr?: boolean;
   };
 
 export interface ShepherdList<T extends ShepherdListPr> {
@@ -302,13 +293,7 @@ export function buildShepherdList<T extends ShepherdListPr>(prs: readonly T[]): 
     Math.min(
       ...group
         .filter((entry) => entry.pr.shepherd)
-        .map(
-          (entry) =>
-            PR_SHEPHERD_STATUS_ORDER[
-              evaluatePrShepherd({ ...entry.pr, stackedOnOpenPr: entry.pr.isStackedOnOpenPr })
-                .status
-            ]
-        )
+        .map((entry) => PR_SHEPHERD_STATUS_ORDER[evaluatePrShepherd(entry.pr).status])
     );
 
   return {

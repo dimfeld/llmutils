@@ -174,13 +174,13 @@ describe('lib/server/pr_shepherd', () => {
       expect(inboxKinds()).toEqual(['pr_ready_to_merge:3']);
     });
 
-    test('does not report a stacked PR as ready while its base PR is open', () => {
+    test('reports a stacked PR as ready while its base PR is open', () => {
       addPr(1, { headBranch: 'base-branch' });
       const stacked = addPr(2, { baseBranch: 'base-branch' });
       enrollPrShepherd(db, stacked, 'auto');
 
       updatePrShepherdNotifications(db);
-      expect(inboxKinds()).toEqual([]);
+      expect(inboxKinds()).toEqual(['pr_ready_to_merge:2']);
     });
   });
 

@@ -41,7 +41,7 @@
   const sessionManager = useSessionManager();
 
   let shepherded = $derived(pr.shepherd !== null);
-  let evaluation = $derived(evaluatePrShepherd({ ...pr, stackedOnOpenPr: pr.isStackedOnOpenPr }));
+  let evaluation = $derived(evaluatePrShepherd(pr));
   let attentionKinds = $derived(new Set(evaluation.attention.map((item) => item.kind)));
   let projectIdParam = $derived(String(pr.projectId));
   let canonicalPrUrl = $derived(tryCanonicalizePrUrl(pr.status.pr_url));
@@ -208,7 +208,6 @@
         return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
       case 'waiting_checks':
       case 'waiting_review':
-      case 'waiting_stack':
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300';
       default:
         return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
