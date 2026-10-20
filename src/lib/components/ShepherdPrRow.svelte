@@ -1,6 +1,7 @@
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
   import ActiveSessionLink from './ActiveSessionLink.svelte';
+  import CopyButton from './CopyButton.svelte';
   import ExecutorChoiceDropdown from './ExecutorChoiceDropdown.svelte';
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
   import PrMergeQueueBadge from './PrMergeQueueBadge.svelte';
@@ -260,9 +261,18 @@
     {#if projectName}
       <span class="shrink-0 text-xs text-muted-foreground">{projectName}</span>
     {/if}
-    <span class="hidden shrink-0 font-mono text-[11px] text-muted-foreground/70 md:inline">
-      {pr.status.head_branch ?? ''}
-    </span>
+    {#if pr.status.head_branch}
+      <CopyButton
+        text={pr.status.head_branch}
+        mode="text"
+        label={pr.status.head_branch}
+        className="hidden shrink-0 cursor-pointer font-mono text-[11px] text-muted-foreground/70 hover:text-foreground hover:underline md:inline"
+        copiedClass="text-emerald-600 dark:text-emerald-400"
+        failedClass="text-red-600 dark:text-red-400"
+        title="Copy branch name"
+        ariaLabel={`Copy branch name ${pr.status.head_branch}`}
+      />
+    {/if}
     <button
       type="button"
       onclick={handleToggleShepherd}

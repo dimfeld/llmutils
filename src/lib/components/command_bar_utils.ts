@@ -54,6 +54,7 @@ export const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Pull Requests', slug: 'prs', keywords: 'pull requests prs github' },
   { label: 'Review Guides', slug: 'reviews', keywords: 'review guides generated issues' },
   { label: 'Plans', slug: 'plans', keywords: 'plans list browse' },
+  { label: 'Shepherd', slug: 'shepherd', keywords: 'shepherd watched prs merge ci' },
   { label: 'Import', slug: 'import', keywords: 'import issue issues tracker clipboard paste' },
   { label: 'Settings', slug: 'settings', keywords: 'settings configuration' },
 ];

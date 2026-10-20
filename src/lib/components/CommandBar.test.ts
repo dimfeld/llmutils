@@ -77,6 +77,7 @@ describe('command_bar_utils', () => {
       'prs',
       'reviews',
       'plans',
+      'shepherd',
       'import',
       'settings',
     ]);
@@ -87,6 +88,7 @@ describe('command_bar_utils', () => {
     expect(getNavigationItems('3', 'github').map((item) => item.slug)).toEqual(['prs']);
     expect(getNavigationItems('3', 'import').map((item) => item.slug)).toEqual(['import']);
     expect(getNavigationItems('3', 'clipboard').map((item) => item.slug)).toEqual(['import']);
+    expect(getNavigationItems('3', 'shep').map((item) => item.slug)).toEqual(['shepherd']);
   });
 
   test('omits project-scoped navigation items when projectId is all', () => {
