@@ -16,6 +16,7 @@
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
   import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
+  import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import {
     PR_SHEPHERD_STATUS_LABELS,
     evaluatePrShepherd,
@@ -43,6 +44,9 @@
   let attentionKinds = $derived(new Set(evaluation.attention.map((item) => item.kind)));
   let projectIdParam = $derived(String(pr.projectId));
   let canonicalPrUrl = $derived(tryCanonicalizePrUrl(pr.status.pr_url));
+  let linearPrReviewUrl = $derived(
+    buildLinearReviewDeepLink({ prUrl: pr.status.pr_url, prNumber: pr.status.pr_number })
+  );
 
   let starting = $state<Record<LaunchAction, boolean>>({ fix: false, ci: false, rebase: false });
   let launched = $state<Record<LaunchAction, boolean>>({ fix: false, ci: false, rebase: false });
@@ -274,8 +278,8 @@
     </button>
   </div>
 
-  {#if shepherded && (evaluation.attention.length > 0 || evaluation.status === 'ready')}
-    <div class="flex flex-wrap items-center gap-1.5 pl-1">
+  <div class="flex flex-wrap items-center gap-1.5 pl-1">
+    {#if shepherded}
       {#each evaluation.attention as item (item.kind)}
         <span
           class="rounded px-1.5 py-0.5 text-[11px] {item.blocking
@@ -367,19 +371,31 @@
           {updatingBranch === 'merge' ? 'Merging...' : 'Merge Base In'}
         </button>
       {/if}
+    {/if}
 
-      {#if evaluation.status === 'ready'}
-        <a
-          href={pr.status.pr_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          class="{actionButtonClass} border-green-200 text-green-700 hover:bg-green-50 dark:border-green-900/60 dark:text-green-400 dark:hover:bg-green-950/30"
-        >
-          Merge on GitHub
-        </a>
-      {/if}
-    </div>
-  {/if}
+    <a
+      href={pr.status.pr_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      class={neutralAction}
+      title="View in GitHub"
+      aria-label={`View PR #${pr.status.pr_number} in GitHub`}
+    >
+      View in GitHub
+    </a>
+    {#if linearPrReviewUrl}
+      <a
+        href={linearPrReviewUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        class={neutralAction}
+        title="View in Linear"
+        aria-label={`View PR #${pr.status.pr_number} in Linear`}
+      >
+        View in Linear
+      </a>
+    {/if}
+  </div>
 
   {#if actionError}
     <p class="pl-1 text-xs text-red-700 dark:text-red-400">{actionError}</p>

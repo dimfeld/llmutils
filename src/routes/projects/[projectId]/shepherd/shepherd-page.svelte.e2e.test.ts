@@ -168,6 +168,27 @@ describe('shepherd page', () => {
     expect(page.getByText('PR number 2').elements()).toHaveLength(1);
   });
 
+  test('every PR row links to GitHub and Linear, whatever its status', async () => {
+    // PR 1 is watched with no attention items, and PR 2 is not watched.
+    setPrs([makePr(1, { shepherded: true }), makePr(2)]);
+
+    unmount = render(ShepherdPage, {
+      props: {
+        data: { projectId: '7', projects: [], currentUsername: 'me', prFixExecutorOptions: [] },
+      } as never,
+    }).unmount;
+
+    await page.getByText('Your other open PRs (1)').click();
+    for (const prNumber of [1, 2]) {
+      await expect
+        .element(page.getByRole('link', { name: `View PR #${prNumber} in GitHub` }))
+        .toHaveAttribute('href', `https://github.com/example/repo/pull/${prNumber}`);
+      await expect
+        .element(page.getByRole('link', { name: `View PR #${prNumber} in Linear` }))
+        .toHaveAttribute('href', `linear://review/example/repo/pull/${prNumber}`);
+    }
+  });
+
   test('watching a stacked PR moves the whole stack out of the other PRs section', async () => {
     const stack = (watched: boolean) => [
       makePr(1, { shepherded: true }),
