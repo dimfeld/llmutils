@@ -2478,6 +2478,35 @@ describe('tim db/pr_status', () => {
     expect(updated.status.changed_files).toBe(10);
   });
 
+  test('upsertPrStatus sets, keeps, and clears the merge queue entry time', () => {
+    const base = {
+      prUrl: 'https://github.com/example/repo/pull/903',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 903,
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    };
+
+    expect(upsertPrStatus(db, base).status.merge_queue_enqueued_at).toBeNull();
+    expect(
+      upsertPrStatus(db, { ...base, mergeQueueEnqueuedAt: '2026-03-20T01:00:00.000Z' }).status
+        .merge_queue_enqueued_at
+    ).toBe('2026-03-20T01:00:00.000Z');
+    // An omitted value keeps the stored entry time (for example a review-thread refresh).
+    expect(upsertPrStatus(db, base).status.merge_queue_enqueued_at).toBe(
+      '2026-03-20T01:00:00.000Z'
+    );
+    expect(
+      upsertPrStatusMetadata(db, { ...base, mergeQueueEnqueuedAt: undefined }).status
+        .merge_queue_enqueued_at
+    ).toBe('2026-03-20T01:00:00.000Z');
+    expect(
+      upsertPrStatus(db, { ...base, mergeQueueEnqueuedAt: null }).status.merge_queue_enqueued_at
+    ).toBeNull();
+  });
+
   test('upsertPrStatus stores null diff stats when not provided', () => {
     const created = upsertPrStatus(db, {
       prUrl: 'https://github.com/example/repo/pull/901',

@@ -36,6 +36,7 @@ function makeStatus(overrides: Partial<PrStatusRow> = {}): PrStatusRow {
     latest_commit_pushed_at: null,
     ready_at: null,
     behind_by: null,
+    merge_queue_enqueued_at: null,
     last_fetched_at: '2026-01-01T00:00:00.000Z',
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -132,6 +133,28 @@ describe('evaluatePrShepherd', () => {
   test('behind base is not shown when the PR has conflicts', () => {
     const evaluation = evaluatePrShepherd(makePr({ behind_by: 3, mergeable: 'CONFLICTING' }));
     expect(evaluation.attention.map((item) => item.kind)).toEqual(['conflicts']);
+  });
+
+  test('a queued PR is in the merge queue even when it has other problems', () => {
+    const queuedAt = '2026-01-02T00:00:00.000Z';
+    expect(evaluatePrShepherd(makePr({ merge_queue_enqueued_at: queuedAt })).status).toBe(
+      'in_merge_queue'
+    );
+
+    const evaluation = evaluatePrShepherd(
+      makePr({ merge_queue_enqueued_at: queuedAt, check_rollup_state: 'failure' })
+    );
+    expect(evaluation.status).toBe('in_merge_queue');
+    expect(evaluation.attention.map((item) => item.kind)).toEqual(['ci_failed']);
+    expect(getPrShepherdNotificationFlags(evaluation)).toEqual([]);
+  });
+
+  test('a merged PR with a stale merge queue entry is done', () => {
+    expect(
+      evaluatePrShepherd(
+        makePr({ state: 'merged', merge_queue_enqueued_at: '2026-01-02T00:00:00.000Z' })
+      ).status
+    ).toBe('done');
   });
 
   test('pending checks wait before review', () => {

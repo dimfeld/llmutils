@@ -83,6 +83,7 @@ function buildUpsertPrStatusInput(
     additions: fullStatus.additions,
     deletions: fullStatus.deletions,
     changedFiles: fullStatus.changedFiles,
+    mergeQueueEnqueuedAt: fullStatus.mergeQueueEnqueuedAt,
     lastFetchedAt,
     checks: fullStatus.checks.map((check) => ({
       name: check.name,

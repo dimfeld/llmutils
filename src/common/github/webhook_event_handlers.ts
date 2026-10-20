@@ -768,6 +768,13 @@ export function handlePullRequestEvent(
         labels: pullRequest.labels,
         latestCommitPushedAt: isPushAction ? (pullRequest.updatedAt ?? null) : undefined,
         readyAt: pullRequest.draft ? null : enteredReadyForReview ? eventTime : undefined,
+        // Other actions do not report merge queue membership, so they keep the stored value.
+        mergeQueueEnqueuedAt:
+          parsed.action === 'enqueued' && state === 'open'
+            ? signalEventTime
+            : parsed.action === 'dequeued' || state !== 'open'
+              ? null
+              : undefined,
       });
 
       if (!nextDetail) {

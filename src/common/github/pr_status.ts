@@ -91,6 +91,8 @@ export interface PrFullStatus {
   deletions: number | null;
   changedFiles: number | null;
   latestCommitPushedAt: string | null;
+  /** When the PR entered the merge queue, or null when it is not queued. */
+  mergeQueueEnqueuedAt: string | null;
 }
 
 export interface PrReviewRequestTimelineEvent {
@@ -192,6 +194,7 @@ interface GraphQlPullRequestFullStatus {
   baseRefName: string | null;
   headRefName: string | null;
   reviewDecision: string | null;
+  mergeQueueEntry: { enqueuedAt: string | null } | null;
   reviewRequests: {
     pageInfo: {
       hasNextPage: boolean;
@@ -359,6 +362,9 @@ const fullStatusQuery = `
           }
         }
         reviewDecision
+        mergeQueueEntry {
+          enqueuedAt
+        }
         reviewRequests(first: 100) {
           pageInfo {
             hasNextPage
@@ -1203,6 +1209,7 @@ export async function fetchPrFullStatus(
     deletions: pullRequest.deletions ?? null,
     changedFiles: pullRequest.changedFiles ?? null,
     latestCommitPushedAt,
+    mergeQueueEnqueuedAt: pullRequest.mergeQueueEntry?.enqueuedAt ?? null,
   };
 }
 

@@ -157,6 +157,7 @@ export async function refreshPrStatus(
         additions: fullStatus.additions,
         deletions: fullStatus.deletions,
         changedFiles: fullStatus.changedFiles,
+        mergeQueueEnqueuedAt: fullStatus.mergeQueueEnqueuedAt,
         lastFetchedAt: getNowIsoString(),
         ...(options.refreshDigestMetadata && fullStatus.isDraft
           ? { readyAt: null }
@@ -507,6 +508,7 @@ export async function syncPlanPrLinks(
       additions: fullStatus.additions,
       deletions: fullStatus.deletions,
       changedFiles: fullStatus.changedFiles,
+      mergeQueueEnqueuedAt: fullStatus.mergeQueueEnqueuedAt,
       lastFetchedAt: getNowIsoString(),
       checks: fullStatus.checks.map((check) => ({
         name: check.name,

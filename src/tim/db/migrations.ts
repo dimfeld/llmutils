@@ -1536,6 +1536,18 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 59,
+    up: `SELECT 1;`,
+    afterUp: (db: Database): void => {
+      if (!tableExists(db, 'pr_status')) {
+        return;
+      }
+      if (!tableColumns(db, 'pr_status').has('merge_queue_enqueued_at')) {
+        db.exec('ALTER TABLE pr_status ADD COLUMN merge_queue_enqueued_at TEXT');
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

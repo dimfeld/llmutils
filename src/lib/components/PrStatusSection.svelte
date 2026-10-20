@@ -34,6 +34,7 @@
   } from '$lib/utils/pr_display.js';
 
   import CopyButton from './CopyButton.svelte';
+  import PrMergeQueueBadge from './PrMergeQueueBadge.svelte';
   import ExecutorChoiceDropdown from './ExecutorChoiceDropdown.svelte';
   import ActiveSessionLink from './ActiveSessionLink.svelte';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
@@ -573,6 +574,9 @@
           >
             {stateLabel(pr.status.state, pr.status.draft)}
           </span>
+          {#if pr.status.state === 'open' && pr.status.merge_queue_enqueued_at}
+            <PrMergeQueueBadge enqueuedAt={pr.status.merge_queue_enqueued_at} />
+          {/if}
           <span
             class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {checksBadgeColor(
               pr.status.check_rollup_state

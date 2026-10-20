@@ -31,6 +31,8 @@ export interface PrStatusRow {
   ready_at: string | null;
   /** Commits on the base branch that the head branch does not have. Only tracked for shepherded PRs. */
   behind_by: number | null;
+  /** When the PR entered the merge queue. NULL when the PR is not in a merge queue. */
+  merge_queue_enqueued_at: string | null;
   last_fetched_at: string;
   created_at: string;
   updated_at: string;
@@ -193,7 +195,10 @@ export interface UpsertPrStatusInput {
   deletions?: number | null;
   changedFiles?: number | null;
   latestCommitPushedAt?: string | null;
+  /** Omit (or pass undefined) to keep the stored value. */
   readyAt?: string | null;
+  /** When the PR entered the merge queue, or null when it is not queued. Omit (or pass undefined) to keep the stored value. */
+  mergeQueueEnqueuedAt?: string | null;
   lastFetchedAt: string;
   checks?: StoredPrCheckRunInput[];
   reviews?: StoredPrReviewInput[];
@@ -632,9 +637,10 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           last_fetched_at,
           latest_commit_pushed_at,
           ready_at,
+          merge_queue_enqueued_at,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
         ON CONFLICT(pr_url) DO UPDATE SET
           owner = excluded.owner,
           repo = excluded.repo,
@@ -659,6 +665,7 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
           last_fetched_at = excluded.last_fetched_at,
           latest_commit_pushed_at = COALESCE(excluded.latest_commit_pushed_at, pr_status.latest_commit_pushed_at),
           ready_at = CASE WHEN ? THEN excluded.ready_at ELSE pr_status.ready_at END,
+          merge_queue_enqueued_at = CASE WHEN ? THEN excluded.merge_queue_enqueued_at ELSE pr_status.merge_queue_enqueued_at END,
           updated_at = ${SQL_NOW_ISO_UTC}
       `
     ).run(
@@ -686,7 +693,9 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
       nextInput.lastFetchedAt,
       nextInput.latestCommitPushedAt ?? null,
       nextInput.readyAt ?? null,
-      Object.prototype.hasOwnProperty.call(nextInput, 'readyAt') ? 1 : 0
+      nextInput.mergeQueueEnqueuedAt ?? null,
+      nextInput.readyAt !== undefined ? 1 : 0,
+      nextInput.mergeQueueEnqueuedAt !== undefined ? 1 : 0
     );
 
     const row = db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(nextInput.prUrl) as {
@@ -751,9 +760,10 @@ export function upsertPrStatusMetadata(
             last_fetched_at,
             latest_commit_pushed_at,
             ready_at,
+            merge_queue_enqueued_at,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
           ON CONFLICT(pr_url) DO UPDATE SET
             owner = excluded.owner,
             repo = excluded.repo,
@@ -778,6 +788,7 @@ export function upsertPrStatusMetadata(
             last_fetched_at = excluded.last_fetched_at,
             latest_commit_pushed_at = COALESCE(excluded.latest_commit_pushed_at, pr_status.latest_commit_pushed_at),
             ready_at = CASE WHEN ? THEN excluded.ready_at ELSE pr_status.ready_at END,
+            merge_queue_enqueued_at = CASE WHEN ? THEN excluded.merge_queue_enqueued_at ELSE pr_status.merge_queue_enqueued_at END,
             updated_at = ${SQL_NOW_ISO_UTC}
           WHERE excluded.pr_updated_at IS NULL
              OR pr_status.pr_updated_at IS NULL
@@ -809,7 +820,9 @@ export function upsertPrStatusMetadata(
           nextInput.lastFetchedAt,
           nextInput.latestCommitPushedAt ?? null,
           nextInput.readyAt ?? null,
-          Object.prototype.hasOwnProperty.call(nextInput, 'readyAt') ? 1 : 0
+          nextInput.mergeQueueEnqueuedAt ?? null,
+          nextInput.readyAt !== undefined ? 1 : 0,
+          nextInput.mergeQueueEnqueuedAt !== undefined ? 1 : 0
         );
 
       const row = db.prepare('SELECT id FROM pr_status WHERE pr_url = ?').get(nextInput.prUrl) as {

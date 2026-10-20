@@ -3,6 +3,7 @@
   import ActiveSessionLink from './ActiveSessionLink.svelte';
   import ExecutorChoiceDropdown from './ExecutorChoiceDropdown.svelte';
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
+  import PrMergeQueueBadge from './PrMergeQueueBadge.svelte';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import { setPrShepherded, updateShepherdedPrBranch } from '$lib/remote/pr_shepherd.remote.js';
   import {
@@ -203,6 +204,8 @@
         return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300';
       case 'ready':
         return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300';
+      case 'in_merge_queue':
+        return 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300';
       case 'waiting_checks':
       case 'waiting_review':
       case 'waiting_stack':
@@ -241,6 +244,9 @@
       >
         Not watched
       </span>
+      {#if pr.status.state === 'open' && pr.status.merge_queue_enqueued_at}
+        <PrMergeQueueBadge enqueuedAt={pr.status.merge_queue_enqueued_at} compact />
+      {/if}
     {/if}
     {#if pr.currentUserNeedsReviewRequest}
       <NeedsReviewerBadge compact />

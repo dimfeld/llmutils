@@ -47,6 +47,7 @@
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import CopyButton from './CopyButton.svelte';
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
+  import PrMergeQueueBadge from './PrMergeQueueBadge.svelte';
   import { toLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
@@ -786,6 +787,9 @@
       >
         {stateLabel(pr.status.state, pr.status.draft)}
       </span>
+      {#if pr.status.state === 'open' && pr.status.merge_queue_enqueued_at}
+        <PrMergeQueueBadge enqueuedAt={pr.status.merge_queue_enqueued_at} />
+      {/if}
       <span
         class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {checksBadgeColor(
           pr.status.check_rollup_state
@@ -965,6 +969,9 @@
                 >
                   Open
                 </span>
+              {/if}
+              {#if entry.pr.status.state === 'open' && entry.pr.status.merge_queue_enqueued_at}
+                <PrMergeQueueBadge enqueuedAt={entry.pr.status.merge_queue_enqueued_at} compact />
               {/if}
               {#if entryUnresolvedThreads > 0}
                 <span

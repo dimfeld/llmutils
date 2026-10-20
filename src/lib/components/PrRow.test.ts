@@ -78,6 +78,18 @@ describe('PrRow', () => {
     expect(body).toContain('Conflicts');
   });
 
+  test('renders a merge queue badge only for an open PR in the merge queue', () => {
+    const pr = createPr();
+    const props = { pr, href: '/projects/123/prs/42', itemId: '123:42' };
+    expect(render(PrRow, { props }).body).not.toContain('In merge queue');
+
+    pr.status.merge_queue_enqueued_at = '2026-03-18T10:05:00.000Z';
+    expect(render(PrRow, { props }).body).toContain('In merge queue');
+
+    pr.status.state = 'merged';
+    expect(render(PrRow, { props }).body).not.toContain('In merge queue');
+  });
+
   test('does not render a conflicts badge for mergeable or closed PRs', () => {
     const { body: mergeableBody } = render(PrRow, {
       props: { pr: createPr(), href: '/projects/123/prs/42', itemId: '123:42' },

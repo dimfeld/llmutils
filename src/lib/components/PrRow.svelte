@@ -8,6 +8,7 @@
   import PrStatusIndicator from './PrStatusIndicator.svelte';
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
   import PrConflictsBadge from './PrConflictsBadge.svelte';
+  import PrMergeQueueBadge from './PrMergeQueueBadge.svelte';
   import { getEffectiveReviewDecision, hasHumanApproval } from '$common/github/review_requests.js';
   import {
     checkRollupToSummaryStatus,
@@ -118,6 +119,9 @@
             </span>
           {/if}
         </span>
+      {/if}
+      {#if pr.status.state === 'open' && pr.status.merge_queue_enqueued_at}
+        <PrMergeQueueBadge enqueuedAt={pr.status.merge_queue_enqueued_at} />
       {/if}
       {#if pr.status.state === 'open' && pr.status.mergeable === 'CONFLICTING'}
         <PrConflictsBadge />

@@ -234,6 +234,7 @@ function statusSignature(status: PrStatusRow | undefined | null): string {
     status.check_rollup_state,
     status.behind_by,
     status.head_sha,
+    status.merge_queue_enqueued_at,
   ].join('|');
 }
 

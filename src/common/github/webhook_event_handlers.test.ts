@@ -1815,6 +1815,64 @@ describe('common/github/webhook_event_handlers', () => {
     });
   });
 
+  test('handlePullRequestEvent tracks merge queue membership from enqueued and dequeued actions', () => {
+    const prUrl = 'https://github.com/example/repo/pull/92';
+    const makePayload = (
+      action: string,
+      updatedAt: string,
+      overrides: Record<string, unknown> = {}
+    ): Record<string, unknown> => ({
+      action,
+      repository: { full_name: 'example/repo' },
+      sender: { login: 'pr-author', type: 'User' },
+      pull_request: {
+        number: 92,
+        title: 'Queued PR',
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'pr-author' },
+        head: { sha: 'sha-92', ref: 'feature/queue' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: updatedAt,
+        ...overrides,
+      },
+    });
+
+    handlePullRequestEvent(db, makePayload('opened', '2026-03-30T12:00:00.000Z'));
+    expect(getPrStatusByUrl(db, prUrl)?.status.merge_queue_enqueued_at).toBeNull();
+
+    handlePullRequestEvent(db, makePayload('enqueued', '2026-03-30T12:05:00.000Z'));
+    expect(getPrStatusByUrl(db, prUrl)?.status.merge_queue_enqueued_at).toBe(
+      '2026-03-30T12:05:00.000Z'
+    );
+
+    // Actions that do not report queue membership keep the stored value.
+    handlePullRequestEvent(db, makePayload('labeled', '2026-03-30T12:06:00.000Z'));
+    expect(getPrStatusByUrl(db, prUrl)?.status.merge_queue_enqueued_at).toBe(
+      '2026-03-30T12:05:00.000Z'
+    );
+    // ready_at from the "opened" event also survives unrelated actions.
+    expect(getPrStatusByUrl(db, prUrl)?.status.ready_at).toBe('2026-03-30T12:00:00.000Z');
+
+    handlePullRequestEvent(db, makePayload('dequeued', '2026-03-30T12:07:00.000Z'));
+    expect(getPrStatusByUrl(db, prUrl)?.status.merge_queue_enqueued_at).toBeNull();
+
+    handlePullRequestEvent(db, makePayload('enqueued', '2026-03-30T12:08:00.000Z'));
+    handlePullRequestEvent(
+      db,
+      makePayload('closed', '2026-03-30T12:10:00.000Z', {
+        state: 'closed',
+        merged_at: '2026-03-30T12:10:00.000Z',
+      })
+    );
+    const merged = getPrStatusByUrl(db, prUrl)?.status;
+    expect(merged?.state).toBe('merged');
+    expect(merged?.merge_queue_enqueued_at).toBeNull();
+  });
+
   describe('handlePullRequestEvent inbox signals', () => {
     test('emits merge_queue_removed with the dequeue reason and sender as actor', () => {
       const result = handlePullRequestEvent(db, {

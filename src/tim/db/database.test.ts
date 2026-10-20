@@ -351,7 +351,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(58);
+    expect(version?.version).toBe(59);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
 
@@ -754,7 +754,7 @@ describe('tim db/database', () => {
         revision: 9,
       });
       expect(db.query<{ version: number }, []>('SELECT version FROM schema_version').get()).toEqual(
-        { version: 58 }
+        { version: 59 }
       );
       expect(
         db
@@ -785,7 +785,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(58);
+    expect(version?.version).toBe(59);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
     const versionRowCount = db2
@@ -917,7 +917,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(58);
+      expect(schemaVersion?.version).toBe(59);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -1068,7 +1068,7 @@ describe('tim db/database', () => {
           'SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1'
         )
         .get();
-      expect(schemaVersion?.version).toBe(58);
+      expect(schemaVersion?.version).toBe(59);
 
       const checkRows = db
         .query<{ count: number }, []>(
@@ -1389,7 +1389,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(58);
+      ).toBe(59);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1897,7 +1897,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(58);
+      ).toBe(59);
 
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")

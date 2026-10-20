@@ -14,7 +14,8 @@ export type PrShepherdStatus =
   | 'waiting_checks'
   | 'waiting_review'
   | 'waiting_stack'
-  | 'ready';
+  | 'ready'
+  | 'in_merge_queue';
 
 export type PrShepherdAttentionKind =
   | 'conflicts'
@@ -119,6 +120,12 @@ export function evaluatePrShepherd(pr: PrShepherdInput): PrShepherdEvaluation {
     return { status: 'paused', attention };
   }
 
+  // A queued PR needs no action. GitHub removes it from the queue when something fails,
+  // and the next evaluation then shows the problem.
+  if (status.merge_queue_enqueued_at) {
+    return { status: 'in_merge_queue', attention };
+  }
+
   if (attention.some((item) => item.blocking)) {
     return { status: 'needs_attention', attention };
   }
@@ -162,17 +169,19 @@ export const PR_SHEPHERD_STATUS_LABELS: Record<PrShepherdStatus, string> = {
   waiting_review: 'Waiting for review',
   waiting_stack: 'Waiting for base PR',
   ready: 'Ready to merge',
+  in_merge_queue: 'In merge queue',
 };
 
 /** Sort key for statuses. Lower values show first. */
 export const PR_SHEPHERD_STATUS_ORDER: Record<PrShepherdStatus, number> = {
   needs_attention: 0,
   ready: 1,
-  waiting_stack: 2,
-  waiting_checks: 3,
-  waiting_review: 4,
-  paused: 5,
-  done: 6,
+  in_merge_queue: 2,
+  waiting_stack: 3,
+  waiting_checks: 4,
+  waiting_review: 5,
+  paused: 6,
+  done: 7,
 };
 
 export interface StackablePr {
