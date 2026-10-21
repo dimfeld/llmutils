@@ -48,6 +48,7 @@
   import CopyButton from './CopyButton.svelte';
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
   import PrMergeQueueBadge from './PrMergeQueueBadge.svelte';
+  import PrMergedBadge from './PrMergedBadge.svelte';
   import { toLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
@@ -779,14 +780,18 @@
 
     <!-- Badges -->
     <div class="flex flex-wrap items-center gap-1.5">
-      <span
-        class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {stateBadgeColor(
-          pr.status.state,
-          pr.status.draft
-        )}"
-      >
-        {stateLabel(pr.status.state, pr.status.draft)}
-      </span>
+      {#if pr.status.state === 'merged' && pr.status.merged_at}
+        <PrMergedBadge mergedAt={pr.status.merged_at} />
+      {:else}
+        <span
+          class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {stateBadgeColor(
+            pr.status.state,
+            pr.status.draft
+          )}"
+        >
+          {stateLabel(pr.status.state, pr.status.draft)}
+        </span>
+      {/if}
       {#if pr.status.state === 'open' && pr.status.merge_queue_enqueued_at}
         <PrMergeQueueBadge enqueuedAt={pr.status.merge_queue_enqueued_at} />
       {/if}

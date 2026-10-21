@@ -1812,7 +1812,50 @@ export function getPlansWithPrs(db: Database, projectId?: number): PlanWithLinke
   return [...plans.values()];
 }
 
-export function cleanOrphanedPrStatus(db: Database): number {
+/** Unlinked merged PRs stay in the cache this long after they merge. */
+export const MERGED_PR_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isWithinMergedRetention(mergedAt: string | null, nowMs: number): boolean {
+  if (!mergedAt) {
+    return false;
+  }
+  const mergedAtMs = Date.parse(mergedAt);
+  return !Number.isNaN(mergedAtMs) && nowMs - mergedAtMs < MERGED_PR_RETENTION_MS;
+}
+
+/**
+ * Merged PRs in the repo that merged less than `MERGED_PR_RETENTION_MS` ago,
+ * most recently merged first.
+ */
+export function getRecentlyMergedPrStatusesForRepo(
+  db: Database,
+  owner: string,
+  repo: string,
+  options?: { includeReviewThreads?: boolean; now?: Date }
+): PrStatusDetail[] {
+  const nowMs = (options?.now ?? new Date()).getTime();
+  const rows = db
+    .prepare(
+      `
+        SELECT ps.id, ps.merged_at
+        FROM pr_status ps
+        WHERE ps.owner = ?
+          AND ps.repo = ?
+          AND ps.state = 'merged'
+          AND ps.merged_at IS NOT NULL
+      `
+    )
+    .all(owner, repo) as Array<{ id: number; merged_at: string }>;
+
+  return rows
+    .filter((row) => isWithinMergedRetention(row.merged_at, nowMs))
+    .toSorted((a, b) => Date.parse(b.merged_at) - Date.parse(a.merged_at))
+    .map((row) => getDetailById(db, row.id, options))
+    .filter((detail): detail is PrStatusDetail => detail !== null);
+}
+
+export function cleanOrphanedPrStatus(db: Database, options: { now?: Date } = {}): number {
+  const nowMs = (options.now ?? new Date()).getTime();
   const cleanInTransaction = db.transaction((): number => {
     const referencedPrUrls = new Set<string>();
     const planRows = db
@@ -1858,7 +1901,7 @@ export function cleanOrphanedPrStatus(db: Database): number {
     const unlinkedRows = db
       .prepare(
         `
-          SELECT ps.id, ps.pr_url, ps.state
+          SELECT ps.id, ps.pr_url, ps.state, ps.merged_at
           FROM pr_status ps
           WHERE NOT EXISTS (
             SELECT 1
@@ -1867,12 +1910,18 @@ export function cleanOrphanedPrStatus(db: Database): number {
           )
         `
       )
-      .all() as Array<{ id: number; pr_url: string; state: string }>;
+      .all() as Array<{ id: number; pr_url: string; state: string; merged_at: string | null }>;
 
     const idsToDelete = unlinkedRows
       // Keep open webhook-ingested PRs, including unlinked PRs opened by others,
       // so downstream daily digest jobs retain their review/review-request data.
-      .filter((row) => row.state !== 'open' && !referencedPrUrls.has(row.pr_url))
+      // Keep recently merged PRs so the web UI can show them for a while after they merge.
+      .filter(
+        (row) =>
+          row.state !== 'open' &&
+          !(row.state === 'merged' && isWithinMergedRetention(row.merged_at, nowMs)) &&
+          !referencedPrUrls.has(row.pr_url)
+      )
       .map((row) => row.id);
     if (idsToDelete.length === 0) {
       return 0;

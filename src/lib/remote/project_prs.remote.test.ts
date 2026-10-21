@@ -577,6 +577,71 @@ describe('project_prs remote functions', () => {
     expect(result.authored.map((pr) => pr.status.pr_number)).toEqual([23, 17]);
   });
 
+  test('getProjectPrs returns recently merged PRs separately, newest first', async () => {
+    const daysAgo = (days: number): string =>
+      new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const insert = (
+      prNumber: number,
+      options: { state: 'open' | 'merged'; author: string; mergedAt?: string }
+    ) =>
+      upsertPrStatus(currentDb, {
+        prUrl: `https://github.com/example/repo/pull/${prNumber}`,
+        owner: 'example',
+        repo: 'repo',
+        prNumber,
+        title: `PR ${prNumber}`,
+        state: options.state,
+        draft: false,
+        author: options.author,
+        mergedAt: options.mergedAt ?? null,
+        lastFetchedAt: '2026-03-30T10:00:00.000Z',
+      });
+    insert(10, { state: 'open', author: 'dimfeld' });
+    insert(11, { state: 'merged', author: 'dimfeld', mergedAt: daysAgo(3) });
+    insert(12, { state: 'merged', author: 'dimfeld', mergedAt: daysAgo(1) });
+    insert(13, { state: 'merged', author: 'dimfeld', mergedAt: daysAgo(10) });
+    const reviewed = insert(14, { state: 'merged', author: 'alice', mergedAt: daysAgo(2) });
+    upsertPrReviewRequestByReviewer(currentDb, reviewed.status.id, {
+      reviewer: 'dimfeld',
+      action: 'requested',
+      eventAt: daysAgo(4),
+    });
+    insert(15, { state: 'merged', author: 'alice', mergedAt: daysAgo(2) });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    for (const id of [String(projectId), 'all']) {
+      const result = await invokeQuery(getProjectPrs, { projectId: id });
+
+      expect(result.authored.map((pr) => pr.status.pr_number)).toEqual([10]);
+      expect(result.recentlyMerged.authored.map((pr) => pr.status.pr_number)).toEqual([12, 11]);
+      expect(result.recentlyMerged.reviewing.map((pr) => pr.status.pr_number)).toEqual([14]);
+      expect(result.recentlyMerged.authored[0].projectId).toBe(projectId);
+    }
+  });
+
+  test('getProjectPrs returns recently merged PRs when no PRs are open', async () => {
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/20',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 20,
+      title: 'Merged PR',
+      state: 'merged',
+      draft: false,
+      author: 'dimfeld',
+      mergedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+    });
+
+    const { getProjectPrs } = await import('./project_prs.remote.js');
+    for (const id of [String(projectId), 'all']) {
+      const result = await invokeQuery(getProjectPrs, { projectId: id });
+
+      expect(result.hasData).toBe(false);
+      expect(result.recentlyMerged.authored.map((pr) => pr.status.pr_number)).toEqual([20]);
+    }
+  });
+
   test('getProjectPrs sorts a single project by PR number descending', async () => {
     upsertPrStatus(currentDb, {
       prUrl: 'https://github.com/example/repo/pull/17',

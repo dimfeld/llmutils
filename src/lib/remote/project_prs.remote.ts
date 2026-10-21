@@ -26,6 +26,7 @@ import { getProjectById, listProjects } from '$tim/db/project.js';
 import {
   getLinkedPlansByPrUrl,
   getPrStatusesForRepo,
+  getRecentlyMergedPrStatusesForRepo,
   type LinkedPlanSummary,
   type PrStatusDetail,
 } from '$tim/db/pr_status.js';
@@ -70,6 +71,27 @@ export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
 export interface PrShepherdSummary {
   source: PrShepherdSource;
   enrolledAt: string;
+}
+
+/** PRs that merged recently, most recently merged first. */
+export interface RecentlyMergedProjectPrs {
+  authored: EnrichedProjectPr[];
+  reviewing: EnrichedProjectPr[];
+}
+
+function emptyRecentlyMerged(): RecentlyMergedProjectPrs {
+  return { authored: [], reviewing: [] };
+}
+
+function loadRecentlyMergedPrs(
+  db: Database,
+  owner: string,
+  repo: string
+): PrStatusDetailWithRequiredChecks[] {
+  return withRequiredCheckRollupStates(
+    db,
+    getRecentlyMergedPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true })
+  );
 }
 
 interface RefreshResult {
@@ -354,6 +376,7 @@ async function getAllProjectPrsData() {
   const username = await getGitHubUsername({ githubUsername: config.githubUsername });
 
   const allProjectPrs: EnrichedProjectPr[] = [];
+  const allMergedPrs: EnrichedProjectPr[] = [];
   const prUrls: string[] = [];
 
   for (const project of listProjects(db)) {
@@ -370,21 +393,26 @@ async function getAllProjectPrsData() {
     const projectPrUrls = prs.map((pr) => pr.status.pr_url);
     prUrls.push(...projectPrUrls);
 
-    allProjectPrs.push(
-      ...enrichProjectPrs(
-        db,
-        project.id,
-        prs,
-        new Map(projectPrUrls.map((url) => [url, [] as LinkedPlanSummary[]])),
-        username
-      )
-    );
+    allProjectPrs.push(...enrichProjectPrs(db, project.id, prs, new Map(), username));
+
+    const mergedPrs = loadRecentlyMergedPrs(db, owner, repo);
+    prUrls.push(...mergedPrs.map((pr) => pr.status.pr_url));
+    allMergedPrs.push(...enrichProjectPrs(db, project.id, mergedPrs, new Map(), username));
   }
+
+  const linkedPlansByPrUrl = getLinkedPlansByPrUrl(db, prUrls);
+  const withLinkedPlans = (prs: EnrichedProjectPr[]): EnrichedProjectPr[] =>
+    prs.map((pr) => ({
+      ...pr,
+      linkedPlans: linkedPlansByPrUrl.get(pr.status.pr_url) ?? [],
+    }));
+  const recentlyMerged = partitionRecentlyMergedPrs(withLinkedPlans(allMergedPrs), username);
 
   if (allProjectPrs.length === 0) {
     return {
       authored: [] as EnrichedProjectPr[],
       reviewing: [] as EnrichedProjectPr[],
+      recentlyMerged,
       username,
       hasData: false,
       tokenConfigured,
@@ -392,18 +420,32 @@ async function getAllProjectPrsData() {
     };
   }
 
-  const linkedPlansByPrUrl = getLinkedPlansByPrUrl(db, prUrls);
-  const enrichedPrs = allProjectPrs.map((pr) => ({
-    ...pr,
-    linkedPlans: linkedPlansByPrUrl.get(pr.status.pr_url) ?? [],
-  }));
-
   return {
-    ...partitionProjectPrs(enrichedPrs, username),
+    ...partitionProjectPrs(withLinkedPlans(allProjectPrs), username),
+    recentlyMerged,
     username,
     hasData: true,
     tokenConfigured,
     webhookConfigured,
+  };
+}
+
+function sortByMergedAtDesc(prs: EnrichedProjectPr[]): EnrichedProjectPr[] {
+  return prs.toSorted(
+    (left, right) =>
+      Date.parse(right.status.merged_at ?? '') - Date.parse(left.status.merged_at ?? '') ||
+      right.status.pr_number - left.status.pr_number
+  );
+}
+
+function partitionRecentlyMergedPrs(
+  prs: EnrichedProjectPr[],
+  username: string | null
+): RecentlyMergedProjectPrs {
+  const partitioned = partitionCachedProjectPrs(prs, username);
+  return {
+    authored: sortByMergedAtDesc(partitioned.authored),
+    reviewing: sortByMergedAtDesc(partitioned.reviewing),
   };
 }
 
@@ -549,6 +591,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
     return {
       authored: [] as EnrichedProjectPr[],
       reviewing: [] as EnrichedProjectPr[],
+      recentlyMerged: emptyRecentlyMerged(),
       username: null,
       hasData: false,
       tokenConfigured,
@@ -561,17 +604,23 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
     db,
     getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true })
   );
+  const mergedPrs = loadRecentlyMergedPrs(db, owner, repo);
   const username = await getGitHubUsername({ githubUsername: config.githubUsername });
   const linkedPlansByPrUrl = getLinkedPlansByPrUrl(
     db,
-    prs.map((pr) => pr.status.pr_url)
+    [...prs, ...mergedPrs].map((pr) => pr.status.pr_url)
   );
   const enrichedPrs = enrichProjectPrs(db, Number(projectId), prs, linkedPlansByPrUrl, username);
+  const recentlyMerged = partitionRecentlyMergedPrs(
+    enrichProjectPrs(db, Number(projectId), mergedPrs, linkedPlansByPrUrl, username),
+    username
+  );
 
   if (enrichedPrs.length === 0) {
     return {
       authored: [] as EnrichedProjectPr[],
       reviewing: [] as EnrichedProjectPr[],
+      recentlyMerged,
       username,
       hasData: false,
       tokenConfigured,
@@ -581,6 +630,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
 
   return {
     ...partitionProjectPrs(enrichedPrs, username),
+    recentlyMerged,
     username,
     hasData: true,
     tokenConfigured,

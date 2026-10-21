@@ -17,6 +17,7 @@ import {
   getPrStatusByUrl,
   getPrStatusByUrls,
   getPrStatusForPlan,
+  getRecentlyMergedPrStatusesForRepo,
   listExistingPrStatusProjectNumbers,
   linkPlanToPr,
   linkPlanToPrs,
@@ -2319,6 +2320,96 @@ describe('tim db/pr_status', () => {
 
     expect(cleanOrphanedPrStatus(db)).toBe(0);
     expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/123')).not.toBeNull();
+  });
+
+  test('cleanOrphanedPrStatus keeps unlinked merged PRs until the retention period ends', () => {
+    const mergedAt = '2026-03-20T12:00:00.000Z';
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/120',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 120,
+      title: 'Recently merged PR 120',
+      state: 'merged',
+      draft: false,
+      mergedAt,
+      lastFetchedAt: '2026-03-20T12:00:00.000Z',
+      reviews: [{ author: 'alice', state: 'APPROVED' }],
+    });
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/121',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 121,
+      title: 'Closed PR 121',
+      state: 'closed',
+      draft: false,
+      lastFetchedAt: '2026-03-20T12:00:00.000Z',
+    });
+
+    // Six days after the merge: the merged PR stays, the closed PR goes.
+    expect(cleanOrphanedPrStatus(db, { now: new Date('2026-03-26T12:00:00.000Z') })).toBe(1);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/120')?.reviews).toHaveLength(
+      1
+    );
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/121')).toBeNull();
+
+    // Seven days after the merge, the merged PR is removed with its child rows.
+    expect(cleanOrphanedPrStatus(db, { now: new Date('2026-03-27T12:00:00.000Z') })).toBe(2);
+    expect(getPrStatusByUrl(db, 'https://github.com/example/repo/pull/120')).toBeNull();
+  });
+
+  test('cleanOrphanedPrStatus removes merged PRs with an invalid merged_at', () => {
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/122',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 122,
+      title: 'Merged PR 122',
+      state: 'merged',
+      draft: false,
+      mergedAt: 'not a date',
+      lastFetchedAt: '2026-03-20T12:00:00.000Z',
+    });
+
+    expect(cleanOrphanedPrStatus(db, { now: new Date('2026-03-20T13:00:00.000Z') })).toBe(1);
+  });
+
+  test('getRecentlyMergedPrStatusesForRepo returns PRs merged in the retention period, newest first', () => {
+    const insert = (prNumber: number, state: 'open' | 'closed' | 'merged', mergedAt?: string) =>
+      upsertPrStatus(db, {
+        prUrl: `https://github.com/example/repo/pull/${prNumber}`,
+        owner: 'example',
+        repo: 'repo',
+        prNumber,
+        title: `PR ${prNumber}`,
+        state,
+        draft: false,
+        mergedAt: mergedAt ?? null,
+        lastFetchedAt: '2026-03-20T12:00:00.000Z',
+      });
+    insert(130, 'merged', '2026-03-24T09:00:00.000Z');
+    insert(131, 'merged', '2026-03-25T09:00:00.000Z');
+    insert(132, 'merged', '2026-03-10T09:00:00.000Z'); // too old
+    insert(133, 'merged'); // no merged_at
+    insert(134, 'open');
+    insert(135, 'closed');
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/other/pull/136',
+      owner: 'example',
+      repo: 'other',
+      prNumber: 136,
+      title: 'Other repo PR',
+      state: 'merged',
+      draft: false,
+      mergedAt: '2026-03-25T09:00:00.000Z',
+      lastFetchedAt: '2026-03-20T12:00:00.000Z',
+    });
+
+    const result = getRecentlyMergedPrStatusesForRepo(db, 'example', 'repo', {
+      now: new Date('2026-03-26T00:00:00.000Z'),
+    });
+    expect(result.map((pr) => pr.status.pr_number)).toEqual([131, 130]);
   });
 
   test('cleanOrphanedPrStatus mixed: open orphan retained, closed/merged orphans removed, linked rows unaffected', () => {

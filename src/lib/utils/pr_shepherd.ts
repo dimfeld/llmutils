@@ -303,3 +303,59 @@ export function buildShepherdList<T extends ShepherdListPr>(prs: readonly T[]): 
     unwatched: unwatched.toSorted((a, b) => b.status.pr_number - a.status.pr_number),
   };
 }
+
+export interface MergedPrDayGroup<T> {
+  /** Local calendar date of the merge, as `YYYY-MM-DD`. */
+  key: string;
+  label: string;
+  prs: T[];
+}
+
+function localDateKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * Group merged PRs by the local calendar day they merged, most recent day first.
+ * PRs without a valid `merged_at` are left out.
+ */
+export function groupPrsByMergedDay<T extends { status: { merged_at: string | null } }>(
+  prs: readonly T[],
+  now: Date = new Date()
+): MergedPrDayGroup<T>[] {
+  const todayKey = localDateKey(now);
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  const yesterdayKey = localDateKey(yesterday);
+
+  const dated = prs
+    .flatMap((pr) => {
+      const mergedAt = pr.status.merged_at ? new Date(pr.status.merged_at) : null;
+      return mergedAt && !Number.isNaN(mergedAt.getTime()) ? [{ pr, mergedAt }] : [];
+    })
+    .toSorted((a, b) => b.mergedAt.getTime() - a.mergedAt.getTime());
+
+  const groups: MergedPrDayGroup<T>[] = [];
+  for (const { pr, mergedAt } of dated) {
+    const key = localDateKey(mergedAt);
+    const last = groups.at(-1);
+    if (last?.key === key) {
+      last.prs.push(pr);
+      continue;
+    }
+
+    const label =
+      key === todayKey
+        ? 'Today'
+        : key === yesterdayKey
+          ? 'Yesterday'
+          : mergedAt.toLocaleDateString(undefined, {
+              weekday: 'long',
+              month: 'short',
+              day: 'numeric',
+            });
+    groups.push({ key, label, prs: [pr] });
+  }
+  return groups;
+}

@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import PrMergedBadge from '$lib/components/PrMergedBadge.svelte';
   import ShepherdPrRow from '$lib/components/ShepherdPrRow.svelte';
   import { getProjectPrs, refreshProjectPrs } from '$lib/remote/project_prs.remote.js';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { shouldRefreshProjectPrs } from '$lib/utils/pr_update_events.js';
-  import { buildShepherdList } from '$lib/utils/pr_shepherd.js';
+  import { buildShepherdList, groupPrsByMergedDay } from '$lib/utils/pr_shepherd.js';
   import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
   import type { PageProps } from './$types';
 
@@ -16,6 +17,8 @@
   let isAllProjects = $derived(projectId === 'all');
   let prData = $derived(await getProjectPrs({ projectId }));
   let shepherdList = $derived(buildShepherdList(prData.authored));
+  let mergedDays = $derived(groupPrsByMergedDay(prData.recentlyMerged.authored));
+  let mergedCount = $derived(mergedDays.reduce((count, day) => count + day.prs.length, 0));
   let watchedCount = $derived(
     shepherdList.groups.reduce(
       (count, group) => count + group.filter((entry) => entry.pr.shepherd).length,
@@ -130,6 +133,57 @@
             />
           {/each}
         </ul>
+      </details>
+    {/if}
+
+    {#if mergedCount > 0}
+      <details class="rounded-md border border-border">
+        <summary
+          class="cursor-pointer px-3 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+        >
+          Recently merged ({mergedCount})
+        </summary>
+        <div class="border-t border-border">
+          {#each mergedDays as day (day.key)}
+            <section>
+              <h2
+                class="border-b border-border bg-gray-50 px-3 py-1 text-[11px] font-semibold text-muted-foreground dark:bg-gray-900/40"
+              >
+                {day.label}
+              </h2>
+              <ul class="divide-y divide-border border-b border-border last:border-b-0">
+                {#each day.prs as pr (pr.status.pr_url)}
+                  <li class="flex min-w-0 items-center gap-2 px-3 py-2">
+                    {#if pr.status.merged_at}
+                      <PrMergedBadge mergedAt={pr.status.merged_at} compact />
+                    {/if}
+                    <a
+                      href="/projects/{pr.projectId}/prs/{pr.status.pr_number}"
+                      class="min-w-0 flex-1 truncate text-sm text-foreground hover:underline"
+                    >
+                      <span class="text-muted-foreground">#{pr.status.pr_number}</span>
+                      {pr.status.title ?? 'Untitled'}
+                    </a>
+                    {#if isAllProjects && projectNamesById[pr.projectId]}
+                      <span class="shrink-0 text-xs text-muted-foreground">
+                        {projectNamesById[pr.projectId]}
+                      </span>
+                    {/if}
+                    <a
+                      href={pr.status.pr_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+                      aria-label={`View PR #${pr.status.pr_number} in GitHub`}
+                    >
+                      View in GitHub
+                    </a>
+                  </li>
+                {/each}
+              </ul>
+            </section>
+          {/each}
+        </div>
       </details>
     {/if}
   </div>

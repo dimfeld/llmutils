@@ -9,7 +9,10 @@
   let prData = $derived(await getProjectPrs({ projectId }));
 
   let allPrs = $derived(prData ? [...prData.authored, ...prData.reviewing] : []);
-  let pr = $derived(allPrs.find((p) => p.status.pr_number === prNumber) ?? null);
+  let mergedPrs = $derived(
+    prData ? [...prData.recentlyMerged.authored, ...prData.recentlyMerged.reviewing] : []
+  );
+  let pr = $derived([...allPrs, ...mergedPrs].find((p) => p.status.pr_number === prNumber) ?? null);
 </script>
 
 {#if pr}

@@ -55,7 +55,7 @@ import ShepherdPage from './+page.svelte';
 
 function makePr(
   prNumber: number,
-  options: { shepherded?: boolean; base?: string; head?: string } = {}
+  options: { shepherded?: boolean; base?: string; head?: string; mergedAt?: string } = {}
 ) {
   return {
     status: {
@@ -66,7 +66,7 @@ function makePr(
       pr_number: prNumber,
       author: 'me',
       title: `PR number ${prNumber}`,
-      state: 'open',
+      state: options.mergedAt ? 'merged' : 'open',
       draft: 0,
       mergeable: 'MERGEABLE',
       head_sha: 'sha',
@@ -76,7 +76,7 @@ function makePr(
       requested_reviewers: null,
       review_decision: null,
       check_rollup_state: 'success',
-      merged_at: null,
+      merged_at: options.mergedAt ?? null,
       additions: null,
       deletions: null,
       changed_files: null,
@@ -108,10 +108,11 @@ function makePr(
   } as unknown as EnrichedProjectPr;
 }
 
-function setPrs(prs: EnrichedProjectPr[]): void {
+function setPrs(prs: EnrichedProjectPr[], mergedPrs: EnrichedProjectPr[] = []): void {
   shepherdPageTestState.value = {
     authored: prs,
     reviewing: [],
+    recentlyMerged: { authored: mergedPrs, reviewing: [] },
     username: 'me',
     hasData: true,
     tokenConfigured: true,
@@ -224,5 +225,61 @@ describe('shepherd page', () => {
     expect(indent(2)).toBe('0.75rem');
     expect(indent(3)).toBe('2rem');
     expect(indent(4)).toBe('2rem');
+  });
+
+  test('recently merged PRs show in a collapsed section grouped by day', async () => {
+    const now = new Date();
+    const at = (daysBack: number, hour: number): string =>
+      new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack, hour).toISOString();
+    setPrs(
+      [makePr(1, { shepherded: true })],
+      [
+        makePr(50, { mergedAt: at(0, 0) }),
+        makePr(51, { mergedAt: at(1, 10) }),
+        makePr(52, { mergedAt: at(1, 11) }),
+      ]
+    );
+
+    unmount = render(ShepherdPage, {
+      props: {
+        data: { projectId: '7', projects: [], currentUsername: 'me', prFixExecutorOptions: [] },
+      } as never,
+    }).unmount;
+
+    const summary = page.getByText('Recently merged (3)');
+    await expect.element(summary).toBeVisible();
+    await expect.element(page.getByText('PR number 50')).not.toBeVisible();
+
+    await summary.click();
+    await expect.element(page.getByRole('heading', { name: 'Today' })).toBeVisible();
+    await expect.element(page.getByRole('heading', { name: 'Yesterday' })).toBeVisible();
+    await expect
+      .element(page.getByRole('link', { name: '#50 PR number 50' }))
+      .toHaveAttribute('href', '/projects/7/prs/50');
+    await expect
+      .element(page.getByRole('link', { name: 'View PR #51 in GitHub' }))
+      .toHaveAttribute('href', 'https://github.com/example/repo/pull/51');
+
+    const yesterdayRows = page
+      .getByRole('heading', { name: 'Yesterday' })
+      .element()
+      .closest('section')
+      ?.querySelectorAll('li');
+    expect(
+      Array.from(yesterdayRows ?? []).map((row) => row.textContent?.match(/#\d+/)?.[0])
+    ).toEqual(['#52', '#51']);
+  });
+
+  test('the recently merged section is hidden when nothing merged recently', async () => {
+    setPrs([makePr(1, { shepherded: true })]);
+
+    unmount = render(ShepherdPage, {
+      props: {
+        data: { projectId: '7', projects: [], currentUsername: 'me', prFixExecutorOptions: [] },
+      } as never,
+    }).unmount;
+
+    await expect.element(page.getByText('PR number 1')).toBeVisible();
+    await expect.element(page.getByText(/Recently merged/)).not.toBeInTheDocument();
   });
 });

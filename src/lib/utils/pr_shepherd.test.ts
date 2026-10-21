@@ -5,6 +5,7 @@ import {
   buildShepherdList,
   evaluatePrShepherd,
   getPrShepherdNotificationFlags,
+  groupPrsByMergedDay,
   groupPrsIntoStacks,
   type PrShepherdInput,
 } from './pr_shepherd.js';
@@ -278,5 +279,43 @@ describe('buildShepherdList', () => {
       [1],
     ]);
     expect(list.unwatched.map((pr) => pr.status.pr_number)).toEqual([9]);
+  });
+});
+
+describe('groupPrsByMergedDay', () => {
+  // Local times, so the test does not depend on the time zone of the test machine.
+  const now = new Date(2026, 9, 21, 15, 0);
+  const merged = (id: number, mergedAt: Date | string | null) => ({
+    id,
+    status: { merged_at: mergedAt instanceof Date ? mergedAt.toISOString() : mergedAt },
+  });
+
+  test('groups PRs by local merge day, newest first, with Today and Yesterday labels', () => {
+    const groups = groupPrsByMergedDay(
+      [
+        merged(1, new Date(2026, 9, 19, 10, 0)),
+        merged(2, new Date(2026, 9, 21, 9, 0)),
+        merged(3, new Date(2026, 9, 20, 23, 30)),
+        merged(4, new Date(2026, 9, 21, 14, 0)),
+        merged(5, new Date(2026, 9, 20, 0, 15)),
+      ],
+      now
+    );
+
+    expect(groups.map((group) => group.key)).toEqual(['2026-10-21', '2026-10-20', '2026-10-19']);
+    expect(groups[0].label).toBe('Today');
+    expect(groups[1].label).toBe('Yesterday');
+    expect(groups[2].label).toBe(
+      new Date(2026, 9, 19).toLocaleDateString(undefined, {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric',
+      })
+    );
+    expect(groups.map((group) => group.prs.map((pr) => pr.id))).toEqual([[4, 2], [3, 5], [1]]);
+  });
+
+  test('leaves out PRs without a valid merge time', () => {
+    expect(groupPrsByMergedDay([merged(1, null), merged(2, 'not a date')], now)).toEqual([]);
   });
 });
