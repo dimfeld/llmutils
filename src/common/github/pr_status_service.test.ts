@@ -9,6 +9,7 @@ import { getBranchMergeRequirements } from '../../tim/db/branch_merge_requiremen
 import { refreshPrStatus } from './pr_status_service.js';
 import { getPrStatusByUrl, getPrStatusForPlan, upsertPrStatus } from '../../tim/db/pr_status.js';
 import { nonSyncedUpsertPlan } from '../../tim/db/plan.js';
+import { enrollPrShepherd } from '../../tim/db/pr_shepherd.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
 
 // Mock the GitHub modules
@@ -26,6 +27,7 @@ vi.mock('../../common/github/pr_status.ts', () => ({
   fetchPrMergeableAndReviewDecision: vi.fn(),
   fetchPrReviewThread: vi.fn(),
   fetchPrReviewThreads: vi.fn(),
+  fetchBranchBehindBy: vi.fn(),
 }));
 
 vi.mock('../../common/github/branch_merge_requirements.ts', () => ({
@@ -46,6 +48,7 @@ import {
   fetchPrMergeableAndReviewDecision,
   fetchPrReviewThread,
   fetchPrReviewThreads,
+  fetchBranchBehindBy,
 } from '../../common/github/pr_status.ts';
 import { fetchBranchMergeRequirements } from '../../common/github/branch_merge_requirements.ts';
 
@@ -418,6 +421,75 @@ describe('common/github/pr_status_service', () => {
     expect(result.reviewThreads).toHaveLength(1);
     expect(result.reviewThreads?.[0]?.thread.path).toBe('src/example.ts');
     expect(result.reviewThreads?.[0]?.comments[0]?.database_id).toBe(401);
+  });
+
+  test('refreshPrStatus returns review threads for a shepherded PR after updating behind_by', async () => {
+    const existing = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/209',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 209,
+      title: 'Shepherded PR',
+      state: 'open',
+      draft: false,
+      baseBranch: 'main',
+      headBranch: 'feature/shepherded',
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+    });
+    enrollPrShepherd(db, existing.status.id, 'auto');
+
+    vi.mocked(fetchPrFullStatus).mockResolvedValue({
+      number: 209,
+      title: 'Shepherded PR',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'shepherd-sha',
+      baseRefName: 'main',
+      headRefName: 'feature/shepherded',
+      reviewDecision: 'CHANGES_REQUESTED' as const,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: 'success' as const,
+    });
+    vi.mocked(fetchPrReviewThreads).mockResolvedValue([
+      {
+        threadId: 'shepherd-thread',
+        path: 'src/shepherd.ts',
+        line: 3,
+        isResolved: false,
+        isOutdated: false,
+        comments: [{ commentId: 'shepherd-comment', body: 'Fix this.' }],
+      },
+    ]);
+    vi.mocked(fetchBranchBehindBy).mockResolvedValue(2);
+    vi.mocked(fetchBranchMergeRequirements).mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      requirements: [],
+    });
+    vi.mocked(parsePrOrIssueNumber).mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      number: 209,
+    });
+    vi.mocked(canonicalizePrUrl).mockReturnValue('https://github.com/example/repo/pull/209');
+
+    const result = await refreshPrStatus(db, 'https://github.com/example/repo/pull/209');
+
+    expect(fetchBranchBehindBy).toHaveBeenCalledWith(
+      'example',
+      'repo',
+      'main',
+      'feature/shepherded'
+    );
+    expect(result.status.behind_by).toBe(2);
+    expect(result.reviewThreads?.map((thread) => thread.thread.thread_id)).toEqual([
+      'shepherd-thread',
+    ]);
   });
 
   test('refreshPrStatus preserves cached review threads when review thread fetch fails', async () => {

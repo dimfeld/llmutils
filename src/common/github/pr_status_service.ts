@@ -134,6 +134,12 @@ export async function refreshPrStatus(
     );
   }
 
+  // Reload with the same review-thread inclusion as the upsert result, so callers that
+  // need threads (such as `tim pr fix`) still get them after a reload.
+  const reloadOptions = {
+    includeReviewThreads: reviewThreadsResult?.status === 'fulfilled',
+  };
+
   const updatedDetail = db
     .transaction((): PrStatusDetail => {
       const detail = upsertPrStatus(db, {
@@ -213,7 +219,7 @@ export async function refreshPrStatus(
           }
         }
 
-        const refreshedDetail = getPrStatusByUrl(db, canonicalPrUrl);
+        const refreshedDetail = getPrStatusByUrl(db, canonicalPrUrl, reloadOptions);
         if (!refreshedDetail) {
           throw new Error(
             `Failed to reload PR status after refreshing review requests: ${canonicalPrUrl}`
@@ -227,7 +233,7 @@ export async function refreshPrStatus(
     .immediate();
 
   if (await refreshShepherdedPrBehindBy(db, updatedDetail.status, fetchOptions)) {
-    return getPrStatusByUrl(db, canonicalPrUrl) ?? updatedDetail;
+    return getPrStatusByUrl(db, canonicalPrUrl, reloadOptions) ?? updatedDetail;
   }
   return updatedDetail;
 }
