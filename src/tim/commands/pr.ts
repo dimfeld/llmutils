@@ -1202,7 +1202,7 @@ export function buildReviewThreadFixInstructions(
     '   When a comment lists one or more issues, scan all later comments on the same thread and PR to determine whether each issue was already addressed (for example, acknowledged as fixed, resolved, or withdrawn in a subsequent comment). Skip issues that later comments indicate were already handled, and address the remaining issues that no later comment resolves.',
     '3. Ask the user for feedback on which review comments to address and how, as described above.',
     '4. Apply focused changes that resolve the raised concerns without altering unrelated code.',
-    '5. Run type checking, linting, and tests appropriate to the files you changed. Add tests only when necessary to cover the fixes.',
+    "5. Run the repository's formatter, type checking, linting, tests, and any other checks that CI runs, as appropriate to the files you changed. Make sure all of them pass before you commit, so the push does not fail CI. Add tests only when necessary to cover the fixes.",
     '6. Commit the code changes. If the repository uses jj, update the current bookmark to the commit you created before pushing, for example `jj bookmark set <current-bookmark> -r @-` after `jj commit` creates the new empty working-copy commit.',
     '7. Push the branch/bookmark changes to the PR before replying to review comments.',
     '8. Reply to each addressed review thread with a concise explanation of what changed using one pending GraphQL review per PR, then submit that pending review with event `COMMENT`.',
