@@ -19,8 +19,15 @@ const mockFullRefreshPrStatus = vi.fn();
 const mockStartFixThreads = vi.fn();
 const mockStartCiFix = vi.fn();
 const mockStartPrAutoreview = vi.fn();
+const mockStartPrRebase = vi.fn();
+const mockTogglePrDraftStatus = vi.fn();
+const mockRequestTimReviewLabel = vi.fn();
 const sessionManager = {
-  hasActiveSessionForPr: vi.fn((_url: string): { active: boolean } => ({ active: false })),
+  hasActiveSessionForPr: vi.fn(
+    (_url: string, _command?: string): { active: boolean; connectionId?: string } => ({
+      active: false,
+    })
+  ),
   sessions: new Map<
     string,
     {
@@ -35,11 +42,14 @@ vi.mock('$lib/remote/pr_status.remote.js', () => ({
   getPrStatus: (...args: unknown[]) => mockGetPrStatus(...args),
   refreshPrStatus: (...args: unknown[]) => mockRefreshPrStatus(...args),
   fullRefreshPrStatus: (...args: unknown[]) => mockFullRefreshPrStatus(...args),
+  togglePrDraftStatus: (...args: unknown[]) => mockTogglePrDraftStatus(...args),
+  requestTimReviewLabel: (...args: unknown[]) => mockRequestTimReviewLabel(...args),
 }));
 vi.mock('$lib/remote/review_thread_actions.remote.js', () => ({
   startFixThreads: (...args: unknown[]) => mockStartFixThreads(...args),
   startCiFix: (...args: unknown[]) => mockStartCiFix(...args),
   startPrAutoreview: (...args: unknown[]) => mockStartPrAutoreview(...args),
+  startPrRebase: (...args: unknown[]) => mockStartPrRebase(...args),
 }));
 
 vi.mock('$lib/stores/session_state.svelte.js', () => ({
@@ -196,6 +206,7 @@ async function renderSection(props: {
   prStatuses: PrStatusDetail[];
   latestReviewGuidesByPrUrl?: Record<string, { id: number; createdAt: string }>;
   configuredUsername?: string | null;
+  tokenConfigured?: boolean;
 }) {
   mockGetPrStatus.mockReturnValue(
     Promise.resolve({
@@ -203,7 +214,7 @@ async function renderSection(props: {
       invalidPrUrls: props.invalidPrUrls ?? [],
       prStatuses: props.prStatuses,
       latestReviewGuidesByPrUrl: props.latestReviewGuidesByPrUrl ?? {},
-      tokenConfigured: true,
+      tokenConfigured: props.tokenConfigured ?? true,
       configuredUsername: props.configuredUsername ?? null,
     })
   );
@@ -222,6 +233,9 @@ describe('PrStatusSection', () => {
     mockStartFixThreads.mockReset();
     mockStartCiFix.mockReset();
     mockStartPrAutoreview.mockReset();
+    mockStartPrRebase.mockReset();
+    mockTogglePrDraftStatus.mockReset();
+    mockRequestTimReviewLabel.mockReset();
     sessionManager.hasActiveSessionForPr.mockReset().mockReturnValue({ active: false });
   });
 
@@ -1124,5 +1138,136 @@ describe('PrStatusSection', () => {
 
     expect(body).toContain('Fix CI');
     expect(body).not.toContain('Session Active');
+  });
+  test("shows Mark ready for review for the configured user's draft PR", async () => {
+    const detail = makePrDetail({ status: { author: 'testuser', draft: 1 } });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).toContain('aria-label="Mark ready for review PR #42"');
+    expect(body).toContain('Mark ready for review');
+  });
+
+  test("shows Convert to draft for the configured user's non-draft PR", async () => {
+    const detail = makePrDetail({ status: { author: 'testuser', draft: 0 } });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).toContain('aria-label="Convert to draft PR #42"');
+  });
+
+  test('hides the draft toggle for PRs by other authors', async () => {
+    const detail = makePrDetail({ status: { author: 'someone-else', draft: 1 } });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).not.toContain('Mark ready for review');
+    expect(body).not.toContain('Convert to draft');
+  });
+
+  test('hides the draft toggle and tim review request when no GitHub token is configured', async () => {
+    const detail = makePrDetail({ status: { author: 'testuser', draft: 1 } });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+      tokenConfigured: false,
+    });
+
+    expect(body).not.toContain('Mark ready for review');
+    expect(body).not.toContain('Request tim review');
+  });
+
+  test('hides per-PR actions for merged PRs', async () => {
+    const detail = makePrDetail({
+      status: {
+        author: 'testuser',
+        state: 'merged',
+        merged_at: '2026-03-19T10:00:00.000Z',
+        mergeable: 'CONFLICTING',
+      },
+    });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+      configuredUsername: 'testuser',
+    });
+
+    expect(body).not.toContain('Convert to draft');
+    expect(body).not.toContain('Request tim review');
+    expect(body).not.toContain('Fix Conflicts');
+  });
+
+  test('shows Request tim review for open PRs', async () => {
+    const detail = makePrDetail({ status: { author: 'someone-else' } });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    const button = (body.match(/<button\b[^>]*>/g) ?? []).find((b) =>
+      b.includes('Request tim review for PR #42')
+    );
+    expect(button).toBeDefined();
+    expect(button).not.toContain(' disabled=');
+    expect(body).toContain('Request tim review');
+  });
+
+  test('disables Request tim review when the tim-review label is already on the PR', async () => {
+    const detail = makePrDetail({ labels: [makeLabel({ name: 'tim-review' })] });
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    const button = (body.match(/<button\b[^>]*>/g) ?? []).find((b) =>
+      b.includes('Request tim review for PR #42')
+    );
+    expect(button).toContain('disabled');
+    expect(body).toContain('tim review requested');
+  });
+
+  test('shows Fix Conflicts only for the PR with merge conflicts', async () => {
+    const first = makePrDetail({ status: { mergeable: 'CONFLICTING' } });
+    const second = makePrDetail({
+      status: {
+        pr_url: 'https://github.com/owner/repo/pull/43',
+        pr_number: 43,
+        mergeable: 'MERGEABLE',
+      },
+    });
+    const { body } = await renderSection({
+      prUrls: [first.status.pr_url, second.status.pr_url],
+      prStatuses: [first, second],
+    });
+
+    expect(body).toContain('aria-label="Fix merge conflicts for PR #42"');
+    expect(body).not.toContain('aria-label="Fix merge conflicts for PR #43"');
+  });
+
+  test('links to the active rebase session instead of showing Fix Conflicts', async () => {
+    const detail = makePrDetail({ status: { mergeable: 'CONFLICTING' } });
+    sessionManager.hasActiveSessionForPr.mockImplementation(
+      (url: string, command?: string): { active: boolean; connectionId?: string } =>
+        url === detail.status.pr_url && command === 'pr-rebase'
+          ? { active: true, connectionId: 'rebase-conn' }
+          : { active: false }
+    );
+    const { body } = await renderSection({
+      prUrls: [detail.status.pr_url],
+      prStatuses: [detail],
+    });
+
+    expect(body).not.toContain('aria-label="Fix merge conflicts for PR #42"');
+    expect(body).toContain('rebase-conn');
   });
 });

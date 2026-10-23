@@ -1,18 +1,23 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { SvelteSet } from 'svelte/reactivity';
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { toast } from 'svelte-sonner';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import {
     fullRefreshPrStatus,
     getPrStatus,
     refreshPrStatus,
+    requestTimReviewLabel,
+    togglePrDraftStatus,
   } from '$lib/remote/pr_status.remote.js';
+  import { REVIEW_LABEL_NAME } from '$common/github/review_command.js';
+  import { isPrRebaseEligible } from '$lib/utils/pr_rebase_eligibility.js';
   import type { PrStatusRow } from '$tim/db/pr_status.js';
   import {
     startFixThreads,
     startCiFix,
     startPrAutoreview,
+    startPrRebase,
   } from '$lib/remote/review_thread_actions.remote.js';
   import {
     getFixButtonState,
@@ -166,16 +171,9 @@
     effectivePrs.some((pr) => pr.reviewThreads?.some((rt) => !rt.thread.is_resolved)) ?? false
   );
 
-  let hasFailingOwnPr = $derived.by(() => {
-    const configuredUsername = prData.configuredUsername;
-    if (!configuredUsername) return false;
-    return effectivePrs.some((pr) => {
-      const isOwnPr =
-        !!pr.status.author &&
-        normalizeGitHubUsername(pr.status.author) === normalizeGitHubUsername(configuredUsername);
-      return canFixCi({ isOwnPr, status: pr.status });
-    });
-  });
+  let hasFailingOwnPr = $derived(
+    effectivePrs.some((pr) => canFixCi({ isOwnPr: isOwnPr(pr.status), status: pr.status }))
+  );
 
   let activeSessionIdForPlan = $derived.by(() => {
     for (const session of sessionManager.sessions.values()) {
@@ -203,6 +201,133 @@
 
   let refreshError = $state<string | null>(null);
   const autoreviewStarting = new SvelteSet<string>();
+  const draftUpdating = new SvelteSet<string>();
+  const timReviewRequesting = new SvelteSet<string>();
+  const rebaseStarting = new SvelteSet<string>();
+  // PR URL -> launch timestamp, for the gap until the rebase session shows up.
+  const rebaseLaunched = new SvelteMap<string, number>();
+
+  function isOwnPr(status: PrStatusRow): boolean {
+    const configuredUsername = prData.configuredUsername;
+    return (
+      !!configuredUsername &&
+      !!status.author &&
+      normalizeGitHubUsername(status.author) === normalizeGitHubUsername(configuredUsername)
+    );
+  }
+
+  function hasTimReviewLabel(pr: { labels: { name: string }[] }): boolean {
+    return pr.labels.some((label) => label.name.toLowerCase() === REVIEW_LABEL_NAME);
+  }
+
+  function getRebaseActiveSessionId(status: PrStatusRow): string | null {
+    const result = sessionManager.hasActiveSessionForPr(status.pr_url, 'pr-rebase');
+    return result.active ? (result.connectionId ?? '') : null;
+  }
+
+  $effect(() => {
+    for (const prUrl of rebaseLaunched.keys()) {
+      if (sessionManager.hasActiveSessionForPr(prUrl, 'pr-rebase').active) {
+        rebaseLaunched.delete(prUrl);
+      }
+    }
+  });
+
+  $effect(() => {
+    if (rebaseLaunched.size === 0) return;
+    const timer = setTimeout(() => {
+      const cutoff = Date.now() - 30_000;
+      for (const [prUrl, launchedAt] of rebaseLaunched) {
+        if (launchedAt <= cutoff) rebaseLaunched.delete(prUrl);
+      }
+    }, 30_000);
+    return () => clearTimeout(timer);
+  });
+
+  async function handleToggleDraftStatus(pr: PrStatusRow): Promise<void> {
+    if (draftUpdating.has(pr.pr_url)) return;
+
+    const requestPlanUuid = planUuid;
+    draftUpdating.add(pr.pr_url);
+    refreshError = null;
+    try {
+      await togglePrDraftStatus({
+        owner: pr.owner,
+        repo: pr.repo,
+        prNumber: pr.pr_number,
+        prUrl: pr.pr_url,
+        draft: !pr.draft,
+      });
+      if (planUuid !== requestPlanUuid) return;
+      toast.success(
+        pr.draft
+          ? `PR #${pr.pr_number} marked ready for review`
+          : `PR #${pr.pr_number} converted to draft`
+      );
+      getPrStatus({ planUuid }).refresh();
+    } catch (err) {
+      if (planUuid !== requestPlanUuid) return;
+      refreshError = `Failed to update PR #${pr.pr_number}: ${err}`;
+    } finally {
+      draftUpdating.delete(pr.pr_url);
+    }
+  }
+
+  async function handleRequestTimReview(pr: PrStatusRow): Promise<void> {
+    if (timReviewRequesting.has(pr.pr_url)) return;
+
+    const requestPlanUuid = planUuid;
+    timReviewRequesting.add(pr.pr_url);
+    refreshError = null;
+    try {
+      await requestTimReviewLabel({
+        owner: pr.owner,
+        repo: pr.repo,
+        prNumber: pr.pr_number,
+        prUrl: pr.pr_url,
+      });
+      if (planUuid !== requestPlanUuid) return;
+      toast.success(`tim review requested for PR #${pr.pr_number}`);
+      getPrStatus({ planUuid }).refresh();
+    } catch (err) {
+      if (planUuid !== requestPlanUuid) return;
+      refreshError = `Failed to request tim review for PR #${pr.pr_number}: ${err}`;
+    } finally {
+      timReviewRequesting.delete(pr.pr_url);
+    }
+  }
+
+  async function handleStartRebase(pr: PrStatusRow): Promise<void> {
+    if (
+      rebaseStarting.has(pr.pr_url) ||
+      rebaseLaunched.has(pr.pr_url) ||
+      getRebaseActiveSessionId(pr) !== null
+    ) {
+      return;
+    }
+
+    const requestPlanUuid = planUuid;
+    rebaseStarting.add(pr.pr_url);
+    refreshError = null;
+    try {
+      const result = await startPrRebase({
+        projectId: Number(projectId),
+        prNumber: pr.pr_number,
+      });
+      if (planUuid !== requestPlanUuid) return;
+      const fixResultState = getFixStartResultState(result.status, 'pr');
+      if (fixResultState.fixLaunched) {
+        rebaseLaunched.set(pr.pr_url, Date.now());
+        toast.success(`Conflict fix started for PR #${pr.pr_number}`);
+      }
+      refreshError = fixResultState.message;
+    } catch (err) {
+      if (planUuid !== requestPlanUuid) return;
+      refreshError = `Failed to start conflict fix for PR #${pr.pr_number}: ${err}`;
+    } finally {
+      rebaseStarting.delete(pr.pr_url);
+    }
+  }
 
   async function handleStartAutoreview(pr: PrStatusRow): Promise<void> {
     if (
@@ -285,6 +410,7 @@
     fixStarting = false;
     ciFixLaunched = false;
     ciFixStarting = false;
+    rebaseLaunched.clear();
   });
 
   // Timeout fallback: if no session appears within 30s, reset fixLaunched
@@ -601,6 +727,76 @@
             </span>
           {/if}
         </div>
+
+        <!-- Actions -->
+        {#if pr.status.state === 'open'}
+          {@const ownPr = isOwnPr(pr.status)}
+          {@const showFixConflicts = isPrRebaseEligible(pr)}
+          {@const timReviewLabelPresent = hasTimReviewLabel(pr)}
+          {#if tokenConfigured || showFixConflicts}
+            <div class="mt-1.5 flex flex-wrap items-center gap-1">
+              {#if showFixConflicts}
+                {@const rebaseActiveSessionId = getRebaseActiveSessionId(pr.status)}
+                {#if rebaseActiveSessionId !== null}
+                  <ActiveSessionLink
+                    {projectId}
+                    connectionId={rebaseActiveSessionId}
+                    class="rounded px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 hover:text-red-900 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                  />
+                {:else}
+                  <button
+                    onclick={() => handleStartRebase(pr.status)}
+                    disabled={refreshing ||
+                      rebaseStarting.has(pr.status.pr_url) ||
+                      rebaseLaunched.has(pr.status.pr_url)}
+                    class="rounded px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 hover:text-red-900 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30 dark:hover:text-red-300"
+                    aria-label="Fix merge conflicts for PR #{pr.status.pr_number}"
+                    title="Start a session that rebases this PR onto its base branch and resolves the conflicts"
+                  >
+                    {rebaseStarting.has(pr.status.pr_url)
+                      ? 'Starting...'
+                      : rebaseLaunched.has(pr.status.pr_url)
+                        ? 'Starting session...'
+                        : 'Fix Conflicts'}
+                  </button>
+                {/if}
+              {/if}
+              {#if tokenConfigured && ownPr}
+                <button
+                  onclick={() => handleToggleDraftStatus(pr.status)}
+                  disabled={draftUpdating.has(pr.status.pr_url)}
+                  class="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                  aria-label="{pr.status.draft
+                    ? 'Mark ready for review'
+                    : 'Convert to draft'} PR #{pr.status.pr_number}"
+                >
+                  {draftUpdating.has(pr.status.pr_url)
+                    ? 'Updating...'
+                    : pr.status.draft
+                      ? 'Mark ready for review'
+                      : 'Convert to draft'}
+                </button>
+              {/if}
+              {#if tokenConfigured}
+                <button
+                  onclick={() => handleRequestTimReview(pr.status)}
+                  disabled={timReviewRequesting.has(pr.status.pr_url) || timReviewLabelPresent}
+                  class="rounded px-2 py-0.5 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-gray-800"
+                  aria-label="Request tim review for PR #{pr.status.pr_number}"
+                  title={timReviewLabelPresent
+                    ? `The ${REVIEW_LABEL_NAME} label is on this PR. tim removes it after it posts the review.`
+                    : `Add the ${REVIEW_LABEL_NAME} label to request an automatic tim review`}
+                >
+                  {timReviewRequesting.has(pr.status.pr_url)
+                    ? 'Requesting...'
+                    : timReviewLabelPresent
+                      ? 'tim review requested'
+                      : 'Request tim review'}
+                </button>
+              {/if}
+            </div>
+          {/if}
+        {/if}
 
         <!-- Labels -->
         {#if pr.labels.length > 0}
