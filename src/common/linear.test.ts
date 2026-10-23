@@ -599,6 +599,178 @@ describe('LinearIssueTrackerClient', () => {
       expect(update).not.toHaveBeenCalled();
     });
 
+    test('moves issue in an unstarted-type state with a custom name', async () => {
+      const update = vi.fn(async () => ({ success: true }));
+      const mockLinearClient = {
+        issue: vi.fn(async () => ({
+          identifier: 'TEAM-123',
+          state: Promise.resolve({ name: 'Ready', type: 'unstarted' }),
+          team: Promise.resolve({
+            states: vi.fn(async () => ({
+              nodes: [{ id: 'state-progress', name: 'In Progress' }],
+              pageInfo: { hasNextPage: false },
+            })),
+          }),
+          update,
+        })),
+      };
+
+      vi.mocked(linearClientModule.getLinearClient).mockReturnValue(mockLinearClient as any);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.transitionIssueToInProgressIfReady('TEAM-123');
+
+      expect(result.changed).toBe(true);
+      expect(update).toHaveBeenCalledWith({ stateId: 'state-progress' });
+    });
+
+    function makeIssueMock(options: {
+      identifier: string;
+      state: { name: string; type?: string };
+      parent?: unknown;
+      update?: ReturnType<typeof vi.fn>;
+    }) {
+      return {
+        identifier: options.identifier,
+        state: Promise.resolve(options.state),
+        parent: Promise.resolve(options.parent),
+        team: Promise.resolve({
+          states: vi.fn(async () => ({
+            nodes: [
+              { id: 'state-todo', name: 'Todo' },
+              { id: 'state-progress', name: 'In Progress' },
+            ],
+            pageInfo: { hasNextPage: false },
+          })),
+        }),
+        update: options.update ?? vi.fn(async () => ({ success: true })),
+      };
+    }
+
+    test.each([
+      { name: 'Todo', type: 'unstarted' },
+      { name: 'Backlog', type: 'backlog' },
+    ])('moves parent issue from $name to In Progress', async (parentState) => {
+      const parentUpdate = vi.fn(async () => ({ success: true }));
+      const childUpdate = vi.fn(async () => ({ success: true }));
+      const parent = makeIssueMock({
+        identifier: 'TEAM-100',
+        state: parentState,
+        update: parentUpdate,
+      });
+      const child = makeIssueMock({
+        identifier: 'TEAM-123',
+        state: { name: 'Todo', type: 'unstarted' },
+        parent,
+        update: childUpdate,
+      });
+
+      vi.mocked(linearClientModule.getLinearClient).mockReturnValue({
+        issue: vi.fn(async () => child),
+      } as any);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.transitionIssueToInProgressIfReady('TEAM-123');
+
+      expect(result).toEqual({
+        identifier: 'TEAM-123',
+        fromState: 'Todo',
+        toState: 'In Progress',
+        changed: true,
+        parent: {
+          identifier: 'TEAM-100',
+          fromState: parentState.name,
+          toState: 'In Progress',
+          changed: true,
+        },
+      });
+      expect(childUpdate).toHaveBeenCalledWith({ stateId: 'state-progress' });
+      expect(parentUpdate).toHaveBeenCalledWith({ stateId: 'state-progress' });
+    });
+
+    test('does not move parent issue that is already started', async () => {
+      const parentUpdate = vi.fn(async () => ({ success: true }));
+      const parent = makeIssueMock({
+        identifier: 'TEAM-100',
+        state: { name: 'In Review', type: 'started' },
+        update: parentUpdate,
+      });
+      const child = makeIssueMock({
+        identifier: 'TEAM-123',
+        state: { name: 'Todo', type: 'unstarted' },
+        parent,
+      });
+
+      vi.mocked(linearClientModule.getLinearClient).mockReturnValue({
+        issue: vi.fn(async () => child),
+      } as any);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.transitionIssueToInProgressIfReady('TEAM-123');
+
+      expect(result.changed).toBe(true);
+      expect(result.parent).toEqual({
+        identifier: 'TEAM-100',
+        fromState: 'In Review',
+        changed: false,
+        reason: 'not-ready-state',
+      });
+      expect(parentUpdate).not.toHaveBeenCalled();
+    });
+
+    test('does not check parent issue when the issue was not moved', async () => {
+      const parentUpdate = vi.fn(async () => ({ success: true }));
+      const parent = makeIssueMock({
+        identifier: 'TEAM-100',
+        state: { name: 'Todo', type: 'unstarted' },
+        update: parentUpdate,
+      });
+      const child = makeIssueMock({
+        identifier: 'TEAM-123',
+        state: { name: 'In Progress', type: 'started' },
+        parent,
+      });
+
+      vi.mocked(linearClientModule.getLinearClient).mockReturnValue({
+        issue: vi.fn(async () => child),
+      } as any);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.transitionIssueToInProgressIfReady('TEAM-123');
+
+      expect(result.changed).toBe(false);
+      expect(result.parent).toBeUndefined();
+      expect(parentUpdate).not.toHaveBeenCalled();
+    });
+
+    test('reports parent update failure without failing the issue update', async () => {
+      const parent = makeIssueMock({
+        identifier: 'TEAM-100',
+        state: { name: 'Todo', type: 'unstarted' },
+        update: vi.fn(async () => {
+          throw new Error('permission denied');
+        }),
+      });
+      const childUpdate = vi.fn(async () => ({ success: true }));
+      const child = makeIssueMock({
+        identifier: 'TEAM-123',
+        state: { name: 'Todo', type: 'unstarted' },
+        parent,
+        update: childUpdate,
+      });
+
+      vi.mocked(linearClientModule.getLinearClient).mockReturnValue({
+        issue: vi.fn(async () => child),
+      } as any);
+
+      const client = new LinearIssueTrackerClient(mockConfig);
+      const result = await client.transitionIssueToInProgressIfReady('TEAM-123');
+
+      expect(result.changed).toBe(true);
+      expect(childUpdate).toHaveBeenCalled();
+      expect(result.parent).toEqual({ identifier: 'TEAM-100', error: 'permission denied' });
+    });
+
     test('reports missing In Progress state without updating', async () => {
       const update = vi.fn(async () => ({ success: true }));
       const mockLinearClient = {

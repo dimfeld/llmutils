@@ -178,8 +178,10 @@ tim done 456 --commit
 ```
 
 When `tim agent` starts on a plan linked to Linear issue URLs, it checks each linked
-Linear issue. Issues currently in `Backlog` or `Todo` are moved to `In Progress`
-before execution begins. Other states are left unchanged.
+Linear issue. Issues currently in a backlog or todo type of state are moved to
+`In Progress` before execution begins. Other states are left unchanged. When tim moves
+an issue that has a parent issue, it also moves the parent issue to `In Progress` if the
+parent is in a backlog or todo type of state.
 
 ### Multi-Issue Project Planning
 

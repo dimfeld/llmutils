@@ -139,6 +139,8 @@ export interface IssueStateTransitionResult {
   changed: boolean;
   /** Why the issue was not updated */
   reason?: 'not-ready-state' | 'target-state-missing';
+  /** Result of moving the parent issue, when the issue was moved and it has a parent */
+  parent?: IssueStateTransitionResult | { identifier: string; error: string };
 }
 
 export interface IssueTrackerUploadFileInput {

@@ -74,6 +74,22 @@ function normalizeLinearStateName(stateName: string): string {
   return stateName.toLowerCase().replace(/[\s_-]+/g, '');
 }
 
+/** Returns true for backlog and todo type states, which have not been started yet. */
+function isLinearReadyToStartState(
+  state: { name?: string | null; type?: string | null } | undefined
+): boolean {
+  if (!state) {
+    return false;
+  }
+
+  if (state.type === 'backlog' || state.type === 'unstarted') {
+    return true;
+  }
+
+  const normalizedName = normalizeLinearStateName(state.name ?? '');
+  return normalizedName === 'backlog' || normalizedName === 'todo';
+}
+
 export function parseLinearIssueIdentifier(spec: string): ParsedIssueIdentifier | null {
   const trimmedSpec = spec.trim();
 
@@ -446,54 +462,15 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
       throw new Error(`Invalid Linear issue identifier: ${identifier}`);
     }
 
+    let issue: Issue | undefined;
+    let result: IssueStateTransitionResult;
     try {
-      const issue = await client.issue(parsed.identifier);
+      issue = await client.issue(parsed.identifier);
       if (!issue) {
         throw new Error(`Issue not found: ${parsed.identifier}`);
       }
 
-      const state = await issue.state;
-      const fromState = state?.name || 'Unknown';
-      const normalizedFromState = normalizeLinearStateName(fromState);
-      if (normalizedFromState !== 'backlog' && normalizedFromState !== 'todo') {
-        return {
-          identifier: parsed.identifier,
-          fromState,
-          changed: false,
-          reason: 'not-ready-state',
-        };
-      }
-
-      const team = await issue.team;
-      if (!team) {
-        throw new Error(`Issue ${parsed.identifier} has no team`);
-      }
-
-      const states = await this.fetchAllWorkflowStateNodes(await team.states());
-      const inProgressState = states.find(
-        (workflowState) => normalizeLinearStateName(workflowState.name) === 'inprogress'
-      );
-      if (!inProgressState) {
-        return {
-          identifier: parsed.identifier,
-          fromState,
-          changed: false,
-          reason: 'target-state-missing',
-        };
-      }
-
-      await issue.update({ stateId: inProgressState.id });
-
-      debugLog(
-        `Moved Linear issue ${parsed.identifier} from ${fromState} to ${inProgressState.name}`
-      );
-
-      return {
-        identifier: parsed.identifier,
-        fromState,
-        toState: inProgressState.name,
-        changed: true,
-      };
+      result = await this.moveIssueToInProgressIfReady(issue, parsed.identifier);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(
@@ -501,6 +478,80 @@ export class LinearIssueTrackerClient implements IssueTrackerClient {
         { cause: error }
       );
     }
+
+    if (result.changed) {
+      // When work starts on a sub-issue, the parent issue is also in progress.
+      result.parent = await this.moveParentIssueToInProgressIfReady(issue, parsed.identifier);
+    }
+
+    return result;
+  }
+
+  private async moveParentIssueToInProgressIfReady(
+    issue: Issue,
+    childIdentifier: string
+  ): Promise<IssueStateTransitionResult | { identifier: string; error: string } | undefined> {
+    let parentIdentifier = 'parent';
+    try {
+      const parent = await issue.parent;
+      if (!parent) {
+        return undefined;
+      }
+
+      parentIdentifier = parent.identifier;
+      return await this.moveIssueToInProgressIfReady(parent, parent.identifier);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      debugLog(
+        `Failed to update ${parentIdentifier} issue of Linear issue ${childIdentifier}: ${errorMessage}`
+      );
+      return { identifier: parentIdentifier, error: errorMessage };
+    }
+  }
+
+  private async moveIssueToInProgressIfReady(
+    issue: Issue,
+    identifier: string
+  ): Promise<IssueStateTransitionResult> {
+    const state = await issue.state;
+    const fromState = state?.name || 'Unknown';
+    if (!isLinearReadyToStartState(state)) {
+      return {
+        identifier,
+        fromState,
+        changed: false,
+        reason: 'not-ready-state',
+      };
+    }
+
+    const team = await issue.team;
+    if (!team) {
+      throw new Error(`Issue ${identifier} has no team`);
+    }
+
+    const states = await this.fetchAllWorkflowStateNodes(await team.states());
+    const inProgressState = states.find(
+      (workflowState) => normalizeLinearStateName(workflowState.name) === 'inprogress'
+    );
+    if (!inProgressState) {
+      return {
+        identifier,
+        fromState,
+        changed: false,
+        reason: 'target-state-missing',
+      };
+    }
+
+    await issue.update({ stateId: inProgressState.id });
+
+    debugLog(`Moved Linear issue ${identifier} from ${fromState} to ${inProgressState.name}`);
+
+    return {
+      identifier,
+      fromState,
+      toState: inProgressState.name,
+      changed: true,
+    };
   }
 
   async uploadFile(input: IssueTrackerUploadFileInput): Promise<IssueTrackerUploadedFile> {

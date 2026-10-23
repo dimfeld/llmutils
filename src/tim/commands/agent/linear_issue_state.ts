@@ -43,6 +43,17 @@ export async function moveLinearIssuesToInProgressForAgentRun(
       } else if (result.reason === 'target-state-missing') {
         warn(`Linear issue ${result.identifier} has no "In Progress" workflow state to move to.`);
       }
+
+      const parent = result.parent;
+      if (parent && 'error' in parent) {
+        warn(
+          `Failed to update parent Linear issue ${parent.identifier} of ${result.identifier}: ${parent.error}`
+        );
+      } else if (parent?.changed) {
+        log(
+          `Moved parent Linear issue ${parent.identifier} from ${parent.fromState} to ${parent.toState}.`
+        );
+      }
     } catch (err) {
       warn(`Failed to update Linear issue ${issueRef} before agent run: ${err as Error}`);
     }

@@ -57,6 +57,49 @@ describe('moveLinearIssuesToInProgressForAgentRun', () => {
     expect(log).toHaveBeenCalledWith('Moved Linear issue TEAM-123 from Todo to In Progress.');
   });
 
+  test('logs parent issue transitions and failures', async () => {
+    const tracker = makeTracker({
+      parseIssueIdentifier: vi.fn((spec: string) => ({ identifier: spec })),
+      transitionIssueToInProgressIfReady: vi.fn(async (identifier: string) =>
+        identifier === 'TEAM-123'
+          ? {
+              identifier,
+              fromState: 'Todo',
+              toState: 'In Progress',
+              changed: true,
+              parent: {
+                identifier: 'TEAM-100',
+                fromState: 'Backlog',
+                toState: 'In Progress',
+                changed: true,
+              },
+            }
+          : {
+              identifier,
+              fromState: 'Todo',
+              toState: 'In Progress',
+              changed: true,
+              parent: { identifier: 'TEAM-200', error: 'permission denied' },
+            }
+      ),
+    });
+    vi.mocked(getIssueTracker).mockResolvedValue(tracker);
+
+    await moveLinearIssuesToInProgressForAgentRun(
+      { ...basePlan, issue: ['TEAM-123', 'TEAM-456'] },
+      {
+        issueTracker: 'linear',
+      } as any
+    );
+
+    expect(log).toHaveBeenCalledWith(
+      'Moved parent Linear issue TEAM-100 from Backlog to In Progress.'
+    );
+    expect(warn).toHaveBeenCalledWith(
+      'Failed to update parent Linear issue TEAM-200 of TEAM-456: permission denied'
+    );
+  });
+
   test('does nothing for non-Linear projects', async () => {
     await moveLinearIssuesToInProgressForAgentRun(
       { ...basePlan, issue: ['https://linear.app/acme/issue/TEAM-123/do-the-work'] },
