@@ -1098,24 +1098,13 @@
   let siblingEntries = $derived.by(() => {
     const basePlanUuid = (plan.effectiveBasePlan ?? plan.basePlan)?.uuid;
     const dependentUuids = new Set(plan.dependents.map((dependent) => dependent.uuid));
-    const relationshipRank = (entry: { isBase: boolean; dependsOnCurrent: boolean }): number => {
-      if (entry.isBase) return 0;
-      if (entry.dependsOnCurrent) return 1;
-      return 2;
-    };
 
-    return plan.siblings
-      .map((sibling) => ({
-        dep: sibling,
-        isBase: sibling.uuid === basePlanUuid,
-        dependsOnCurrent: dependentUuids.has(sibling.uuid),
-      }))
-      .sort((a, b) => {
-        const rankDifference = relationshipRank(a) - relationshipRank(b);
-        if (rankDifference !== 0) return rankDifference;
-
-        return (a.dep.planId ?? 0) - (b.dep.planId ?? 0);
-      });
+    return plan.siblingGroup.map((sibling) => ({
+      dep: sibling,
+      isCurrent: sibling.uuid === plan.uuid,
+      isBase: sibling.uuid === basePlanUuid,
+      dependsOnCurrent: dependentUuids.has(sibling.uuid),
+    }));
   });
 
   function planUrl(uuid: string, depProjectId?: number | null): string {
@@ -1563,12 +1552,15 @@
           Sibling Plans
         </h3>
         <ul class="space-y-1">
-          {#each siblingEntries as { dep, isBase, dependsOnCurrent } (dep.uuid)}
+          {#each siblingEntries as { dep, isCurrent, isBase, dependsOnCurrent } (dep.uuid)}
             <li class="text-sm">
               <a
                 href={planUrl(dep.uuid, dep.projectId)}
                 data-sveltekit-preload-data
-                class="flex items-center gap-1.5 rounded px-1.5 py-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+                aria-current={isCurrent ? 'page' : undefined}
+                class="flex items-center gap-1.5 rounded px-1.5 py-0.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 {isCurrent
+                  ? 'bg-gray-100 font-semibold dark:bg-gray-800'
+                  : ''}"
               >
                 {#if dep.planId}
                   <span class="text-xs font-medium text-muted-foreground">#{dep.planId}</span>
@@ -1578,6 +1570,9 @@
                 >
                   {dep.title ?? 'Unknown plan'}
                 </span>
+                {#if isCurrent}
+                  <span class="text-xs font-normal text-muted-foreground">(this plan)</span>
+                {/if}
                 {#if isBase}
                   <span
                     class="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"

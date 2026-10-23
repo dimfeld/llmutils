@@ -160,6 +160,7 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     dependencies: [],
     dependents: [],
     siblings: [],
+    siblingGroup: [],
     children: [],
     basePlan: null,
     effectiveBasePlan: null,

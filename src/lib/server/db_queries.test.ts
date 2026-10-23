@@ -224,6 +224,57 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
+  test('getPlanDetail returns the sibling group in dependency order', async () => {
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'order-epic',
+      planId: 950,
+      title: 'Order epic',
+      epic: true,
+    });
+    // 951 depends on 953 and stacks on 954; 954 depends on 952. 955 has no relationships.
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'order-a',
+      planId: 951,
+      parentUuid: 'order-epic',
+      dependencyUuids: ['order-c'],
+      basePlanUuid: 'order-d',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'order-b',
+      planId: 952,
+      parentUuid: 'order-epic',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'order-c',
+      planId: 953,
+      parentUuid: 'order-epic',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'order-d',
+      planId: 954,
+      parentUuid: 'order-epic',
+      dependencyUuids: ['order-b'],
+    });
+    // A dependency on a plan outside the group does not affect the order.
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'order-outside',
+      planId: 956,
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'order-e',
+      planId: 955,
+      parentUuid: 'order-epic',
+      dependencyUuids: ['order-outside'],
+    });
+
+    const detail = await getPlanDetail(db, 'order-d');
+    expect(detail?.siblingGroup.map((plan) => plan.planId)).toEqual([952, 953, 954, 951, 955]);
+    expect(detail?.siblings.map((plan) => plan.uuid)).not.toContain('order-d');
+
+    const noSiblings = await getPlanDetail(db, 'order-outside');
+    expect(noSiblings?.siblingGroup).toEqual([]);
+  });
+
   test('getPlanDetail summarizes linked PR readiness for siblings and child dependencies', async () => {
     const prUrl = (n: number): string => `https://github.com/example/repo/pull/${n}`;
     const addPr = (

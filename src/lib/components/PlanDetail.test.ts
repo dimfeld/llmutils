@@ -183,6 +183,7 @@ function makePlanDetail(overrides: Partial<PlanDetail> = {}): PlanDetail {
     dependencies: [],
     dependents: [],
     siblings: [],
+    siblingGroup: [],
     children: [],
     childExternalDependencyStatuses: {},
     assignment: null,
@@ -438,6 +439,15 @@ describe('PlanDetail', () => {
       displayStatus: 'blocked' as const,
       isResolved: false,
     };
+    const currentPlan = {
+      uuid: 'plan-1',
+      projectId: 123,
+      planId: 1,
+      title: 'Linked PR plan',
+      status: 'in_progress' as const,
+      displayStatus: 'in_progress' as const,
+      isResolved: false,
+    };
 
     const { body } = render(PlanDetailComponent, {
       props: {
@@ -445,6 +455,7 @@ describe('PlanDetail', () => {
           dependencies: [baseSibling],
           dependents: [dependentSibling],
           siblings: [unrelatedSibling, dependentSibling, baseSibling],
+          siblingGroup: [baseSibling, currentPlan, unrelatedSibling, dependentSibling],
           effectiveBasePlan: baseSibling,
         }),
         projectId: '123',
@@ -458,8 +469,19 @@ describe('PlanDetail', () => {
     expect(body).toContain('Depends on this');
     expect(body).toContain('bg-indigo-100');
     expect(body).toContain('text-indigo-700');
-    expect(body.indexOf('Base sibling')).toBeLessThan(body.indexOf('Dependent sibling'));
-    expect(body.indexOf('Dependent sibling')).toBeLessThan(body.indexOf('Unrelated sibling'));
+    expect(body).toContain('(this plan)');
+    expect(body).toContain('aria-current="page"');
+    // The list keeps the dependency order from the server.
+    const siblingSection = body.slice(body.indexOf('Sibling Plans'));
+    expect(siblingSection.indexOf('Base sibling')).toBeLessThan(
+      siblingSection.indexOf('Linked PR plan')
+    );
+    expect(siblingSection.indexOf('Linked PR plan')).toBeLessThan(
+      siblingSection.indexOf('Unrelated sibling')
+    );
+    expect(siblingSection.indexOf('Unrelated sibling')).toBeLessThan(
+      siblingSection.indexOf('Dependent sibling')
+    );
     expect(body).not.toContain('Depends On');
     expect(body).not.toContain('Depended on by');
   });
@@ -486,7 +508,10 @@ describe('PlanDetail', () => {
 
     const { body } = render(PlanDetailComponent, {
       props: {
-        plan: makePlanDetail({ siblings: [doneSibling, pendingSibling] }),
+        plan: makePlanDetail({
+          siblings: [doneSibling, pendingSibling],
+          siblingGroup: [doneSibling, pendingSibling],
+        }),
         projectId: '123',
       },
     });
@@ -522,6 +547,7 @@ describe('PlanDetail', () => {
         plan: makePlanDetail({
           epic: true,
           siblings: [draftSibling, noPrSibling],
+          siblingGroup: [draftSibling, noPrSibling],
           dependencies: [readyChild, mergedChild],
           children: [
             { ...readyChild, taskCount: 0, doneTaskCount: 0, dependencies: [] },

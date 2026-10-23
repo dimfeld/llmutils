@@ -178,6 +178,8 @@ export interface PlanDetail extends EnrichedPlan {
   dependencies: EnrichedPlanDependency[];
   dependents: EnrichedPlanDependency[];
   siblings: EnrichedPlanDependency[];
+  /** The current plan and its siblings, sorted so that each plan comes after the plans it depends on. */
+  siblingGroup: EnrichedPlanDependency[];
   children: ChildPlanSummary[];
   childExternalDependencyStatuses: Record<string, ChildExternalDependencyInfo>;
   assignment: AssignmentEntry | null;
@@ -1314,6 +1316,61 @@ export function getChildPlansForEpic(db: Database, epicUuid: string): ChildPlanS
   return getChildPlansForEpicFromPlanDb(db, epicUuid);
 }
 
+/**
+ * Sort plans so that each plan comes after the plans in the group that it depends on, either
+ * through an explicit dependency or as its base plan. Ties sort by plan ID. Plans in a dependency
+ * cycle go at the end, sorted by plan ID.
+ */
+export function sortPlanUuidsInDependencyOrder(
+  planUuids: string[],
+  planByUuid: ReadonlyMap<string, PlanRow>,
+  dependencyRowsByPlanUuid: ReadonlyMap<string, PlanDependencyRow[]>
+): string[] {
+  const group = new Set(planUuids);
+  const planIdOf = (uuid: string): number =>
+    planByUuid.get(uuid)?.plan_id ?? Number.POSITIVE_INFINITY;
+  const byPlanId = (a: string, b: string): number => planIdOf(a) - planIdOf(b);
+
+  const remainingDeps = new Map<string, Set<string>>();
+  const dependentsOf = new Map<string, string[]>();
+  for (const uuid of group) {
+    const deps = new Set<string>();
+    for (const row of dependencyRowsByPlanUuid.get(uuid) ?? []) {
+      if (group.has(row.depends_on_uuid)) deps.add(row.depends_on_uuid);
+    }
+    const baseUuid = planByUuid.get(uuid)?.base_plan_uuid;
+    if (baseUuid && group.has(baseUuid)) deps.add(baseUuid);
+    deps.delete(uuid);
+    remainingDeps.set(uuid, deps);
+    for (const dep of deps) {
+      const list = dependentsOf.get(dep) ?? [];
+      list.push(uuid);
+      dependentsOf.set(dep, list);
+    }
+  }
+
+  const sorted: string[] = [];
+  let ready = [...group].filter((uuid) => remainingDeps.get(uuid)!.size === 0).sort(byPlanId);
+  while (ready.length > 0) {
+    const next = ready.shift()!;
+    sorted.push(next);
+    for (const dependent of dependentsOf.get(next) ?? []) {
+      const deps = remainingDeps.get(dependent)!;
+      deps.delete(next);
+      if (deps.size === 0) {
+        ready.push(dependent);
+        ready.sort(byPlanId);
+      }
+    }
+  }
+
+  if (sorted.length < group.size) {
+    const placed = new Set(sorted);
+    sorted.push(...[...group].filter((uuid) => !placed.has(uuid)).sort(byPlanId));
+  }
+  return sorted;
+}
+
 export async function getPlanDetail(
   db: Database,
   planUuid: string,
@@ -1468,6 +1525,14 @@ export async function getPlanDetail(
   const siblings = siblingUuids.map((uuid) =>
     toDependencySummary(uuid, planByUuid, dependenciesByPlanUuid)
   );
+  const siblingGroup =
+    siblingUuids.length > 0
+      ? sortPlanUuidsInDependencyOrder(
+          [planUuid, ...siblingUuids],
+          planByUuid,
+          dependenciesByPlanUuid
+        ).map((uuid) => toDependencySummary(uuid, planByUuid, dependenciesByPlanUuid))
+      : [];
 
   const prReadinessByPlanUuid = new Map<string, PlanPrReadiness>();
   const withPrReadiness = (summary: EnrichedPlanDependency): EnrichedPlanDependency => {
@@ -1484,6 +1549,7 @@ export async function getPlanDetail(
     dependencies: dependencySummaries.map(withPrReadiness),
     dependents,
     siblings: siblings.map(withPrReadiness),
+    siblingGroup: siblingGroup.map(withPrReadiness),
     children,
     childExternalDependencyStatuses,
     assignment,
