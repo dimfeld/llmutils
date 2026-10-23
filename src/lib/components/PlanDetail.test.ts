@@ -464,6 +464,39 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('Depended on by');
   });
 
+  test('crosses out and grays siblings in a terminal state', () => {
+    const doneSibling = {
+      uuid: 'done-sibling',
+      projectId: 123,
+      planId: 30,
+      title: 'Done sibling',
+      status: 'done' as const,
+      displayStatus: 'done' as const,
+      isResolved: true,
+    };
+    const pendingSibling = {
+      uuid: 'pending-sibling',
+      projectId: 123,
+      planId: 31,
+      title: 'Pending sibling',
+      status: 'pending' as const,
+      displayStatus: 'pending' as const,
+      isResolved: false,
+    };
+
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({ siblings: [doneSibling, pendingSibling] }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toMatch(
+      /<span class="text-muted-foreground line-through">\s*Done sibling\s*<\/span>/
+    );
+    expect(body).toMatch(/<span class="text-foreground">\s*Pending sibling\s*<\/span>/);
+  });
+
   test('shows Finish for a taskless epic outside needs_review', () => {
     const { body } = render(PlanDetailComponent, {
       props: {

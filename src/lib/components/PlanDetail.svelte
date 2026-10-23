@@ -1569,7 +1569,11 @@
                 {#if dep.planId}
                   <span class="text-xs font-medium text-muted-foreground">#{dep.planId}</span>
                 {/if}
-                <span class="text-foreground">{dep.title ?? 'Unknown plan'}</span>
+                <span
+                  class={dep.isResolved ? 'text-muted-foreground line-through' : 'text-foreground'}
+                >
+                  {dep.title ?? 'Unknown plan'}
+                </span>
                 {#if isBase}
                   <span
                     class="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300"
