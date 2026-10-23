@@ -6,7 +6,7 @@ import yaml from 'yaml';
 
 import { clearAllTimCaches } from '../../../testing.js';
 import { closeDatabaseForTesting, getDatabase } from '../../db/database.js';
-import { getPlanByPlanId } from '../../db/plan.js';
+import { getPlanByPlanId, getPlanDependenciesByUuid } from '../../db/plan.js';
 import { clearPlanSyncContext } from '../../db/plan_sync.js';
 import type { PlanSchema } from '../../planSchema.js';
 import { resolveProjectContext } from '../../plan_materialize.js';
@@ -132,6 +132,31 @@ describe('writeImportedPlansToDbTransactionally atomicity', () => {
     expect(getPlanByPlanId(db, context.projectId, 1)).toBeNull();
     expect(getPlanByPlanId(db, context.projectId, 2)).toBeNull();
     expect(getPlanByPlanId(db, context.projectId, 3)).toBeNull();
+  });
+
+  test('creates a new parent with new children when the parent is bootstrapped first', async () => {
+    await writeImportedPlansToDbTransactionally(tempDir, [
+      { plan: makePlan(1), filePath: null, syncOnly: true },
+      { plan: { ...makePlan(2), parent: 1 }, filePath: null },
+      { plan: { ...makePlan(3), parent: 1 }, filePath: null },
+      { plan: { ...makePlan(1), dependencies: [2, 3] }, filePath: null },
+    ]);
+
+    const context = await resolveProjectContext(tempDir);
+    const db = getDatabase();
+    const parent = getPlanByPlanId(db, context.projectId, 1);
+    expect(parent).not.toBeNull();
+    expect(getPlanByPlanId(db, context.projectId, 2)?.parent_uuid).toBe(parent!.uuid);
+    expect(getPlanByPlanId(db, context.projectId, 3)?.parent_uuid).toBe(parent!.uuid);
+    const dependencyUuids = getPlanDependenciesByUuid(db, parent!.uuid).map(
+      (row) => row.depends_on_uuid
+    );
+    expect(dependencyUuids.toSorted()).toEqual(
+      [
+        getPlanByPlanId(db, context.projectId, 2)!.uuid,
+        getPlanByPlanId(db, context.projectId, 3)!.uuid,
+      ].toSorted()
+    );
   });
 });
 

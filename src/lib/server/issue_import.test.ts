@@ -677,11 +677,9 @@ describe('issue_import server helpers', () => {
         expect(call[2]).toEqual({ simple: true });
       }
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
-      expect(pendingWrites).toHaveLength(3);
-      expect(pendingWrites?.map((entry) => entry.plan.simple)).toEqual([true, true, true]);
-      expect(pendingWrites?.map((entry) => entry.plan.id).toSorted((a, b) => a - b)).toEqual([
-        100, 101, 102,
-      ]);
+      expect(pendingWrites).toHaveLength(4);
+      expect(pendingWrites?.map((entry) => entry.plan.simple)).toEqual([true, true, true, true]);
+      expect(pendingWrites?.map((entry) => entry.plan.id)).toEqual([100, 101, 102, 100]);
     });
 
     test('creates a simple plan in merged mode when requested', async () => {
@@ -987,19 +985,24 @@ describe('issue_import server helpers', () => {
       expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 3);
       expect(writeImportedPlansToDbTransactionally).toHaveBeenCalledTimes(1);
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
-      expect(pendingWrites).toHaveLength(3);
-      expect(pendingWrites?.[0]?.plan).toMatchObject({
+      expect(pendingWrites).toHaveLength(4);
+      // The new parent is created first without child dependencies so the
+      // children can reference it, then rewritten with the dependencies.
+      expect(pendingWrites?.[0]).toMatchObject({ syncOnly: true, plan: { id: 100 } });
+      expect(pendingWrites?.[0]?.plan.dependencies ?? []).toEqual([]);
+      expect(pendingWrites?.[1]?.plan).toMatchObject({
         id: 101,
         parent: 100,
       });
-      expect(pendingWrites?.[1]?.plan).toMatchObject({
+      expect(pendingWrites?.[2]?.plan).toMatchObject({
         id: 102,
         parent: 100,
       });
-      expect(pendingWrites?.[2]?.plan).toMatchObject({
+      expect(pendingWrites?.[3]?.plan).toMatchObject({
         id: 100,
         dependencies: [101, 102],
       });
+      expect(pendingWrites?.[3]?.syncOnly).toBeUndefined();
 
       // Child plans should not have rmprOptions (matching CLI behavior)
       const childCalls = vi.mocked(createStubPlanFromIssue).mock.calls.filter(
@@ -1619,9 +1622,11 @@ describe('issue_import server helpers', () => {
       // Only 1 new plan (the parent)
       expect(reserveImportedPlanStartId).toHaveBeenCalledWith('/tmp/preferred-workspace', 1);
       const pendingWrites = vi.mocked(writeImportedPlansToDbTransactionally).mock.calls[0]?.[1];
-      expect(pendingWrites).toHaveLength(2); // existing child + new parent
-      const parentWrite = pendingWrites?.find((w) => w.plan.id === 200);
-      expect(parentWrite?.plan.dependencies).toContain(101);
+      expect(pendingWrites).toHaveLength(3); // parent bootstrap + existing child + new parent
+      expect(pendingWrites?.map((w) => w.plan.id)).toEqual([200, 101, 200]);
+      expect(pendingWrites?.[0]?.syncOnly).toBe(true);
+      expect(pendingWrites?.[0]?.plan.dependencies ?? []).not.toContain(101);
+      expect(pendingWrites?.[2]?.plan.dependencies).toContain(101);
       expect(result).toEqual({ planUuid: expect.stringContaining('uuid') });
     });
 

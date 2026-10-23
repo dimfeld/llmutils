@@ -608,6 +608,22 @@ export async function createPlansFromIssue(
       };
     }
 
+    if (!existingParentPlan && childIds.length > 0) {
+      // A new parent must exist before the children that reference it, but the
+      // parent's dependencies point at those children. Create the parent first
+      // without the child dependencies, then add them in the final parent write.
+      pendingWrites.unshift({
+        plan: {
+          ...parentPlan,
+          dependencies: (parentPlan.dependencies ?? []).filter(
+            (dependencyId) => !childIds.includes(dependencyId)
+          ),
+        },
+        filePath: null,
+        syncOnly: true,
+      });
+    }
+
     if (shouldWriteParent) {
       pendingWrites.push({ plan: parentPlan, filePath: null });
     }
