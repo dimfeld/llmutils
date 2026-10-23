@@ -497,6 +497,47 @@ describe('PlanDetail', () => {
     expect(body).toMatch(/<span class="text-foreground">\s*Pending sibling\s*<\/span>/);
   });
 
+  test('shows PR readiness badges for siblings and children', () => {
+    const makeSummary = (
+      uuid: string,
+      planId: number,
+      prReadiness: 'none' | 'draft' | 'ready' | 'merged'
+    ) => ({
+      uuid,
+      projectId: 123,
+      planId,
+      title: uuid,
+      status: 'pending' as const,
+      displayStatus: 'pending' as const,
+      isResolved: false,
+      prReadiness,
+    });
+    const draftSibling = makeSummary('draft-sibling', 40, 'draft');
+    const noPrSibling = makeSummary('no-pr-sibling', 41, 'none');
+    const readyChild = makeSummary('ready-child', 42, 'ready');
+    const mergedChild = makeSummary('merged-child', 43, 'merged');
+
+    const { body } = render(PlanDetailComponent, {
+      props: {
+        plan: makePlanDetail({
+          epic: true,
+          siblings: [draftSibling, noPrSibling],
+          dependencies: [readyChild, mergedChild],
+          children: [
+            { ...readyChild, taskCount: 0, doneTaskCount: 0, dependencies: [] },
+            { ...mergedChild, taskCount: 0, doneTaskCount: 0, dependencies: [] },
+          ],
+        }),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toContain('PR draft');
+    expect(body).toContain('PR ready');
+    expect(body).toContain('PR merged');
+    expect(body.match(/PR (draft|ready|merged)/g)).toHaveLength(3);
+  });
+
   test('shows Finish for a taskless epic outside needs_review', () => {
     const { body } = render(PlanDetailComponent, {
       props: {

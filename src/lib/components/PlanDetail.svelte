@@ -49,6 +49,7 @@
   import { useSessionWindows } from '$lib/stores/session_windows.svelte.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import StatusBadge from './StatusBadge.svelte';
+  import PlanPrReadinessBadge from './PlanPrReadinessBadge.svelte';
   import PriorityBadge from './PriorityBadge.svelte';
   import RunChildrenPanel from './RunChildrenPanel.svelte';
   import { isAgentEligibleChild } from './run_children_panel/eligibility.js';
@@ -1492,6 +1493,9 @@
                     Base Plan
                   </span>
                 {/if}
+                {#if dep.prReadiness && dep.prReadiness !== 'none'}
+                  <PlanPrReadinessBadge readiness={dep.prReadiness} />
+                {/if}
                 {#if dep.displayStatus}
                   <StatusBadge status={dep.displayStatus} planStatus={dep.status ?? undefined} />
                 {/if}
@@ -1587,6 +1591,9 @@
                   >
                     Depends on this
                   </span>
+                {/if}
+                {#if dep.prReadiness && dep.prReadiness !== 'none'}
+                  <PlanPrReadinessBadge readiness={dep.prReadiness} />
                 {/if}
                 {#if dep.displayStatus}
                   <StatusBadge status={dep.displayStatus} planStatus={dep.status ?? undefined} />

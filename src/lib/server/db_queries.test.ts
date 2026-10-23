@@ -224,6 +224,99 @@ describe('lib/server/db_queries', () => {
     ]);
   });
 
+  test('getPlanDetail summarizes linked PR readiness for siblings and child dependencies', async () => {
+    const prUrl = (n: number): string => `https://github.com/example/repo/pull/${n}`;
+    const addPr = (
+      n: number,
+      options: { state?: string; draft?: boolean; mergedAt?: string | null } = {}
+    ): number =>
+      upsertPrStatus(db, {
+        prUrl: prUrl(n),
+        owner: 'example',
+        repo: 'repo',
+        prNumber: n,
+        title: `PR ${n}`,
+        state: options.state ?? 'open',
+        draft: options.draft ?? false,
+        mergedAt: options.mergedAt ?? null,
+        lastFetchedAt: recentTimestamp(),
+      }).status.id;
+
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'readiness-epic',
+      planId: 930,
+      title: 'Readiness epic',
+      epic: true,
+      dependencyUuids: ['readiness-draft', 'readiness-none'],
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'readiness-current',
+      planId: 931,
+      parentUuid: 'readiness-epic',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'readiness-ready',
+      planId: 932,
+      parentUuid: 'readiness-epic',
+      pullRequest: [prUrl(932)],
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'readiness-draft',
+      planId: 933,
+      parentUuid: 'readiness-epic',
+      pullRequest: [prUrl(933)],
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'readiness-merged',
+      planId: 934,
+      parentUuid: 'readiness-epic',
+      pullRequest: [prUrl(934)],
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'readiness-none',
+      planId: 935,
+      parentUuid: 'readiness-epic',
+    });
+    nonSyncedUpsertPlan(db, projectId, {
+      uuid: 'readiness-closed',
+      planId: 936,
+      parentUuid: 'readiness-epic',
+      pullRequest: [prUrl(936)],
+    });
+
+    addPr(932);
+    // One ready explicit PR plus one auto-linked draft PR.
+    addPr(933);
+    linkPlanToPr(db, 'readiness-draft', addPr(9330, { draft: true }), 'auto');
+    addPr(934, { state: 'merged', mergedAt: '2026-03-18T10:00:00.000Z' });
+    addPr(936, { state: 'closed' });
+
+    const detail = await getPlanDetail(db, 'readiness-current');
+    const readinessByUuid = Object.fromEntries(
+      (detail?.siblings ?? []).map((sibling) => [sibling.uuid, sibling.prReadiness])
+    );
+    expect(readinessByUuid).toEqual({
+      'readiness-ready': 'ready',
+      'readiness-draft': 'draft',
+      'readiness-merged': 'merged',
+      'readiness-none': 'none',
+      'readiness-closed': 'none',
+    });
+
+    const epicDetail = await getPlanDetail(db, 'readiness-epic');
+    expect(
+      Object.fromEntries(
+        (epicDetail?.dependencies ?? []).map((dependency) => [
+          dependency.uuid,
+          dependency.prReadiness,
+        ])
+      )
+    ).toEqual({
+      'readiness-draft': 'draft',
+      'readiness-none': 'none',
+    });
+  });
+
   test('getPlanDetail includes child external dependency statuses for epic plans', async () => {
     nonSyncedUpsertPlan(db, projectId, {
       uuid: 'child-external-status-epic',

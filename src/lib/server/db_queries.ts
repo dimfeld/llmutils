@@ -95,7 +95,17 @@ export interface EnrichedPlanDependency {
   status: PlanRow['status'] | null;
   displayStatus: PlanDisplayStatus | null;
   isResolved: boolean;
+  /** Summary of the plan's linked PRs. Only set in plan detail views. */
+  prReadiness?: PlanPrReadiness;
 }
+
+/**
+ * - `none`: no linked PRs with cached status (closed, unmerged PRs are ignored)
+ * - `draft`: at least one open PR is still a draft
+ * - `ready`: every open PR is ready for review
+ * - `merged`: every linked PR is merged
+ */
+export type PlanPrReadiness = 'none' | 'draft' | 'ready' | 'merged';
 
 export interface EnrichedPlan {
   uuid: string;
@@ -825,6 +835,26 @@ function getChildExternalDependencyStatuses(
   return statuses;
 }
 
+function getPlanPrReadiness(db: Database, plan: PlanRow | undefined): PlanPrReadiness {
+  if (!plan) {
+    return 'none';
+  }
+
+  const explicitPrUrls = categorizePrUrls(parseJsonStringArray(plan.pull_request)).valid;
+  const statuses = getPrStatusForPlan(db, plan.uuid, explicitPrUrls)
+    .map((detail) => detail.status)
+    .filter((status) => status.state !== 'closed' || status.merged_at !== null);
+  if (statuses.length === 0) {
+    return 'none';
+  }
+
+  const openStatuses = statuses.filter((status) => status.state === 'open');
+  if (openStatuses.length === 0) {
+    return 'merged';
+  }
+  return openStatuses.some((status) => status.draft) ? 'draft' : 'ready';
+}
+
 function toDependencySummary(
   dependencyUuid: string,
   planByUuid: ReadonlyMap<string, PlanRow>,
@@ -1439,19 +1469,29 @@ export async function getPlanDetail(
     toDependencySummary(uuid, planByUuid, dependenciesByPlanUuid)
   );
 
+  const prReadinessByPlanUuid = new Map<string, PlanPrReadiness>();
+  const withPrReadiness = (summary: EnrichedPlanDependency): EnrichedPlanDependency => {
+    let prReadiness = prReadinessByPlanUuid.get(summary.uuid);
+    if (prReadiness === undefined) {
+      prReadiness = getPlanPrReadiness(db, planByUuid.get(summary.uuid));
+      prReadinessByPlanUuid.set(summary.uuid, prReadiness);
+    }
+    return { ...summary, prReadiness };
+  };
+
   return {
     ...enrichedPlan,
-    dependencies: dependencySummaries,
+    dependencies: dependencySummaries.map(withPrReadiness),
     dependents,
-    siblings,
+    siblings: siblings.map(withPrReadiness),
     children,
     childExternalDependencyStatuses,
     assignment,
     parent,
-    basePlan,
+    basePlan: basePlan ? withPrReadiness(basePlan) : null,
     effectiveBaseBranch: effectiveBaseResolution.baseBranch ?? null,
     effectiveBaseBranchSource: effectiveBaseResolution.source ?? null,
-    effectiveBasePlan,
+    effectiveBasePlan: effectiveBasePlan ? withPrReadiness(effectiveBasePlan) : null,
     basePlanResolutionWarning,
     prStatuses: withRequiredCheckRollupStates(db, prStatuses),
     reviewIssues,
