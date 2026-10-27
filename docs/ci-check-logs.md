@@ -192,8 +192,10 @@ absolute path only.
   agent asks the user, together with the diagnosis summary, if they want to rebase and fix
   conflicts before it applies the CI fixes. `tim pr fix` uses the same check and section.
 - **Responsibilities** — diagnose every failure; present a numbered summary with a proposed fix
-  and **wait for the user's direction**; fix the required failures only, and others only on
-  request; propose a re-run instead of a code change for environmental or flaky failures; run the
+  and **wait for the user's direction**, except that deterministic and obvious fixes for
+  required failures (for example, running the formatter or handling a new type member) are
+  applied without asking (when a rebase question is pending, the agent waits for that answer
+  first); fix the required failures only, and others only on request; propose a re-run instead of a code change for environmental or flaky failures; run the
   local checks; commit and push (with jj bookmark guidance); do not edit plan files.
 
 ### Configuration

@@ -345,9 +345,10 @@ export function buildCiFixPrompt(
     '',
     '1. Read every available log and diagnose the root cause of every failing check, whether the check is required or not. For checks without logs, investigate using the provided details URL.',
     '2. Present a numbered summary of every failure with its diagnosis and a proposed fix. Ask the user what to do about each one, waiting for direction before making changes.',
+    '   Exception: when the fix for a REQUIRED failure is deterministic and obvious, apply it without asking for permission. Examples are running the formatter, or updating code to handle a type that has a new member. Show these fixes in the summary as already applied.',
     ...(options.rebaseStatus
       ? [
-          '   In the same message, also ask the user if they want to rebase this branch onto the updated base branch before you apply the fixes. See "Base Branch Updates" above.',
+          '   In the same message, also ask the user if they want to rebase this branch onto the updated base branch before you apply the fixes. See "Base Branch Updates" above. Wait for the answer about the rebase before you apply any fix, including the obvious ones.',
         ]
       : []),
     '3. Apply fixes for the REQUIRED failures only. Apply fixes for not-required failures only if the user asks. When a failure is environmental or flaky, propose re-running the check instead of changing code when that is the appropriate action.',

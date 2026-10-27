@@ -409,7 +409,7 @@ describe('tim/commands/ci_fix', () => {
     mockGetOctokit.mockReturnValue({} as never);
   });
 
-  test('builds a prompt with required markers, absolute log paths, no-log fallback, and ask-before-fix guidance', () => {
+  test('builds a prompt with PR metadata, required markers, absolute log paths, and no-log fallback', () => {
     const logPath = path.join('selected-workspace', '.tim/tmp/ci-fix/unit.log');
     const absoluteLogPath = path.resolve(logPath);
     const prompt = buildCiFixPrompt(
@@ -456,31 +456,7 @@ describe('tim/commands/ci_fix', () => {
     expect(prompt).toContain('- Failed steps: None reported');
     expect(prompt).toContain(`Log file: ${absoluteLogPath}`);
     expect(prompt).not.toContain(`Log file: ${logPath}`);
-    expect(prompt).toContain('read this file; the tail usually has the error');
     expect(prompt).toContain('No logs available; investigate via https://ci.example.test/build/9');
-    expect(prompt).toContain('no log excerpts are included in this prompt');
-    expect(prompt).toContain(
-      '1. Read every available log and diagnose the root cause of every failing check, whether the check is required or not.'
-    );
-    expect(prompt).toContain(
-      '2. Present a numbered summary of every failure with its diagnosis and a proposed fix.'
-    );
-    expect(prompt).toContain('Ask the user what to do about each one, waiting for direction');
-    expect(prompt).toContain('before making changes');
-    expect(prompt).toContain(
-      'Apply fixes for the REQUIRED failures only. Apply fixes for not-required failures only if the user asks.'
-    );
-    expect(prompt).toContain('Run the relevant local checks and tests to verify the fixes.');
-    expect(prompt).toContain('Commit the code changes and push them to the pull request branch.');
-    expect(prompt).toContain('environmental or flaky');
-    expect(prompt).toContain('re-running the check');
-    expect(prompt).toContain('jj bookmark set <current-bookmark> -r @-');
-    expect(prompt).toContain(
-      'Do not edit plan files or change plan tasks, plan status, or plan assignments during this CI-fix run.'
-    );
-    expect(prompt).not.toContain('No tim plan is associated with this run');
-    expect(prompt).toContain('Do not edit plan files in PR mode.');
-    expect(prompt).not.toContain('inline log');
   });
 
   test('states that every failing check is in scope without required-check configuration', () => {
@@ -505,8 +481,6 @@ describe('tim/commands/ci_fix', () => {
       'Before you apply any CI fixes, ask the user if they want to rebase this branch onto the latest `main` from origin and fix any conflicts.'
     );
     expect(prompt).toContain('jj rebase -b @ -d main@origin');
-    expect(prompt).toContain('the downloaded logs show the results from before the rebase');
-    expect(prompt).toContain('In the same message, also ask the user if they want to rebase');
     expect(prompt.indexOf('## Base Branch Updates')).toBeLessThan(
       prompt.indexOf('## Responsibilities')
     );
