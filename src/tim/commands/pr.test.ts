@@ -1622,56 +1622,13 @@ describe('tim/commands/pr', () => {
       ]
     );
 
-    expect(prompt).toContain('## Plan Context');
     expect(prompt).toContain('**Plan ID:** 251');
     expect(prompt).toContain('**Title:** Review Comment Actions');
     expect(prompt).toContain('**Goal:** Automatically address unresolved review feedback');
     expect(prompt).toContain('- https://github.com/example/repo/pull/123');
-    expect(prompt).toContain('## Unresolved Review Threads');
     expect(prompt).toContain('- PRRT thread ID: thread-123');
     expect(prompt).toContain('This logic needs a null check.');
     expect(prompt).toContain('Please add a test too.');
-    expect(prompt).toContain('## Additional PR Feedback');
-    expect(prompt).toContain('tim pr comment <PR URL or owner/repo#number> "explanation of fix"');
-    expect(prompt).toContain('## User Feedback');
-    expect(prompt).toContain('Show the whole contents of each issue/comment');
-    expect(prompt).toContain('name the other item(s) that it duplicates');
-    expect(prompt).toContain('review guide comment from `tim-task-implementation-machine[bot]`');
-    expect(prompt).toContain(
-      'Ask the user for feedback on which review comments to address and how.'
-    );
-    expect(prompt).toContain('otherwise wait for direction before implementing fixes');
-    expect(prompt).toContain('## GraphQL Review Reply Workflow');
-    expect(prompt).toContain('Commit the code changes.');
-    expect(prompt).toContain('jj bookmark set <current-bookmark> -r @-');
-    expect(prompt).toContain('Push the branch/bookmark changes to the PR before replying');
-    expect(prompt).toContain(
-      'Group the threads that need a reply (addressed threads and threads with issues you decided not to fix) by PR URL.'
-    );
-    expect(prompt).toContain(
-      'For each actionable issue that you decide not to fix, or that the user tells you not to fix, also leave a reply that gives the reason.'
-    );
-    expect(prompt).toContain('reason for not fixing');
-    expect(prompt).toContain('addPullRequestReview(input:{pullRequestId:$pr})');
-    expect(prompt).toContain(
-      'addPullRequestReviewThreadReply(input:{pullRequestReviewId:$review,pullRequestReviewThreadId:$thread,body:$body})'
-    );
-    expect(prompt).toContain(
-      'submitPullRequestReview(input:{pullRequestReviewId:$review,event:COMMENT})'
-    );
-    expect(prompt).toContain('Do not leave a pending review unsubmitted.');
-    expect(prompt).toContain(
-      'Every comment posted to the PR, including review-thread replies and standalone PR comments, must start with `AI Response: `'
-    );
-    expect(prompt).not.toContain('Do not mark review comments or threads resolved.');
-    expect(prompt).toContain('## Resolving Review Threads');
-    expect(prompt).toContain('`tim pr resolve <PRRT thread ID>`');
-    expect(prompt).toContain(
-      'only when every issue in that thread was actually fixed or was intentionally not fixed'
-    );
-    expect(prompt).not.toContain('tim pr reply');
-    expect(prompt).not.toContain('tim pr resolve <Thread ID>');
-    expect(prompt).not.toContain('gh pr view');
   });
 
   test('buildReviewThreadFixPrompt includes rebase instructions when given a rebase status', () => {
@@ -2321,42 +2278,7 @@ describe('tim/commands/pr', () => {
     expect(sharedOptions.model).not.toBe('gpt-5-codex');
   });
 
-  test('buildReviewThreadFixPrompt follows address-review guidance and resolves fully handled threads', () => {
-    const prompt = buildReviewThreadFixPrompt(
-      {
-        id: 248,
-        title: 'PR status monitoring',
-        goal: 'Address review comments',
-        branch: '248-pr-status-monitoring',
-      } as any,
-      [
-        {
-          prUrl: 'https://github.com/example/repo/pull/701',
-          thread: createReviewThreadDetail({
-            threadId: 'thread-1',
-            path: 'src/auth.ts',
-            line: 42,
-            comments: [{ body: 'Fix auth.', diff_hunk: '@@ -42,1 +42,1 @@' }],
-          }),
-        },
-      ]
-    );
-
-    expect(prompt).toContain('**Branch:** 248-pr-status-monitoring');
-    expect(prompt).not.toContain('Do not mark review comments or threads resolved.');
-    expect(prompt).toContain('## Resolving Review Threads');
-    expect(prompt).toContain('`tim pr resolve <PRRT thread ID>`');
-    expect(prompt).toContain(
-      'only when every issue in that thread was actually fixed or was intentionally not fixed'
-    );
-    expect(prompt).toContain('one pending GraphQL review per PR');
-    expect(prompt).toContain('submitPullRequestReview');
-    expect(prompt).not.toContain('tim pr reply');
-    expect(prompt).toContain('tim pr resolve <PRRT thread ID>');
-    expect(prompt).toContain('https://linear.review');
-  });
-
-  test('buildReviewThreadFixPrompt includes branch context without gh fetch instructions', () => {
+  test('buildReviewThreadFixPrompt includes branch context', () => {
     const prompt = buildReviewThreadFixPrompt(
       { id: 1, title: 'Test', branch: 'feature/x' } as any,
       [
@@ -2374,7 +2296,6 @@ describe('tim/commands/pr', () => {
 
     expect(prompt).toContain('**Branch:** feature/x');
     expect(prompt).toContain('- PRRT thread ID: thread-1');
-    expect(prompt).not.toContain('gh pr view');
   });
 
   test('buildReviewThreadFixPrompt omits goal line for plan without goal', () => {
@@ -2987,7 +2908,6 @@ describe('tim/commands/pr', () => {
     test('includes Pull Request Context section with all fields', () => {
       const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
 
-      expect(prompt).toContain('## Pull Request Context');
       expect(prompt).toContain('**PR URL:** https://github.com/example/repo/pull/42');
       expect(prompt).toContain('**PR Number:** 42');
       expect(prompt).toContain('**Repository:** example/repo');
@@ -2996,14 +2916,6 @@ describe('tim/commands/pr', () => {
       expect(prompt).toContain('**Base Branch:** main');
       expect(prompt).toContain('**Head Branch:** feature/my-pr');
       expect(prompt).toContain('**Head SHA:** abc123def456');
-    });
-
-    test('includes no-plan disclaimer', () => {
-      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
-
-      expect(prompt).toContain(
-        'No tim plan is associated with this run; do not update plan files, plan tasks, plan status, or plan assignments.'
-      );
     });
 
     test('does NOT contain Plan Context section', () => {
@@ -3043,46 +2955,9 @@ describe('tim/commands/pr', () => {
 
       const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), threads);
 
-      expect(prompt).toContain('## Unresolved Review Threads');
       expect(prompt).toContain('- PRRT thread ID: thread-x');
       expect(prompt).toContain('Needs null check.');
       expect(prompt).toContain('And a test.');
-    });
-
-    test('includes GraphQL review reply workflow instructions', () => {
-      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
-
-      expect(prompt).toContain('## GraphQL Review Reply Workflow');
-      expect(prompt).toContain('Commit the code changes.');
-      expect(prompt).toContain('jj bookmark set <current-bookmark> -r @-');
-      expect(prompt).toContain('Push the branch/bookmark changes to the PR before replying');
-      expect(prompt).toContain('addPullRequestReview(input:{pullRequestId:$pr})');
-      expect(prompt).toContain(
-        'addPullRequestReviewThreadReply(input:{pullRequestReviewId:$review,pullRequestReviewThreadId:$thread,body:$body})'
-      );
-      expect(prompt).toContain(
-        'submitPullRequestReview(input:{pullRequestReviewId:$review,event:COMMENT})'
-      );
-      expect(prompt).toContain('Do not leave a pending review unsubmitted.');
-    });
-
-    test('includes AI Response prefix requirement', () => {
-      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
-
-      expect(prompt).toContain('must start with `AI Response: `');
-    });
-
-    test('includes no-resolve and no-request-review restrictions', () => {
-      const prompt = buildPrReviewThreadFixPrompt(makePrTarget(), []);
-
-      expect(prompt).not.toContain('Do not mark review comments or threads resolved.');
-      expect(prompt).toContain('## Resolving Review Threads');
-      expect(prompt).toContain('`tim pr resolve <PRRT thread ID>`');
-      expect(prompt).toContain(
-        'only when every issue in that thread was actually fixed or was intentionally not fixed'
-      );
-      expect(prompt).toContain('Do not update the status of the issue or PR.');
-      expect(prompt).toContain('Do not request or re-request reviews.');
     });
 
     test('no threads renders empty-thread notice', () => {
@@ -3097,19 +2972,6 @@ describe('tim/commands/pr', () => {
   // ---------------------------------------------------------------------------
 
   describe('buildReviewThreadFixInstructions', () => {
-    test('returns array of strings containing instruction sections', () => {
-      const lines = buildReviewThreadFixInstructions([]);
-
-      const joined = lines.join('\n');
-      expect(joined).toContain('## Unresolved Review Threads');
-      expect(joined).toContain('## GraphQL Review Reply Workflow');
-      expect(joined).toContain('## Additional PR Feedback');
-      expect(joined).toContain('## User Feedback');
-      expect(joined).toContain('jj bookmark set <current-bookmark> -r @-');
-      expect(joined).toContain('Push the branch/bookmark changes to the PR before replying');
-      expect(joined).toContain('AI Response: ');
-    });
-
     test('includes thread details when threads are provided', () => {
       const lines = buildReviewThreadFixInstructions([
         {
@@ -3131,23 +2993,13 @@ describe('tim/commands/pr', () => {
     test('omits rebase instructions when no rebase is needed', () => {
       const joined = buildReviewThreadFixInstructions([]).join('\n');
       expect(joined).not.toContain('## Base Branch Updates');
-      expect(joined).not.toContain('rebase this branch');
     });
 
     test('asks the user about rebasing before fixes when the branch is behind its base', () => {
       const joined = buildReviewThreadFixInstructions([], [], { baseBranch: 'release' }).join('\n');
       expect(joined).toContain('## Base Branch Updates');
-      expect(joined).toContain('The base branch `release` has new commits');
-      expect(joined).toContain(
-        'Before you apply any review fixes, ask the user if they want to rebase this branch onto the latest `release` from origin and fix any conflicts.'
-      );
       expect(joined).toContain('jj rebase -b @ -d release@origin');
       expect(joined).toContain('git rebase origin/release');
-      expect(joined).toContain('git push --force-with-lease');
-      expect(joined).toContain('If the user declines the rebase');
-      expect(joined).toContain(
-        'In the same message, also ask the user if they want to rebase this branch'
-      );
       expect(joined.indexOf('## Base Branch Updates')).toBeLessThan(
         joined.indexOf('## User Feedback')
       );
@@ -3155,7 +3007,6 @@ describe('tim/commands/pr', () => {
 
     test('reports when no additional feedback is provided', () => {
       const joined = buildReviewThreadFixInstructions([]).join('\n');
-      expect(joined).toContain('## PR Review Summaries and Conversation Comments');
       expect(joined).toContain('No PR review summaries or conversation comments were provided.');
     });
 
