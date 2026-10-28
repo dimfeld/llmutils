@@ -1942,7 +1942,8 @@ describe('tim/commands/pr', () => {
     );
     expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(
       roundTripContext,
-      'PR review fixes'
+      'PR review fixes',
+      { skipPush: true }
     );
     expect(mockTouchWorkspaceInfo).toHaveBeenCalledWith('/tmp/workspace');
   });
@@ -2700,7 +2701,8 @@ describe('tim/commands/pr', () => {
       expect(mockRunPreExecutionWorkspaceSync).toHaveBeenCalledWith(roundTripContext);
       expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(
         roundTripContext,
-        'PR review fixes'
+        'PR review fixes',
+        { skipPush: true }
       );
       expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
         'claude-code',

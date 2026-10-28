@@ -190,6 +190,38 @@ describe('runPostExecutionWorkspaceSync', () => {
     expect(mockReaddir).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
   });
 
+  test('commits but does not push when skipPush is set', async () => {
+    const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
+
+    await runPostExecutionWorkspaceSync(
+      {
+        executionWorkspacePath: '/tmp/workspace',
+        primaryWorkspacePath: '/tmp/primary',
+        refName: 'task-123',
+        preExecutionState: {
+          commitHash: 'before',
+          hasChanges: false,
+        },
+      },
+      'sync workspace',
+      { skipPush: true }
+    );
+
+    expect(mockCommitAll).toHaveBeenCalledWith('sync workspace', '/tmp/workspace');
+    expect(mockSetWorkspaceBookmarkToCurrent).not.toHaveBeenCalled();
+    expect(mockPushWorkspaceRefToRemote).not.toHaveBeenCalled();
+    expect(mockPullWorkspaceRefIfExists).toHaveBeenCalledWith(
+      '/tmp/primary',
+      'task-123',
+      'origin',
+      undefined,
+      {
+        checkoutJjBookmark: false,
+      }
+    );
+    expect(mockReaddir).toHaveBeenCalledWith('/tmp/workspace/.tim/plans');
+  });
+
   test('throws before pushing when committing workspace changes fails', async () => {
     const { runPostExecutionWorkspaceSync } = await import('./workspace_roundtrip.js');
     mockCommitAll.mockResolvedValue(1);

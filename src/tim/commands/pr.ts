@@ -1805,7 +1805,11 @@ async function executePrFixCommand({
 
     if (roundTripContext) {
       try {
-        await runPostExecutionWorkspaceSync(roundTripContext, 'PR review fixes');
+        // The agent pushes its own fixes before it replies to review threads, so do not push
+        // again here. Leftover changes are committed locally and stay in the workspace.
+        await runPostExecutionWorkspaceSync(roundTripContext, 'PR review fixes', {
+          skipPush: true,
+        });
       } catch (err) {
         roundTripError = err;
       }

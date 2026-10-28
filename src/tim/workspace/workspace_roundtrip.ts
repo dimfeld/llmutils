@@ -224,7 +224,7 @@ export async function verifyWorkspaceStillOnRef(context: WorkspaceRoundTripConte
 export async function runPostExecutionWorkspaceSync(
   context: WorkspaceRoundTripContext,
   commitMessage: string,
-  options: { requireRefCheckedOut?: boolean } = {}
+  options: { requireRefCheckedOut?: boolean; skipPush?: boolean } = {}
 ): Promise<void> {
   if (options.requireRefCheckedOut) {
     await verifyWorkspaceStillOnRef(context);
@@ -271,17 +271,23 @@ export async function runPostExecutionWorkspaceSync(
         );
       }
     } else {
-      if (await getUsingJj(context.executionWorkspacePath)) {
-        await ensureJjPublishedCommitsHaveDescriptions(context.executionWorkspacePath);
-        await setWorkspaceBookmarkToCurrent(context.executionWorkspacePath, context.refName, '@-');
-      }
+      if (!options.skipPush) {
+        if (await getUsingJj(context.executionWorkspacePath)) {
+          await ensureJjPublishedCommitsHaveDescriptions(context.executionWorkspacePath);
+          await setWorkspaceBookmarkToCurrent(
+            context.executionWorkspacePath,
+            context.refName,
+            '@-'
+          );
+        }
 
-      await pushWorkspaceRefToRemote({
-        workspacePath: context.executionWorkspacePath,
-        refName: context.refName,
-        remoteName: 'origin',
-        ensureJjBookmarkAtCurrent: false,
-      });
+        await pushWorkspaceRefToRemote({
+          workspacePath: context.executionWorkspacePath,
+          refName: context.refName,
+          remoteName: 'origin',
+          ensureJjBookmarkAtCurrent: false,
+        });
+      }
 
       if (context.primaryWorkspacePath) {
         await pullWorkspaceRefIfExists(
