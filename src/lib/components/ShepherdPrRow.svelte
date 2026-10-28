@@ -15,6 +15,7 @@
   import { getFixButtonState, getFixStartResultState } from './pr_fix_launch_state.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { tryCanonicalizePrUrl } from '$common/github/identifier_urls.js';
+  import { isPrApproved } from '$common/github/review_requests.js';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
   import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
@@ -44,6 +45,11 @@
   let shepherded = $derived(pr.shepherd !== null);
   let evaluation = $derived(evaluatePrShepherd(pr));
   let attentionKinds = $derived(new Set(evaluation.attention.map((item) => item.kind)));
+  // Show approval even when checks, conflicts, or other problems block the merge. The
+  // "Ready to merge" status already includes approval, so skip the badge there.
+  let showApprovedBadge = $derived(
+    pr.status.state === 'open' && evaluation.status !== 'ready' && isPrApproved(pr)
+  );
   let projectIdParam = $derived(String(pr.projectId));
   let canonicalPrUrl = $derived(tryCanonicalizePrUrl(pr.status.pr_url));
   let linearPrReviewUrl = $derived(
@@ -247,6 +253,13 @@
       {#if pr.status.state === 'open' && pr.status.merge_queue_enqueued_at}
         <PrMergeQueueBadge enqueuedAt={pr.status.merge_queue_enqueued_at} compact />
       {/if}
+    {/if}
+    {#if showApprovedBadge}
+      <span
+        class="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300"
+      >
+        Approved
+      </span>
     {/if}
     {#if pr.currentUserNeedsReviewRequest}
       <NeedsReviewerBadge compact />

@@ -191,6 +191,33 @@ describe('shepherd page', () => {
     }
   });
 
+  test('approved PRs show an Approved badge even when they cannot merge yet', async () => {
+    const approve = (pr: EnrichedProjectPr): EnrichedProjectPr => {
+      pr.status.review_decision = 'APPROVED';
+      pr.reviews = [{ author: 'reviewer', state: 'APPROVED' }] as EnrichedProjectPr['reviews'];
+      return pr;
+    };
+    const pending = approve(makePr(1, { shepherded: true }));
+    pending.status.check_rollup_state = 'pending';
+    const conflicting = approve(makePr(2, { shepherded: true }));
+    conflicting.status.mergeable = 'CONFLICTING';
+    const ready = approve(makePr(3, { shepherded: true }));
+    const unapproved = makePr(4, { shepherded: true });
+    setPrs([pending, conflicting, ready, unapproved]);
+
+    unmount = render(ShepherdPage, {
+      props: {
+        data: { projectId: '7', projects: [], currentUsername: 'me', prFixExecutorOptions: [] },
+      } as never,
+    }).unmount;
+
+    await expect.element(page.getByText('Waiting for checks')).toBeVisible();
+    await expect.element(page.getByText('Needs attention')).toBeVisible();
+    await expect.element(page.getByText('Ready to merge')).toBeVisible();
+    // The ready PR already says it is approved, and PR 4 has no approval.
+    expect(page.getByText('Approved', { exact: true }).elements()).toHaveLength(2);
+  });
+
   test('watching a stacked PR moves the whole stack out of the other PRs section', async () => {
     const stack = (watched: boolean) => [
       makePr(1, { shepherded: true }),
