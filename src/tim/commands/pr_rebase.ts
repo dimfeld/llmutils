@@ -277,7 +277,8 @@ export async function executePrRebaseCommand({
 
     if (roundTripContext) {
       try {
-        await runPostExecutionWorkspaceSync(roundTripContext, 'PR rebase');
+        // The agent pushes the rebased branch itself, so do not push again here.
+        await runPostExecutionWorkspaceSync(roundTripContext, 'PR rebase', { skipPush: true });
       } catch (err) {
         roundTripError = err;
       }

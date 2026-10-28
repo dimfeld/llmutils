@@ -619,7 +619,8 @@ export async function executeCiFixCommand({
 
     if (roundTripContext) {
       try {
-        await runPostExecutionWorkspaceSync(roundTripContext, 'CI fixes');
+        // The agent pushes its own fixes, so do not push again here.
+        await runPostExecutionWorkspaceSync(roundTripContext, 'CI fixes', { skipPush: true });
       } catch (err) {
         roundTripError = err;
       }

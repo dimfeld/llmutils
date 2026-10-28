@@ -714,7 +714,9 @@ describe('tim/commands/ci_fix', () => {
     );
     expect(state.lifecycleStartup).toHaveBeenCalledTimes(1);
     expect(state.lifecycleShutdown).toHaveBeenCalledTimes(1);
-    expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(roundTripContext, 'CI fixes');
+    expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(roundTripContext, 'CI fixes', {
+      skipPush: true,
+    });
     expect(mockTouchWorkspaceInfo).toHaveBeenCalledWith(state.workspaceDir);
     expect(await fs.stat(staleDirectory).catch(() => null)).toBeNull();
     expect(
@@ -803,7 +805,9 @@ describe('tim/commands/ci_fix', () => {
 
     expect(state.postSyncLogDirectoryExists).toBe(false);
     expect(state.postSyncCleanupSize).toBe(0);
-    expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(roundTripContext, 'CI fixes');
+    expect(mockRunPostExecutionWorkspaceSync).toHaveBeenCalledWith(roundTripContext, 'CI fixes', {
+      skipPush: true,
+    });
   });
 
   test('CLI options override ciFix executor, model, and effort configuration', async () => {
