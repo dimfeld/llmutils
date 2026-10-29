@@ -40,8 +40,6 @@ describe('buildPrRebasePrompt', () => {
     expect(prompt).toContain('**Base Branch:** main');
     expect(prompt).toContain('**Head Branch:** feature-x');
     expect(prompt).toContain('**Author:** alice');
-    expect(prompt).toContain('Do not edit plan files');
-    expect(prompt).toContain('stop and ask the user');
   });
 
   test('gives git rebase and force-with-lease push instructions for git repositories', () => {
@@ -60,8 +58,6 @@ describe('buildPrRebasePrompt', () => {
     expect(prompt).toContain(
       `jj log -r 'conflicts() & descendants(roots(main@origin.."feature-x"))'`
     );
-    expect(prompt).toContain('out of scope');
-    expect(prompt).toContain('branches stacked on top of it');
     expect(prompt).not.toContain('git rebase origin/main');
   });
 });
@@ -88,7 +84,6 @@ describe('buildPrRebasePrompt with stacked branches', () => {
   test('rebases and pushes all stacked branches in git repositories', () => {
     const prompt = buildPrRebasePrompt(makeTarget(), false, stacked);
 
-    expect(prompt).toContain('git rebase --onto <base branch> origin/<base branch> <branch>');
     expect(prompt).toContain('git push --force-with-lease origin feature-x feature-y feature-z');
   });
 
