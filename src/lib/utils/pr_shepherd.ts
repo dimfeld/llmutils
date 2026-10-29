@@ -165,17 +165,6 @@ export const PR_SHEPHERD_STATUS_LABELS: Record<PrShepherdStatus, string> = {
   in_merge_queue: 'In merge queue',
 };
 
-/** Sort key for statuses. Lower values show first. */
-export const PR_SHEPHERD_STATUS_ORDER: Record<PrShepherdStatus, number> = {
-  needs_attention: 0,
-  ready: 1,
-  in_merge_queue: 2,
-  waiting_checks: 3,
-  waiting_review: 4,
-  paused: 5,
-  done: 6,
-};
-
 export interface StackablePr {
   status: Pick<
     PrStatusDetail['status'],
@@ -266,7 +255,7 @@ export type ShepherdListPr = StackablePr &
   };
 
 export interface ShepherdList<T extends ShepherdListPr> {
-  /** Stacks that contain at least one shepherded PR, most urgent first. */
+  /** Stacks that contain at least one shepherded PR, ordered by root PR number. */
   groups: PrStackEntry<T>[][];
   /** Open PRs that are not in the list and not in a stack with a shepherded PR. */
   unwatched: T[];
@@ -289,17 +278,13 @@ export function buildShepherdList<T extends ShepherdListPr>(prs: readonly T[]): 
     }
   }
 
-  const groupRank = (group: PrStackEntry<T>[]): number =>
-    Math.min(
-      ...group
-        .filter((entry) => entry.pr.shepherd)
-        .map((entry) => PR_SHEPHERD_STATUS_ORDER[evaluatePrShepherd(entry.pr).status])
-    );
+  // Sort by root PR number so stacks keep their place when PR status changes.
+  const byRootPr = (a: PrStackEntry<T>[], b: PrStackEntry<T>[]): number =>
+    a[0].pr.status.pr_number - b[0].pr.status.pr_number ||
+    repoKey(a[0].pr).localeCompare(repoKey(b[0].pr));
 
   return {
-    groups: groups.toSorted(
-      (a, b) => groupRank(a) - groupRank(b) || a[0].pr.status.pr_number - b[0].pr.status.pr_number
-    ),
+    groups: groups.toSorted(byRootPr),
     unwatched: unwatched.toSorted((a, b) => b.status.pr_number - a.status.pr_number),
   };
 }

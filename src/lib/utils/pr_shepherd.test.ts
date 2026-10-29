@@ -264,7 +264,7 @@ describe('groupPrsIntoStacks', () => {
 });
 
 describe('buildShepherdList', () => {
-  test('keeps unwatched stack members with their stack and sorts urgent groups first', () => {
+  test('keeps unwatched stack members with their stack and sorts groups by root PR number', () => {
     const readyPr = stackPr(1, 'main', 'ready');
     const stackBase = stackPr(5, 'main', 'base', { shepherded: false });
     const stackTop = stackPr(6, 'base', 'top', {
@@ -275,10 +275,28 @@ describe('buildShepherdList', () => {
 
     const list = buildShepherdList([readyPr, stackBase, stackTop, unwatched, closed]);
     expect(list.groups.map((group) => group.map((entry) => entry.pr.status.pr_number))).toEqual([
-      [5, 6],
       [1],
+      [5, 6],
     ]);
     expect(list.unwatched.map((pr) => pr.status.pr_number)).toEqual([9]);
+  });
+
+  test('orders groups the same way when the PR status changes or the input order changes', () => {
+    const conflicting = stackPr(2, 'main', 'two', { status: { mergeable: 'CONFLICTING' } });
+    const ready = stackPr(1, 'main', 'one');
+    const otherRepo = stackPr(1, 'main', 'one', { repo: 'another' });
+
+    const list = buildShepherdList([conflicting, ready, otherRepo]);
+    expect(list.groups.map((group) => group[0].pr.status.pr_url)).toEqual([
+      'https://github.com/example/another/pull/1',
+      'https://github.com/example/repo/pull/1',
+      'https://github.com/example/repo/pull/2',
+    ]);
+
+    const reversed = buildShepherdList([otherRepo, ready, conflicting]);
+    expect(reversed.groups.map((group) => group[0].pr.status.pr_url)).toEqual(
+      list.groups.map((group) => group[0].pr.status.pr_url)
+    );
   });
 });
 
