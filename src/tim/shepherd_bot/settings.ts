@@ -5,7 +5,7 @@ import { getTimDataDir } from '../../common/config_paths.js';
 import type { TimConfig } from '../configSchema.js';
 
 export const DEFAULT_SHEPHERD_BOT_EXECUTOR = 'codex-cli';
-export const DEFAULT_SHEPHERD_BOT_MODEL = 'gpt-6-luna';
+export const DEFAULT_SHEPHERD_BOT_MODEL = 'gpt-6-luna:high';
 export const DEFAULT_SHEPHERD_BOT_MAX_RUNS_PER_HOUR = 60;
 
 export interface ShepherdBotSettings {
