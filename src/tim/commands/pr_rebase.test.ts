@@ -57,8 +57,11 @@ describe('buildPrRebasePrompt', () => {
 
     expect(prompt).toContain('jj rebase -b @ -d main@origin');
     expect(prompt).toContain('jj git push --bookmark feature-x');
-    expect(prompt).toContain('jj log -r "conflicts()"');
-    expect(prompt).toContain('further up the stack');
+    expect(prompt).toContain(
+      `jj log -r 'conflicts() & descendants(roots(main@origin.."feature-x"))'`
+    );
+    expect(prompt).toContain('out of scope');
+    expect(prompt).toContain('branches stacked on top of it');
     expect(prompt).not.toContain('git rebase origin/main');
   });
 });
