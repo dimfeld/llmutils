@@ -87,7 +87,7 @@ describe('structured_message_builders', () => {
       type: 'llm_status',
       timestamp,
       source: 'codex',
-      status: 'llm.event',
+      status: 'event',
       detail: 'payload',
     });
   });

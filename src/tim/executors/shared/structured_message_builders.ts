@@ -149,7 +149,7 @@ export function buildUnknownStatus(
     type: 'llm_status',
     timestamp,
     source,
-    status: `llm.${code}`,
+    status: code,
     detail,
   };
 }

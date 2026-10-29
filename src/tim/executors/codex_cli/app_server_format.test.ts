@@ -1031,7 +1031,7 @@ describe('createAppServerFormatter', () => {
       expect.objectContaining({
         type: 'llm_status',
         source: 'codex',
-        status: 'llm.custom.unknown',
+        status: 'custom.unknown',
       })
     );
   });
