@@ -100,8 +100,9 @@ export function buildPrRebasePrompt(target: PullRequestFixTarget, usingJj: boole
       '2. Run `jj status` and `jj log` to find the commits that have conflicts. Make a todo list of the conflicts to fix.',
       '3. For each conflict, examine each side and the commits that changed those lines, to get the context for each change. The conflicting changes from the other side are probably in commits on the base branch.',
       '4. Resolve each conflict. Keep the intent of both changes. Do not discard either side without examining it. When you use `jj squash` as part of this process, do not give it any arguments, because the squash message will overwrite the original commit message.',
-      '5. Run type checking, linting, and tests appropriate to the changed files to make sure that the rebased branch works. Fix any problems that the rebase caused.',
-      `6. Make sure that the \`${target.headBranch}\` bookmark points to the rebased head commit, then push with \`jj git push --bookmark ${target.headBranch}\`.`
+      '5. The rebase also moves the branches that are stacked on top of this branch. After you resolve the conflicts in this branch, run `jj log -r "conflicts()"` to find conflicts in commits further up the stack. If you find any, resolve them too, with the same process. Repeat until `jj log -r "conflicts()"` shows no commits.',
+      '6. Run type checking, linting, and tests appropriate to the changed files to make sure that the rebased branch works. Fix any problems that the rebase caused.',
+      `7. Make sure that the \`${target.headBranch}\` bookmark points to the rebased head commit, then push with \`jj git push --bookmark ${target.headBranch}\`.`
     );
   } else {
     prompt.push(
