@@ -561,8 +561,7 @@ export class PersistentCodexTurnController {
       notification.lowerMethod.startsWith('thread/status/') ||
       notification.lowerMethod.startsWith('turn/') ||
       notification.lowerMethod.startsWith('item/') ||
-      notification.lowerMethod.startsWith('codex/event/') ||
-      notification.lowerMethod.startsWith('llm/item/')
+      notification.lowerMethod.startsWith('codex/event/')
     );
   }
 

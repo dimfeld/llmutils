@@ -753,7 +753,7 @@ export function createAppServerFormatter(model?: string) {
           : { type: method };
       }
 
-      if (lowerMethod === 'llm/item/autoapprovalreview/started') {
+      if (lowerMethod === 'item/autoapprovalreview/started') {
         return {
           type: method,
           structured: {
@@ -765,7 +765,7 @@ export function createAppServerFormatter(model?: string) {
         };
       }
 
-      if (lowerMethod === 'llm/item/autoapprovalreview/completed') {
+      if (lowerMethod === 'item/autoapprovalreview/completed') {
         const review = extractRecord(payload.review);
         return {
           type: method,
@@ -780,7 +780,7 @@ export function createAppServerFormatter(model?: string) {
       }
 
       if (
-        lowerMethod === 'llm/guardianwarning' &&
+        lowerMethod === 'guardianwarning' &&
         extractTextField(payload.message)?.startsWith('Automatic approval review ')
       ) {
         // The completed auto-approval review has the same rationale in a result message.
@@ -884,8 +884,8 @@ export function createAppServerFormatter(model?: string) {
 
       if (
         method === 'turn/diff/updated' ||
-        lowerMethod === 'llm/turn/moderationmetadata' ||
-        lowerMethod === 'llm/thread/readstate/changed'
+        lowerMethod === 'turn/moderationmetadata' ||
+        lowerMethod === 'thread/readstate/changed'
       ) {
         return { type: method };
       }

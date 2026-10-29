@@ -327,7 +327,7 @@ describe('createAppServerFormatter', () => {
     const formatter = createAppServerFormatter();
     const command = 'gh api graphql -f query=submitPullRequestReview';
 
-    const started = formatter.handleNotification('llm/item/autoApprovalReview/started', {
+    const started = formatter.handleNotification('item/autoApprovalReview/started', {
       reviewId: 'review-1',
       review: { status: 'inProgress', riskLevel: null, userAuthorization: null, rationale: null },
       action: {
@@ -351,7 +351,7 @@ describe('createAppServerFormatter', () => {
     );
     expect(started.structured).not.toEqual(expect.objectContaining({ input: expect.anything() }));
 
-    const completed = formatter.handleNotification('llm/item/autoApprovalReview/completed', {
+    const completed = formatter.handleNotification('item/autoApprovalReview/completed', {
       reviewId: 'review-1',
       decisionSource: 'agent',
       review: {
@@ -388,10 +388,10 @@ describe('createAppServerFormatter', () => {
     const formatter = createAppServerFormatter();
 
     expect(
-      formatter.handleNotification('llm/guardianWarning', {
+      formatter.handleNotification('guardianWarning', {
         message: 'Automatic approval review approved.',
       })
-    ).toEqual({ type: 'llm/guardianWarning' });
+    ).toEqual({ type: 'guardianWarning' });
   });
 
   test('formats started dynamic tool calls with safe arguments and namespace display', () => {
@@ -979,12 +979,12 @@ describe('createAppServerFormatter', () => {
     });
     expect(diff).toEqual({ type: 'turn/diff/updated' });
 
+    expect(formatter.handleNotification('turn/moderationMetadata', { turnId: 'turn-1' })).toEqual({
+      type: 'turn/moderationMetadata',
+    });
     expect(
-      formatter.handleNotification('llm/turn/moderationMetadata', { turnId: 'turn-1' })
-    ).toEqual({ type: 'llm/turn/moderationMetadata' });
-    expect(
-      formatter.handleNotification('llm/thread/readState/changed', { threadId: 'thread-1' })
-    ).toEqual({ type: 'llm/thread/readState/changed' });
+      formatter.handleNotification('thread/readState/changed', { threadId: 'thread-1' })
+    ).toEqual({ type: 'thread/readState/changed' });
 
     const plan = formatter.handleNotification('turn/plan/updated', {
       turnId: 'turn-1',
