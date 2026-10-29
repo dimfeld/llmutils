@@ -7,7 +7,8 @@ import { getRepositoryIdentity } from './assignments/workspace_identifier.js';
 import { describeRemoteForLogging } from './external_storage_utils.js';
 import { getDatabase } from './db/database.js';
 import { getProject } from './db/project.js';
-import { markJobFinished, recordJobStart, updateJobFromSessionInfo } from './db/job.js';
+import { getJobById, markJobFinished, recordJobStart, updateJobFromSessionInfo } from './db/job.js';
+import { enqueueShepherdBotTriggerForJob } from './shepherd_bot/triggers.js';
 import { getBinaryRealPath, getBuildSha, getBuildTime } from './build_info.js';
 
 export const DEFAULT_HEADLESS_URL = 'ws://localhost:8123/tim-agent';
@@ -55,6 +56,7 @@ export type HeadlessCommand =
   | 'pr-fix'
   | 'ci-fix'
   | 'pr-rebase'
+  | 'shepherd-bot'
   | 'shell';
 
 interface RunWithHeadlessOptions<T> {
@@ -179,7 +181,8 @@ function shouldRecordJob(command: HeadlessCommand): boolean {
     command === 'chat' ||
     command === 'run-prompt' ||
     command === 'shell' ||
-    command === 'review-guide-comment'
+    command === 'review-guide-comment' ||
+    command === 'shepherd-bot'
   ) {
     return false;
   }
@@ -231,10 +234,24 @@ async function recordJobStartFromSession(
 }
 
 function markJobFinishedSafely(jobId: number, status: 'completed' | 'failed'): void {
+  let db: ReturnType<typeof getDatabase>;
   try {
-    markJobFinished(getDatabase(), jobId, status);
+    db = getDatabase();
+    markJobFinished(db, jobId, status);
   } catch (err) {
     debugLog(`Failed to mark job ${jobId} as ${status}: ${err as Error}`);
+    return;
+  }
+
+  // The job log is in the shared DB, so this reaches the shepherd bot even when the web
+  // server is not running now.
+  try {
+    const job = getJobById(db, jobId);
+    if (job) {
+      enqueueShepherdBotTriggerForJob(db, job);
+    }
+  } catch (err) {
+    debugLog(`Failed to queue a shepherd bot trigger for job ${jobId}: ${err as Error}`);
   }
 }
 

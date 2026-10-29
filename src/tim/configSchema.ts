@@ -612,6 +612,28 @@ export const timConfigSchema = z
     githubWebhooks: githubWebhooksConfigSchema
       .optional()
       .describe('Machine-local GitHub webhook ingestion behavior'),
+    /** PR shepherd bot settings. */
+    shepherdBot: z
+      .object({
+        executor: z
+          .enum(['codex-cli', 'claude-code'])
+          .optional()
+          .describe('Executor for shepherd bot runs (default codex-cli)'),
+        model: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Model for shepherd bot runs (default gpt-6-luna)'),
+        maxRunsPerHour: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Maximum shepherd bot runs per project per hour (default 60)'),
+      })
+      .strict()
+      .optional()
+      .describe('PR shepherd bot settings'),
     /** Experimental features that are disabled unless explicitly enabled. */
     experimental: z
       .object({

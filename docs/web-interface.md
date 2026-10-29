@@ -260,6 +260,7 @@ The Shepherd tab (`src/routes/projects/[projectId]/shepherd/`) lists the user's 
 - **Status**: `evaluatePrShepherd()` is pure and is also used on the server for notifications, so the page and the inbox always agree. Blocking items (conflicts, failing CI, changes requested, unresolved threads) give `needs_attention`. Being behind the base branch is a non-blocking hint.
 - **Actions**: `ShepherdPrRow.svelte` shows a button for each attention item. It reuses `startPrRebase`, `startPrCiFix`, and `startFixPrThreads` with the shared `getFixButtonState()` labels. `updateShepherdedPrBranch` (`src/lib/remote/pr_shepherd.remote.ts`) calls GitHub's `updatePullRequestBranch` mutation with `REBASE` or `MERGE` and the cached head SHA as `expectedHeadOid`. `setPrShepherded` adds or removes a PR; both commands accept only the user's own open PRs.
 - `PrDetail.svelte` has a **Watch** / **Stop Watching** button for the user's own open PRs, a **Watched** badge, and a "N behind base" badge when `behind_by` is set.
+- **Shepherd bot**: `ShepherdBotPanel.svelte` shows on numeric project pages. It reads `getShepherdBotStatus` (polled every 10 seconds) and toggles the bot with `setShepherdBotRunning`. `PrShepherdSummary.botEnabled` drives the **Bot** badge and the **Add to Bot** / **Remove from Bot** row buttons (`addPrStackToShepherdBot`, `removePrStackFromShepherdBot`). In a stack, the stack header has **Remove Stack from Bot** and the rows only offer **Add to Bot (from root)**. See [PR Shepherd Bot](database.md#pr-shepherd-bot) for the server side.
 
 ## Inbox
 

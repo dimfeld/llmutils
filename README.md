@@ -82,7 +82,7 @@ The **My PRs** lists on the Active Work page and on the PRs page show a **No rev
 
 ### PR shepherd
 
-The **Shepherd** tab (`/projects/{projectId}/shepherd`, or All Projects) monitors your own open PRs until they merge. It shows the next action for each PR and a button for that action. The shepherd never starts an action automatically.
+The **Shepherd** tab (`/projects/{projectId}/shepherd`, or All Projects) monitors your own open PRs until they merge. It shows the next action for each PR and a button for that action. The shepherd list itself never starts an action automatically. The optional [shepherd bot](#pr-shepherd-bot) does.
 
 - **Adding PRs.** When one of your PRs becomes ready for review (it is opened as a non-draft PR, or it moves from draft to ready), tim adds it to the list. This uses webhook events, so it needs the webhook receiver. You can also add a PR with **Watch** on the PR page or on the Shepherd page, which also lists your other open PRs. If you remove a PR, tim does not add it again automatically.
 - **Status.** Each PR shows one of: **Needs attention**, **Ready to merge**, **In merge queue**, **Waiting for checks**, **Waiting for review**, or **Draft**. A PR in the GitHub merge queue shows **In merge queue** until it merges or GitHub removes it from the queue. Stacked PRs show together as a stack, from the PR nearest to the trunk to the tip. A stacked PR can show **Ready to merge** while its base PR is still open, because the whole stack can go into the merge queue together.
@@ -90,6 +90,26 @@ The **Shepherd** tab (`/projects/{projectId}/shepherd`, or All Projects) monitor
 - **Notifications.** tim adds an inbox item when a watched PR gets merge conflicts (with a **Fix Conflicts** action) and when it becomes ready to merge. CI failures and review comments use the existing inbox items.
 - **Updates.** Webhook events update the watched PRs. A push to the base branch of a watched PR also refreshes its mergeable state and its "behind base" count, so new conflicts show without any PR activity. Add the **Push** event to your GitHub App or repository webhook for this. As a fallback, the web server checks watched PRs every 10 minutes with a small GitHub query, and does a full refresh only when something changed. Without webhooks, it does a full refresh of the watched PRs every 2 minutes.
 - **Recently merged.** A collapsed **Recently merged** section at the bottom lists your PRs that merged in the last 7 days, grouped by the day they merged. tim keeps a merged PR in its database for about 7 days after it merges, even when no plan links to it, so you can still open its PR page. That page shows a **Merged** badge with the merge time.
+
+### PR shepherd bot
+
+The shepherd bot is an LLM agent that watches stacks of your PRs and starts fix sessions for them. It is off until you start it, and you can stop it at any time with **Start Bot** / **Stop Bot** on the Shepherd page of a project.
+
+- **Choosing PRs.** Select **Add to Bot** on a PR. In a stack, this adds that PR and all the PRs below it, down to the root of the stack. A PR above it is not added, so you can watch a partial stack. **Remove Stack from Bot** (or **Remove from Bot** for a single PR) removes the whole stack. A PR that the bot watches has a **Bot** badge and is also in the shepherd list.
+- **When it runs.** The bot does not run all the time. tim wakes it when a watched PR changes in a way that matters (checks start failing or pass, new commits, conflicts, review threads, review decision, merge queue, merge), when a `pr fix`, `pr fix-ci`, `pr rebase`, or `autoreview` session for a watched PR ends, and when the bot asked to check again later. Changes wait for about one minute without new changes, so a burst of webhook events becomes one run. While a fix session runs in a stack, events for that stack wait until the session ends. Only one bot run is active at a time for each project. The queue is in the tim database, so a web server restart loses nothing.
+- **What it does.** Each run gets the state of all watched stacks, the events since the last run, its recent actions, and the recent sessions for these PRs. It can start a CI fix, a conflict fix, or a review-comment fix, write an inbox message, or ask to check again later. It works from the bottom of each stack up, because a failure in a lower PR often also breaks the PRs above it. Review-comment fixes start the interactive `tim pr fix` session, which asks you about each comment, and the bot adds an inbox item so that you know the session waits for you. The bot never merges PRs, adds them to the merge queue, or restacks branches. It tells you in the inbox when that is necessary.
+- **Guardrails.** The web server checks each fix before it starts it: the bot must still run, the PR must be open and watched, no other fix session may run in the same stack, the same fix starts at most twice for the same head commit, and a review-comment fix starts only once for the same set of unresolved threads.
+- **Memory.** The bot keeps short notes between runs in `~/.local/share/tim/shepherd-bot/project-<id>/state.md` and `state.json`. The Shepherd page shows the notes, the recent runs, and the recent actions. A running bot run shows as a session.
+- **Settings.** The bot uses the Codex executor with `gpt-6-luna` by default. Change this in the config:
+
+  ```yaml
+  shepherdBot:
+    executor: codex-cli # or claude-code
+    model: gpt-6-luna
+    maxRunsPerHour: 60 # per project
+  ```
+
+The web server starts each bot run as `tim shepherd-bot run <runId>`. You do not usually run this command yourself.
 
 ### Project chats
 

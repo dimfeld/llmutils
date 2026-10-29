@@ -447,7 +447,7 @@ Rows are self-contained on purpose. `webhook_log` payloads are pruned after 7 da
 
 **Source**: rows come from the `inboxSignals` array on `IngestResult`, which webhook event handlers fill in during ingestion. See [Inbox signals](#webhook-log) above for the signal shape and for which handler emits which kind.
 
-**Kinds** (`INBOX_ITEM_KINDS`): `review_requested`, `pr_comment`, `reviewed_pr_comment`, `pr_merged`, `pr_approved`, `ci_failure`, `merge_queue_removed`, `pr_conflicts`, `pr_ready_to_merge`. The last two come from the [PR shepherd](#pr-shepherd), not from webhook signals. There is no `CHECK` constraint on `kind` — the accessor validates at the write path, so the kind list can grow without a migration.
+**Kinds** (`INBOX_ITEM_KINDS`): `review_requested`, `pr_comment`, `reviewed_pr_comment`, `pr_merged`, `pr_approved`, `ci_failure`, `merge_queue_removed`, `pr_conflicts`, `pr_ready_to_merge`, `shepherd_bot`. `pr_conflicts` and `pr_ready_to_merge` come from the [PR shepherd](#pr-shepherd), and `shepherd_bot` from the [shepherd bot](#pr-shepherd-bot), not from webhook signals. There is no `CHECK` constraint on `kind` — the accessor validates at the write path, so the kind list can grow without a migration.
 
 **Aggregation and re-surface**: `dedupe_key` defaults to `<kind>:<canonical pr_url>`, so repeated events for the same PR and kind upsert into the one row, increment `event_count`, and bump `last_event_at`. The upsert also clears `read_at` and `dismissed_at`, which re-surfaces a row the user already handled. All read paths order by `last_event_at DESC`, so a re-surfaced row returns to the top.
 
@@ -507,6 +507,35 @@ The PR shepherd watches the user's own open PRs until they merge (migration v58)
 - `processPrShepherdAfterIngest()` runs from `ingestWebhookEventsWithInbox()`, so every ingest path does it. It auto-enrolls `prsReadyForReview` entries that the user authored, then calls `updatePrShepherdNotifications()` for the enrolled and updated PRs.
 - `updatePrShepherdNotifications()` evaluates each PR with the pure `evaluatePrShepherd()` (`src/lib/utils/pr_shepherd.ts`, shared with the UI) after `withRequiredCheckRollupState()`. It compares the current flags (`conflicts`, `ready`) with `notified_flags` and writes a `pr_conflicts` or `pr_ready_to_merge` inbox item for each flag that became true. A flag that clears and later comes back notifies again.
 - `PrShepherdMonitor` is a fallback loop started from `hooks.server.ts`. In webhook mode it runs every 10 minutes and uses the cheap mergeable query; it does a full `refreshPrStatus()` only when that query shows a change. Without webhooks it does a full refresh every 2 minutes. It emits `pr:updated` for changed PRs.
+
+### PR Shepherd Bot
+
+The shepherd bot is an LLM agent that starts fix sessions for watched PR stacks (migration v60). All its tables are local-only and have no sync support. All its state is in the DB, so the web server can restart at any time.
+
+**Tables**:
+
+- `pr_shepherd.bot_enabled_at`: set while the bot watches the PR. Enabling the bot also does a manual shepherd enroll. `removePrShepherd()` clears it. `pr_shepherd.bot_snapshot` is the JSON `ShepherdBotPrSnapshot` that the trigger logic saw last.
+- `shepherd_bot_project`: the start/stop flag (`running`) for each project.
+- `shepherd_bot_trigger`: the event queue. `kind` is `pr_changed`, `session_ended`, `recheck`, `bot_started`, or `prs_added`. `details` is kind-specific JSON. `due_at` is the earliest time the trigger can start a run. `run_id` is set when a run takes the trigger. `attempts` counts runs that took the trigger and did not complete.
+- `shepherd_bot_run`: one row for each bot run. `status` is `running`, `completed`, `failed`, or `interrupted`. The bot process writes `pid` and `heartbeat_at`.
+- `shepherd_bot_action`: the action log. A run writes fix actions (`ci_fix`, `pr_fix`, `pr_rebase`) as `requested`. The web server changes them to `launched`, `rejected`, or `failed`. `notify` and `recheck` actions are `done` when the run writes them. `head_sha` and `dedupe_key` (the sorted unresolved thread IDs for `pr_fix`) back the retry limits.
+
+**CRUD module** (`src/tim/db/shepherd_bot.ts`): `startShepherdBotRun()` creates the run and claims its triggers in one `IMMEDIATE` transaction, and returns null when the project already has a running run. `finishShepherdBotRun()` releases the triggers of a run that did not complete, with a delay, until a trigger has used `SHEPHERD_BOT_MAX_TRIGGER_ATTEMPTS`.
+
+**Triggers** (`src/tim/shepherd_bot/triggers.ts`, shared by the CLI and the web server):
+
+- `updateShepherdBotSnapshots()` runs after `updatePrShepherdNotifications()` in `processPrShepherdAfterIngest()` and in `PrShepherdMonitor.tick()`. It compares a new snapshot (`src/tim/shepherd_bot/snapshot.ts`) with `bot_snapshot` and adds a `pr_changed` trigger, debounced by 60 seconds, when `describeShepherdBotSnapshotChanges()` returns changes. It stores snapshots also while the bot is stopped, so a start does not replay old changes. `behind_by` is not in the snapshot.
+- `markJobFinishedSafely()` in `src/tim/headless.ts` calls `enqueueShepherdBotTriggerForJob()` after it marks a job as finished. This adds a `session_ended` trigger for `pr-fix`, `ci-fix`, `pr-rebase`, and `autoreview` jobs on watched PRs, also when the web server is not running. The web server also listens for `session:disconnect` and adds a trigger with outcome `unknown` when no `session_ended` trigger came for that PR in the last 2 minutes, for sessions that crashed.
+
+**Bot run** (`tim shepherd-bot run <runId>`, `src/tim/commands/shepherd_bot.ts`): loads the context (`loadShepherdBotContext()`: the open stacks with at least one watched PR, the run's triggers, the recent actions, and the recent jobs for those PRs), reads the state files (`src/tim/shepherd_bot/settings.ts`, under `getTimDataDir()/shepherd-bot/project-<id>/`), and runs the configured executor in bare mode. The model returns one JSON object (`shepherdBotOutputSchema`). The command writes the state files itself, so the model needs no write access outside the workspace. Then `applyShepherdBotOutput()` records the actions, writes `notify` inbox items, and adds at most one `recheck` trigger.
+
+**Runner** (`ShepherdBotRunner` in `src/lib/server/shepherd_bot.ts`, started from `hooks.server.ts`): every 15 seconds it
+
+1. Marks running runs as `interrupted` when the heartbeat is older than 3 minutes, the process is gone, or the run is older than 30 minutes (it also sends `SIGTERM`).
+2. Executes `requested` actions with guardrails: the bot runs for the project, the PR is open and watched, no fix session or launch lock exists for any PR in the stack, fewer than 2 launches of the same kind for the current head SHA, kind-specific eligibility, and for `pr_fix` no earlier launch for the same thread set. A launched `pr_fix` adds a `shepherd_bot` inbox item because the session waits for the user.
+3. For each running project without a running run, starts a run when a trigger is due. Triggers for a stack with an active fix session are held. A run waits while a non-recheck trigger is still inside its debounce window, but not when the oldest due trigger waited 10 minutes. `shepherdBot.maxRunsPerHour` (default 60) limits runs. Future rechecks stay in the queue.
+
+**User operations**: `setShepherdBotRunningForProject()` adds a `bot_started` trigger when the bot starts. `addStackPathToShepherdBot()` enables the PR and its ancestors (`getStackPathToPr()`), stores their baseline snapshots, and adds a `prs_added` trigger. `removeStackFromShepherdBot()` disables every PR in the stack.
 
 ### Project Settings
 

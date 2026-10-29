@@ -228,3 +228,31 @@ export function listRecentJobs(
     )
     .all(...params) as JobRow[];
 }
+
+export function getJobById(db: Database, jobId: number): JobRow | null {
+  return (db.prepare('SELECT * FROM job WHERE id = ?').get(jobId) as JobRow | undefined) ?? null;
+}
+
+/** Jobs for the given PR URLs that started at or after `sinceIso`, most recent first. */
+export function listJobsForPrUrls(
+  db: Database,
+  prUrls: readonly string[],
+  sinceIso: string,
+  limit: number
+): JobRow[] {
+  if (prUrls.length === 0) {
+    return [];
+  }
+  const placeholders = prUrls.map(() => '?').join(', ');
+  return db
+    .prepare(
+      `
+        SELECT * FROM job
+        WHERE pr_url IN (${placeholders})
+          AND started_at >= ?
+        ORDER BY started_at DESC, id DESC
+        LIMIT ?
+      `
+    )
+    .all(...prUrls, sinceIso, limit) as JobRow[];
+}

@@ -502,6 +502,19 @@ export async function spawnPrRebaseForPrProcess(
   );
 }
 
+export async function spawnShepherdBotRunProcess(
+  runId: number,
+  cwd: string
+): Promise<SpawnTargetProcessResult> {
+  return spawnTimProcess(
+    `shepherd bot run ${runId}`,
+    null,
+    ['shepherd-bot', 'run', String(runId)],
+    cwd,
+    { TIM_HIDE_PLAN_DETAILS: '1' }
+  );
+}
+
 export async function spawnAutoreviewProcess(
   planId: number,
   cwd: string

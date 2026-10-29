@@ -41,6 +41,7 @@ function getActionType(kind: InboxItemKind): InboxActionType | null {
       return 'pr-rebase';
     case 'pr_merged':
     case 'pr_approved':
+    case 'shepherd_bot':
       return null;
     default:
       return null;

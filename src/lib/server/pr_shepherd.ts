@@ -22,6 +22,7 @@ import {
 } from '../../tim/db/pr_shepherd.js';
 import { getPrStatusByUrl, type PrStatusRow } from '../../tim/db/pr_status.js';
 import { getProject } from '../../tim/db/project.js';
+import { updateShepherdBotSnapshots } from '../../tim/shepherd_bot/triggers.js';
 import {
   evaluatePrShepherd,
   getPrShepherdNotificationFlags,
@@ -196,6 +197,7 @@ export async function processPrShepherdAfterIngest(
   }
 
   updatePrShepherdNotifications(db, { ...options, prStatusIds });
+  updateShepherdBotSnapshots(db, { prStatusIds });
 }
 
 function statusSignature(status: PrStatusRow | undefined | null): string {
@@ -294,6 +296,8 @@ export class PrShepherdMonitor {
         sessionManager,
         prStatusIds: shepherded.map((pr) => pr.status.id),
       });
+      // Without an ID filter, this also sees bot PRs that merged since the last pass.
+      updateShepherdBotSnapshots(this.db);
 
       if (changedUrls.length > 0 && sessionManager?.hasPrUpdateListeners()) {
         sessionManager.emitPrUpdate(changedUrls, getProjectIdsForPrUrls(this.db, changedUrls));

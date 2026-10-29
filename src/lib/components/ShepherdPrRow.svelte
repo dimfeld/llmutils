@@ -6,7 +6,12 @@
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
   import PrMergeQueueBadge from './PrMergeQueueBadge.svelte';
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
-  import { setPrShepherded, updateShepherdedPrBranch } from '$lib/remote/pr_shepherd.remote.js';
+  import {
+    addPrStackToShepherdBot,
+    removePrStackFromShepherdBot,
+    setPrShepherded,
+    updateShepherdedPrBranch,
+  } from '$lib/remote/pr_shepherd.remote.js';
   import {
     startFixPrThreads,
     startPrCiFix,
@@ -33,16 +38,20 @@
     depth = 0,
     projectName = null,
     prFixExecutorOptions = DEFAULT_CHAT_EXECUTOR_OPTIONS,
+    inStack = false,
   }: {
     pr: EnrichedProjectPr;
     depth?: number;
     projectName?: string | null;
     prFixExecutorOptions?: ChatExecutorOption[];
+    /** True when the row is part of a stack. The stack header then has the bot removal button. */
+    inStack?: boolean;
   } = $props();
 
   const sessionManager = useSessionManager();
 
   let shepherded = $derived(pr.shepherd !== null);
+  let botEnabled = $derived(pr.shepherd?.botEnabled === true);
   let evaluation = $derived(evaluatePrShepherd(pr));
   let attentionKinds = $derived(new Set(evaluation.attention.map((item) => item.kind)));
   // Show approval even when checks, conflicts, or other problems block the merge. The
@@ -60,6 +69,7 @@
   let launched = $state<Record<LaunchAction, boolean>>({ fix: false, ci: false, rebase: false });
   let updatingBranch = $state<'rebase' | 'merge' | null>(null);
   let togglingShepherd = $state(false);
+  let togglingBot = $state(false);
   let actionError = $state<string | null>(null);
 
   function activeSessionFor(command?: string): string | null {
@@ -205,6 +215,26 @@
     }
   }
 
+  async function handleToggleBot(): Promise<void> {
+    if (togglingBot) {
+      return;
+    }
+    actionError = null;
+    togglingBot = true;
+    try {
+      const target = { projectId: pr.projectId, prNumber: pr.status.pr_number };
+      if (botEnabled) {
+        await removePrStackFromShepherdBot(target);
+      } else {
+        await addPrStackToShepherdBot(target);
+      }
+    } catch (err) {
+      actionError = extractRemoteErrorMessage(err);
+    } finally {
+      togglingBot = false;
+    }
+  }
+
   function statusBadgeClass(status: PrShepherdStatus): string {
     switch (status) {
       case 'needs_attention':
@@ -261,6 +291,14 @@
         Approved
       </span>
     {/if}
+    {#if botEnabled}
+      <span
+        class="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-medium text-sky-800 dark:bg-sky-900/30 dark:text-sky-300"
+        title="The shepherd bot watches this PR"
+      >
+        Bot
+      </span>
+    {/if}
     {#if pr.currentUserNeedsReviewRequest}
       <NeedsReviewerBadge compact />
     {/if}
@@ -285,6 +323,27 @@
         title="Copy branch name"
         ariaLabel={`Copy branch name ${pr.status.head_branch}`}
       />
+    {/if}
+    {#if pr.status.state === 'open' && (!botEnabled || !inStack)}
+      <button
+        type="button"
+        onclick={handleToggleBot}
+        disabled={togglingBot}
+        class="{neutralAction} shrink-0"
+        title={botEnabled
+          ? 'Stop the shepherd bot from watching this PR'
+          : depth > 0
+            ? 'Let the shepherd bot watch this PR and the PRs below it in the stack'
+            : 'Let the shepherd bot watch this PR'}
+      >
+        {#if togglingBot}
+          {botEnabled ? 'Removing...' : 'Adding...'}
+        {:else if botEnabled}
+          Remove from Bot
+        {:else}
+          {depth > 0 ? 'Add to Bot (from root)' : 'Add to Bot'}
+        {/if}
+      </button>
     {/if}
     <button
       type="button"

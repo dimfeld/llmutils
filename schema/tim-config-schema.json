@@ -222,6 +222,32 @@
       },
       "additionalProperties": false
     },
+    "shepherdBot": {
+      "description": "PR shepherd bot settings",
+      "type": "object",
+      "properties": {
+        "executor": {
+          "description": "Executor for shepherd bot runs (default codex-cli)",
+          "type": "string",
+          "enum": [
+            "codex-cli",
+            "claude-code"
+          ]
+        },
+        "model": {
+          "description": "Model for shepherd bot runs (default gpt-6-luna)",
+          "type": "string",
+          "minLength": 1
+        },
+        "maxRunsPerHour": {
+          "description": "Maximum shepherd bot runs per project per hour (default 60)",
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
     "experimental": {
       "description": "Experimental features",
       "type": "object",

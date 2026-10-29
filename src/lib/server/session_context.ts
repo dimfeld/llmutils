@@ -4,6 +4,7 @@ import type { SyncServiceHandle } from './sync_service.js';
 import type { WebSocketServerHandle } from './ws_server.js';
 import type { AutoRunScheduler } from './auto_run.js';
 import type { PrShepherdMonitor } from './pr_shepherd.js';
+import type { ShepherdBotRunner } from './shepherd_bot.js';
 
 export interface WebhookPollerHandle {
   stop: () => void;
@@ -28,6 +29,7 @@ interface SessionContextState {
   dailyDigestScheduler: DailyDigestSchedulerHandle | null;
   autoRunScheduler: AutoRunScheduler | null;
   prShepherdMonitor: PrShepherdMonitor | null;
+  shepherdBotRunner: ShepherdBotRunner | null;
   syncService: SyncServiceHandle | null;
   initPromise: Promise<SessionManager> | null;
 }
@@ -48,6 +50,7 @@ function getState(): SessionContextState {
     dailyDigestScheduler: null,
     autoRunScheduler: null,
     prShepherdMonitor: null,
+    shepherdBotRunner: null,
     syncService: null,
     initPromise: null,
   };
@@ -69,6 +72,14 @@ export function getPrShepherdMonitor(): PrShepherdMonitor | null {
 
 export function setPrShepherdMonitor(monitor: PrShepherdMonitor | null): void {
   getState().prShepherdMonitor = monitor;
+}
+
+export function getShepherdBotRunner(): ShepherdBotRunner | null {
+  return getState().shepherdBotRunner ?? null;
+}
+
+export function setShepherdBotRunner(runner: ShepherdBotRunner | null): void {
+  getState().shepherdBotRunner = runner;
 }
 
 export function getSessionManager(): SessionManager {

@@ -1548,6 +1548,79 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 60,
+    up: `SELECT 1;`,
+    afterUp: (db: Database): void => {
+      if (!tableExists(db, 'pr_shepherd') || !tableExists(db, 'project')) {
+        return;
+      }
+      const shepherdColumns = tableColumns(db, 'pr_shepherd');
+      if (!shepherdColumns.has('bot_enabled_at')) {
+        db.exec('ALTER TABLE pr_shepherd ADD COLUMN bot_enabled_at TEXT');
+      }
+      if (!shepherdColumns.has('bot_snapshot')) {
+        db.exec('ALTER TABLE pr_shepherd ADD COLUMN bot_snapshot TEXT');
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS shepherd_bot_project (
+          project_id INTEGER PRIMARY KEY REFERENCES project(id) ON DELETE CASCADE,
+          running INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+        );
+
+        CREATE TABLE IF NOT EXISTS shepherd_bot_run (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+          status TEXT NOT NULL
+            CHECK(status IN ('running', 'completed', 'failed', 'interrupted')),
+          pid INTEGER,
+          started_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          heartbeat_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          finished_at TEXT,
+          summary TEXT,
+          error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_shepherd_bot_run_project
+          ON shepherd_bot_run(project_id, started_at);
+
+        CREATE TABLE IF NOT EXISTS shepherd_bot_trigger (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+          pr_status_id INTEGER REFERENCES pr_status(id) ON DELETE SET NULL,
+          pr_url TEXT,
+          kind TEXT NOT NULL,
+          details TEXT,
+          created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          due_at TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          run_id INTEGER REFERENCES shepherd_bot_run(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_shepherd_bot_trigger_pending
+          ON shepherd_bot_trigger(project_id, run_id, due_at);
+
+        CREATE TABLE IF NOT EXISTS shepherd_bot_action (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE CASCADE,
+          run_id INTEGER REFERENCES shepherd_bot_run(id) ON DELETE SET NULL,
+          pr_status_id INTEGER REFERENCES pr_status(id) ON DELETE SET NULL,
+          pr_url TEXT,
+          pr_number INTEGER,
+          kind TEXT NOT NULL,
+          head_sha TEXT,
+          dedupe_key TEXT,
+          reason TEXT,
+          status TEXT NOT NULL
+            CHECK(status IN ('requested', 'launched', 'rejected', 'failed', 'done')),
+          result TEXT,
+          created_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC}),
+          updated_at TEXT NOT NULL DEFAULT (${SQL_NOW_ISO_UTC})
+        );
+        CREATE INDEX IF NOT EXISTS idx_shepherd_bot_action_project
+          ON shepherd_bot_action(project_id, status, created_at);
+      `);
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

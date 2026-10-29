@@ -1888,6 +1888,20 @@ reviewGuideCommand
     }).catch(handleCommandError);
   });
 
+const shepherdBotCommand = program
+  .command('shepherd-bot')
+  .description('PR shepherd bot commands (normally started by the web server)');
+
+shepherdBotCommand
+  .command('run <runId>')
+  .description('Run one queued shepherd bot batch')
+  .action(async (runId, _options, command) => {
+    const { handleShepherdBotRunCommand } = await import('./commands/shepherd_bot.js');
+    await handleShepherdBotRunCommand(runId, command.parent.parent.opts()).catch(
+      handleCommandError
+    );
+  });
+
 const prCommand = program.command('pr').description('GitHub PR commands');
 
 prCommand

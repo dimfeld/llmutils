@@ -39,6 +39,24 @@ vi.mock('$lib/remote/project_prs.remote.js', async () => {
 vi.mock('$lib/remote/pr_shepherd.remote.js', () => ({
   setPrShepherded: mocks.setPrShepherded,
   updateShepherdedPrBranch: vi.fn(),
+  addPrStackToShepherdBot: vi.fn(),
+  removePrStackFromShepherdBot: vi.fn(),
+  setShepherdBotRunning: vi.fn(),
+  getShepherdBotStatus: vi.fn(() =>
+    Object.assign(
+      Promise.resolve({
+        running: false,
+        activeRun: null,
+        pendingTriggerCount: 0,
+        nextDueAt: null,
+        recentRuns: [],
+        recentActions: [],
+        stateMarkdown: '',
+        statePath: '',
+      }),
+      { refresh: vi.fn() }
+    )
+  ),
 }));
 
 vi.mock('$lib/remote/review_thread_actions.remote.js', () => ({
@@ -103,7 +121,7 @@ function makePr(
     isStackedOnOpenPr: false,
     currentUserNeedsReviewRequest: false,
     shepherd: options.shepherded
-      ? { source: 'auto', enrolledAt: '2026-01-01T00:00:00.000Z' }
+      ? { source: 'auto', enrolledAt: '2026-01-01T00:00:00.000Z', botEnabled: false }
       : null,
   } as unknown as EnrichedProjectPr;
 }

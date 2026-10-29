@@ -14,6 +14,10 @@ export interface PrShepherdRow {
   /** JSON array of the notification flags that were active at the last notification pass. */
   notified_flags: string | null;
   updated_at: string;
+  /** Set while the shepherd bot watches the PR. */
+  bot_enabled_at: string | null;
+  /** JSON snapshot of the PR state that the bot trigger logic saw last. */
+  bot_snapshot: string | null;
 }
 
 export interface ShepherdedPr {
@@ -87,6 +91,8 @@ export function removePrShepherd(db: Database, prStatusId: number): boolean {
       `
         UPDATE pr_shepherd
         SET removed_at = ${SQL_NOW_ISO_UTC},
+            bot_enabled_at = NULL,
+            bot_snapshot = NULL,
             updated_at = ${SQL_NOW_ISO_UTC}
         WHERE pr_status_id = ?
           AND removed_at IS NULL
@@ -132,6 +138,8 @@ function mapShepherdedRows(rows: Array<Record<string, unknown>>): ShepherdedPr[]
       shepherd_removed_at,
       shepherd_notified_flags,
       shepherd_updated_at,
+      shepherd_bot_enabled_at,
+      shepherd_bot_snapshot,
       ...status
     } = row;
     const statusRow = status as unknown as PrStatusRow;
@@ -144,6 +152,8 @@ function mapShepherdedRows(rows: Array<Record<string, unknown>>): ShepherdedPr[]
         removed_at: shepherd_removed_at as string | null,
         notified_flags: shepherd_notified_flags as string | null,
         updated_at: shepherd_updated_at as string,
+        bot_enabled_at: (shepherd_bot_enabled_at as string | null) ?? null,
+        bot_snapshot: (shepherd_bot_snapshot as string | null) ?? null,
       },
     };
   });
@@ -155,7 +165,9 @@ const SHEPHERDED_SELECT = `
     sh.enrolled_at AS shepherd_enrolled_at,
     sh.removed_at AS shepherd_removed_at,
     sh.notified_flags AS shepherd_notified_flags,
-    sh.updated_at AS shepherd_updated_at
+    sh.updated_at AS shepherd_updated_at,
+    sh.bot_enabled_at AS shepherd_bot_enabled_at,
+    sh.bot_snapshot AS shepherd_bot_snapshot
   FROM pr_shepherd sh
   INNER JOIN pr_status ps ON ps.id = sh.pr_status_id
   WHERE sh.removed_at IS NULL
@@ -218,4 +230,62 @@ export function setPrShepherdNotifiedFlags(
       WHERE pr_status_id = ?
     `
   ).run(JSON.stringify([...new Set(flags)].sort()), prStatusId);
+}
+
+/**
+ * Turn the shepherd bot on or off for a PR. Turning it on also adds the PR to the shepherd
+ * list. `snapshot` is the baseline for the bot trigger logic, so that the bot is not woken
+ * for the state that the PR already had when it was added.
+ */
+export function setPrShepherdBotEnabled(
+  db: Database,
+  prStatusId: number,
+  enabled: boolean,
+  snapshot?: string | null
+): void {
+  if (!enabled) {
+    db.prepare(
+      `
+        UPDATE pr_shepherd
+        SET bot_enabled_at = NULL,
+            bot_snapshot = NULL,
+            updated_at = ${SQL_NOW_ISO_UTC}
+        WHERE pr_status_id = ?
+      `
+    ).run(prStatusId);
+    return;
+  }
+
+  db.transaction(() => {
+    enrollPrShepherd(db, prStatusId, 'manual');
+    db.prepare(
+      `
+        UPDATE pr_shepherd
+        SET bot_enabled_at = COALESCE(bot_enabled_at, ${SQL_NOW_ISO_UTC}),
+            bot_snapshot = CASE WHEN bot_enabled_at IS NULL THEN ? ELSE bot_snapshot END,
+            updated_at = ${SQL_NOW_ISO_UTC}
+        WHERE pr_status_id = ?
+      `
+    ).run(snapshot ?? null, prStatusId);
+  }).immediate();
+}
+
+export function setPrShepherdBotSnapshot(db: Database, prStatusId: number, snapshot: string): void {
+  db.prepare('UPDATE pr_shepherd SET bot_snapshot = ? WHERE pr_status_id = ?').run(
+    snapshot,
+    prStatusId
+  );
+}
+
+/**
+ * PRs that the bot watches, joined with their status rows. Closed and merged PRs are
+ * included, so that the trigger logic can see the change to `merged` once.
+ */
+export function listBotEnabledShepherdPrs(db: Database): ShepherdedPr[] {
+  const rows = db
+    .prepare(
+      `${SHEPHERDED_SELECT} AND sh.bot_enabled_at IS NOT NULL ORDER BY ps.owner, ps.repo, ps.pr_number`
+    )
+    .all() as Array<Record<string, unknown>>;
+  return mapShepherdedRows(rows);
 }

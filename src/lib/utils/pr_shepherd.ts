@@ -48,7 +48,7 @@ export function countUnresolvedReviewThreads(pr: Pick<PrStatusDetail, 'reviewThr
 }
 
 /** Same mapping as `checkRollupToSummaryStatus` in `pr_display.ts`, without its alias imports. */
-function summarizeCheckRollup(
+export function summarizeCheckRollup(
   rollupState: string | null
 ): 'passing' | 'failing' | 'pending' | 'none' {
   switch (rollupState) {

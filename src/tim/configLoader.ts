@@ -246,6 +246,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('proofGeneration');
   mergeConfigKey('prStacking');
   mergeConfigKey('githubWebhooks');
+  mergeConfigKey('shepherdBot');
   mergeConfigKeyDeep('autoreview');
   mergeConfigKeyDeep('agents');
   mergeConfigKeyDeep('generate');

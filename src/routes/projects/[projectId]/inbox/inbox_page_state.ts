@@ -43,6 +43,10 @@ const KIND_BADGE_CONFIG: Record<InboxItemKind, KindBadgeConfig> = {
     label: 'Ready to Merge',
     colorClasses: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
   },
+  shepherd_bot: {
+    label: 'Shepherd Bot',
+    colorClasses: 'bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300',
+  },
 };
 
 export function getKindBadge(kind: InboxItemKind): KindBadgeConfig {
@@ -80,6 +84,7 @@ export function getEventCountLabel(item: EnrichedInboxItem): string | null {
     merge_queue_removed: 'removal',
     pr_conflicts: 'conflict',
     pr_ready_to_merge: 'update',
+    shepherd_bot: 'message',
   };
   const noun = NOUNS[kind] ?? 'event';
   const plural = noun.endsWith('s') ? noun + 'es' : noun + 's';

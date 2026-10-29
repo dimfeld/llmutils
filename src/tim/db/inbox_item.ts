@@ -13,6 +13,7 @@ export const INBOX_ITEM_KINDS = [
   'merge_queue_removed',
   'pr_conflicts',
   'pr_ready_to_merge',
+  'shepherd_bot',
 ] as const;
 
 export type InboxItemKind = (typeof INBOX_ITEM_KINDS)[number];

@@ -12,11 +12,13 @@ import {
 import { getServerContext } from '$lib/server/init.js';
 import { AutoRunScheduler } from '$lib/server/auto_run.js';
 import { PrShepherdMonitor } from '$lib/server/pr_shepherd.js';
+import { ShepherdBotRunner } from '$lib/server/shepherd_bot.js';
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import {
   getDailyDigestScheduler,
   getAutoRunScheduler,
   getPrShepherdMonitor,
+  getShepherdBotRunner,
   getSessionDiscoveryClient,
   getSessionInitPromise,
   getSessionManager,
@@ -28,6 +30,7 @@ import {
   setDailyDigestScheduler,
   setAutoRunScheduler,
   setPrShepherdMonitor,
+  setShepherdBotRunner,
   setSessionInitPromise,
   setSessionManager,
   setSlackNotifier,
@@ -86,6 +89,7 @@ function registerCurrentShutdownHandlers(): void {
     getSyncService()?.stop();
     getAutoRunScheduler()?.stop();
     getPrShepherdMonitor()?.stop();
+    getShepherdBotRunner()?.stop();
     getDailyDigestScheduler()?.stop();
     getSlackNotifier()?.stop();
     getWebhookPoller()?.stop();
@@ -119,6 +123,23 @@ function ensurePrShepherdMonitor(db: Database): boolean {
   return true;
 }
 
+function ensureShepherdBotRunner(db: Database, config: TimConfig): boolean {
+  if (getShepherdBotRunner()) return false;
+  const runner = new ShepherdBotRunner(db, {
+    config,
+    getSessionManager: () => {
+      try {
+        return getSessionManager();
+      } catch {
+        return null;
+      }
+    },
+  });
+  runner.start();
+  setShepherdBotRunner(runner);
+  return true;
+}
+
 export const init: ServerInit = async () => {
   const existingPromise = getSessionInitPromise();
   if (existingPromise) {
@@ -126,6 +147,7 @@ export const init: ServerInit = async () => {
     const { config, db } = await getServerContext();
     ensureAutoRunScheduler(db, config);
     ensurePrShepherdMonitor(db);
+    ensureShepherdBotRunner(db, config);
     registerCurrentShutdownHandlers();
     // Handle poller state changes during HMR re-init.
     const existingPoller = getWebhookPoller();
@@ -185,6 +207,7 @@ export const init: ServerInit = async () => {
     const { config, db } = await getServerContext();
     ensureAutoRunScheduler(db, config);
     ensurePrShepherdMonitor(db);
+    ensureShepherdBotRunner(db, config);
     const shouldRunSync = shouldRunSyncService(config);
     const shouldRunSlack = shouldStartSlackNotifier(config);
     const shouldRunDigest = shouldStartDailyDigest(db, config);
@@ -227,6 +250,7 @@ export const init: ServerInit = async () => {
     dailyDigestScheduler: false,
     autoRunScheduler: false,
     prShepherdMonitor: false,
+    shepherdBotRunner: false,
     syncService: false,
   };
 
@@ -234,6 +258,7 @@ export const init: ServerInit = async () => {
     const { config, db } = await getServerContext();
     createdResources.autoRunScheduler = ensureAutoRunScheduler(db, config);
     createdResources.prShepherdMonitor = ensurePrShepherdMonitor(db);
+    createdResources.shepherdBotRunner = ensureShepherdBotRunner(db, config);
     const sessionManager = existingServer
       ? getSessionManager()
       : new SessionManager(db, { retention: config.headless?.sessionRetention });
@@ -314,6 +339,10 @@ export const init: ServerInit = async () => {
     if (createdResources.prShepherdMonitor) {
       getPrShepherdMonitor()?.stop();
       setPrShepherdMonitor(null);
+    }
+    if (createdResources.shepherdBotRunner) {
+      getShepherdBotRunner()?.stop();
+      setShepherdBotRunner(null);
     }
     if (createdResources.discoveryClient) {
       const discoveryClient = getSessionDiscoveryClient();

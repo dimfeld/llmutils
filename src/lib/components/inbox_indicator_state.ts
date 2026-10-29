@@ -44,6 +44,7 @@ const KIND_CONFIG: Record<
   },
   pr_conflicts: { label: 'Merge conflicts', iconKey: 'circle-x', countNoun: 'conflict' },
   pr_ready_to_merge: { label: 'Ready to merge', iconKey: 'check', countNoun: 'update' },
+  shepherd_bot: { label: 'Shepherd bot', iconKey: 'message-circle', countNoun: 'message' },
 };
 
 export function getInboxIndicatorState(

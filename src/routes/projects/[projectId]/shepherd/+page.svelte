@@ -1,13 +1,16 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PrMergedBadge from '$lib/components/PrMergedBadge.svelte';
+  import ShepherdBotPanel from '$lib/components/ShepherdBotPanel.svelte';
   import ShepherdPrRow from '$lib/components/ShepherdPrRow.svelte';
+  import { removePrStackFromShepherdBot } from '$lib/remote/pr_shepherd.remote.js';
   import { getProjectPrs, refreshProjectPrs } from '$lib/remote/project_prs.remote.js';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { shouldRefreshProjectPrs } from '$lib/utils/pr_update_events.js';
   import { buildShepherdList, groupPrsByMergedDay } from '$lib/utils/pr_shepherd.js';
   import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
+  import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -36,6 +39,23 @@
 
   let refreshing = $state(false);
   let refreshError = $state<string | null>(null);
+  let removingStackUrl = $state<string | null>(null);
+
+  async function handleRemoveStackFromBot(rootPr: EnrichedProjectPr): Promise<void> {
+    if (removingStackUrl) return;
+    removingStackUrl = rootPr.status.pr_url;
+    refreshError = null;
+    try {
+      await removePrStackFromShepherdBot({
+        projectId: rootPr.projectId,
+        prNumber: rootPr.status.pr_number,
+      });
+    } catch (err) {
+      refreshError = extractRemoteErrorMessage(err);
+    } finally {
+      removingStackUrl = null;
+    }
+  }
 
   async function handleRefresh(): Promise<void> {
     refreshing = true;
@@ -83,6 +103,10 @@
       <p class="text-xs text-amber-600 dark:text-amber-400">{refreshError}</p>
     {/if}
 
+    {#if !isAllProjects}
+      <ShepherdBotPanel projectId={Number(projectId)} />
+    {/if}
+
     {#if shepherdList.groups.length === 0}
       <div
         class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
@@ -94,11 +118,25 @@
         {#each shepherdList.groups as group (group[0].pr.status.pr_url)}
           <section class="rounded-md border border-border">
             {#if group.length > 1}
-              <h2
-                class="border-b border-border px-3 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
+              <div
+                class="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5"
               >
-                Stack · {group.length} PRs
-              </h2>
+                <h2 class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  Stack · {group.length} PRs
+                </h2>
+                {#if group.some((entry) => entry.pr.shepherd?.botEnabled)}
+                  <button
+                    type="button"
+                    onclick={() => handleRemoveStackFromBot(group[0].pr)}
+                    disabled={removingStackUrl !== null}
+                    class="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+                  >
+                    {removingStackUrl === group[0].pr.status.pr_url
+                      ? 'Removing...'
+                      : 'Remove Stack from Bot'}
+                  </button>
+                {/if}
+              </div>
             {/if}
             <ul class="divide-y divide-border">
               {#each group as entry (entry.pr.status.pr_url)}
@@ -109,6 +147,7 @@
                     ? (projectNamesById[entry.pr.projectId] ?? null)
                     : null}
                   prFixExecutorOptions={data.prFixExecutorOptions}
+                  inStack={group.length > 1}
                 />
               {/each}
             </ul>

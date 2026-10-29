@@ -71,6 +71,8 @@ export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
 export interface PrShepherdSummary {
   source: PrShepherdSource;
   enrolledAt: string;
+  /** True while the shepherd bot watches the PR. */
+  botEnabled: boolean;
 }
 
 /** PRs that merged recently, most recently merged first. */
@@ -153,7 +155,9 @@ function enrichProjectPrs(
 }
 
 function toShepherdSummary(row: PrShepherdRow | undefined): PrShepherdSummary | null {
-  return row ? { source: row.source, enrolledAt: row.enrolled_at } : null;
+  return row
+    ? { source: row.source, enrolledAt: row.enrolled_at, botEnabled: row.bot_enabled_at !== null }
+    : null;
 }
 
 /**
