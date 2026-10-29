@@ -5,26 +5,13 @@ import {
   type BranchMergeRequirementsDetail,
 } from '../../tim/db/branch_merge_requirements.js';
 import type { PrCheckRunRow, PrStatusDetail, PrStatusRow } from '../../tim/db/pr_status.js';
+import { classifyCheckRun } from './check_classification.js';
+
+export { classifyCheckRun, FAILURE_CHECK_CONCLUSIONS } from './check_classification.js';
 
 export type PrStatusDetailWithRequiredChecks = PrStatusDetail & {
   requiredCheckNames: string[];
 };
-
-export const FAILURE_CHECK_CONCLUSIONS = new Set([
-  'failure',
-  'error',
-  'timed_out',
-  'startup_failure',
-  'action_required',
-]);
-const PENDING_CHECK_STATUSES = new Set([
-  'pending',
-  'in_progress',
-  'queued',
-  'waiting',
-  'requested',
-]);
-const NON_BLOCKING_CHECK_CONCLUSIONS = new Set(['neutral', 'skipped', 'cancelled', 'stale']);
 
 type RequirementCache = Map<string, BranchMergeRequirementsDetail | null>;
 
@@ -61,27 +48,6 @@ function getRequirementsForStatus(
   );
   cache.set(cacheKey, requirements);
   return requirements;
-}
-
-export function classifyCheckRun(
-  check: Pick<PrCheckRunRow, 'status' | 'conclusion'>
-): 'failing' | 'pending' | 'passing' {
-  if (FAILURE_CHECK_CONCLUSIONS.has(check.conclusion ?? '')) {
-    return 'failing';
-  }
-
-  if (PENDING_CHECK_STATUSES.has(check.status)) {
-    return 'pending';
-  }
-
-  if (
-    check.conclusion === 'success' ||
-    NON_BLOCKING_CHECK_CONCLUSIONS.has(check.conclusion ?? '')
-  ) {
-    return 'passing';
-  }
-
-  return 'pending';
 }
 
 function getRequiredCheckContexts(requirements: BranchMergeRequirementsDetail): Set<string> {

@@ -968,6 +968,27 @@ describe('common/github/pr_status', () => {
         };
       }
 
+      if (variables.prNumber === 46) {
+        return {
+          repository: {
+            pullRequest: {
+              commits: {
+                nodes: [
+                  {
+                    commit: {
+                      statusCheckRollup: {
+                        state: 'EXPECTED',
+                        contexts: { nodes: [] },
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        };
+      }
+
       return {
         repository: {
           pullRequest: {
@@ -1013,12 +1034,128 @@ describe('common/github/pr_status', () => {
           source: 'check_run',
         },
       ],
-      checkRollupState: 'expected',
+      // The startup failure makes the derived rollup fail even though GitHub reports EXPECTED
+      checkRollupState: 'failure',
     });
 
     await expect(fetchPrCheckStatus('owner', 'repo', 45)).resolves.toEqual({
       checks: [],
       checkRollupState: null,
+    });
+
+    // With no checks to derive from, GitHub's rollup state is used
+    await expect(fetchPrCheckStatus('owner', 'repo', 46)).resolves.toEqual({
+      checks: [],
+      checkRollupState: 'expected',
+    });
+  });
+
+  test('fetchPrCheckStatus ignores superseded cancelled runs in the rollup state', async () => {
+    const graphql = vi.fn(async () => ({
+      repository: {
+        pullRequest: {
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  statusCheckRollup: {
+                    state: 'FAILURE',
+                    contexts: {
+                      pageInfo: { hasNextPage: false },
+                      nodes: [
+                        {
+                          __typename: 'CheckRun',
+                          databaseId: 100,
+                          name: 'Test',
+                          status: 'COMPLETED',
+                          conclusion: 'CANCELLED',
+                          detailsUrl: 'https://example.com/checks/old-cancelled',
+                          startedAt: '2026-03-20T00:00:00.000Z',
+                          completedAt: '2026-03-20T00:02:00.000Z',
+                        },
+                        {
+                          __typename: 'CheckRun',
+                          databaseId: 101,
+                          name: 'Test',
+                          status: 'IN_PROGRESS',
+                          conclusion: null,
+                          detailsUrl: 'https://example.com/checks/new-running',
+                          startedAt: '2026-03-20T00:03:00.000Z',
+                          completedAt: null,
+                        },
+                        {
+                          __typename: 'CheckRun',
+                          databaseId: 102,
+                          name: 'Review',
+                          status: 'COMPLETED',
+                          conclusion: 'SUCCESS',
+                          detailsUrl: null,
+                          startedAt: '2026-03-20T00:01:00.000Z',
+                          completedAt: '2026-03-20T00:04:00.000Z',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    }));
+
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({ graphql });
+
+    const { fetchPrCheckStatus } = await import('./pr_status.ts');
+    const result = await fetchPrCheckStatus('owner', 'repo', 4960);
+
+    expect(result.checks.map((check) => [check.name, check.status, check.conclusion])).toEqual([
+      ['Test', 'in_progress', null],
+      ['Review', 'completed', 'success'],
+    ]);
+    expect(result.checkRollupState).toBe('pending');
+  });
+
+  test('fetchPrCheckStatus uses the GitHub rollup state when the check list is truncated', async () => {
+    const graphql = vi.fn(async () => ({
+      repository: {
+        pullRequest: {
+          commits: {
+            nodes: [
+              {
+                commit: {
+                  statusCheckRollup: {
+                    state: 'FAILURE',
+                    contexts: {
+                      pageInfo: { hasNextPage: true },
+                      nodes: [
+                        {
+                          __typename: 'CheckRun',
+                          databaseId: 100,
+                          name: 'Test',
+                          status: 'COMPLETED',
+                          conclusion: 'SUCCESS',
+                          detailsUrl: null,
+                          startedAt: '2026-03-20T00:00:00.000Z',
+                          completedAt: '2026-03-20T00:02:00.000Z',
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    }));
+
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({ graphql });
+
+    const { fetchPrCheckStatus } = await import('./pr_status.ts');
+
+    await expect(fetchPrCheckStatus('owner', 'repo', 61)).resolves.toMatchObject({
+      checkRollupState: 'failure',
     });
   });
 

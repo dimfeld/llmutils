@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { deriveCheckRollupState } from '../../common/github/check_classification.js';
 import { tryCanonicalizePrUrl } from '../../common/github/identifiers.js';
 import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_requests.js';
 import { getProjectById } from './project.js';
@@ -241,22 +242,6 @@ export interface LinkedPlanSummary {
   title: string | null;
   branch?: string | null;
 }
-
-const FAILURE_CHECK_CONCLUSIONS = new Set([
-  'failure',
-  'error',
-  'timed_out',
-  'startup_failure',
-  'action_required',
-]);
-const PENDING_CHECK_STATUSES = new Set([
-  'pending',
-  'in_progress',
-  'queued',
-  'waiting',
-  'requested',
-]);
-const NON_BLOCKING_CHECK_CONCLUSIONS = new Set(['neutral', 'skipped', 'cancelled', 'stale']);
 
 function replaceCheckRuns(db: Database, prStatusId: number, checks: StoredPrCheckRunInput[]): void {
   db.prepare('DELETE FROM pr_check_run WHERE pr_status_id = ?').run(prStatusId);
@@ -1341,49 +1326,7 @@ export function recomputeCheckRollupState(db: Database, prStatusId: number): str
     )
     .all(prStatusId) as Array<{ status: string; conclusion: string | null }>;
 
-  let checkRollupState: string | null = null;
-  let hasBlockingFailure = false;
-  let hasPendingCheck = false;
-  let hasSuccessfulOrNonBlockingCheck = false;
-
-  for (const row of rows) {
-    if (FAILURE_CHECK_CONCLUSIONS.has(row.conclusion ?? '')) {
-      hasBlockingFailure = true;
-      break;
-    }
-
-    if (PENDING_CHECK_STATUSES.has(row.status)) {
-      hasPendingCheck = true;
-      continue;
-    }
-
-    if (row.conclusion === 'success') {
-      hasSuccessfulOrNonBlockingCheck = true;
-      continue;
-    }
-
-    if (NON_BLOCKING_CHECK_CONCLUSIONS.has(row.conclusion ?? '')) {
-      hasSuccessfulOrNonBlockingCheck = true;
-      continue;
-    }
-
-    // Completed check with unrecognized conclusion — treat as pending to be safe
-    if (row.status === 'completed') {
-      hasPendingCheck = true;
-      continue;
-    }
-
-    // Unknown status (not pending, not completed) — treat as pending to be safe
-    hasPendingCheck = true;
-  }
-
-  if (hasBlockingFailure) {
-    checkRollupState = 'failure';
-  } else if (hasPendingCheck) {
-    checkRollupState = 'pending';
-  } else if (hasSuccessfulOrNonBlockingCheck) {
-    checkRollupState = 'success';
-  }
+  const checkRollupState = deriveCheckRollupState(rows);
 
   db.prepare(
     `

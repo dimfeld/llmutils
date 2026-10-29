@@ -2,6 +2,7 @@ import type {
   StoredPrReviewThreadCommentInput,
   StoredPrReviewThreadInput,
 } from '../../tim/db/pr_status.js';
+import { deriveCheckRollupState, isRecognizedCheckState } from './check_classification.js';
 import { getOctokit } from './octokit.js';
 import { isBotLogin } from './username.js';
 
@@ -167,6 +168,7 @@ type GraphQlCheckContextNode = GraphQlCheckRunNode | GraphQlStatusContextNode;
 interface GraphQlStatusCheckRollup {
   state: string | null;
   contexts: {
+    pageInfo?: { hasNextPage: boolean } | null;
     nodes: Array<GraphQlCheckContextNode | null> | null;
   } | null;
 }
@@ -398,6 +400,9 @@ const fullStatusQuery = `
               statusCheckRollup {
                 state
                 contexts(first: 100) {
+                  pageInfo {
+                    hasNextPage
+                  }
                   nodes {
                     __typename
                     ... on CheckRun {
@@ -542,6 +547,9 @@ const checkStatusQuery = `
               statusCheckRollup {
                 state
                 contexts(first: 100) {
+                  pageInfo {
+                    hasNextPage
+                  }
                   nodes {
                     __typename
                     ... on CheckRun {
@@ -1000,10 +1008,19 @@ function normalizeChecks(
   const checks = keepLatestCheckContexts(statusRollup?.contexts?.nodes ?? []).map(
     normalizeCheckRun
   );
+  const githubRollupState = normalizeCheckRollupState(statusRollup?.state ?? null);
+
+  // GitHub's rollup state includes superseded runs, such as a cancelled run that a newer
+  // run of the same check replaced. Derive the state from the deduplicated checks instead,
+  // unless the check list is incomplete or holds a state we do not recognize.
+  const canDeriveRollupState =
+    checks.length > 0 &&
+    statusRollup?.contexts?.pageInfo?.hasNextPage !== true &&
+    checks.every(isRecognizedCheckState);
 
   return {
     checks,
-    checkRollupState: normalizeCheckRollupState(statusRollup?.state ?? null),
+    checkRollupState: canDeriveRollupState ? deriveCheckRollupState(checks) : githubRollupState,
   };
 }
 
