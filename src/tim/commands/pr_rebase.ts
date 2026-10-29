@@ -1,8 +1,13 @@
 import path from 'node:path';
 
-import { getUsingJj } from '../../common/git.js';
+import {
+  ensureLocalJjBookmark,
+  fetchRemoteBranch,
+  getUsingJj,
+  isBranchBehindRemoteBase,
+} from '../../common/git.js';
 import { resolveGitHubToken } from '../../common/github/token.js';
-import { warn } from '../../logging.js';
+import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
@@ -14,6 +19,11 @@ import {
 } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import {
+  findOpenStackForPr,
+  getStackedBranchesAbovePr,
+  type StackedBranch,
+} from '../shepherd_bot/stack.js';
 import {
   prepareWorkspaceRoundTrip,
   runPostExecutionWorkspaceSync,
@@ -63,7 +73,19 @@ function getRootOptions(command: RootCommandLike | undefined): { config?: string
   return current?.opts?.() ?? {};
 }
 
-export function buildPrRebasePrompt(target: PullRequestFixTarget, usingJj: boolean): string {
+function formatStackedBranches(stackedBranches: StackedBranch[]): string {
+  return stackedBranches
+    .map((branch) => `\`${branch.headBranch}\` (based on \`${branch.baseBranch}\`)`)
+    .join(', ');
+}
+
+export function buildPrRebasePrompt(
+  target: PullRequestFixTarget,
+  usingJj: boolean,
+  stackedBranches: StackedBranch[] = []
+): string {
+  const hasStack = stackedBranches.length > 0;
+  const allBranches = [target.headBranch, ...stackedBranches.map((branch) => branch.headBranch)];
   const prompt = [
     '# Rebase Pull Request and Resolve Conflicts',
     '',
@@ -88,6 +110,12 @@ export function buildPrRebasePrompt(target: PullRequestFixTarget, usingJj: boole
     '',
     'The latest base branch was already fetched from origin.',
     '',
+    ...(hasStack
+      ? [
+          `Other open PRs are stacked on top of this PR. Their branches, each after the branch it is based on: ${formatStackedBranches(stackedBranches)}. These branches were also fetched from origin. You must rebase them too and push them together with this branch, so that the whole stack stays consistent on GitHub. Otherwise GitHub reports merge conflicts for the stacked PRs.`,
+          '',
+        ]
+      : []),
     'Do not edit plan files or change plan tasks, plan status, or plan assignments during this rebase run.',
     '',
     '## Steps',
@@ -102,7 +130,14 @@ export function buildPrRebasePrompt(target: PullRequestFixTarget, usingJj: boole
       '4. Resolve each conflict. Keep the intent of both changes. Do not discard either side without examining it. When you use `jj squash` as part of this process, do not give it any arguments, because the squash message will overwrite the original commit message.',
       `5. The rebase also moves the branches that are stacked on top of this branch. After you resolve the conflicts in this branch, run \`jj log -r 'conflicts() & descendants(roots(${target.baseBranch}@origin.."${target.headBranch}"))'\` to find conflicts in this branch and in the branches stacked on top of it. If you find any, resolve them too, with the same process. Repeat until that command shows no commits. Conflicts in commits that are not in this branch or in the branches stacked on top of it are out of scope. Do not change them.`,
       '6. Run type checking, linting, and tests appropriate to the changed files to make sure that the rebased branch works. Fix any problems that the rebase caused.',
-      `7. Make sure that the \`${target.headBranch}\` bookmark points to the rebased head commit, then push with \`jj git push --bookmark ${target.headBranch}\`.`
+      ...(hasStack
+        ? [
+            `7. Run \`jj log -r '${target.baseBranch}@origin::'\` and make sure that each stacked bookmark is on top of the rebased version of the branch it is based on. If a stacked branch is not on top of it (for example, because an earlier rebase did not push it), rebase that branch onto its base bookmark, without the old copies of the base branch commits, and resolve its conflicts with the same process.`,
+            `8. Make sure that each of these bookmarks points to the rebased head commit of its branch: ${allBranches.map((branch) => `\`${branch}\``).join(', ')}. Then push all of them with \`jj git push ${allBranches.map((branch) => `--bookmark ${branch}`).join(' ')}\`.`,
+          ]
+        : [
+            `7. Make sure that the \`${target.headBranch}\` bookmark points to the rebased head commit, then push with \`jj git push --bookmark ${target.headBranch}\`.`,
+          ])
     );
   } else {
     prompt.push(
@@ -111,7 +146,14 @@ export function buildPrRebasePrompt(target: PullRequestFixTarget, usingJj: boole
       '3. For each conflicting file, examine the conflict markers and the git log for both branches, to understand the context of each change.',
       '4. Resolve each conflict. Keep the intent of both changes. Do not discard either side without examining it. Run `git add <file>` to mark each file as resolved, then run `git rebase --continue`. More than one commit can have conflicts, so repeat until the rebase is complete.',
       '5. Run type checking, linting, and tests appropriate to the changed files to make sure that the rebased branch works. Fix any problems that the rebase caused.',
-      `6. Push the rebased branch with \`git push --force-with-lease origin ${target.headBranch}\`. A force push is necessary because the rebase rewrote the branch history.`
+      ...(hasStack
+        ? [
+            `6. Rebase each stacked branch onto the rebased version of its base branch, in the order given above. Do this before you push, while \`origin/<base branch>\` still points to the old version of the base branch. For each stacked branch, run \`git checkout -B <branch> origin/<branch>\`, then \`git rebase --onto <base branch> origin/<base branch> <branch>\`. If a stacked branch is not on top of \`origin/<base branch>\` (for example, because an earlier rebase did not push it), make sure that only its own commits are moved. Resolve conflicts with the same process, and check the result if conflicts occurred.`,
+            `7. Push all the rebased branches with \`git push --force-with-lease origin ${allBranches.join(' ')}\`. A force push is necessary because the rebase rewrote the branch history.`,
+          ]
+        : [
+            `6. Push the rebased branch with \`git push --force-with-lease origin ${target.headBranch}\`. A force push is necessary because the rebase rewrote the branch history.`,
+          ])
     );
   }
 
@@ -122,6 +164,41 @@ export function buildPrRebasePrompt(target: PullRequestFixTarget, usingJj: boole
   );
 
   return prompt.join('\n');
+}
+
+/**
+ * Fetch the branches of the PRs stacked on top of the PR, so that the rebase can move and push
+ * them too. In jj, also track them so that they have local bookmarks that the rebase moves.
+ * A branch that cannot be fetched is left out, together with the branches stacked on it.
+ */
+async function prepareStackedBranches(
+  workspacePath: string,
+  stackedBranches: StackedBranch[],
+  usingJj: boolean
+): Promise<StackedBranch[]> {
+  const skipped = new Set<string>();
+  const prepared: StackedBranch[] = [];
+  for (const branch of stackedBranches) {
+    if (skipped.has(branch.baseBranch)) {
+      skipped.add(branch.headBranch);
+      continue;
+    }
+    try {
+      if (!(await fetchRemoteBranch(workspacePath, branch.headBranch))) {
+        throw new Error('fetch failed');
+      }
+      if (usingJj) {
+        await ensureLocalJjBookmark(workspacePath, branch.headBranch);
+      }
+      prepared.push(branch);
+    } catch (err) {
+      warn(
+        `Could not fetch stacked branch ${branch.headBranch}; it will not be rebased: ${err as Error}`
+      );
+      skipped.add(branch.headBranch);
+    }
+  }
+  return prepared;
 }
 
 export async function handlePrRebaseCommand(
@@ -231,6 +308,26 @@ export async function executePrRebaseCommand({
     await fetchPrFixBaseBranch(currentBaseDir, prTarget.baseBranch);
     updateCiFixHeadlessSessionInfo(db, prTarget, currentBaseDir);
 
+    // A PR can have merge conflicts only when its base branch has commits that the PR does
+    // not have. The conflict state on GitHub can be stale, for example during a push of the
+    // stack, so check before starting an agent.
+    if ((await isBranchBehindRemoteBase(currentBaseDir, prTarget.baseBranch)) === false) {
+      log(
+        `PR #${prTarget.prNumber} already contains the latest ${prTarget.baseBranch} from origin. There is nothing to rebase.`
+      );
+      return;
+    }
+
+    const usingJj = await getUsingJj(currentBaseDir);
+    const stackedBranches = await prepareStackedBranches(
+      currentBaseDir,
+      getStackedBranchesAbovePr(
+        findOpenStackForPr(db, prTarget.prStatus.status),
+        prTarget.prNumber
+      ),
+      usingJj
+    );
+
     if (path.resolve(currentBaseDir) !== path.resolve(prTarget.repoRoot)) {
       roundTripContext = await prepareWorkspaceRoundTrip({
         workspacePath: currentBaseDir,
@@ -243,7 +340,7 @@ export async function executePrRebaseCommand({
       await runPreExecutionWorkspaceSync(roundTripContext);
     }
 
-    const rebasePrompt = buildPrRebasePrompt(prTarget, await getUsingJj(currentBaseDir));
+    const rebasePrompt = buildPrRebasePrompt(prTarget, usingJj, stackedBranches);
     const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
       config,
       currentBaseDir,

@@ -36,7 +36,7 @@ import {
   ShepherdBotRunner,
   type ShepherdBotSessionManager,
 } from './shepherd_bot.js';
-import { getPrStatusByUrl } from '$tim/db/pr_status.js';
+import { getPrStatusByUrl, updatePrMergeableAndReviewDecision } from '$tim/db/pr_status.js';
 import { clearPrLaunchLock } from './launch_lock.js';
 
 describe('lib/server/shepherd_bot', () => {
@@ -44,9 +44,24 @@ describe('lib/server/shepherd_bot', () => {
   let projectId: number;
   let now: Date;
   let activeSessionUrls: Set<string>;
+  /** The mergeable state that GitHub returns for each PR number, when it differs from the DB. */
+  let githubMergeable: Map<number, string | null>;
   const spawnRun = vi.fn(async () => ({ success: true as const }));
   const launchFix = vi.fn(async () => ({ success: true as const }));
   const emitInboxUpdate = vi.fn();
+  const refreshMergeable = vi.fn(async (status: { pr_number: number }) => {
+    if (!githubMergeable.has(status.pr_number)) {
+      return;
+    }
+    const detail = getPrStatusByUrl(db, fixturePrUrl(status.pr_number))!;
+    updatePrMergeableAndReviewDecision(
+      db,
+      detail.status.id,
+      githubMergeable.get(status.pr_number) ?? null,
+      detail.status.review_decision,
+      now.toISOString()
+    );
+  });
 
   const sessionManager: ShepherdBotSessionManager = {
     hasActiveSessionForPr: (url: string) => ({ active: activeSessionUrls.has(url) }),
@@ -62,6 +77,7 @@ describe('lib/server/shepherd_bot', () => {
       spawnRun,
       launchFix,
       resolveUsername: async () => 'me',
+      refreshMergeable,
       isProcessAlive: () => true,
       getWorkspacePath: () => '/tmp/workspace',
       now: () => now,
@@ -73,6 +89,8 @@ describe('lib/server/shepherd_bot', () => {
     projectId = getOrCreateProject(db, constructGitHubRepositoryId(FIXTURE_OWNER, FIXTURE_REPO)).id;
     now = new Date();
     activeSessionUrls = new Set();
+    githubMergeable = new Map();
+    refreshMergeable.mockClear();
     spawnRun.mockClear();
     spawnRun.mockImplementation(async () => ({ success: true as const }));
     launchFix.mockClear();
@@ -355,6 +373,61 @@ describe('lib/server/shepherd_bot', () => {
       await createRunner().tick();
       expect(actionStatus(stopped)).toEqual(['rejected', 'The bot was stopped']);
       expect(launchFix).not.toHaveBeenCalled();
+    });
+
+    test('checks the mergeable state on GitHub again before it starts a rebase', async () => {
+      addWatchedStack();
+      for (const prNumber of [1, 2, 3]) {
+        addFixturePr(db, prNumber, {
+          base: prNumber === 1 ? 'main' : `stack-${prNumber - 1}`,
+          head: `stack-${prNumber}`,
+          mergeable: 'CONFLICTING',
+        });
+      }
+
+      // The cached state is stale: GitHub now reports no conflicts.
+      githubMergeable.set(1, 'MERGEABLE');
+      const resolved = requestAction('pr_rebase', 1);
+      await createRunner().tick();
+      expect(refreshMergeable).toHaveBeenCalledWith(
+        expect.objectContaining({ pr_number: 1, owner: FIXTURE_OWNER, repo: FIXTURE_REPO })
+      );
+      expect(actionStatus(resolved)).toEqual([
+        'rejected',
+        'GitHub no longer reports merge conflicts for the PR',
+      ]);
+      expect(getPrStatusByUrl(db, fixturePrUrl(1))!.status.mergeable).toBe('MERGEABLE');
+      expect(launchFix).not.toHaveBeenCalled();
+
+      // GitHub is still computing: reject now and check again later.
+      githubMergeable.set(2, 'UNKNOWN');
+      const computing = requestAction('pr_rebase', 2);
+      await createRunner().tick();
+      expect(actionStatus(computing)).toEqual([
+        'rejected',
+        'GitHub is still computing whether the PR has merge conflicts. The bot will check again.',
+      ]);
+      const rechecks = listPendingShepherdBotTriggers(db, projectId).filter(
+        (trigger) => trigger.kind === 'recheck'
+      );
+      expect(rechecks).toHaveLength(1);
+      expect(rechecks[0].pr_url).toBe(fixturePrUrl(2));
+      expect(rechecks[0].due_at > now.toISOString()).toBe(true);
+      expect(launchFix).not.toHaveBeenCalled();
+
+      // GitHub confirms the conflicts.
+      const conflicting = requestAction('pr_rebase', 3);
+      await createRunner().tick();
+      expect(actionStatus(conflicting)[0]).toBe('launched');
+      expect(launchFix).toHaveBeenCalledWith('pr_rebase', fixturePrUrl(3), '/tmp/workspace');
+    });
+
+    test('does not ask GitHub when the cached state has no conflicts', async () => {
+      addWatchedStack();
+      const action = requestAction('pr_rebase', 1);
+      await createRunner().tick();
+      expect(actionStatus(action)).toEqual(['rejected', 'The PR has no merge conflicts']);
+      expect(refreshMergeable).not.toHaveBeenCalled();
     });
 
     test('starts a PR fix once for each set of threads and tells the user', async () => {

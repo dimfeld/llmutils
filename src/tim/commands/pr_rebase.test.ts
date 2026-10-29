@@ -66,6 +66,40 @@ describe('buildPrRebasePrompt', () => {
   });
 });
 
+describe('buildPrRebasePrompt with stacked branches', () => {
+  const stacked = [
+    { headBranch: 'feature-y', baseBranch: 'feature-x' },
+    { headBranch: 'feature-z', baseBranch: 'feature-y' },
+  ];
+
+  test('pushes all stacked bookmarks in jj repositories', () => {
+    const prompt = buildPrRebasePrompt(makeTarget(), true, stacked);
+
+    expect(prompt).toContain(
+      '`feature-y` (based on `feature-x`), `feature-z` (based on `feature-y`)'
+    );
+    expect(prompt).toContain(
+      'jj git push --bookmark feature-x --bookmark feature-y --bookmark feature-z'
+    );
+    expect(prompt).toContain("jj log -r 'main@origin::'");
+    expect(prompt).not.toContain('push with `jj git push --bookmark feature-x`.');
+  });
+
+  test('rebases and pushes all stacked branches in git repositories', () => {
+    const prompt = buildPrRebasePrompt(makeTarget(), false, stacked);
+
+    expect(prompt).toContain('git rebase --onto <base branch> origin/<base branch> <branch>');
+    expect(prompt).toContain('git push --force-with-lease origin feature-x feature-y feature-z');
+  });
+
+  test('does not mention a stack when no PRs are stacked on top', () => {
+    const prompt = buildPrRebasePrompt(makeTarget(), true, []);
+
+    expect(prompt).not.toContain('stacked on top of this PR');
+    expect(prompt).toContain('jj git push --bookmark feature-x`');
+  });
+});
+
 describe('resolveSinglePullRequestTarget', () => {
   test('returns a PR target unchanged', () => {
     const target = makeTarget();

@@ -64,3 +64,39 @@ export function getStackPathToPr<T extends StackablePr>(
   }
   return path;
 }
+
+export interface StackedBranch {
+  headBranch: string;
+  baseBranch: string;
+}
+
+/**
+ * The branches of the PRs stacked on top of `prNumber`, directly or through other PRs. Each
+ * branch comes after the branch it is based on.
+ */
+export function getStackedBranchesAbovePr<T extends StackablePr>(
+  stack: readonly PrStackEntry<T>[],
+  prNumber: number
+): StackedBranch[] {
+  const start = stack.find((entry) => entry.pr.status.pr_number === prNumber)?.pr.status
+    .head_branch;
+  if (!start) {
+    return [];
+  }
+
+  const result: StackedBranch[] = [];
+  const seen = new Set([start]);
+  const queue = [start];
+  while (queue.length > 0) {
+    const parent = queue.shift()!;
+    for (const entry of stack) {
+      const { head_branch: headBranch, base_branch: baseBranch } = entry.pr.status;
+      if (baseBranch === parent && headBranch && !seen.has(headBranch)) {
+        seen.add(headBranch);
+        queue.push(headBranch);
+        result.push({ headBranch, baseBranch });
+      }
+    }
+  }
+  return result;
+}

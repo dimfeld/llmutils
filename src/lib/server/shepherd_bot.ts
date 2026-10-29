@@ -1,11 +1,12 @@
 import type { Database } from 'bun:sqlite';
 
 import { tryCanonicalizePrUrl } from '$common/github/identifier_urls.js';
+import { fetchAndUpdatePrMergeableStatus } from '$common/github/pr_status_service.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import type { TimConfig } from '$tim/configSchema.js';
 import { upsertInboxItem } from '$tim/db/inbox_item.js';
 import { getPrShepherd, setPrShepherdBotEnabled } from '$tim/db/pr_shepherd.js';
-import { getPrStatusByUrl, type PrStatusDetail } from '$tim/db/pr_status.js';
+import { getPrStatusByUrl, type PrStatusDetail, type PrStatusRow } from '$tim/db/pr_status.js';
 import {
   countLaunchedShepherdBotActions,
   countShepherdBotRunsSince,
@@ -60,6 +61,8 @@ const SESSION_END_BACKUP_WINDOW_MS = 2 * 60 * 1000;
 /** A fix of the same kind for the same head SHA is started at most this many times. */
 const MAX_FIX_ATTEMPTS_PER_SHA = 2;
 const TRIGGER_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+/** Check again this much later when GitHub has not finished computing the mergeable state. */
+const MERGEABLE_UNKNOWN_RECHECK_MS = 2 * 60 * 1000;
 
 export type ShepherdBotFixKind = 'ci_fix' | 'pr_fix' | 'pr_rebase';
 
@@ -78,6 +81,8 @@ export interface ShepherdBotRunnerOptions {
     cwd: string
   ) => Promise<SpawnTargetProcessResult>;
   resolveUsername?: () => Promise<string | null>;
+  /** Get the mergeable state of the PR from GitHub and store it in the DB. */
+  refreshMergeable?: (status: Pick<PrStatusRow, 'owner' | 'repo' | 'pr_number'>) => Promise<void>;
   isProcessAlive?: (pid: number) => boolean;
   killProcess?: (pid: number) => void;
   getWorkspacePath?: (projectId: number) => string | null;
@@ -490,11 +495,38 @@ export class ShepherdBotRunner {
           return reject('The PR has no failing checks that a CI fix can handle');
         }
         break;
-      case 'pr_rebase':
+      case 'pr_rebase': {
         if (!isPrRebaseEligible(detail)) {
           return reject('The PR has no merge conflicts');
         }
+        // The cached state can be from before a recent push, for example while an earlier
+        // session was still pushing the stack. Ask GitHub again before a rebase starts.
+        await (
+          this.options.refreshMergeable ??
+          ((status) =>
+            fetchAndUpdatePrMergeableStatus(this.db, status.owner, status.repo, status.pr_number))
+        )(detail.status);
+        const fresh = getPrStatusByUrl(this.db, detail.status.pr_url);
+        if (!fresh?.status.mergeable || fresh.status.mergeable === 'UNKNOWN') {
+          insertShepherdBotTrigger(this.db, {
+            projectId: action.project_id,
+            prStatusId: detail.status.id,
+            prUrl: detail.status.pr_url,
+            kind: 'recheck',
+            details: {
+              reason: `GitHub was still computing the merge conflicts of #${detail.status.pr_number}`,
+            },
+            dueAt: new Date(this.now().getTime() + MERGEABLE_UNKNOWN_RECHECK_MS),
+          });
+          return reject(
+            'GitHub is still computing whether the PR has merge conflicts. The bot will check again.'
+          );
+        }
+        if (!isPrRebaseEligible(fresh)) {
+          return reject('GitHub no longer reports merge conflicts for the PR');
+        }
         break;
+      }
       case 'pr_fix':
         dedupeKey = unresolvedThreadKey(detail);
         if (!dedupeKey) {

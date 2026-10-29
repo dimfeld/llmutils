@@ -344,7 +344,7 @@ ${state.json.trim() || '{}'}
 
 - \`ci_fix\`: start a CI fix session for a PR with failing checks. The session reads the CI logs, fixes the code, and pushes.
 - \`pr_fix\`: start a review-comment fix session for a PR with unresolved review threads. This session is interactive: it asks the user what to do about each comment, so the user always decides. The system notifies the user.
-- \`pr_rebase\`: start a session that resolves merge conflicts with the base branch and pushes.
+- \`pr_rebase\`: start a session that resolves merge conflicts with the base branch and pushes. The session also rebases and pushes the PRs stacked on top of that PR.
 - \`notify\`: write a message to the user's inbox about a PR. Use this when a problem needs a human decision, when you stop retrying something, or when you see a problem that you cannot fix with the other actions.
 - \`recheck\`: ask to be woken again after some minutes, for example to look again at checks that are still running. You are woken anyway when a watched PR changes or a session ends, so do not schedule a recheck only to wait for that.
 
