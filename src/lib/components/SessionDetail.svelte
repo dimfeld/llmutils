@@ -12,13 +12,14 @@
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { exportSessionAsMarkdown, generateExportFilename } from '$lib/utils/session_export.js';
 
-  import type { SessionData } from '$lib/types/session.js';
+  import type { DisplayMessage, SessionData } from '$lib/types/session.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { useUIState } from '$lib/stores/ui_state.svelte.js';
   import SessionMessage from './SessionMessage.svelte';
   import { formatMessageTimestamp } from '$lib/utils/message_formatting.js';
   import { sessionDisplayName } from '$lib/utils/session_window_title.js';
   import { summarizeHiddenToolCalls } from '$lib/utils/session_message_visibility.js';
+  import { reuseUnchangedMessages } from '$lib/utils/stable_display_messages.js';
   import { mergeConsecutiveOutputMessages } from '$lib/utils/merge_output_messages.js';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
@@ -57,9 +58,10 @@
   const windows = useSessionWindows();
   let { session, floating = false }: { session: SessionData; floating?: boolean } = $props();
   const sessionManager = useSessionManager();
-  $effect(() => {
-    sessionManager.openSession(session.connectionId);
-  });
+  // Track the id separately so that new session objects for the same session do not
+  // close and reopen the transcript stream.
+  let transcriptConnectionId = $derived(session.connectionId);
+  $effect(() => sessionManager.openSession(transcriptConnectionId));
   const uiState = useUIState();
 
   let scrollContainer: HTMLDivElement | undefined = $state();
@@ -275,11 +277,19 @@
   let showToolCalls = $derived(
     uiState.getSessionState(session.connectionId).showToolCalls ?? false
   );
-  let visibleMessages = $derived(
-    mergeConsecutiveOutputMessages(
-      summarizeHiddenToolCalls(session.messages, showLifecycleOutput, showToolCalls)
-    )
-  );
+  // Plain variable, not state: it only lets each run reuse objects from the previous run.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  let previousVisibleMessagesById = new Map<string, DisplayMessage>();
+  let visibleMessages = $derived.by(() => {
+    const next = reuseUnchangedMessages(
+      mergeConsecutiveOutputMessages(
+        summarizeHiddenToolCalls(session.messages, showLifecycleOutput, showToolCalls)
+      ),
+      previousVisibleMessagesById
+    );
+    previousVisibleMessagesById = new Map(next.map((message) => [message.id, message]));
+    return next;
+  });
 
   // This ensures that we do layout on the final messages, which helps autoscroll to continue to work when adding new
   // messages.

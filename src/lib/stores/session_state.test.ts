@@ -193,6 +193,108 @@ describe('SessionManager.openSession', () => {
   });
 });
 
+describe('SessionManager transcript streams', () => {
+  function stubEventSource(): {
+    sources: Array<{ url: string; close: ReturnType<typeof vi.fn> }>;
+  } {
+    const sources: Array<{ url: string; close: ReturnType<typeof vi.fn> }> = [];
+    vi.stubGlobal(
+      'EventSource',
+      vi.fn().mockImplementation(function (url: string): EventSource {
+        const source = { url, close: vi.fn(), addEventListener: vi.fn() };
+        sources.push(source);
+        return source as unknown as EventSource;
+      })
+    );
+    return { sources };
+  }
+
+  test('closes the stream only after every opener releases it', () => {
+    const { sources } = stubEventSource();
+    try {
+      const manager = new SessionManager();
+      manager.sessions.set('conn-1', createSession());
+      const releaseA = manager.openSession('conn-1');
+      const releaseB = manager.openSession('conn-1');
+      expect(sources).toHaveLength(1);
+
+      releaseA();
+      releaseA();
+      expect(sources[0].close).not.toHaveBeenCalled();
+      expect(manager.hasOpenTranscript('conn-1')).toBe(true);
+
+      releaseB();
+      expect(sources[0].close).toHaveBeenCalledTimes(1);
+      expect(manager.hasOpenTranscript('conn-1')).toBe(false);
+
+      // Opening again after release starts a new stream.
+      manager.openSession('conn-1')();
+      expect(sources).toHaveLength(2);
+      expect(sources[1].close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('a release from before a dismissal does not close the reopened stream', () => {
+    const { sources } = stubEventSource();
+    try {
+      const manager = new SessionManager();
+      manager.connect();
+      const main = sources[0] as unknown as { addEventListener: ReturnType<typeof vi.fn> };
+      const dismissedListener = main.addEventListener.mock.calls.find(
+        ([name]) => name === 'session:dismissed'
+      )?.[1] as (event: MessageEvent) => void;
+
+      manager.sessions.set('conn-1', createSession());
+      const staleRelease = manager.openSession('conn-1');
+      dismissedListener({ data: JSON.stringify({ connectionId: 'conn-1' }) } as MessageEvent);
+      expect(sources[1].close).toHaveBeenCalledTimes(1);
+
+      manager.sessions.set('conn-1', createSession());
+      manager.openSession('conn-1');
+      staleRelease();
+      expect(sources[2].close).not.toHaveBeenCalled();
+      expect(manager.hasOpenTranscript('conn-1')).toBe(true);
+      manager.disconnect();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test('ignores main-stream activity for sessions with an open transcript', () => {
+    const { sources } = stubEventSource();
+    try {
+      const manager = new SessionManager();
+      manager.connect();
+      const main = sources[0] as unknown as { addEventListener: ReturnType<typeof vi.fn> };
+      const activityListener = main.addEventListener.mock.calls.find(
+        ([name]) => name === 'session:activity'
+      )?.[1] as (event: MessageEvent) => void;
+
+      const open = createSession({ connectionId: 'conn-open' });
+      const closed = createSession({ connectionId: 'conn-closed' });
+      manager.sessions.set(open.connectionId, open);
+      manager.sessions.set(closed.connectionId, closed);
+      manager.openSession(open.connectionId);
+
+      for (const connectionId of [open.connectionId, closed.connectionId]) {
+        activityListener({
+          data: JSON.stringify({ connectionId, timestamp: '2026-03-18T10:05:00.000Z' }),
+        } as MessageEvent);
+      }
+
+      expect(manager.sessions.get(open.connectionId)).toBe(open);
+      expect(manager.sessions.get(closed.connectionId)?.lastMessageAt).toBe(
+        '2026-03-18T10:05:00.000Z'
+      );
+      manager.disconnect();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
 describe('SessionManager.needsAttention', () => {
   test('returns false when there are no sessions', () => {
     const manager = new SessionManager();

@@ -12,6 +12,7 @@ import {
   createSessionEventsResponse,
   createSessionTranscriptResponse,
   formatSseEvent,
+  SESSION_ACTIVITY_THROTTLE_MS,
 } from './session_routes.js';
 
 async function readSseEvent(
@@ -389,6 +390,79 @@ describe('lib/server/session_routes', () => {
 
     abortController.abort();
     await reader!.cancel();
+  });
+
+  test('createSessionEventsResponse throttles activity events per session', async () => {
+    const abortController = new AbortController();
+    const response = createSessionEventsResponse(manager, abortController.signal);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const streamState = { buffer: '' };
+
+    for (const connectionId of ['conn-a', 'conn-b']) {
+      manager.handleWebSocketConnect(connectionId, vi.fn());
+      manager.handleWebSocketMessage(connectionId, {
+        type: 'session_info',
+        command: 'agent',
+        interactive: true,
+        workspacePath: `/tmp/${connectionId}`,
+        gitRemote: 'git@example.com:repo.git',
+      });
+    }
+
+    // Log messages take their timestamp from the clock, so set it to make each one distinct.
+    const sendLog = (connectionId: string, seq: number, second: number): void => {
+      vi.setSystemTime(new Date(`2026-03-17T10:00:${String(second).padStart(2, '0')}.000Z`));
+      manager.handleWebSocketMessage(connectionId, {
+        type: 'output',
+        seq,
+        message: { type: 'log', args: [`message ${seq}`] },
+      });
+    };
+
+    sendLog('conn-a', 1, 1);
+    sendLog('conn-a', 2, 2);
+    sendLog('conn-a', 3, 3);
+    sendLog('conn-b', 1, 4);
+
+    const events: Array<{ event: string; data: unknown }> = [];
+    const readUntil = async (count: number): Promise<void> => {
+      while (events.length < count) {
+        const event = await readSseEvent(reader, decoder, streamState);
+        expect(event).not.toBeNull();
+        if (event!.event === 'session:activity') events.push(event!);
+      }
+    };
+
+    // The first activity of each session goes out at once; later ones wait for the window.
+    await readUntil(2);
+    expect(events.map((event) => event.data)).toEqual([
+      { connectionId: 'conn-a', timestamp: '2026-03-17T10:00:01.000Z' },
+      { connectionId: 'conn-b', timestamp: '2026-03-17T10:00:04.000Z' },
+    ]);
+
+    // At the end of the window, only the latest pending timestamp is sent.
+    vi.advanceTimersByTime(SESSION_ACTIVITY_THROTTLE_MS);
+    await readUntil(3);
+    expect(events[2].data).toEqual({
+      connectionId: 'conn-a',
+      timestamp: '2026-03-17T10:00:03.000Z',
+    });
+
+    // A quiet window ends the throttle, so the next activity goes out at once.
+    vi.advanceTimersByTime(SESSION_ACTIVITY_THROTTLE_MS);
+    sendLog('conn-a', 4, 5);
+    await readUntil(4);
+    expect(events[3].data).toEqual({
+      connectionId: 'conn-a',
+      timestamp: '2026-03-17T10:00:05.000Z',
+    });
+
+    // Abort clears the throttle timer that the last activity started.
+    const timersBeforeAbort = vi.getTimerCount();
+    abortController.abort();
+    expect(vi.getTimerCount()).toBe(timersBeforeAbort - 1);
+    await reader.cancel();
   });
 
   test('createSessionEventsResponse forwards every session event type and cleans up subscriptions', async () => {

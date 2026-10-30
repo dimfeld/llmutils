@@ -54,6 +54,8 @@ export async function invokeQuery<TArg, TResult>(
         },
       } as never,
     },
-    () => fn(arg as TArg)
+    // Await inside the store: query resources are lazy, and batched queries read the
+    // request store only when the result is first awaited.
+    async () => await fn(arg as TArg)
   );
 }

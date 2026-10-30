@@ -239,6 +239,50 @@ describe('applySessionEvent', () => {
     });
   });
 
+  test('session:message skips duplicates, also after the transcript was trimmed', () => {
+    const session = createSession();
+    session.messages = [];
+    const state = createState(session);
+    const send = (id: string, seq: number): void => {
+      applySessionEvent(
+        'session:message',
+        {
+          connectionId: session.connectionId,
+          message: createMessage({ id, seq, timestamp: `2026-03-17T10:00:0${seq % 10}.000Z` }),
+        },
+        state
+      );
+    };
+
+    for (let seq = 1; seq <= MAX_CLIENT_MESSAGES + 1; seq += 1) send(`msg-${seq}`, seq);
+    send(`msg-${MAX_CLIENT_MESSAGES + 1}`, MAX_CLIENT_MESSAGES + 1);
+    expect(state.sessions.get(session.connectionId)!.messages).toHaveLength(MAX_CLIENT_MESSAGES);
+
+    // msg-1 was trimmed, so it is no longer a known id and is appended again.
+    send('msg-1', 1);
+    const messages = state.sessions.get(session.connectionId)!.messages;
+    expect(messages).toHaveLength(MAX_CLIENT_MESSAGES);
+    expect(messages.at(-1)).toMatchObject({ id: 'msg-1' });
+    expect(
+      messages.filter((message) => message.id === `msg-${MAX_CLIENT_MESSAGES + 1}`)
+    ).toHaveLength(1);
+  });
+
+  test('session:message sets lastMessageAt and replaced transcripts reset known ids', () => {
+    const session = createSession();
+    const state = createState(session);
+    const message = createMessage({ id: 'msg-x', seq: 9, timestamp: '2026-03-17T10:09:00.000Z' });
+
+    applySessionEvent('session:message', { connectionId: session.connectionId, message }, state);
+    expect(state.sessions.get(session.connectionId)!.lastMessageAt).toBe(
+      '2026-03-17T10:09:00.000Z'
+    );
+
+    applySessionEvent('session:transcript', { session: { ...session, messages: [] } }, state);
+    applySessionEvent('session:message', { connectionId: session.connectionId, message }, state);
+    expect(state.sessions.get(session.connectionId)!.messages.map((m) => m.id)).toEqual(['msg-x']);
+  });
+
   test('metadata-only session updates preserve local messages', () => {
     const session = createSession();
     const state = createState(session);

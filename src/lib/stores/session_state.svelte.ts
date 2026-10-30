@@ -65,6 +65,7 @@ export class SessionManager {
 
   eventSource: EventSource | null = null;
   private transcriptSources = new Map<string, EventSource>();
+  private transcriptRefCounts = new Map<string, number>();
   reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   reconnectDelay = 1000;
   readonly MAX_RECONNECT_DELAY = 30000;
@@ -248,8 +249,15 @@ export class SessionManager {
       },
     };
 
-    // The main stream carries notification messages only. Transcript streams own message state.
-    if (eventName !== 'session:message') applySessionEvent(eventName, parsed, state);
+    // The main stream carries notification messages only. Transcript streams own message
+    // state, and their messages already advance the session, so activity events for an
+    // open transcript would only cause a second update of the same session.
+    const event = toSessionClientEvent(eventName, parsed);
+    const ownedByTranscript =
+      event.eventName === 'session:message' ||
+      (event.eventName === 'session:activity' &&
+        this.transcriptSources.has(event.payload.connectionId));
+    if (!ownedByTranscript) applySessionEvent(eventName, parsed, state);
     this.reconcileAcknowledgedNotifications(eventName, parsed);
 
     for (const callback of this.eventCallbacks) {
@@ -407,29 +415,59 @@ export class SessionManager {
     this.connectSse();
   }
 
-  openSession(connectionId: string): void {
-    if (this.transcriptSources.has(connectionId)) return;
-    const source = new EventSource(
-      `${base}/api/sessions/events?connectionId=${encodeURIComponent(connectionId)}`
+  /**
+   * Subscribe to the full transcript of a session. Returns a release function. The
+   * transcript stream closes when every caller that opened it has released it, so
+   * idle streams do not use up the browser's per-origin connection limit.
+   */
+  openSession(connectionId: string): () => void {
+    this.transcriptRefCounts.set(
+      connectionId,
+      (this.transcriptRefCounts.get(connectionId) ?? 0) + 1
     );
-    this.transcriptSources.set(connectionId, source);
-    source.addEventListener('session:transcript', (event: MessageEvent) => {
-      const payload = parseSessionEventPayload<SessionClientEventMap['session:transcript']>(
-        event.data
+    if (!this.transcriptSources.has(connectionId)) {
+      const source = new EventSource(
+        `${base}/api/sessions/events?connectionId=${encodeURIComponent(connectionId)}`
       );
-      if (payload) this.applyTranscriptEvent('session:transcript', payload);
-    });
-    source.addEventListener('session:message', (event: MessageEvent) => {
-      const payload = parseSessionEventPayload<SessionClientEventMap['session:message']>(
-        event.data
-      );
-      if (payload) this.applyTranscriptEvent('session:message', payload);
-    });
+      this.transcriptSources.set(connectionId, source);
+      source.addEventListener('session:transcript', (event: MessageEvent) => {
+        const payload = parseSessionEventPayload<SessionClientEventMap['session:transcript']>(
+          event.data
+        );
+        if (payload) this.applyTranscriptEvent('session:transcript', payload);
+      });
+      source.addEventListener('session:message', (event: MessageEvent) => {
+        const payload = parseSessionEventPayload<SessionClientEventMap['session:message']>(
+          event.data
+        );
+        if (payload) this.applyTranscriptEvent('session:message', payload);
+      });
+    }
+
+    // A release from before the stream was closed and opened again must not affect the new one.
+    const openedSource = this.transcriptSources.get(connectionId);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (this.transcriptSources.get(connectionId) !== openedSource) return;
+      const remaining = (this.transcriptRefCounts.get(connectionId) ?? 0) - 1;
+      if (remaining > 0) {
+        this.transcriptRefCounts.set(connectionId, remaining);
+      } else {
+        this.closeTranscript(connectionId);
+      }
+    };
+  }
+
+  hasOpenTranscript(connectionId: string): boolean {
+    return this.transcriptSources.has(connectionId);
   }
 
   private closeTranscript(connectionId: string): void {
     this.transcriptSources.get(connectionId)?.close();
     this.transcriptSources.delete(connectionId);
+    this.transcriptRefCounts.delete(connectionId);
   }
 
   private applyTranscriptEvent<TEventName extends 'session:transcript' | 'session:message'>(
@@ -453,6 +491,7 @@ export class SessionManager {
   disconnect(): void {
     for (const source of this.transcriptSources.values()) source.close();
     this.transcriptSources.clear();
+    this.transcriptRefCounts.clear();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

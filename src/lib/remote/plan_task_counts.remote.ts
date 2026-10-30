@@ -9,17 +9,30 @@ const planUuidSchema = z.object({
   planUuid: z.string().min(1),
 });
 
-export const getPlanTaskCounts = query(planUuidSchema, async ({ planUuid }) => {
+/** Batched so that a list of sessions loads all of its counts in one request. */
+export const getPlanTaskCounts = query.batch(planUuidSchema, async (inputs) => {
   const { db } = await getServerContext();
-  const plan = getPlanByUuid(db, planUuid);
-  if (!plan) {
-    error(404, 'Plan not found');
+  const counts = new Map<string, { done: number; total: number } | null>();
+  for (const { planUuid } of inputs) {
+    if (counts.has(planUuid)) continue;
+    const plan = getPlanByUuid(db, planUuid);
+    if (!plan) {
+      counts.set(planUuid, null);
+      continue;
+    }
+
+    const tasks = getPlanTasksByUuid(db, planUuid);
+    counts.set(planUuid, {
+      done: tasks.filter((t) => t.done === 1).length,
+      total: tasks.length,
+    });
   }
 
-  const tasks = getPlanTasksByUuid(db, planUuid);
-
-  const total = tasks.length;
-  const done = tasks.filter((t) => t.done === 1).length;
-
-  return { done, total };
+  return ({ planUuid }) => {
+    const result = counts.get(planUuid);
+    if (!result) {
+      error(404, 'Plan not found');
+    }
+    return result;
+  };
 });

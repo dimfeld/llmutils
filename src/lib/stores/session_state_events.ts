@@ -1,4 +1,5 @@
 import type {
+  DisplayMessage,
   SessionClientEvent,
   SessionData,
   SessionClientEventMap,
@@ -76,6 +77,22 @@ function syncSessionListIndex(
     updatedSessions[existingIndex] = next;
     index.set(nextKey, updatedSessions);
   }
+}
+
+/**
+ * Message ids for each messages array, so that the duplicate check for an incoming
+ * message does not scan the whole transcript. A replaced array gets a new set the
+ * next time it is used.
+ */
+const messageIdsByArray = new WeakMap<DisplayMessage[], Set<string>>();
+
+function getMessageIds(messages: DisplayMessage[]): Set<string> {
+  let ids = messageIdsByArray.get(messages);
+  if (!ids) {
+    ids = new Set(messages.map((message) => message.id));
+    messageIdsByArray.set(messages, ids);
+  }
+  return ids;
 }
 
 /** Maximum number of messages retained per session in the client-side store. */
@@ -191,14 +208,20 @@ export function applySessionEvent<TEventName extends SessionClientEventName>(
     }
     case 'session:message': {
       const session = state.sessions.get(event.payload.connectionId);
-      if (session && !session.messages.some((message) => message.id === event.payload.message.id)) {
-        session.messages.push(event.payload.message);
-        if (session.messages.length > MAX_CLIENT_MESSAGES) {
-          session.messages = session.messages.slice(-MAX_CLIENT_MESSAGES);
-        }
-        // Re-set to trigger SvelteMap reactivity
-        setSession(state, { ...session });
+      if (!session) break;
+      const ids = getMessageIds(session.messages);
+      const { message } = event.payload;
+      if (ids.has(message.id)) break;
+
+      session.messages.push(message);
+      ids.add(message.id);
+      if (session.messages.length > MAX_CLIENT_MESSAGES) {
+        // Trim in place so the id set stays attached to the same array.
+        const removed = session.messages.splice(0, session.messages.length - MAX_CLIENT_MESSAGES);
+        for (const removedMessage of removed) ids.delete(removedMessage.id);
       }
+      // Re-set to trigger SvelteMap reactivity
+      setSession(state, { ...session, lastMessageAt: message.timestamp });
       break;
     }
     case 'session:transcript': {

@@ -33,11 +33,18 @@
   let relativeTime = $derived(formatRelativeTime(lastUpdatedAt));
   let canDismiss = $derived(session.status !== 'active');
   let needsAttention = $derived(sessionManager.hasSessionAttention(session));
-  let taskCounts = $derived(
-    session.sessionInfo.planUuid
-      ? await getPlanTaskCounts({ planUuid: session.sessionInfo.planUuid })
-      : null
+  let planUuid = $derived(session.sessionInfo.planUuid);
+  let liveTaskCounts = $derived.by(() => {
+    const tasks = session.planTasks;
+    if (tasks.length === 0) return null;
+    return { done: tasks.filter((task) => task.done).length, total: tasks.length };
+  });
+  // Read the query resource instead of awaiting it, so that a row never suspends the
+  // session list while the counts load. The live plan tasks take precedence when present.
+  let queriedTaskCounts = $derived(
+    planUuid && !liveTaskCounts ? (getPlanTaskCounts({ planUuid }).current ?? null) : null
   );
+  let taskCounts = $derived(liveTaskCounts ?? queriedTaskCounts);
   let workspaceLabel = $derived.by(() => {
     const workspacePath = session.sessionInfo.workspacePath;
     if (!workspacePath) {

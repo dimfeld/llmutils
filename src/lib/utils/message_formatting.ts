@@ -4,9 +4,21 @@ import type {
   StructuredMessagePayload,
 } from '$lib/types/session.js';
 
-/** Format a message timestamp into the string shown next to each message. */
+const MAX_CACHED_TIMESTAMPS = 20_000;
+const formattedTimestamps = new Map<string, string>();
+
+/**
+ * Format a message timestamp into the string shown next to each message. The transcript
+ * view formats every message on each update, so cache the results.
+ */
 export function formatMessageTimestamp(timestamp: string): string {
-  return new Date(timestamp).toLocaleTimeString();
+  let formatted = formattedTimestamps.get(timestamp);
+  if (formatted === undefined) {
+    formatted = new Date(timestamp).toLocaleTimeString();
+    if (formattedTimestamps.size >= MAX_CACHED_TIMESTAMPS) formattedTimestamps.clear();
+    formattedTimestamps.set(timestamp, formatted);
+  }
+  return formatted;
 }
 
 export type DisplayCategory =

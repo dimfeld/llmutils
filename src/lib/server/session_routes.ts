@@ -7,6 +7,25 @@ const SSE_HEADERS = {
   'Content-Type': 'text/event-stream',
 } as const;
 
+/** Minimum time between `session:activity` events for one session on one stream. */
+export const SESSION_ACTIVITY_THROTTLE_MS = 1000;
+
+function getEventConnectionId(payload: object): string | null {
+  if ('connectionId' in payload && typeof payload.connectionId === 'string') {
+    return payload.connectionId;
+  }
+  if (
+    'session' in payload &&
+    payload.session != null &&
+    typeof payload.session === 'object' &&
+    'connectionId' in payload.session &&
+    typeof payload.session.connectionId === 'string'
+  ) {
+    return payload.session.connectionId;
+  }
+  return null;
+}
+
 export function formatSseEvent(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
@@ -33,6 +52,7 @@ export function createSessionEventsResponse(
           manager.unregisterSSESubscriber();
         }
         unsubscribe();
+        clearActivityThrottles();
         signal?.removeEventListener('abort', onAbort);
 
         if (!skipControllerClose) {
@@ -46,6 +66,52 @@ export function createSessionEventsResponse(
       cleanup = close;
 
       const onAbort = () => close();
+
+      // Busy sessions can produce many messages per second. Each activity event makes the
+      // browser rebuild all its session-wide state, so send at most one per session per
+      // throttle window and always send the latest timestamp at the end of the window.
+      const activityThrottles = new Map<
+        string,
+        { timer: ReturnType<typeof setTimeout> | null; pendingTimestamp: string | null }
+      >();
+      const sendThrottledActivity = (connectionId: string, timestamp: string): void => {
+        const throttle = activityThrottles.get(connectionId);
+        if (throttle) {
+          throttle.pendingTimestamp = timestamp;
+          return;
+        }
+
+        send('session:activity', { connectionId, timestamp });
+        const entry: {
+          timer: ReturnType<typeof setTimeout> | null;
+          pendingTimestamp: string | null;
+        } = { timer: null, pendingTimestamp: null };
+        const flush = (): void => {
+          if (entry.pendingTimestamp == null) {
+            activityThrottles.delete(connectionId);
+            return;
+          }
+          send('session:activity', { connectionId, timestamp: entry.pendingTimestamp });
+          entry.pendingTimestamp = null;
+          entry.timer = setTimeout(flush, SESSION_ACTIVITY_THROTTLE_MS);
+        };
+        entry.timer = setTimeout(flush, SESSION_ACTIVITY_THROTTLE_MS);
+        activityThrottles.set(connectionId, entry);
+      };
+      // Send a pending activity event now, so it never arrives after a later event for the
+      // same session.
+      const flushPendingActivity = (connectionId: string): void => {
+        const entry = activityThrottles.get(connectionId);
+        if (entry?.pendingTimestamp == null) return;
+        send('session:activity', { connectionId, timestamp: entry.pendingTimestamp });
+        entry.pendingTimestamp = null;
+      };
+      const clearActivityThrottles = (): void => {
+        for (const entry of activityThrottles.values()) {
+          if (entry.timer) clearTimeout(entry.timer);
+        }
+        activityThrottles.clear();
+      };
 
       const send = (event: string, data: unknown) => {
         if (closed) {
@@ -84,7 +150,13 @@ export function createSessionEventsResponse(
                 }
               : payload;
         if (snapshotSent) {
-          send(outgoingEvent, outgoingPayload);
+          if (outgoingEvent === 'session:activity' && 'message' in payload) {
+            sendThrottledActivity(payload.connectionId, payload.message.timestamp);
+          } else {
+            const connectionId = getEventConnectionId(payload);
+            if (connectionId) flushPendingActivity(connectionId);
+            send(outgoingEvent, outgoingPayload);
+          }
         } else {
           buffered.push({ event: outgoingEvent, data: outgoingPayload });
         }
