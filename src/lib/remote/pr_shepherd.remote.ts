@@ -10,7 +10,9 @@ import { getGitHubUsername } from '$common/github/user.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
 import { getServerContext } from '$lib/server/init.js';
 import { getProjectIdsForPrUrls } from '$lib/server/pr_event_utils.js';
+import { spawnPrRebaseForPrProcess } from '$lib/server/plan_actions.js';
 import { updatePrShepherdNotifications } from '$lib/server/pr_shepherd.js';
+import { launchPrTimCommand, type PrTimCommandLaunchResult } from '$lib/server/pr_tim_launch.js';
 import { getSessionManager, getShepherdBotRunner } from '$lib/server/session_context.js';
 import {
   addStackPathToShepherdBot,
@@ -31,6 +33,7 @@ import {
   type ShepherdBotRunStatus,
 } from '$tim/db/shepherd_bot.js';
 import { getShepherdBotStatePaths, readShepherdBotState } from '$tim/shepherd_bot/settings.js';
+import { findOpenStackForPr, getStackedBranchesAbovePr } from '$tim/shepherd_bot/stack.js';
 
 const prTargetSchema = z.object({
   projectId: z.number().int().positive(),
@@ -100,13 +103,32 @@ export const setPrShepherded = command(
   }
 );
 
+export type UpdateShepherdedPrBranchResult =
+  | { status: 'updated' }
+  | (PrTimCommandLaunchResult & { stackRebase: true });
+
 export const updateShepherdedPrBranch = command(
   prTargetSchema.extend({ method: z.enum(['rebase', 'merge']) }),
-  async ({ projectId, prNumber, method }): Promise<{ ok: true }> => {
+  async ({ projectId, prNumber, method }): Promise<UpdateShepherdedPrBranchResult> => {
     const { db } = await getServerContext();
     const pr = await loadOwnOpenPr(projectId, prNumber);
     if (!resolveGitHubToken()) {
       error(400, 'GITHUB_TOKEN not configured');
+    }
+
+    // GitHub can rebase only one branch. When other PRs are stacked on top of this one, run
+    // `tim pr rebase` so that the stacked branches move too.
+    if (
+      method === 'rebase' &&
+      getStackedBranchesAbovePr(findOpenStackForPr(db, pr.status), prNumber).length > 0
+    ) {
+      const result = await launchPrTimCommand(
+        'pr-rebase',
+        projectId,
+        prNumber,
+        spawnPrRebaseForPrProcess
+      );
+      return { ...result, stackRebase: true };
     }
 
     try {
@@ -127,7 +149,7 @@ export const updateShepherdedPrBranch = command(
       console.warn(`[pr_shepherd] Failed to refresh ${pr.status.pr_url} after branch update`, err);
     }
     notifyPrChanged(db, projectId, pr.status.pr_url);
-    return { ok: true };
+    return { status: 'updated' };
   }
 );
 

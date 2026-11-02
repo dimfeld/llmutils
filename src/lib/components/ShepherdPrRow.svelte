@@ -184,11 +184,17 @@
     actionError = null;
     updatingBranch = method;
     try {
-      await updateShepherdedPrBranch({
+      const result = await updateShepherdedPrBranch({
         projectId: pr.projectId,
         prNumber: pr.status.pr_number,
         method,
       });
+      if (result.status !== 'updated') {
+        // The PR has stacked PRs, so the server started a rebase session for the whole stack.
+        const state = getFixStartResultState(result.status, 'pr');
+        launched.rebase = state.fixLaunched;
+        actionError = state.message;
+      }
     } catch (err) {
       actionError = extractRemoteErrorMessage(err);
     } finally {
@@ -439,19 +445,33 @@
       {/if}
 
       {#if attentionKinds.has('behind_base')}
+        {#if rebaseButton.activeSessionId && !attentionKinds.has('conflicts')}
+          <ActiveSessionLink
+            projectId={projectIdParam}
+            connectionId={rebaseButton.activeSessionId}
+            class={neutralAction}
+          />
+        {:else}
+          <button
+            type="button"
+            class={neutralAction}
+            disabled={updatingBranch !== null || rebaseButton.disabled}
+            onclick={() => handleUpdateBranch('rebase')}
+            title="Rebase this PR and the PRs stacked on top of it on the base branch. This starts new CI runs."
+          >
+            {#if updatingBranch === 'rebase'}
+              Rebasing...
+            {:else if launched.rebase}
+              Rebase Started
+            {:else}
+              Rebase on Base
+            {/if}
+          </button>
+        {/if}
         <button
           type="button"
           class={neutralAction}
-          disabled={updatingBranch !== null}
-          onclick={() => handleUpdateBranch('rebase')}
-          title="Rebase this PR on its base branch with GitHub. This starts new CI runs."
-        >
-          {updatingBranch === 'rebase' ? 'Rebasing...' : 'Rebase on Base'}
-        </button>
-        <button
-          type="button"
-          class={neutralAction}
-          disabled={updatingBranch !== null}
+          disabled={updatingBranch !== null || rebaseButton.disabled}
           onclick={() => handleUpdateBranch('merge')}
           title="Merge the base branch into this PR with GitHub. This starts new CI runs."
         >

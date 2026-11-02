@@ -46,6 +46,7 @@ import {
   type PrFixTarget,
   type PullRequestFixTarget,
 } from './pr.js';
+import { tryCleanStackRebase } from './pr_stack_rebase.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -339,6 +340,19 @@ export async function executePrRebaseCommand({
     if (roundTripContext) {
       await runPreExecutionWorkspaceSync(roundTripContext);
     }
+
+    // Most rebases have no conflicts, so try a rebase without an agent first.
+    const cleanRebase = await tryCleanStackRebase(
+      currentBaseDir,
+      prTarget,
+      stackedBranches,
+      usingJj
+    );
+    if (cleanRebase.status === 'pushed') {
+      log(`Rebased and pushed ${cleanRebase.branches.join(', ')} without conflicts.`);
+      return;
+    }
+    log(`Starting an agent to finish the rebase. ${cleanRebase.reason}.`);
 
     const rebasePrompt = buildPrRebasePrompt(prTarget, usingJj, stackedBranches);
     const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
