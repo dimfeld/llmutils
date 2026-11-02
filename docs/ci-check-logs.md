@@ -134,6 +134,23 @@ Behavior worth knowing:
 Full logs can be tens of megabytes. This layer only stores them on disk; excerpting them for a
 prompt is the job of the caller.
 
+## Rerunning cancelled checks
+
+`src/common/github/rerun_checks.ts` has `rerunActionsChecks(octokit, owner, repo, checks)`. It
+parses each check's `detailsUrl` with `parseActionsDetailsUrl`, groups the checks by workflow
+run, and calls `POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs` once for
+each run. Use one call for each run: a rerun of one job starts a new run attempt, and then
+GitHub refuses reruns of other jobs from the old attempt. A run that has not finished is not
+rerun (GitHub refuses it), and its checks go into `stillRunning`. Checks that are not Actions
+jobs of the same repository go into `unsupported`.
+
+Callers get cancelled checks from `getCancelledChecks` in `src/lib/utils/pr_shepherd.ts`.
+`classifyCheckRun` still counts a cancelled check as passing, so the check rollup and
+`tim pr fix-ci` do not treat it as a failure. The shepherd evaluation adds a separate
+`checks_cancelled` attention item, which blocks only when a required check is cancelled. The
+**Rerun Cancelled** button (`rerunCancelledPrChecks`) and the shepherd bot runner
+(`ShepherdBotRunner.rerunCancelledChecks`, `rerun_checks` actions) use this module.
+
 ## The `tim pr fix-ci` command
 
 `src/tim/commands/ci_fix.ts` holds the command. The internal and headless command name is

@@ -21,7 +21,14 @@ export type ShepherdBotTriggerKind =
   /** The user added PRs to the bot. */
   | 'prs_added';
 
-export type ShepherdBotActionKind = 'ci_fix' | 'pr_fix' | 'pr_rebase' | 'notify' | 'recheck';
+export type ShepherdBotActionKind =
+  | 'ci_fix'
+  | 'pr_fix'
+  | 'pr_rebase'
+  | 'notify'
+  | 'recheck'
+  /** The server reran cancelled checks without a bot run. */
+  | 'rerun_checks';
 
 export type ShepherdBotActionStatus = 'requested' | 'launched' | 'rejected' | 'failed' | 'done';
 
@@ -400,7 +407,10 @@ export function listRequestedShepherdBotActions(db: Database): ShepherdBotAction
     .all() as ShepherdBotActionRow[];
 }
 
-/** Count launched actions of one kind for a PR, optionally for one head SHA or dedupe key. */
+/**
+ * Count launched actions of one kind for a PR, optionally for one head SHA or dedupe key.
+ * `statuses` replaces the default `launched` status filter.
+ */
 export function countLaunchedShepherdBotActions(
   db: Database,
   params: {
@@ -408,10 +418,16 @@ export function countLaunchedShepherdBotActions(
     kind: ShepherdBotActionKind;
     headSha?: string | null;
     dedupeKey?: string | null;
+    statuses?: readonly ShepherdBotActionStatus[];
   }
 ): number {
-  const conditions = [`status = 'launched'`, 'pr_status_id = ?', 'kind = ?'];
-  const values: Array<string | number> = [params.prStatusId, params.kind];
+  const statuses = params.statuses ?? ['launched'];
+  const conditions = [
+    `status IN (${statuses.map(() => '?').join(', ')})`,
+    'pr_status_id = ?',
+    'kind = ?',
+  ];
+  const values: Array<string | number> = [...statuses, params.prStatusId, params.kind];
   if (params.headSha != null) {
     conditions.push('head_sha = ?');
     values.push(params.headSha);

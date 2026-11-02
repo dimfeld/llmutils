@@ -31,7 +31,9 @@ export interface ShepherdBotPrSnapshot {
 
 /** `detail` must already have the required-check rollup state applied. */
 export function buildShepherdBotSnapshot(
-  detail: Pick<PrStatusDetail, 'status' | 'checks' | 'reviews' | 'reviewThreads'>
+  detail: Pick<PrStatusDetail, 'status' | 'checks' | 'reviews' | 'reviewThreads'> & {
+    requiredCheckNames: string[];
+  }
 ): ShepherdBotPrSnapshot {
   const { status } = detail;
   return {

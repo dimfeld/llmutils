@@ -4,6 +4,7 @@ import type { PrReviewRow, PrStatusRow, PrReviewThreadDetail } from '$tim/db/pr_
 import {
   buildShepherdList,
   evaluatePrShepherd,
+  getCancelledChecks,
   getPrShepherdNotificationFlags,
   groupPrsByMergedDay,
   groupPrsIntoStacks,
@@ -83,7 +84,18 @@ function makePr(
     status: makeStatus(statusOverrides),
     reviews: [humanApproval],
     reviewThreads: [],
+    checks: [],
+    requiredCheckNames: [],
     ...extra,
+  };
+}
+
+function makeCheck(name: string, conclusion: string | null): PrShepherdInput['checks'][number] {
+  return {
+    name,
+    conclusion,
+    details_url: `https://github.com/example/repo/actions/runs/1/job/${name.length}`,
+    completed_at: '2026-01-01T00:00:00.000Z',
   };
 }
 
@@ -164,12 +176,76 @@ describe('evaluatePrShepherd', () => {
     ).toBe('waiting_checks');
   });
 
+  test('a cancelled required check blocks ready', () => {
+    const evaluation = evaluatePrShepherd(
+      makePr(
+        {},
+        {
+          checks: [makeCheck('test', 'cancelled'), makeCheck('lint', 'success')],
+          requiredCheckNames: ['test', 'lint'],
+        }
+      )
+    );
+    expect(evaluation).toEqual({
+      status: 'needs_attention',
+      attention: [{ kind: 'checks_cancelled', label: '1 check cancelled', blocking: true }],
+    });
+  });
+
+  test('a cancelled check that is not required is only a hint', () => {
+    const evaluation = evaluatePrShepherd(
+      makePr(
+        {},
+        {
+          checks: [makeCheck('preview', 'cancelled'), makeCheck('test', 'cancelled')],
+          requiredCheckNames: ['lint'],
+        }
+      )
+    );
+    expect(evaluation).toEqual({
+      status: 'ready',
+      attention: [{ kind: 'checks_cancelled', label: '2 checks cancelled', blocking: false }],
+    });
+  });
+
+  test('a cancelled check without required-check configuration is only a hint', () => {
+    const evaluation = evaluatePrShepherd(makePr({}, { checks: [makeCheck('test', 'cancelled')] }));
+    expect(evaluation.status).toBe('ready');
+    expect(evaluation.attention.map((item) => item.blocking)).toEqual([false]);
+  });
+
   test('PR without a human approval waits for review', () => {
     expect(evaluatePrShepherd(makePr({}, { reviews: [] })).status).toBe('waiting_review');
     expect(
       evaluatePrShepherd(makePr({}, { reviews: [{ ...humanApproval, author: 'helper[bot]' }] }))
         .status
     ).toBe('waiting_review');
+  });
+});
+
+describe('getCancelledChecks', () => {
+  test('returns only cancelled checks and marks the required ones', () => {
+    const checks = [
+      makeCheck('test', 'cancelled'),
+      makeCheck('lint', 'failure'),
+      makeCheck('build', 'success'),
+      makeCheck('preview', 'cancelled'),
+      makeCheck('deploy', null),
+    ];
+    expect(getCancelledChecks({ checks, requiredCheckNames: ['test', 'lint'] })).toEqual([
+      {
+        name: 'test',
+        detailsUrl: checks[0].details_url,
+        completedAt: checks[0].completed_at,
+        required: true,
+      },
+      {
+        name: 'preview',
+        detailsUrl: checks[3].details_url,
+        completedAt: checks[3].completed_at,
+        required: false,
+      },
+    ]);
   });
 });
 

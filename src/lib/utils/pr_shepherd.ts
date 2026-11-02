@@ -21,6 +21,7 @@ export type PrShepherdAttentionKind =
   | 'ci_failed'
   | 'changes_requested'
   | 'unresolved_threads'
+  | 'checks_cancelled'
   | 'behind_base';
 
 export interface PrShepherdAttentionItem {
@@ -35,7 +36,14 @@ export interface PrShepherdEvaluation {
   attention: PrShepherdAttentionItem[];
 }
 
-export type PrShepherdInput = Pick<PrStatusDetail, 'status' | 'reviews' | 'reviewThreads'>;
+export type PrShepherdInput = Pick<PrStatusDetail, 'status' | 'reviews' | 'reviewThreads'> & {
+  checks: Pick<
+    PrStatusDetail['checks'][number],
+    'name' | 'conclusion' | 'details_url' | 'completed_at'
+  >[];
+  /** The checks that branch protection or rulesets require. Empty when nothing is required. */
+  requiredCheckNames: string[];
+};
 
 /**
  * Flags that produce a notification when they become true. Other states are reported
@@ -63,6 +71,31 @@ export function summarizeCheckRollup(
     default:
       return 'none';
   }
+}
+
+export interface CancelledCheck {
+  name: string;
+  detailsUrl: string | null;
+  completedAt: string | null;
+  required: boolean;
+}
+
+/**
+ * The checks whose latest run was cancelled. GitHub does not merge a PR while a required
+ * check is cancelled, but the check rollup counts a cancelled check as not blocking.
+ */
+export function getCancelledChecks(
+  pr: Pick<PrShepherdInput, 'checks' | 'requiredCheckNames'>
+): CancelledCheck[] {
+  const required = new Set(pr.requiredCheckNames);
+  return pr.checks
+    .filter((check) => check.conclusion === 'cancelled')
+    .map((check) => ({
+      name: check.name,
+      detailsUrl: check.details_url,
+      completedAt: check.completed_at,
+      required: required.has(check.name),
+    }));
 }
 
 function plural(count: number, noun: string): string {
@@ -99,6 +132,15 @@ export function evaluatePrShepherd(pr: PrShepherdInput): PrShepherdEvaluation {
       kind: 'unresolved_threads',
       label: plural(unresolvedThreads, 'unresolved thread'),
       blocking: true,
+    });
+  }
+
+  const cancelledChecks = getCancelledChecks(pr);
+  if (cancelledChecks.length > 0) {
+    attention.push({
+      kind: 'checks_cancelled',
+      label: `${plural(cancelledChecks.length, 'check')} cancelled`,
+      blocking: cancelledChecks.some((check) => check.required),
     });
   }
 

@@ -76,6 +76,7 @@
     pr_rebase: 'Fix conflicts',
     notify: 'Notify',
     recheck: 'Check again',
+    rerun_checks: 'Rerun cancelled checks',
   };
 
   function actionStatusClass(action: ShepherdBotActionSummary): string {

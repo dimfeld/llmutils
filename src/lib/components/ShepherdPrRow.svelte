@@ -9,6 +9,7 @@
   import {
     addPrStackToShepherdBot,
     removePrStackFromShepherdBot,
+    rerunCancelledPrChecks,
     setPrShepherded,
     updateShepherdedPrBranch,
   } from '$lib/remote/pr_shepherd.remote.js';
@@ -68,6 +69,8 @@
   let starting = $state<Record<LaunchAction, boolean>>({ fix: false, ci: false, rebase: false });
   let launched = $state<Record<LaunchAction, boolean>>({ fix: false, ci: false, rebase: false });
   let updatingBranch = $state<'rebase' | 'merge' | null>(null);
+  let rerunningChecks = $state(false);
+  let actionMessage = $state<string | null>(null);
   let togglingShepherd = $state(false);
   let togglingBot = $state(false);
   let actionError = $state<string | null>(null);
@@ -199,6 +202,26 @@
       actionError = extractRemoteErrorMessage(err);
     } finally {
       updatingBranch = null;
+    }
+  }
+
+  async function handleRerunCancelledChecks(): Promise<void> {
+    if (rerunningChecks) {
+      return;
+    }
+    actionError = null;
+    actionMessage = null;
+    rerunningChecks = true;
+    try {
+      const result = await rerunCancelledPrChecks({
+        projectId: pr.projectId,
+        prNumber: pr.status.pr_number,
+      });
+      actionMessage = result.message;
+    } catch (err) {
+      actionError = extractRemoteErrorMessage(err);
+    } finally {
+      rerunningChecks = false;
     }
   }
 
@@ -421,6 +444,22 @@
         {/if}
       {/if}
 
+      {#if attentionKinds.has('checks_cancelled')}
+        <button
+          type="button"
+          class={evaluation.attention.some(
+            (item) => item.kind === 'checks_cancelled' && item.blocking
+          )
+            ? redAction
+            : neutralAction}
+          disabled={rerunningChecks}
+          onclick={handleRerunCancelledChecks}
+          title="Run the cancelled GitHub Actions checks again"
+        >
+          {rerunningChecks ? 'Rerunning...' : 'Rerun Cancelled'}
+        </button>
+      {/if}
+
       {#if attentionKinds.has('unresolved_threads')}
         {#if fixButton.activeSessionId}
           <ActiveSessionLink
@@ -506,5 +545,7 @@
 
   {#if actionError}
     <p class="pl-1 text-xs text-red-700 dark:text-red-400">{actionError}</p>
+  {:else if actionMessage}
+    <p class="pl-1 text-xs text-muted-foreground">{actionMessage}</p>
   {/if}
 </li>

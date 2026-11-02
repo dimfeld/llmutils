@@ -36,7 +36,9 @@ import {
   ShepherdBotRunner,
   type ShepherdBotSessionManager,
 } from './shepherd_bot.js';
+import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { getPrStatusByUrl, updatePrMergeableAndReviewDecision } from '$tim/db/pr_status.js';
+import type { RerunChecksResult } from '$common/github/rerun_checks.js';
 import { clearPrLaunchLock } from './launch_lock.js';
 
 describe('lib/server/shepherd_bot', () => {
@@ -538,6 +540,155 @@ describe('lib/server/shepherd_bot', () => {
       const triggers = listPendingShepherdBotTriggers(db, projectId);
       expect(triggers).toHaveLength(1);
       expect(JSON.parse(triggers[0].details!)).toMatchObject({ outcome: 'unknown' });
+    });
+  });
+
+  describe('rerunning cancelled checks', () => {
+    const rerunAll = async (
+      _owner: string,
+      _repo: string,
+      checks: Array<{ name: string }>
+    ): Promise<RerunChecksResult> => ({
+      rerun: checks.map((check) => check.name),
+      stillRunning: [],
+      unsupported: [],
+      errors: [],
+    });
+    const rerunChecks = vi.fn(rerunAll);
+    const refreshChecks = vi.fn(async () => {});
+
+    function createRerunRunner(): ShepherdBotRunner {
+      return new ShepherdBotRunner(db, {
+        config: {},
+        getSessionManager: () => sessionManager,
+        spawnRun,
+        launchFix,
+        rerunChecks,
+        refreshChecks,
+        isProcessAlive: () => true,
+        getWorkspacePath: () => '/tmp/workspace',
+        now: () => now,
+      });
+    }
+
+    /** Add a watched PR whose `test` check was cancelled `minutesAgo` minutes ago. */
+    function addCancelledPr(prNumber: number, minutesAgo: number): number {
+      const completedAt = new Date(now.getTime() - minutesAgo * 60_000).toISOString();
+      const id = addFixturePr(db, prNumber, {
+        checks: [
+          {
+            name: 'test',
+            source: 'check_run',
+            status: 'completed',
+            conclusion: 'cancelled',
+            detailsUrl: `https://github.com/${FIXTURE_OWNER}/${FIXTURE_REPO}/actions/runs/9/job/1`,
+            completedAt,
+          },
+          { name: 'optional', source: 'check_run', status: 'completed', conclusion: 'cancelled' },
+        ],
+      });
+      setPrShepherdBotEnabled(db, id, true, null);
+      return id;
+    }
+
+    function rerunActions(): ReturnType<typeof listRecentShepherdBotActions> {
+      return listRecentShepherdBotActions(db, projectId, 50).filter(
+        (action) => action.kind === 'rerun_checks'
+      );
+    }
+
+    beforeEach(() => {
+      rerunChecks.mockReset();
+      rerunChecks.mockImplementation(rerunAll);
+      refreshChecks.mockClear();
+      upsertBranchMergeRequirements(db, {
+        owner: FIXTURE_OWNER,
+        repo: FIXTURE_REPO,
+        branchName: 'main',
+        lastFetchedAt: now.toISOString(),
+        requirements: [
+          { sourceKind: 'legacy_branch_protection', sourceId: 0, checks: [{ context: 'test' }] },
+        ],
+      });
+      setShepherdBotRunning(db, projectId, true);
+    });
+
+    test('reruns only the cancelled required checks and records the action', async () => {
+      addCancelledPr(1, 5);
+
+      await createRerunRunner().tick();
+
+      expect(rerunChecks).toHaveBeenCalledTimes(1);
+      expect(rerunChecks.mock.calls[0][2].map((check) => check.name)).toEqual(['test']);
+      expect(refreshChecks).toHaveBeenCalledWith(fixturePrUrl(1));
+      expect(rerunActions()).toMatchObject([
+        { pr_number: 1, status: 'launched', head_sha: 'sha-1' },
+      ]);
+    });
+
+    test('waits until the check was cancelled a while ago', async () => {
+      addCancelledPr(1, 0);
+
+      await createRerunRunner().tick();
+
+      expect(rerunChecks).not.toHaveBeenCalled();
+    });
+
+    test('reruns at most twice for the same head SHA', async () => {
+      addCancelledPr(1, 5);
+      const runner = createRerunRunner();
+
+      await runner.tick();
+      await runner.tick();
+      await runner.tick();
+
+      expect(rerunChecks).toHaveBeenCalledTimes(2);
+      expect(rerunActions()).toHaveLength(2);
+    });
+
+    test('counts refused reruns toward the limit', async () => {
+      addCancelledPr(1, 5);
+      rerunChecks.mockImplementation(async () => ({
+        rerun: [],
+        stillRunning: [],
+        unsupported: [],
+        errors: [{ checks: ['test'], message: 'Forbidden' }],
+      }));
+      const runner = createRerunRunner();
+
+      await runner.tick();
+      await runner.tick();
+      await runner.tick();
+
+      expect(rerunChecks).toHaveBeenCalledTimes(2);
+      expect(rerunActions().map((action) => action.status)).toEqual(['failed', 'failed']);
+    });
+
+    test('does not record an attempt while the workflow run has not finished', async () => {
+      addCancelledPr(1, 5);
+      rerunChecks.mockImplementationOnce(async () => ({
+        rerun: [],
+        stillRunning: ['test'],
+        unsupported: [],
+        errors: [],
+      }));
+
+      await createRerunRunner().tick();
+
+      expect(rerunChecks).toHaveBeenCalledTimes(1);
+      expect(rerunActions()).toEqual([]);
+    });
+
+    test('does nothing when the bot is stopped or a session runs for the PR', async () => {
+      addCancelledPr(1, 5);
+      activeSessionUrls.add(fixturePrUrl(1));
+      await createRerunRunner().tick();
+
+      activeSessionUrls.clear();
+      setShepherdBotRunning(db, projectId, false);
+      await createRerunRunner().tick();
+
+      expect(rerunChecks).not.toHaveBeenCalled();
     });
   });
 });

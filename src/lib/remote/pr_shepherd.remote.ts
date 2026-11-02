@@ -3,8 +3,15 @@ import { command, query } from '$app/server';
 import { error } from '@sveltejs/kit';
 import * as z from 'zod';
 
-import { refreshPrStatus, refreshShepherdedPrBehindBy } from '$common/github/pr_status_service.js';
+import { getOctokit } from '$common/github/octokit.js';
+import {
+  refreshPrCheckStatus,
+  refreshPrStatus,
+  refreshShepherdedPrBehindBy,
+} from '$common/github/pr_status_service.js';
 import { updatePullRequestBranch } from '$common/github/pull_requests.js';
+import { withRequiredCheckRollupState } from '$common/github/required_check_rollup.js';
+import { describeRerunChecksResult, rerunActionsChecks } from '$common/github/rerun_checks.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
@@ -20,6 +27,7 @@ import {
   setShepherdBotRunningForProject,
 } from '$lib/server/shepherd_bot.js';
 import { getProjectPrs } from '$lib/remote/project_prs.remote.js';
+import { getCancelledChecks } from '$lib/utils/pr_shepherd.js';
 import { enrollPrShepherd, removePrShepherd } from '$tim/db/pr_shepherd.js';
 import { getPrStatusByProjectAndNumber, type PrStatusDetail } from '$tim/db/pr_status.js';
 import {
@@ -150,6 +158,38 @@ export const updateShepherdedPrBranch = command(
     }
     notifyPrChanged(db, projectId, pr.status.pr_url);
     return { status: 'updated' };
+  }
+);
+
+export const rerunCancelledPrChecks = command(
+  prTargetSchema,
+  async ({ projectId, prNumber }): Promise<{ rerunCount: number; message: string }> => {
+    const { db } = await getServerContext();
+    const pr = await loadOwnOpenPr(projectId, prNumber);
+    if (!resolveGitHubToken()) {
+      error(400, 'GITHUB_TOKEN not configured');
+    }
+
+    const cancelled = getCancelledChecks(withRequiredCheckRollupState(db, pr));
+    if (cancelled.length === 0) {
+      error(400, 'The PR has no cancelled checks');
+    }
+
+    const result = await rerunActionsChecks(
+      getOctokit(),
+      pr.status.owner,
+      pr.status.repo,
+      cancelled
+    );
+    if (result.rerun.length > 0) {
+      try {
+        await refreshPrCheckStatus(db, pr.status.pr_url);
+      } catch (err) {
+        console.warn(`[pr_shepherd] Failed to refresh ${pr.status.pr_url} after a rerun`, err);
+      }
+      notifyPrChanged(db, projectId, pr.status.pr_url);
+    }
+    return { rerunCount: result.rerun.length, message: describeRerunChecksResult(result) };
   }
 );
 

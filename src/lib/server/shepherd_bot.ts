@@ -1,11 +1,27 @@
 import type { Database } from 'bun:sqlite';
 
 import { tryCanonicalizePrUrl } from '$common/github/identifier_urls.js';
-import { fetchAndUpdatePrMergeableStatus } from '$common/github/pr_status_service.js';
+import { getOctokit } from '$common/github/octokit.js';
+import {
+  fetchAndUpdatePrMergeableStatus,
+  refreshPrCheckStatus,
+} from '$common/github/pr_status_service.js';
+import { withRequiredCheckRollupState } from '$common/github/required_check_rollup.js';
+import {
+  describeRerunChecksResult,
+  rerunActionsChecks,
+  type RerunCheckInput,
+  type RerunChecksResult,
+} from '$common/github/rerun_checks.js';
+import { resolveGitHubToken } from '$common/github/token.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import type { TimConfig } from '$tim/configSchema.js';
 import { upsertInboxItem } from '$tim/db/inbox_item.js';
-import { getPrShepherd, setPrShepherdBotEnabled } from '$tim/db/pr_shepherd.js';
+import {
+  getPrShepherd,
+  listBotEnabledShepherdPrs,
+  setPrShepherdBotEnabled,
+} from '$tim/db/pr_shepherd.js';
 import { getPrStatusByUrl, type PrStatusDetail, type PrStatusRow } from '$tim/db/pr_status.js';
 import {
   countLaunchedShepherdBotActions,
@@ -13,6 +29,7 @@ import {
   finishShepherdBotRun,
   getActiveShepherdBotRun,
   hasShepherdBotTriggerSince,
+  insertShepherdBotAction,
   insertShepherdBotTrigger,
   isShepherdBotRunning,
   listPendingShepherdBotTriggers,
@@ -34,6 +51,7 @@ import {
   getProjectIdForPrStatus,
   SHEPHERD_BOT_FIX_COMMANDS,
 } from '$tim/shepherd_bot/triggers.js';
+import { getCancelledChecks } from '$lib/utils/pr_shepherd.js';
 import { isPrRebaseEligible } from '$lib/utils/pr_rebase_eligibility.js';
 
 import { isCiFixEligibleForUsername } from './ci_fix_eligibility.js';
@@ -63,6 +81,13 @@ const MAX_FIX_ATTEMPTS_PER_SHA = 2;
 const TRIGGER_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 /** Check again this much later when GitHub has not finished computing the mergeable state. */
 const MERGEABLE_UNKNOWN_RECHECK_MS = 2 * 60 * 1000;
+/**
+ * Rerun a cancelled check only when it was cancelled at least this long ago. GitHub often
+ * starts a new run of the check soon after it cancels one, and then no rerun is necessary.
+ */
+const CANCELLED_CHECK_SETTLE_MS = 2 * 60 * 1000;
+/** Cancelled checks of the same head SHA are rerun at most this many times. */
+const MAX_CHECK_RERUNS_PER_SHA = 2;
 
 export type ShepherdBotFixKind = 'ci_fix' | 'pr_fix' | 'pr_rebase';
 
@@ -81,6 +106,14 @@ export interface ShepherdBotRunnerOptions {
     cwd: string
   ) => Promise<SpawnTargetProcessResult>;
   resolveUsername?: () => Promise<string | null>;
+  /** Rerun the GitHub Actions runs of cancelled checks. */
+  rerunChecks?: (
+    owner: string,
+    repo: string,
+    checks: RerunCheckInput[]
+  ) => Promise<RerunChecksResult>;
+  /** Get the check status of the PR from GitHub and store it in the DB. */
+  refreshChecks?: (prUrl: string) => Promise<void>;
   /** Get the mergeable state of the PR from GitHub and store it in the DB. */
   refreshMergeable?: (status: Pick<PrStatusRow, 'owner' | 'repo' | 'pr_number'>) => Promise<void>;
   isProcessAlive?: (pid: number) => boolean;
@@ -260,6 +293,7 @@ export class ShepherdBotRunner {
       this.ensureDisconnectListener(sessionManager);
       this.reconcileRuns();
       await this.executeRequestedActions(sessionManager);
+      await this.rerunCancelledChecks(sessionManager);
       for (const projectId of listRunningShepherdBotProjectIds(this.db)) {
         if (this.stopped) {
           return;
@@ -274,6 +308,88 @@ export class ShepherdBotRunner {
       console.warn('[shepherd_bot] Tick failed', err);
     } finally {
       this.running = false;
+    }
+  }
+
+  /**
+   * Rerun the cancelled required checks of the PRs that the bot watches. GitHub sometimes
+   * cancels checks when many branches are pushed at once. This needs no bot run.
+   */
+  private async rerunCancelledChecks(
+    sessionManager: ShepherdBotSessionManager | null
+  ): Promise<void> {
+    const runningProjects = new Set(listRunningShepherdBotProjectIds(this.db));
+    if (runningProjects.size === 0 || (!this.options.rerunChecks && !resolveGitHubToken())) {
+      return;
+    }
+
+    const settledBefore = new Date(this.now().getTime() - CANCELLED_CHECK_SETTLE_MS).toISOString();
+    for (const { status } of listBotEnabledShepherdPrs(this.db)) {
+      if (this.stopped) {
+        return;
+      }
+      if (status.state !== 'open' || status.draft || !status.head_sha) {
+        continue;
+      }
+      const projectId = getProjectIdForPrStatus(this.db, status);
+      if (projectId === null || !runningProjects.has(projectId)) {
+        continue;
+      }
+
+      try {
+        const detail = getPrStatusByUrl(this.db, status.pr_url);
+        if (!detail) {
+          continue;
+        }
+        const cancelled = getCancelledChecks(withRequiredCheckRollupState(this.db, detail)).filter(
+          (check) =>
+            check.required && check.completedAt !== null && check.completedAt <= settledBefore
+        );
+        if (
+          cancelled.length === 0 ||
+          this.isStackBusy([status.pr_url], sessionManager) ||
+          countLaunchedShepherdBotActions(this.db, {
+            prStatusId: status.id,
+            kind: 'rerun_checks',
+            headSha: status.head_sha,
+            statuses: ['launched', 'failed'],
+          }) >= MAX_CHECK_RERUNS_PER_SHA
+        ) {
+          continue;
+        }
+
+        const result = await (
+          this.options.rerunChecks ??
+          ((owner, repo, checks) => rerunActionsChecks(getOctokit(), owner, repo, checks))
+        )(status.owner, status.repo, cancelled);
+        // A run that has not finished is tried again on a later tick. Only record attempts.
+        if (result.rerun.length === 0 && result.errors.length === 0) {
+          continue;
+        }
+
+        insertShepherdBotAction(this.db, {
+          projectId,
+          prStatusId: status.id,
+          prUrl: status.pr_url,
+          prNumber: status.pr_number,
+          kind: 'rerun_checks',
+          headSha: status.head_sha,
+          reason: `Required checks were cancelled: ${cancelled.map((check) => check.name).join(', ')}`,
+          status: result.rerun.length > 0 ? 'launched' : 'failed',
+          result: describeRerunChecksResult(result),
+        });
+
+        if (result.rerun.length > 0) {
+          await (
+            this.options.refreshChecks ??
+            (async (prUrl) => {
+              await refreshPrCheckStatus(this.db, prUrl);
+            })
+          )(status.pr_url);
+        }
+      } catch (err) {
+        console.warn(`[shepherd_bot] Failed to rerun cancelled checks for ${status.pr_url}`, err);
+      }
     }
   }
 

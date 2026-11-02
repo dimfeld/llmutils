@@ -39,6 +39,7 @@ vi.mock('$lib/remote/project_prs.remote.js', async () => {
 vi.mock('$lib/remote/pr_shepherd.remote.js', () => ({
   setPrShepherded: mocks.setPrShepherded,
   updateShepherdedPrBranch: vi.fn(),
+  rerunCancelledPrChecks: vi.fn(),
   addPrStackToShepherdBot: vi.fn(),
   removePrStackFromShepherdBot: vi.fn(),
   setShepherdBotRunning: vi.fn(),

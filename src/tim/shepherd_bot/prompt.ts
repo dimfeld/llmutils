@@ -342,7 +342,7 @@ ${state.json.trim() || '{}'}
 
 ## Available actions
 
-- \`ci_fix\`: start a CI fix session for a PR with failing checks. The session reads the CI logs, fixes the code, and pushes.
+- \`ci_fix\`: start a CI fix session for a PR with failing checks. The session reads the CI logs, fixes the code, and pushes. A cancelled check is not a failing check. The system reruns cancelled required checks by itself, at most twice for each head SHA, so do not start \`ci_fix\` for them. If a required check is still cancelled after the system reran it twice, tell the user with \`notify\`.
 - \`pr_fix\`: start a review-comment fix session for a PR with unresolved review threads. This session is interactive: it asks the user what to do about each comment, so the user always decides. The system notifies the user.
 - \`pr_rebase\`: start a session that resolves merge conflicts with the base branch and pushes. The session also rebases and pushes the PRs stacked on top of that PR.
 - \`notify\`: write a message to the user's inbox about a PR. Use this when a problem needs a human decision, when you stop retrying something, or when you see a problem that you cannot fix with the other actions.
