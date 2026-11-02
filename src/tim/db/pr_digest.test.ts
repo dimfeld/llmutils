@@ -323,11 +323,12 @@ describe('tim db/pr_digest', () => {
   describe('getOtherReadyForReviewRows', () => {
     test('returns open non-draft PRs with ready_at and latest previous review', () => {
       const ready = insertPr(50, { readyAt: '2026-01-01T09:00:00.000Z' });
+      requestReview(ready.status.id, 'reviewer-new', '2026-01-01T09:00:00.000Z');
       review(ready.status.id, 'reviewer-old', 'COMMENTED', '2026-01-01T10:00:00.000Z');
       review(ready.status.id, 'reviewer-new', 'APPROVED', '2026-01-01T11:00:00.000Z');
 
       const noReview = insertPr(51, { readyAt: '2026-01-01T08:00:00.000Z' });
-      expect(noReview.status.id).toBeGreaterThan(0);
+      requestReview(noReview.status.id, 'reviewer-1', '2026-01-01T08:00:00.000Z');
 
       const rows = getOtherReadyForReviewRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
 
@@ -346,19 +347,55 @@ describe('tim db/pr_digest', () => {
     });
 
     test('excludes PRs without ready_at and PRs not ready for review', () => {
-      insertPr(60);
-      insertPr(61, { readyAt: '2026-01-01T09:00:00.000Z', draft: true });
-      insertPr(62, { readyAt: '2026-01-01T09:00:00.000Z', state: 'closed' });
-      insertPr(63, { readyAt: '2026-01-03T09:00:00.000Z' });
-      insertPr(64, {
-        owner: 'octocat',
-        repo: 'other',
-        readyAt: '2026-01-01T09:00:00.000Z',
-      });
+      const prs = [
+        insertPr(60),
+        insertPr(61, { readyAt: '2026-01-01T09:00:00.000Z', draft: true }),
+        insertPr(62, { readyAt: '2026-01-01T09:00:00.000Z', state: 'closed' }),
+        insertPr(63, { readyAt: '2026-01-03T09:00:00.000Z' }),
+        insertPr(64, {
+          owner: 'octocat',
+          repo: 'other',
+          readyAt: '2026-01-01T09:00:00.000Z',
+        }),
+      ];
+      for (const pr of prs) {
+        requestReview(pr.status.id, 'reviewer-1', '2026-01-01T09:00:00.000Z');
+      }
 
       const rows = getOtherReadyForReviewRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
 
       expect(rows).toEqual([]);
+    });
+
+    test('includes only PRs with an active review request for a human', () => {
+      const readyAt = '2026-01-01T09:00:00.000Z';
+      insertPr(80, { readyAt });
+
+      const botOnly = insertPr(81, { readyAt });
+      requestReview(botOnly.status.id, 'df-reviewflow[bot]', readyAt);
+      requestReview(botOnly.status.id, 'Copilot', readyAt);
+
+      const removed = insertPr(82, { readyAt });
+      requestReview(removed.status.id, 'reviewer-1', readyAt);
+      upsertPrReviewRequestByReviewer(db, removed.status.id, {
+        reviewer: 'reviewer-1',
+        action: 'removed',
+        eventAt: '2026-01-01T10:00:00.000Z',
+      });
+
+      const future = insertPr(83, { readyAt });
+      requestReview(future.status.id, 'reviewer-1', new Date(NOW_MS + 1).toISOString());
+
+      const human = insertPr(84, { readyAt });
+      requestReview(human.status.id, 'Copilot', readyAt);
+      requestReview(human.status.id, 'reviewer-1', readyAt);
+
+      insertPr(85, { readyAt, requestedReviewers: ['Copilot', 'reviewer-2'] });
+      insertPr(86, { readyAt, requestedReviewers: ['Copilot', 'df-reviewflow[bot]'] });
+
+      const rows = getOtherReadyForReviewRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows.map((row) => row.pr_number)).toEqual([84, 85]);
     });
   });
 
@@ -479,6 +516,7 @@ describe('tim db/pr_digest', () => {
       labels?: string[];
       baseBranch?: string | null;
       headBranch?: string | null;
+      requestedReviewers?: string[];
     } = {}
   ): ReturnType<typeof upsertPrStatus> {
     const owner = options.owner ?? 'octocat';
@@ -498,6 +536,7 @@ describe('tim db/pr_digest', () => {
       labels: options.labels?.map((name) => ({ name })),
       baseBranch: options.baseBranch,
       headBranch: options.headBranch,
+      requestedReviewers: options.requestedReviewers,
     });
   }
 

@@ -72,6 +72,36 @@ export interface AwaitingReviewResponseRow {
 const NON_BOT_REVIEW_AUTHOR_SQL = `(pr_review.author NOT LIKE '%[bot]' AND LOWER(pr_review.author) != 'copilot')`;
 
 /**
+ * SQL condition that is true when the surrounding `pr_status` row has an active review request for
+ * a human reviewer. This matches `hasHumanReviewRequest`: it checks the `pr_review_request` rows
+ * and falls back to the `requested_reviewers` JSON array. Bots are matched as in `isBotReviewer`.
+ * Takes one bind parameter: the upper bound for `pr_review_request.requested_at`.
+ */
+const HAS_HUMAN_REVIEW_REQUEST_SQL = `
+  (
+    EXISTS (
+      SELECT 1
+      FROM pr_review_request
+      WHERE pr_review_request.pr_status_id = pr_status.id
+        AND pr_review_request.removed_at IS NULL
+        AND pr_review_request.requested_at IS NOT NULL
+        AND pr_review_request.requested_at <= ?
+        AND pr_review_request.reviewer NOT LIKE '%[bot]'
+        AND LOWER(pr_review_request.reviewer) != 'copilot'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM json_each(
+        CASE WHEN json_valid(pr_status.requested_reviewers) THEN pr_status.requested_reviewers ELSE '[]' END
+      ) AS requested_reviewer
+      WHERE requested_reviewer.type = 'text'
+        AND requested_reviewer.value NOT LIKE '%[bot]'
+        AND LOWER(requested_reviewer.value) != 'copilot'
+    )
+  )
+`;
+
+/**
  * SQL fragment that resolves to 1 when the surrounding `pr_status` row is stacked on another open
  * PR — i.e. its base branch is the head branch of a different open PR in the same repo. Correlates
  * on `pr_status.owner`/`pr_status.repo`, so it only works where `pr_status` is in scope.
@@ -239,8 +269,8 @@ export function getStaleReviewRequestRows(
 }
 
 /**
- * Returns open, non-draft PRs that are ready for review in the broad GitHub sense.
- * Callers apply the > 3 day threshold and remove PRs already shown in higher-priority
+ * Returns open, non-draft PRs that are ready for review in the broad GitHub sense and have at
+ * least one active review request for a human reviewer. Callers apply the > 3 day threshold and remove PRs already shown in higher-priority
  * digest buckets.
  */
 export function getOtherReadyForReviewRows(
@@ -279,10 +309,11 @@ export function getOtherReadyForReviewRows(
           AND pr_status.draft = 0
           AND pr_status.ready_at IS NOT NULL
           AND pr_status.ready_at <= ?
+          AND ${HAS_HUMAN_REVIEW_REQUEST_SQL}
         ORDER BY ready_at ASC, pr_status.pr_number ASC, pr_status.id ASC
       `
     )
-    .all(nowIso, owner, repo, nowIso) as OtherReadyForReviewRow[];
+    .all(nowIso, owner, repo, nowIso, nowIso) as OtherReadyForReviewRow[];
 }
 
 /**

@@ -245,6 +245,7 @@ describe('lib/server/daily_digest', () => {
       draft?: boolean;
       reviewDecision?: string | null;
       readyAt?: string | null;
+      requestedReviewers?: string[];
     } = {}
   ): UpsertPrStatusResult {
     return upsertPrStatus(db, {
@@ -258,6 +259,7 @@ describe('lib/server/daily_digest', () => {
       draft: options.draft ?? false,
       reviewDecision: options.reviewDecision ?? null,
       readyAt: options.readyAt,
+      requestedReviewers: options.requestedReviewers,
       lastFetchedAt: '2026-01-01T00:00:00.000Z',
     });
   }
@@ -313,6 +315,12 @@ describe('lib/server/daily_digest', () => {
       title: 'Old ready PR',
       author: 'dana',
       readyAt: '2025-12-29T09:00:00.000Z',
+      requestedReviewers: ['erin'],
+    });
+    insertPr('octocat', 'other-ready', 4, {
+      title: 'Bot-only request PR',
+      readyAt: '2025-12-29T09:00:00.000Z',
+      requestedReviewers: ['Copilot'],
     });
 
     const { sender, sent } = makeFakeSender();
@@ -323,6 +331,7 @@ describe('lib/server/daily_digest', () => {
     expect(payloadText(sent[0])).toContain('Other PRs ready for review for > 3 days');
     expect(payloadText(sent[0])).toContain('Old ready PR');
     expect(payloadText(sent[0])).toContain('no previous review');
+    expect(payloadText(sent[0])).not.toContain('Bot-only request PR');
   });
 
   test('uses refreshed PR status for the scheduled digest', async () => {
