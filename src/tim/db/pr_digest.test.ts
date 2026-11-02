@@ -297,6 +297,29 @@ describe('tim db/pr_digest', () => {
       expect(byNumber.get(46)?.labels).toBeNull();
     });
 
+    test('ignores bot review requests', () => {
+      const botOnly = insertPr(20);
+      requestReview(botOnly.status.id, 'Copilot', REQUESTED_AT);
+      requestReview(botOnly.status.id, 'df-reviewflow[bot]', REQUESTED_AT);
+
+      // A bot request newer than the human request, answered by the bot, does not clear the
+      // human request.
+      const mixed = insertPr(21);
+      requestReview(mixed.status.id, 'reviewer-human', REQUESTED_AT);
+      requestReview(mixed.status.id, 'Copilot', '2026-01-01T11:00:00.000Z');
+      review(mixed.status.id, 'Copilot', 'COMMENTED', '2026-01-01T12:00:00.000Z');
+
+      const rows = getStaleReviewRequestRows(db, 'octocat', 'hello-world', { nowMs: NOW_MS });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          pr_number: 21,
+          reviewer: 'reviewer-human',
+          requested_at: REQUESTED_AT,
+        }),
+      ]);
+    });
+
     test('uses the injected nowMs as the upper bound without applying the stale threshold', () => {
       const atNow = insertPr(40);
       requestReview(atNow.status.id, 'reviewer-at-now', new Date(NOW_MS).toISOString());

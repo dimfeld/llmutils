@@ -69,7 +69,12 @@ export interface AwaitingReviewResponseRow {
  * SQL condition that is true when `pr_review.author` is not a bot. This matches `isBotReviewer`:
  * `[bot]`-suffixed logins and the `Copilot` reviewer are bots.
  */
-const NON_BOT_REVIEW_AUTHOR_SQL = `(pr_review.author NOT LIKE '%[bot]' AND LOWER(pr_review.author) != 'copilot')`;
+const NON_BOT_REVIEW_AUTHOR_SQL = nonBotLoginSql('pr_review.author');
+
+/** Returns an SQL condition that is true when `column` holds a non-bot login (see `isBotReviewer`). */
+function nonBotLoginSql(column: string): string {
+  return `(${column} NOT LIKE '%[bot]' AND LOWER(${column}) != 'copilot')`;
+}
 
 /**
  * SQL condition that is true when the surrounding `pr_status` row has an active review request for
@@ -86,8 +91,7 @@ const HAS_HUMAN_REVIEW_REQUEST_SQL = `
         AND pr_review_request.removed_at IS NULL
         AND pr_review_request.requested_at IS NOT NULL
         AND pr_review_request.requested_at <= ?
-        AND pr_review_request.reviewer NOT LIKE '%[bot]'
-        AND LOWER(pr_review_request.reviewer) != 'copilot'
+        AND ${nonBotLoginSql('pr_review_request.reviewer')}
     )
     OR EXISTS (
       SELECT 1
@@ -95,8 +99,7 @@ const HAS_HUMAN_REVIEW_REQUEST_SQL = `
         CASE WHEN json_valid(pr_status.requested_reviewers) THEN pr_status.requested_reviewers ELSE '[]' END
       ) AS requested_reviewer
       WHERE requested_reviewer.type = 'text'
-        AND requested_reviewer.value NOT LIKE '%[bot]'
-        AND LOWER(requested_reviewer.value) != 'copilot'
+        AND ${nonBotLoginSql('requested_reviewer.value')}
     )
   )
 `;
@@ -191,9 +194,11 @@ export function getApprovedUnmergedRows(
 }
 
 /**
- * Returns active individual review requests (not removed, with a request time) on open,
- * non-draft PRs where no active requested reviewer has submitted a non-dismissed review since
- * the latest active request.
+ * Returns active individual review requests (not removed, with a request time) for human
+ * reviewers on open, non-draft PRs where no active requested human reviewer has submitted a
+ * non-dismissed review since the latest active human request. Bot requests (see
+ * `isBotReviewer`) are ignored entirely: they are not returned and do not affect which human
+ * requests count as answered.
  *
  * NOTE: this applies only a coarse `requested_at <= now` bound. The actual `staleAfterHours`
  * threshold is applied downstream in `buildPrDigest` (see src/lib/server/pr_digest.ts), so
@@ -237,6 +242,7 @@ export function getStaleReviewRequestRows(
           AND pr_review_request.removed_at IS NULL
           AND pr_review_request.requested_at IS NOT NULL
           AND pr_review_request.requested_at <= ?
+          AND ${nonBotLoginSql('pr_review_request.reviewer')}
           AND NOT EXISTS (
             SELECT 1
             FROM pr_review
@@ -249,6 +255,7 @@ export function getStaleReviewRequestRows(
                   AND latest_request.removed_at IS NULL
                   AND latest_request.requested_at IS NOT NULL
                   AND latest_request.requested_at <= ?
+                  AND ${nonBotLoginSql('latest_request.reviewer')}
               )
               AND EXISTS (
                 SELECT 1
@@ -258,6 +265,7 @@ export function getStaleReviewRequestRows(
                   AND requested_reviewer.removed_at IS NULL
                   AND requested_reviewer.requested_at IS NOT NULL
                   AND requested_reviewer.requested_at <= ?
+                  AND ${nonBotLoginSql('requested_reviewer.reviewer')}
               )
               -- Dismissed reviews do not clear the digest nudge; the PR still needs attention.
               AND pr_review.state != 'DISMISSED'
