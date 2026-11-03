@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { isListNavEvent, getAdjacentItem, scrollListItemIntoView } from './keyboard_nav.js';
+import {
+  isListNavEvent,
+  isMatchingListNavEvent,
+  getAdjacentItem,
+  getAdjacentMatchingItem,
+  scrollListItemIntoView,
+} from './keyboard_nav.js';
 
 function makeKeyEvent(
   key: string,
@@ -44,6 +50,71 @@ describe('isListNavEvent', () => {
   test('returns null for Alt+other key', () => {
     expect(isListNavEvent(makeKeyEvent('ArrowLeft', { altKey: true }))).toBe(null);
     expect(isListNavEvent(makeKeyEvent('Enter', { altKey: true }))).toBe(null);
+  });
+});
+
+describe('isMatchingListNavEvent', () => {
+  test('returns direction for Alt+Shift+Arrow', () => {
+    expect(
+      isMatchingListNavEvent(makeKeyEvent('ArrowDown', { altKey: true, shiftKey: true }))
+    ).toBe('down');
+    expect(isMatchingListNavEvent(makeKeyEvent('ArrowUp', { altKey: true, shiftKey: true }))).toBe(
+      'up'
+    );
+  });
+
+  test('returns null without both Alt and Shift', () => {
+    expect(isMatchingListNavEvent(makeKeyEvent('ArrowDown', { altKey: true }))).toBe(null);
+    expect(isMatchingListNavEvent(makeKeyEvent('ArrowDown', { shiftKey: true }))).toBe(null);
+  });
+
+  test('returns null with extra modifiers or other keys', () => {
+    expect(
+      isMatchingListNavEvent(
+        makeKeyEvent('ArrowDown', { altKey: true, shiftKey: true, ctrlKey: true })
+      )
+    ).toBe(null);
+    expect(
+      isMatchingListNavEvent(
+        makeKeyEvent('ArrowUp', { altKey: true, shiftKey: true, metaKey: true })
+      )
+    ).toBe(null);
+    expect(
+      isMatchingListNavEvent(makeKeyEvent('ArrowLeft', { altKey: true, shiftKey: true }))
+    ).toBe(null);
+  });
+});
+
+describe('getAdjacentMatchingItem', () => {
+  const items = ['a', 'b', 'c', 'd', 'e'];
+  const matching = new Set(['b', 'd']);
+  const matches = (id: string): boolean => matching.has(id);
+
+  test('skips non-matching items going down', () => {
+    expect(getAdjacentMatchingItem(items, 'b', 'down', matches)).toBe('d');
+    expect(getAdjacentMatchingItem(items, 'a', 'down', matches)).toBe('b');
+  });
+
+  test('skips non-matching items going up', () => {
+    expect(getAdjacentMatchingItem(items, 'e', 'up', matches)).toBe('d');
+    expect(getAdjacentMatchingItem(items, 'd', 'up', matches)).toBe('b');
+  });
+
+  test('returns null when no matching item in direction', () => {
+    expect(getAdjacentMatchingItem(items, 'd', 'down', matches)).toBe(null);
+    expect(getAdjacentMatchingItem(items, 'b', 'up', matches)).toBe(null);
+  });
+
+  test('returns first or last matching item when nothing is selected', () => {
+    expect(getAdjacentMatchingItem(items, null, 'down', matches)).toBe('b');
+    expect(getAdjacentMatchingItem(items, null, 'up', matches)).toBe('d');
+    expect(getAdjacentMatchingItem(items, 'z', 'down', matches)).toBe('b');
+    expect(getAdjacentMatchingItem(items, 'z', 'up', matches)).toBe('d');
+  });
+
+  test('returns null when nothing matches or list is empty', () => {
+    expect(getAdjacentMatchingItem(items, 'a', 'down', () => false)).toBe(null);
+    expect(getAdjacentMatchingItem([], null, 'down', matches)).toBe(null);
   });
 });
 

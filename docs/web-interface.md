@@ -746,6 +746,7 @@ All three tabs (Sessions, Plans, Active Work) support **Alt+ArrowDown** / **Alt+
 - At list boundaries, the shortcut does nothing (no wrap)
 - The navigated-to item is scrolled into view via `scrollIntoView({ block: 'nearest' })`
 - Events with Ctrl, Meta, or Shift modifiers are ignored to avoid shortcut conflicts
+- On the Sessions tab, **Alt+Shift+ArrowDown** / **Alt+Shift+ArrowUp** jump to the next/previous session that needs attention (blue dot), skipping other sessions
 
 ### Implementation
 
@@ -753,6 +754,8 @@ Each list component (`SessionList.svelte`, `PlansList.svelte`, active work `+lay
 
 - **`isListNavEvent(event)`** — Returns `'up'` or `'down'` for Alt+Arrow events, `null` otherwise
 - **`getAdjacentItem(items, currentId, direction)`** — Computes the adjacent item ID with boundary clamping
+- **`isMatchingListNavEvent(event)`** — Returns `'up'` or `'down'` for Alt+Shift+Arrow events, `null` otherwise
+- **`getAdjacentMatchingItem(items, currentId, direction, matches)`** — Like `getAdjacentItem`, but skips items that do not match the predicate
 - **`scrollListItemIntoView(itemId)`** — Finds `[data-list-item-id]` element and scrolls it into view
 
 Row components (`SessionRow`, `PlanRow`, `ActivePlanRow`) have `data-list-item-id` attributes for scroll targeting.

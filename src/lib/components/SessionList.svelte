@@ -4,9 +4,12 @@
   import type { SessionGroup } from '$lib/types/session.js';
   import {
     isListNavEvent,
+    isMatchingListNavEvent,
     getAdjacentItem,
+    getAdjacentMatchingItem,
     scrollListItemIntoView,
   } from '$lib/utils/keyboard_nav.js';
+  import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import SessionRow from './SessionRow.svelte';
 
   let {
@@ -18,6 +21,8 @@
     selectedSessionId: string | null;
     sessionHref: (connectionId: string) => string;
   } = $props();
+
+  const sessionManager = useSessionManager();
 
   // Track which groups are collapsed
   let collapsed = new SvelteSet<string>();
@@ -33,13 +38,33 @@
     return ids;
   });
 
-  function handleKeydown(event: KeyboardEvent) {
-    const direction = isListNavEvent(event);
-    if (!direction) return;
+  function sessionNeedsAttention(connectionId: string): boolean {
+    for (const group of groups) {
+      const session = group.sessions.find((s) => s.connectionId === connectionId);
+      if (session) return sessionManager.hasSessionAttention(session);
+    }
+    return false;
+  }
 
-    event.preventDefault();
+  function handleKeydown(event: KeyboardEvent): void {
+    let nextId: string | null;
+    const attentionDirection = isMatchingListNavEvent(event);
+    if (attentionDirection) {
+      event.preventDefault();
+      // Alt+Shift+Arrow jumps to the nearest session that needs attention (blue dot).
+      nextId = getAdjacentMatchingItem(
+        visibleSessionIds,
+        selectedSessionId,
+        attentionDirection,
+        sessionNeedsAttention
+      );
+    } else {
+      const direction = isListNavEvent(event);
+      if (!direction) return;
+      event.preventDefault();
+      nextId = getAdjacentItem(visibleSessionIds, selectedSessionId, direction);
+    }
 
-    const nextId = getAdjacentItem(visibleSessionIds, selectedSessionId, direction);
     if (!nextId) return;
 
     void goto(sessionHref(nextId)).then(() => scrollListItemIntoView(nextId));
