@@ -50,6 +50,14 @@ function toSessionClientEvent<TEventName extends SessionClientEventName>(
   return { eventName, payload } as SessionClientEvent;
 }
 
+/** Sort inactive (offline) sessions below the others, then newest connection first. */
+export function compareSessionsForList(a: SessionData, b: SessionData): number {
+  const aInactive = a.status === 'offline';
+  const bInactive = b.status === 'offline';
+  if (aInactive !== bInactive) return aInactive ? 1 : -1;
+  return b.connectedAt.localeCompare(a.connectedAt);
+}
+
 export class SessionManager {
   sessions = new SvelteMap<string, SessionData>();
   private unreadNotifications = new SvelteMap<string, boolean>();
@@ -95,7 +103,7 @@ export class SessionManager {
         groupKey,
         label: this.groupLabel(groupKey, projectId),
         projectId,
-        sessions: sessions.sort((a, b) => b.connectedAt.localeCompare(a.connectedAt)),
+        sessions: sessions.sort(compareSessionsForList),
       });
     }
 

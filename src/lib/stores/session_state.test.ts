@@ -146,6 +146,63 @@ describe('SessionManager.sessionGroups', () => {
       'conn-2',
     ]);
   });
+
+  test('sorts inactive sessions below active sessions', () => {
+    const manager = new SessionManager();
+    manager.sessions.set(
+      'old-active',
+      createSession({ connectionId: 'old-active', connectedAt: '2026-03-18T08:00:00.000Z' })
+    );
+    manager.sessions.set(
+      'new-offline',
+      createSession({
+        connectionId: 'new-offline',
+        status: 'offline',
+        connectedAt: '2026-03-18T12:00:00.000Z',
+      })
+    );
+    manager.sessions.set(
+      'new-active',
+      createSession({ connectionId: 'new-active', connectedAt: '2026-03-18T11:00:00.000Z' })
+    );
+    manager.sessions.set(
+      'notification',
+      createSession({
+        connectionId: 'notification',
+        status: 'notification',
+        connectedAt: '2026-03-18T09:00:00.000Z',
+      })
+    );
+    manager.sessions.set(
+      'old-offline',
+      createSession({
+        connectionId: 'old-offline',
+        status: 'offline',
+        connectedAt: '2026-03-18T07:00:00.000Z',
+      })
+    );
+
+    const order = (): string[] =>
+      manager.sessionGroups[0].sessions.map((session) => session.connectionId);
+    expect(order()).toEqual([
+      'new-active',
+      'notification',
+      'old-active',
+      'new-offline',
+      'old-offline',
+    ]);
+
+    // When an active session becomes inactive, it moves below the active sessions.
+    const session = manager.sessions.get('new-active')!;
+    manager.sessions.set('new-active', { ...session, status: 'offline' });
+    expect(order()).toEqual([
+      'notification',
+      'old-active',
+      'new-offline',
+      'new-active',
+      'old-offline',
+    ]);
+  });
 });
 
 describe('SessionManager.openSession', () => {
