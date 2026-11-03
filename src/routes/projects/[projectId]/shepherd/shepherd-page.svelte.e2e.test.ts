@@ -74,7 +74,13 @@ import ShepherdPage from './+page.svelte';
 
 function makePr(
   prNumber: number,
-  options: { shepherded?: boolean; base?: string; head?: string; mergedAt?: string } = {}
+  options: {
+    shepherded?: boolean;
+    base?: string;
+    head?: string;
+    mergedAt?: string;
+    draft?: boolean;
+  } = {}
 ) {
   return {
     status: {
@@ -86,7 +92,7 @@ function makePr(
       author: 'me',
       title: `PR number ${prNumber}`,
       state: options.mergedAt ? 'merged' : 'open',
-      draft: 0,
+      draft: options.draft ? 1 : 0,
       mergeable: 'MERGEABLE',
       head_sha: 'sha',
       base_sha: 'base',
@@ -271,6 +277,34 @@ describe('shepherd page', () => {
     expect(indent(2)).toBe('0.75rem');
     expect(indent(3)).toBe('2rem');
     expect(indent(4)).toBe('2rem');
+  });
+
+  test('highlights Watch for unwatched ready PRs in a watched stack', async () => {
+    setPrs([
+      makePr(1, { shepherded: true, base: 'main', head: 'a' }),
+      makePr(2, { base: 'a', head: 'b' }),
+      makePr(3, { base: 'b', head: 'c', draft: true }),
+      makePr(4),
+    ]);
+
+    unmount = render(ShepherdPage, {
+      props: {
+        data: { projectId: '7', projects: [], currentUsername: 'me', prFixExecutorOptions: [] },
+      } as never,
+    }).unmount;
+
+    const watchButton = (prNumber: number) =>
+      page.getByRole('button', { name: `Add PR #${prNumber} to the shepherd list` });
+    await expect.element(watchButton(2)).toBeVisible();
+
+    // PR 2 is ready for review and not watched, so its Watch button stands out.
+    expect(watchButton(2).element().className).toContain('border-amber-200');
+    // A draft PR in the stack is not ready for review.
+    expect(watchButton(3).element().className).not.toContain('border-amber-200');
+
+    // A PR that is not in a watched stack keeps the normal style.
+    await page.getByText('Your other open PRs (1)').click();
+    expect(watchButton(4).element().className).not.toContain('border-amber-200');
   });
 
   test('recently merged PRs show in a collapsed section grouped by day', async () => {

@@ -53,6 +53,11 @@
 
   let shepherded = $derived(pr.shepherd !== null);
   let botEnabled = $derived(pr.shepherd?.botEnabled === true);
+  // A stack is shown in the watched list when any of its PRs is watched. Make the Watch button
+  // stand out for the other PRs in the stack that are ready for review, so they are not missed.
+  let highlightWatch = $derived(
+    inStack && !shepherded && pr.status.state === 'open' && !pr.status.draft
+  );
   let evaluation = $derived(evaluatePrShepherd(pr));
   let attentionKinds = $derived(new Set(evaluation.attention.map((item) => item.kind)));
   // Show approval even when checks, conflicts, or other problems block the merge. The
@@ -380,8 +385,14 @@
       disabled={togglingShepherd}
       class={shepherded
         ? 'shrink-0 rounded p-1 text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800'
-        : neutralAction}
-      title={shepherded ? 'Remove from the shepherd list' : 'Add to the shepherd list'}
+        : highlightWatch
+          ? amberAction
+          : neutralAction}
+      title={shepherded
+        ? 'Remove from the shepherd list'
+        : highlightWatch
+          ? 'This PR is ready for review but is not watched. Add it to the shepherd list'
+          : 'Add to the shepherd list'}
       aria-label={shepherded
         ? `Remove PR #${pr.status.pr_number} from the shepherd list`
         : `Add PR #${pr.status.pr_number} to the shepherd list`}
