@@ -50,11 +50,26 @@ function toSessionClientEvent<TEventName extends SessionClientEventName>(
   return { eventName, payload } as SessionClientEvent;
 }
 
-/** Sort inactive (offline) sessions below the others, then newest connection first. */
+/** Commands that run one short, automatic job. They sort below other active sessions. */
+const ONE_OFF_SESSION_COMMANDS: ReadonlySet<string> = new Set([
+  'shepherd-bot',
+  'review-guide',
+  'review-guide-comment',
+]);
+
+function sessionListRank(session: SessionData): number {
+  if (session.status === 'offline') return 2;
+  if (ONE_OFF_SESSION_COMMANDS.has(session.sessionInfo.command)) return 1;
+  return 0;
+}
+
+/**
+ * Sort active sessions first, then active one-off sessions (Shepherd, review guides),
+ * then inactive (offline) sessions. Within each rank, newest connection first.
+ */
 export function compareSessionsForList(a: SessionData, b: SessionData): number {
-  const aInactive = a.status === 'offline';
-  const bInactive = b.status === 'offline';
-  if (aInactive !== bInactive) return aInactive ? 1 : -1;
+  const rankDiff = sessionListRank(a) - sessionListRank(b);
+  if (rankDiff !== 0) return rankDiff;
   return b.connectedAt.localeCompare(a.connectedAt);
 }
 

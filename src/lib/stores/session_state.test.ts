@@ -147,6 +147,43 @@ describe('SessionManager.sessionGroups', () => {
     ]);
   });
 
+  test('sorts one-off sessions below other active sessions and above inactive sessions', () => {
+    const manager = new SessionManager();
+    const add = (
+      connectionId: string,
+      command: string,
+      connectedAt: string,
+      status: SessionData['status'] = 'active'
+    ): void => {
+      manager.sessions.set(
+        connectionId,
+        createSession({
+          connectionId,
+          status,
+          connectedAt,
+          sessionInfo: { command, interactive: false, workspacePath: '/tmp/ws' },
+        })
+      );
+    };
+    add('shepherd', 'shepherd-bot', '2026-03-18T12:00:00.000Z');
+    add('guide', 'review-guide', '2026-03-18T11:30:00.000Z');
+    add('guide-comment', 'review-guide-comment', '2026-03-18T11:00:00.000Z');
+    add('old-agent', 'agent', '2026-03-18T08:00:00.000Z');
+    add('chat', 'chat', '2026-03-18T09:00:00.000Z');
+    add('offline-agent', 'agent', '2026-03-18T13:00:00.000Z', 'offline');
+    add('offline-guide', 'review-guide', '2026-03-18T07:00:00.000Z', 'offline');
+
+    expect(manager.sessionGroups[0].sessions.map((session) => session.connectionId)).toEqual([
+      'chat',
+      'old-agent',
+      'shepherd',
+      'guide',
+      'guide-comment',
+      'offline-agent',
+      'offline-guide',
+    ]);
+  });
+
   test('sorts inactive sessions below active sessions', () => {
     const manager = new SessionManager();
     manager.sessions.set(
