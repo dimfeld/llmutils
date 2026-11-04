@@ -50,6 +50,17 @@ vi.mock('../../common/git.js', () => ({
   remoteBranchExists: vi.fn(async (..._args: unknown[]) => true),
 }));
 
+vi.mock('../workspace/squash_plan_branch.js', () => ({
+  squashPlanBranch: vi.fn(async (..._args: unknown[]) => ({
+    squashed: false,
+    reason: 'not squashed in tests',
+  })),
+}));
+
+vi.mock('./workspace.js', () => ({
+  pushWorkspaceRefToRemote: vi.fn(async (..._args: unknown[]) => {}),
+}));
+
 vi.mock('../executors/index.js', () => ({
   buildExecutorAndLog: vi.fn(() => ({
     execute: vi.fn(async (..._args: unknown[]) => {}),
@@ -94,6 +105,8 @@ import {
   remoteBranchExists as mockRemoteBranchExistsFn,
 } from '../../common/git.js';
 import { buildExecutorAndLog as mockBuildExecutorAndLogFn } from '../executors/index.js';
+import { squashPlanBranch as mockSquashPlanBranchFn } from '../workspace/squash_plan_branch.js';
+import { pushWorkspaceRefToRemote as mockPushWorkspaceRefToRemoteFn } from './workspace.js';
 import {
   materializeRelatedPlans as mockMaterializeRelatedPlansFn,
   resolveProjectContext as mockResolveProjectContextFn,
@@ -114,6 +127,8 @@ const mockGetTrunkBranch = vi.mocked(mockGetTrunkBranchFn);
 const mockGetUsingJj = vi.mocked(mockGetUsingJjFn);
 const mockRemoteBranchExists = vi.mocked(mockRemoteBranchExistsFn);
 const mockBuildExecutorAndLog = vi.mocked(mockBuildExecutorAndLogFn);
+const mockSquashPlanBranch = vi.mocked(mockSquashPlanBranchFn);
+const mockPushWorkspaceRefToRemote = vi.mocked(mockPushWorkspaceRefToRemoteFn);
 const mockMaterializeRelatedPlans = vi.mocked(mockMaterializeRelatedPlansFn);
 const mockResolveProjectContext = vi.mocked(mockResolveProjectContextFn);
 const mockResolveBranchPrefix = vi.mocked(mockResolveBranchPrefixFn);
@@ -137,6 +152,7 @@ describe('create_pr command helpers', () => {
     mockMaterializeRelatedPlans.mockResolvedValue([]);
     mockResolveProjectContext.mockResolvedValue({ projectId: 1 } as any);
     mockResolveBranchPrefix.mockReturnValue('team/');
+    mockSquashPlanBranch.mockResolvedValue({ squashed: false, reason: 'not squashed in tests' });
     mockResolvePlanByNumericId.mockResolvedValue({
       plan: {
         id: 317,
@@ -599,7 +615,7 @@ describe('create_pr command helpers', () => {
         planPath: '/tmp/122.plan.md',
       });
       mockRemoteBranchExists.mockResolvedValueOnce(true);
-      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+      vi.spyOn(Bun, 'spawn').mockImplementation(() => createSpawnResult(0, JSON.stringify([])));
 
       const result = await createOrUpdatePrForPlan(
         {
@@ -647,7 +663,7 @@ describe('create_pr command helpers', () => {
       mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
       mockGetUsingJj.mockResolvedValueOnce(true);
       mockGetTrunkBranch.mockResolvedValueOnce('main');
-      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+      vi.spyOn(Bun, 'spawn').mockImplementation(() => createSpawnResult(0, JSON.stringify([])));
 
       await createOrUpdatePrForPlan(
         {
@@ -685,7 +701,7 @@ describe('create_pr command helpers', () => {
 
     test('materializes related plans when current plan has a materialized file', async () => {
       mockGetUsingJj.mockResolvedValueOnce(true);
-      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+      vi.spyOn(Bun, 'spawn').mockImplementation(() => createSpawnResult(0, JSON.stringify([])));
 
       await createOrUpdatePrForPlan(
         {
@@ -710,7 +726,7 @@ describe('create_pr command helpers', () => {
 
     test('does not materialize related plans for DB-only current plan', async () => {
       mockGetUsingJj.mockResolvedValueOnce(true);
-      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+      vi.spyOn(Bun, 'spawn').mockImplementation(() => createSpawnResult(0, JSON.stringify([])));
 
       await createOrUpdatePrForPlan(
         {
@@ -751,7 +767,7 @@ describe('create_pr command helpers', () => {
       mockRemoteBranchExists.mockResolvedValueOnce(true);
       mockFetchRemoteBranch.mockResolvedValueOnce(true);
       mockGetMergeBase.mockResolvedValueOnce('merge-base-after-fetch');
-      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(createSpawnResult(0, JSON.stringify([])));
+      vi.spyOn(Bun, 'spawn').mockImplementation(() => createSpawnResult(0, JSON.stringify([])));
 
       const result = await createOrUpdatePrForPlan(
         {
@@ -785,7 +801,7 @@ describe('create_pr command helpers', () => {
 
     test('always runs executor even when PR already exists', async () => {
       mockGetUsingJj.mockResolvedValueOnce(true);
-      vi.spyOn(Bun, 'spawn').mockReturnValue(
+      vi.spyOn(Bun, 'spawn').mockImplementation(() =>
         createSpawnResult(0, JSON.stringify([{ url: 'https://github.com/acme/repo/pull/77' }]))
       );
 
@@ -806,6 +822,7 @@ describe('create_pr command helpers', () => {
         }
       );
 
+      expect(mockSquashPlanBranch).not.toHaveBeenCalled();
       expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
       expect(mockBuildExecutorAndLog).toHaveBeenCalledWith(
         'codex-cli',
@@ -956,7 +973,7 @@ describe('create_pr command helpers', () => {
     test('uses the configured small-task executor and model', async () => {
       const executeMock = vi.fn(async (..._args: unknown[]) => {});
       mockBuildExecutorAndLog.mockReturnValueOnce({ execute: executeMock } as any);
-      vi.spyOn(Bun, 'spawn').mockReturnValueOnce(
+      vi.spyOn(Bun, 'spawn').mockImplementation(() =>
         createSpawnResult(0, JSON.stringify([{ url: 'https://github.com/acme/repo/pull/410' }]))
       );
 
@@ -988,6 +1005,110 @@ describe('create_pr command helpers', () => {
         {}
       );
       expect(executeMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('squash before publish', () => {
+    const plan = {
+      id: 600,
+      uuid: 'plan-600',
+      status: 'needs_review',
+      tasks: [],
+      title: 'Add squash before publish',
+      branch: 'feature-600',
+      pullRequest: [],
+    } as unknown as PlanSchema;
+
+    function mockNoExistingPr(): void {
+      vi.spyOn(Bun, 'spawn').mockImplementation(() => createSpawnResult(0, JSON.stringify([])));
+    }
+
+    test('autoCreatePrForPlan squashes against the jj base and pushes an existing remote branch', async () => {
+      mockNoExistingPr();
+      mockGetUsingJj.mockResolvedValue(true);
+      mockRemoteBranchExists.mockResolvedValue(true);
+      mockSquashPlanBranch.mockResolvedValueOnce({ squashed: true, commitCount: 3 });
+
+      await autoCreatePrForPlan(plan, '/tmp/600.plan.md', { baseDir: '/tmp', config: {} });
+
+      expect(mockSquashPlanBranch).toHaveBeenCalledWith({
+        workspacePath: '/tmp',
+        refName: 'feature-600',
+        baseRevision: 'trunk()',
+        title: 'Add squash before publish',
+      });
+      expect(mockRemoteBranchExists).toHaveBeenCalledWith('/tmp', 'feature-600');
+      expect(mockPushWorkspaceRefToRemote).toHaveBeenCalledWith({
+        workspacePath: '/tmp',
+        refName: 'feature-600',
+        remoteName: 'origin',
+        forceWithLease: true,
+      });
+      expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
+    });
+
+    test('uses the git merge-base and does not push a branch that is not on the remote', async () => {
+      mockNoExistingPr();
+      mockGetUsingJj.mockResolvedValue(false);
+      mockRemoteBranchExists.mockResolvedValue(false);
+      mockSquashPlanBranch.mockResolvedValueOnce({ squashed: true, commitCount: 2 });
+
+      await createOrUpdatePrForPlan(plan, '/tmp/600.plan.md', { baseDir: '/tmp', config: {} });
+
+      expect(mockSquashPlanBranch).toHaveBeenCalledWith(
+        expect.objectContaining({ baseRevision: 'merge-base-sha' })
+      );
+      expect(mockPushWorkspaceRefToRemote).not.toHaveBeenCalled();
+    });
+
+    test('does not push when the squash is skipped', async () => {
+      mockNoExistingPr();
+      mockGetUsingJj.mockResolvedValue(true);
+
+      await autoCreatePrForPlan(plan, '/tmp/600.plan.md', { baseDir: '/tmp', config: {} });
+
+      expect(mockSquashPlanBranch).toHaveBeenCalledTimes(1);
+      expect(mockPushWorkspaceRefToRemote).not.toHaveBeenCalled();
+      expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
+    });
+
+    test('still creates the PR when the squash fails', async () => {
+      mockNoExistingPr();
+      mockGetUsingJj.mockResolvedValue(true);
+      mockSquashPlanBranch.mockRejectedValueOnce(new Error('squash failed'));
+
+      await autoCreatePrForPlan(plan, '/tmp/600.plan.md', { baseDir: '/tmp', config: {} });
+
+      expect(mockPushWorkspaceRefToRemote).not.toHaveBeenCalled();
+      expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not squash when the base plan branch is gone from the remote', async () => {
+      mockNoExistingPr();
+      mockGetUsingJj.mockResolvedValue(true);
+      mockResolvePlanByNumericId.mockResolvedValueOnce({
+        plan: {
+          id: 599,
+          uuid: 'plan-599',
+          status: 'done',
+          title: 'Merged base plan',
+          branch: 'feature-599',
+          tasks: [],
+        } as unknown as PlanSchema,
+        planPath: '/tmp/599.plan.md',
+      });
+      // The base plan branch is not on the remote; the plan branch is.
+      mockRemoteBranchExists.mockImplementation(
+        async (_dir: string, branch: string) => branch !== 'feature-599'
+      );
+
+      await autoCreatePrForPlan({ ...plan, basePlan: 599 } as PlanSchema, '/tmp/600.plan.md', {
+        baseDir: '/tmp',
+        config: {},
+      });
+
+      expect(mockSquashPlanBranch).not.toHaveBeenCalled();
+      expect(mockBuildExecutorAndLog).toHaveBeenCalledTimes(1);
     });
   });
 });

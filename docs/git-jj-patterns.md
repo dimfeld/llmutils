@@ -23,6 +23,14 @@ Patterns and gotchas for working with Git and JJ in `src/common/git.ts` and rela
 - JJ revsets with parentheses (e.g., `heads(::@ & ::<branch>)`) must be pre-built as a complete string before passing to Bun's shell template literals (`$\`...\``). Shell metacharacter parsing on `(` causes errors if the revset is interpolated piecemeal.
 - JJ-mode PR creation prompts that build a "commits in this PR" preview must compute the comparison revset (`latest(ancestors(<base>) & ancestors(@))`) against the **resolved PR base**, not `trunk()`. Hardcoding `trunk()` makes a stacked PR's prompt list the predecessor's commits even though `gh pr create --base` targets the predecessor's branch. The base used here must match what's passed to `gh pr create --base`.
 
+## Squashing a Plan Branch Before Publish
+
+`squashPlanBranch` (`src/tim/workspace/squash_plan_branch.ts`) squashes a plan branch into one commit. PR creation calls it only when no PR exists for the branch. The range uses `..`, not `::`: in jj it is `(<base>)..@-`, and in Git it is `<merge-base>..HEAD`. `base::head` would include the base commit itself, and it is empty when the base is not an ancestor of the head (for example, when trunk moved after the branch was made).
+
+- The jj path records the operation ID first and runs `jj op restore` if any step fails or the squashed tree differs from the original head. The Git path does `git reset --soft <original head>` in the same cases.
+- A squash rewrites commits that may already be on `origin`, so the push after it must allow a non-fast-forward update (`pushWorkspaceRefToRemote({ forceWithLease: true })` in Git; `jj git push` allows it when the remote bookmark has not changed).
+- Do not squash when `resolveEffectivePlanBaseWithSource` falls back to trunk because the base plan branch is gone from the remote. The branch can still contain the merged base plan's commits, and a squash makes them impossible to separate.
+
 ## Git Checkouts in Colocated JJ Workspaces
 
 PR review commands check out the PR head with `git checkout --detach` (`checkoutPrBranch` in `src/tim/utils/pr_context_gathering.ts`) because jj cannot fetch `refs/pull/*`. In a colocated repository, the next jj command imports the fetched Git refs. If a fetched remote bookmark was rewritten (for example, a stacked PR's base was rebased and pushed without its children), that import rebases the checked-out commits onto the new base. This makes local-only commits and moves Git HEAD to them, so SHAs sent to GitHub (compare API, review `commit_id`) do not exist there. `checkoutPrBranch` runs `jj git import` at once, and if HEAD moved, runs `jj new <original head>` to restore it. It returns the original head SHA. Use that return value instead of reading HEAD later.

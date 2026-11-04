@@ -4,6 +4,7 @@ import {
   getMergeBase,
   getTrunkBranch,
   getUsingJj,
+  remoteBranchExists,
 } from '../../common/git.js';
 import { log, warn } from '../../logging.js';
 import { isTunnelActive } from '../../logging/tunnel_client.js';
@@ -26,6 +27,8 @@ import {
   resolveEffectivePlanBaseWithSource,
 } from '../plans/base_plan_resolution.js';
 import { setupWorkspace } from '../workspace/workspace_setup.js';
+import { squashPlanBranch } from '../workspace/squash_plan_branch.js';
+import { pushWorkspaceRefToRemote } from './workspace.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { resolveSmallTaskExecutor, type SmallTaskExecutorName } from '../small_task_executor.js';
 
@@ -387,20 +390,76 @@ async function collectSiblingPlanScope(
   }
 }
 
+/**
+ * Squash the plan branch into one commit before its PR is created, and push the result when the
+ * branch is already on the remote. Failures only log a warning, so that PR creation continues
+ * with the original commits.
+ */
+async function squashPlanBranchBeforePublish(
+  plan: PlanSchema,
+  baseDir: string,
+  baseRevision: string,
+  missingBaseBranch: string | undefined
+): Promise<void> {
+  const branch = plan.branch;
+  if (!branch) {
+    return;
+  }
+
+  if (missingBaseBranch) {
+    // The base plan branch is gone from the remote, usually because its PR merged. The plan
+    // branch can still contain the base plan's commits, so a squash would mix them in.
+    log(
+      `Not squashing "${branch}": base branch "${missingBaseBranch}" is not on the remote, so the branch can contain its commits.`
+    );
+    return;
+  }
+
+  try {
+    const existsOnRemote = await remoteBranchExists(baseDir, branch);
+    const result = await squashPlanBranch({
+      workspacePath: baseDir,
+      refName: branch,
+      baseRevision,
+      title: plan.title?.trim() || `Plan ${plan.id}`,
+    });
+    if (!result.squashed) {
+      log(`Not squashing "${branch}": ${result.reason}`);
+      return;
+    }
+
+    if (existsOnRemote) {
+      await pushWorkspaceRefToRemote({
+        workspacePath: baseDir,
+        refName: branch,
+        remoteName: 'origin',
+        forceWithLease: true,
+      });
+    }
+  } catch (err) {
+    warn(`Failed to squash plan branch "${branch}" before publish: ${err as Error}`);
+  }
+}
+
 async function runPrCreationExecutor(
   plan: PlanSchema,
   planPath: string | null,
-  options: AutoCreatePrOptions
+  options: AutoCreatePrOptions,
+  squashBeforePublish: boolean
 ): Promise<void> {
   const usingJj = await getUsingJj(options.baseDir);
   if (usingJj) {
     await ensureJjPublishedCommitsHaveDescriptions(options.baseDir);
   }
+  let missingBaseBranch: string | undefined;
   const baseResolution = await resolveEffectivePlanBaseWithSource({
     plan,
     baseDir: options.baseDir,
     config: options.config,
     fetchBasePlanRemote: !usingJj,
+    onMissingBasePlanBranch: (branchName) => {
+      missingBaseBranch = branchName;
+    },
   });
   const baseBranch = baseResolution.baseBranch;
   const trunkBranch = await getTrunkBranch(options.baseDir);
@@ -418,6 +477,15 @@ async function runPrCreationExecutor(
       throw new Error(`Failed to resolve merge-base against origin/${baseBranch}`);
     }
     mergeBase = resolved;
+  }
+  const squashBaseRevision = usingJj ? jjBaseRevset : mergeBase;
+  if (squashBeforePublish && squashBaseRevision) {
+    await squashPlanBranchBeforePublish(
+      plan,
+      options.baseDir,
+      squashBaseRevision,
+      missingBaseBranch
+    );
   }
   const issueRef = plan.issue?.[0];
   if (planPath && plan.id) {
@@ -508,7 +576,15 @@ export async function createOrUpdatePrForPlan(
     return null;
   }
 
-  await runPrCreationExecutor(plan, planPath, options);
+  // Squash only when no PR exists yet. After a PR exists, reviewers depend on the commit history.
+  let squashBeforePublish = false;
+  try {
+    squashBeforePublish = (await detectExistingPrUrl(plan.branch, options.baseDir)) === null;
+  } catch (err) {
+    warn(`Could not check for an existing PR, so the branch is not squashed: ${err as Error}`);
+  }
+
+  await runPrCreationExecutor(plan, planPath, options, squashBeforePublish);
   return detectAndStorePrUrl(plan.id, plan.uuid, planPath, plan.branch, options.baseDir);
 }
 
@@ -538,8 +614,8 @@ export async function autoCreatePrForPlan(
     return existingPrUrl;
   }
 
-  // No PR exists, create one
-  await runPrCreationExecutor(plan, planPath, options);
+  // No PR exists, so squash the branch and create one
+  await runPrCreationExecutor(plan, planPath, options, true);
   return detectAndStorePrUrl(plan.id, plan.uuid, planPath, plan.branch, options.baseDir);
 }
 

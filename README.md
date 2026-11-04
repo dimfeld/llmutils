@@ -418,6 +418,8 @@ The **Active** tab is the fastest place to work once a project is set up. It sur
 
 `tim` can cache PR status, show CI/review state in the web UI, and help process review feedback.
 
+Before `tim pr create` or the `tim agent` auto-create step makes a new PR, tim squashes the plan branch into one commit. Uncommitted changes go into that commit. The commit message is the plan title, followed by a list of the original commit subjects. If the branch is already on `origin`, tim pushes the squashed commit with a force-with-lease push. Tim does not squash when a PR already exists for the branch, because reviewers use the commit history after that. Tim also does not squash when the branch has fewer than two commits, when its history contains merges, when the workspace is not on the plan branch, or when the base plan branch is gone from `origin` (usually because its PR merged, so the branch can still contain its commits). If the squash fails, tim restores the branch and creates the PR with the original commits.
+
 Useful web actions:
 
 - Link or view PR status from a plan detail page.

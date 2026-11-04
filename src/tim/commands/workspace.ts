@@ -1638,6 +1638,8 @@ export async function pushWorkspaceRefToRemote(options: {
   refName: string;
   remoteName?: string;
   ensureJjBookmarkAtCurrent?: boolean;
+  /** Allow a non-fast-forward push in Git, with `--force-with-lease`. jj push always allows it. */
+  forceWithLease?: boolean;
 }): Promise<void> {
   const remoteName = options.remoteName ?? 'origin';
   const isJj = await getUsingJj(options.workspacePath);
@@ -1651,7 +1653,13 @@ export async function pushWorkspaceRefToRemote(options: {
   }
 
   const pushResult = await spawnAndLogOutput(
-    ['git', 'push', remoteName, `${options.refName}:${options.refName}`],
+    [
+      'git',
+      'push',
+      ...(options.forceWithLease ? ['--force-with-lease'] : []),
+      remoteName,
+      `${options.refName}:${options.refName}`,
+    ],
     { cwd: options.workspacePath }
   );
   if (pushResult.exitCode !== 0) {
