@@ -64,11 +64,11 @@ describe('TabNav', () => {
     expect(tabSlugs).toEqual([
       'sessions',
       'active',
+      'shepherd',
       'plans',
       'prs',
       'activity',
       'inbox',
-      'shepherd',
       'settings',
     ]);
   });
