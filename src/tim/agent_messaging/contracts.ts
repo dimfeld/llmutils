@@ -116,6 +116,11 @@ export const MAX_AGENT_MESSAGE_BYTES = 65_536;
 export const MAX_PENDING_MESSAGES_PER_RECIPIENT = 100;
 /** Finish, graceful stop, and provider End escalate after this much output inactivity. */
 export const STOP_AGENT_INACTIVITY_TIMEOUT_MS = 120_000;
+/**
+ * A running subagent with no provider output for this long gets one heartbeat
+ * reminder. The reminder repeats after each further silent interval.
+ */
+export const AGENT_IDLE_HEARTBEAT_INTERVAL_MS = 30 * 60_000;
 
 const AGENT_ADDRESS_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 

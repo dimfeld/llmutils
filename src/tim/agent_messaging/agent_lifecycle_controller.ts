@@ -1,4 +1,5 @@
 import {
+  AGENT_IDLE_HEARTBEAT_INTERVAL_MS,
   STOP_AGENT_INACTIVITY_TIMEOUT_MS,
   type FinishAgentResult,
   type StopAgentResult,
@@ -26,6 +27,20 @@ import { randomUUID } from 'node:crypto';
 
 const STANDARD_GRACEFUL_STOP_INSTRUCTION =
   'The orchestrator has requested a graceful shutdown. Complete your current work, then provide your final status update or result before ending your session.';
+
+export const IDLE_HEARTBEAT_MESSAGE = `[Automated tim heartbeat] tim has not received any output from you for ${
+  AGENT_IDLE_HEARTBEAT_INTERVAL_MS / 60_000
+} minutes. This message is a check, not a request to stop.
+
+- If you have actually finished your assignment, make sure that you closed any subprocesses that you started (for example background shells, dev servers, or watch processes), then call the FinishTimAgent tool with your final result.
+- If you are still working, or you are waiting for something (for example a message from another agent or a long-running command), that is okay. Do not call FinishTimAgent. Continue to work or wait.`;
+
+interface IdleHeartbeatState {
+  lastActivityAt: number;
+  timerGeneration: number;
+  timerHandle: unknown;
+  stopped: boolean;
+}
 
 type RestorableStopPhase = NoneStopPhase | GracefulStopPhase;
 
@@ -149,6 +164,7 @@ export class AgentLifecycleController {
   private disposed = false;
   private finishResultDelivery: Promise<void> | undefined;
   private finishResultDelivered = false;
+  private idleHeartbeat: IdleHeartbeatState | undefined;
 
   public constructor(private readonly options: AgentLifecycleControllerOptions) {}
 
@@ -170,6 +186,7 @@ export class AgentLifecycleController {
 
   /** Retry a pending startup stop after the provider becomes ready. */
   public providerReady(): void {
+    this.startIdleHeartbeat();
     this.maybeRequestProviderStop();
   }
 
@@ -240,6 +257,7 @@ export class AgentLifecycleController {
     }
 
     this.options.record.state = 'finishing';
+    this.stopIdleHeartbeat();
     this.terminal.finishRequested = true;
     this.saveFinishFallback(message);
     this.startShutdownDeadline();
@@ -256,6 +274,7 @@ export class AgentLifecycleController {
     }
 
     this.options.record.state = 'stopping';
+    this.stopIdleHeartbeat();
     this.phase = this.createGracefulPendingPhase(buildGracefulStopInstruction(message));
     this.maybeRequestProviderStop();
     return Promise.resolve(
@@ -288,6 +307,7 @@ export class AgentLifecycleController {
   /** Start or join graceful shutdown as part of the manager's root fan-out. */
   public requestRootTeardown(): Promise<void> {
     if (this.terminal.terminalClaimed) return this.terminal.terminalPromise;
+    this.stopIdleHeartbeat();
 
     if (this.options.record.state === 'finishing') {
       this.startShutdownDeadline();
@@ -322,6 +342,7 @@ export class AgentLifecycleController {
     if (this.disposed) return;
     this.disposed = true;
     this.cancelStopTimer();
+    this.stopIdleHeartbeat();
     this.unsubscribeProvider?.();
     this.unsubscribeProvider = undefined;
   }
@@ -346,6 +367,7 @@ export class AgentLifecycleController {
     if (!this.isCurrent() || this.providerExit !== undefined || this.terminal.terminalClaimed)
       return;
     if (this.options.record.state !== 'finishing') this.options.record.state = 'stopping';
+    this.stopIdleHeartbeat();
     this.startShutdownDeadline();
   }
 
@@ -451,6 +473,7 @@ export class AgentLifecycleController {
   private handleOutputActivity(): void {
     if (!this.isCurrent() || this.providerExit !== undefined || this.terminal.terminalClaimed)
       return;
+    this.noteIdleHeartbeatActivity();
     const phase = isGracefulStopPhase(this.phase)
       ? this.phase
       : this.phase.kind === 'force-pending' && isGracefulStopPhase(this.phase.previous)
@@ -477,6 +500,7 @@ export class AgentLifecycleController {
   private handleTurnComplete(): void {
     if (!this.isCurrent() || this.providerExit !== undefined || this.terminal.terminalClaimed)
       return;
+    this.noteIdleHeartbeatActivity();
     if (this.options.record.state !== 'finishing' || !this.terminal.finishRequested) return;
     if (this.terminal.closeAfterTurnRequested || this.providerLifecycle === undefined) return;
 
@@ -572,6 +596,7 @@ export class AgentLifecycleController {
 
     const previous = this.captureRestorableStopPhase(this.phase);
     this.options.record.state = 'stopping';
+    this.stopIdleHeartbeat();
     const phase: ForcePendingStopPhase = { kind: 'force-pending', previous };
     this.phase = phase;
     if (this.providerLifecycle === undefined || !this.options.record.launchReady) {
@@ -696,11 +721,128 @@ export class AgentLifecycleController {
     if (isGracefulStopPhase(this.phase)) this.cancelPhaseTimer(this.phase);
   }
 
+  private startIdleHeartbeat(): void {
+    // Input readiness can come after launch readiness, so the record can still
+    // be `starting` here. The timer callback checks the running state.
+    if (
+      this.idleHeartbeat !== undefined ||
+      !this.isCurrent() ||
+      this.providerExit !== undefined ||
+      this.terminal.terminalClaimed ||
+      !this.options.record.launchReady ||
+      this.options.record.state === 'finishing' ||
+      this.options.record.state === 'stopping'
+    ) {
+      return;
+    }
+    this.idleHeartbeat = {
+      lastActivityAt: this.options.scheduler.now(),
+      timerGeneration: 0,
+      timerHandle: undefined,
+      stopped: false,
+    };
+    this.armIdleHeartbeatTimer(this.idleHeartbeat);
+  }
+
+  /**
+   * Provider output can be very frequent, so activity only records a time. The
+   * timer callback re-arms for the remaining interval instead of each output
+   * event replacing the timer.
+   */
+  private noteIdleHeartbeatActivity(): void {
+    if (this.idleHeartbeat === undefined || this.idleHeartbeat.stopped) return;
+    this.idleHeartbeat.lastActivityAt = this.options.scheduler.now();
+  }
+
+  private stopIdleHeartbeat(): void {
+    const heartbeat = this.idleHeartbeat;
+    if (heartbeat === undefined) {
+      // Prevent a later providerReady() from starting a heartbeat.
+      this.idleHeartbeat = {
+        lastActivityAt: 0,
+        timerGeneration: 0,
+        timerHandle: undefined,
+        stopped: true,
+      };
+      return;
+    }
+    heartbeat.stopped = true;
+    heartbeat.timerGeneration += 1;
+    if (heartbeat.timerHandle !== undefined) {
+      this.options.scheduler.clearTimeout(heartbeat.timerHandle);
+      heartbeat.timerHandle = undefined;
+    }
+  }
+
+  private canSendIdleHeartbeat(): boolean {
+    return (
+      this.isCurrent() &&
+      this.providerExit === undefined &&
+      !this.terminal.terminalClaimed &&
+      this.options.record.launchReady &&
+      (this.options.record.state === 'running-active' ||
+        this.options.record.state === 'running-idle')
+    );
+  }
+
+  private armIdleHeartbeatTimer(heartbeat: IdleHeartbeatState): void {
+    if (heartbeat.stopped) return;
+    const expectedGeneration = ++heartbeat.timerGeneration;
+    const remaining = Math.max(
+      0,
+      heartbeat.lastActivityAt + AGENT_IDLE_HEARTBEAT_INTERVAL_MS - this.options.scheduler.now()
+    );
+    heartbeat.timerHandle = this.options.scheduler.setTimeout((): void => {
+      if (heartbeat.stopped || heartbeat.timerGeneration !== expectedGeneration) return;
+      heartbeat.timerHandle = undefined;
+      if (!this.canSendIdleHeartbeat()) {
+        // A nonterminal agent that is not yet running (or briefly in another
+        // state) is checked again later. Finish and stop transitions stop the
+        // heartbeat explicitly.
+        if (this.isCurrent() && !this.terminal.terminalClaimed && this.providerExit === undefined) {
+          heartbeat.lastActivityAt = this.options.scheduler.now();
+          this.armIdleHeartbeatTimer(heartbeat);
+        }
+        return;
+      }
+      const now = this.options.scheduler.now();
+      if (heartbeat.lastActivityAt + AGENT_IDLE_HEARTBEAT_INTERVAL_MS > now) {
+        this.armIdleHeartbeatTimer(heartbeat);
+        return;
+      }
+      heartbeat.lastActivityAt = now;
+      this.armIdleHeartbeatTimer(heartbeat);
+      void this.sendIdleHeartbeat();
+    }, remaining);
+  }
+
+  private async sendIdleHeartbeat(): Promise<void> {
+    try {
+      const acknowledgement = await this.options.sessionRuntime.sendMessage(
+        {
+          id: this.options.rootRegistration.registration.id,
+          name: this.options.rootRegistration.registration.name,
+        },
+        { id: this.options.record.id, name: this.options.record.name },
+        { requestId: randomUUID(), content: IDLE_HEARTBEAT_MESSAGE }
+      );
+      if (!acknowledgement.success) {
+        this.logDiagnostic(
+          'idle heartbeat delivery',
+          new Error(`${acknowledgement.error.code}: ${acknowledgement.error.message}`)
+        );
+      }
+    } catch (error) {
+      this.logDiagnostic('idle heartbeat delivery', error);
+    }
+  }
+
   private async beginTerminal(cause: TerminalNotificationCause): Promise<void> {
     if (this.terminal.terminalClaimed) return this.terminal.terminalPromise;
     this.terminal.terminalClaimed = true;
     this.terminal.cause = cause;
     this.cancelStopTimer();
+    this.stopIdleHeartbeat();
     this.unsubscribeProvider?.();
     this.unsubscribeProvider = undefined;
 

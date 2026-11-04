@@ -13,8 +13,10 @@ import {
   MAX_PENDING_MESSAGES_PER_RECIPIENT,
   MAX_SUBAGENTS_PER_SESSION,
   ORCHESTRATOR_AGENT_NAME,
+  AGENT_IDLE_HEARTBEAT_INTERVAL_MS,
   STOP_AGENT_INACTIVITY_TIMEOUT_MS,
 } from './contracts.js';
+import { IDLE_HEARTBEAT_MESSAGE } from './agent_lifecycle_controller.js';
 import {
   AgentManagerError,
   AgentProviderForceNotAcceptedError,
@@ -4128,6 +4130,116 @@ describe('AgentManager StopTimAgent lifecycle', () => {
     await forceStarted;
     await expect(force).resolves.toMatchObject({ mode: 'forced' });
     await manager.waitForAgentTerminal(launch.request.identity.id);
+  });
+});
+
+describe('AgentManager idle heartbeat', () => {
+  async function createHeartbeatManager(): Promise<{
+    manager: AgentManager;
+    launcher: FakeAgentLauncher;
+    scheduler: FakeAgentManagerScheduler;
+  }> {
+    const launcher = new FakeAgentLauncher();
+    const scheduler = new FakeAgentManagerScheduler();
+    const manager = await createManager({
+      agentPreparer: createPreparer(),
+      agentLauncher: launcher,
+      scheduler,
+    });
+    return { manager, launcher, scheduler };
+  }
+
+  function heartbeatCount(
+    launch: Awaited<ReturnType<FakeAgentLauncher['waitForNextLaunch']>>
+  ): number {
+    return launch.handle.input.receivedMessages.filter(
+      (message) => message.content === IDLE_HEARTBEAT_MESSAGE
+    ).length;
+  }
+
+  test('sends a heartbeat from the orchestrator after silence and repeats it', async () => {
+    const { manager, launcher, scheduler } = await createHeartbeatManager();
+    const launch = await startActiveFakeAgent(manager, launcher, 'silent-agent');
+
+    scheduler.advanceBy(AGENT_IDLE_HEARTBEAT_INTERVAL_MS - 1);
+    await flushLifecyclePromises();
+    expect(heartbeatCount(launch)).toBe(0);
+
+    scheduler.advanceBy(1);
+    await waitFor(() => heartbeatCount(launch) === 1);
+    const heartbeat = launch.handle.input.receivedMessages.find(
+      (message) => message.content === IDLE_HEARTBEAT_MESSAGE
+    );
+    expect(heartbeat?.source.name).toBe(ORCHESTRATOR_AGENT_NAME);
+
+    scheduler.advanceBy(AGENT_IDLE_HEARTBEAT_INTERVAL_MS);
+    await waitFor(() => heartbeatCount(launch) === 2);
+  });
+
+  test('provider activity postpones the heartbeat', async () => {
+    const { manager, launcher, scheduler } = await createHeartbeatManager();
+    const launch = await startActiveFakeAgent(manager, launcher, 'busy-agent');
+
+    scheduler.advanceBy(AGENT_IDLE_HEARTBEAT_INTERVAL_MS - 60_000);
+    launch.handle.lifecycle.emitOutputActivity();
+    scheduler.advanceBy(120_000);
+    await flushLifecyclePromises();
+    expect(heartbeatCount(launch)).toBe(0);
+
+    launch.handle.lifecycle.emitCompletedAssistantMessage('progress');
+    scheduler.advanceBy(AGENT_IDLE_HEARTBEAT_INTERVAL_MS - 1);
+    await flushLifecyclePromises();
+    expect(heartbeatCount(launch)).toBe(0);
+
+    scheduler.advanceBy(1);
+    await waitFor(() => heartbeatCount(launch) === 1);
+  });
+
+  test('sends a heartbeat to an idle agent by starting an idle turn', async () => {
+    const { manager, launcher, scheduler } = await createHeartbeatManager();
+    const launch = await startFakeAgent(manager, launcher, 'idle-agent');
+    launch.handle.input.markReady();
+    await waitFor(
+      () => manager.getAgentSnapshot(launch.request.identity.id)?.state === 'running-idle'
+    );
+
+    scheduler.advanceBy(AGENT_IDLE_HEARTBEAT_INTERVAL_MS);
+    await waitFor(() => heartbeatCount(launch) === 1);
+  });
+
+  test('stops the heartbeat once the agent is finishing', async () => {
+    const { manager, launcher, scheduler } = await createHeartbeatManager();
+    const launch = await startActiveFakeAgent(manager, launcher, 'finishing-agent');
+
+    await manager.finishAgent(launch.request.identity, { message: 'done' });
+    // Only the finish inactivity deadline remains.
+    expect(scheduler.pendingTimerCount).toBe(1);
+    launch.handle.lifecycle.emitOutputActivity();
+    scheduler.advanceBy(STOP_AGENT_INACTIVITY_TIMEOUT_MS - 1);
+    launch.handle.lifecycle.emitOutputActivity();
+    scheduler.advanceBy(AGENT_IDLE_HEARTBEAT_INTERVAL_MS);
+    await flushLifecyclePromises();
+    expect(heartbeatCount(launch)).toBe(0);
+  });
+
+  test('stops the heartbeat once the orchestrator requests a stop', async () => {
+    const { manager, launcher, scheduler } = await createHeartbeatManager();
+    const launch = await startActiveFakeAgent(manager, launcher, 'stopping-agent');
+
+    await manager.stopAgent(manager.orchestratorIdentity, { name: 'stopping-agent' });
+    await flushLifecyclePromises();
+    expect(scheduler.pendingTimerCount).toBe(1);
+    expect(heartbeatCount(launch)).toBe(0);
+  });
+
+  test('clears the heartbeat timer when the provider exits', async () => {
+    const { manager, launcher, scheduler } = await createHeartbeatManager();
+    const launch = await startActiveFakeAgent(manager, launcher, 'exiting-agent');
+    expect(scheduler.pendingTimerCount).toBe(1);
+
+    launch.handle.lifecycle.emitExit('natural');
+    await waitFor(() => manager.getAgentSnapshot(launch.request.identity.id) === undefined);
+    expect(scheduler.pendingTimerCount).toBe(0);
   });
 });
 

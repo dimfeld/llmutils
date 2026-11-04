@@ -13,7 +13,7 @@ export {
 export { formatAgentProcessLabel } from './agent_process_labels.js';
 export { CallbackAgentInputAdapter, DeferredAgentInputAdapter } from './agent_input_adapter.js';
 export { DEFAULT_AGENT_MANAGER_SCHEDULER } from './lifecycle_scheduler.js';
-export { STOP_AGENT_INACTIVITY_TIMEOUT_MS } from './contracts.js';
+export { AGENT_IDLE_HEARTBEAT_INTERVAL_MS, STOP_AGENT_INACTIVITY_TIMEOUT_MS } from './contracts.js';
 export type { AgentId, AgentIdGenerator, AgentName, AgentSlugGenerator } from './agent_names.js';
 export type { AgentProcessLabel } from './agent_process_labels.js';
 export type { AgentPreparationOptions } from './agent_preparation.js';

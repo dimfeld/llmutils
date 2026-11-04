@@ -380,6 +380,31 @@ Failure handling depends on what the failure proves:
 Automatic escalation and root teardown record these errors without blocking
 other agents.
 
+## Idle heartbeat
+
+Sometimes a subagent finishes its work but does not exit, for example because
+its turn ended without FinishTimAgent or a lingering subprocess keeps it alive.
+The lifecycle controller detects this with an idle heartbeat.
+
+- The heartbeat timer starts at launch readiness (`providerReady()`).
+- Every provider observer event (`outputActivity()`,
+  `completedAssistantMessage()`, `turnComplete()`) records the activity time.
+  The timer is not replaced on each event; when it fires, it re-arms for the
+  remaining interval.
+- After `AGENT_IDLE_HEARTBEAT_INTERVAL_MS` (30 minutes) with no provider
+  output, and only while the agent is `running-active` or `running-idle`, the
+  controller sends `IDLE_HEARTBEAT_MESSAGE` from the root `orchestrator`
+  identity through the normal mailbox. It is steered into an active turn or
+  starts an idle turn. The message tells the agent to close lingering
+  subprocesses and call FinishTimAgent only if its work is actually done. An
+  agent that is still working or waiting continues.
+- The heartbeat repeats after each further silent interval.
+- Finish, stop, root teardown, provider End, terminal claim, and `dispose()`
+  stop the heartbeat permanently. The two-minute stop inactivity policy then
+  owns the agent.
+
+Delivery failures are logged as diagnostics and do not change lifecycle state.
+
 ## Terminal convergence and notifications
 
 Natural exit, self-finish, graceful stop, forced stop, provider failure, and
