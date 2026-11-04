@@ -7,6 +7,13 @@ export interface ShortcutCallbacks {
   navigateProject?: (projectIndex: number) => boolean | void;
 }
 
+/** Returns true if the event is Cmd+E (the End Session shortcut on the session detail page). */
+export function isEndSessionShortcut(event: KeyboardEvent): boolean {
+  return (
+    event.code === 'KeyE' && event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+  );
+}
+
 /** Returns true if the event target is a text-entry element where Ctrl+/ would type a character. */
 export function isTypingTarget(event: KeyboardEvent): boolean {
   const target = event.target;

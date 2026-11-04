@@ -769,6 +769,7 @@ The root layout (`+layout.svelte`) registers a `<svelte:window onkeydown>` handl
 | **Cmd+K / Ctrl+K**             | Open command bar scoped to current project | Always active, even in text inputs                                                     |
 | **Cmd+Shift+K / Ctrl+Shift+K** | Open command bar searching all projects    | Always active; when on "All Projects", behaves same as Cmd+K                           |
 | **Ctrl+/**                     | Focus the search input on the Plans tab    | Suppressed when focus is in a text input, textarea, select, or contenteditable element |
+| **Cmd+E**                      | Open the End Session confirmation          | Session detail page for an active session; Enter confirms, Escape cancels              |
 | **Ctrl+1**                     | Navigate to Sessions tab                   | Always active, even in text inputs                                                     |
 | **Ctrl+2**                     | Navigate to Active Work tab                | Always active                                                                          |
 | **Ctrl+3**                     | Navigate to Plans tab                      | Always active                                                                          |

@@ -21,6 +21,7 @@
   import { summarizeHiddenToolCalls } from '$lib/utils/session_message_visibility.js';
   import { reuseUnchangedMessages } from '$lib/utils/stable_display_messages.js';
   import { mergeConsecutiveOutputMessages } from '$lib/utils/merge_output_messages.js';
+  import { isEndSessionShortcut } from '$lib/utils/keyboard_shortcuts.js';
   import PromptRenderer from './PromptRenderer.svelte';
   import MessageInput from './MessageInput.svelte';
   import Terminal from './Terminal.svelte';
@@ -324,6 +325,13 @@
     endSessionTriggerButton?.focus();
   }
 
+  function handleWindowKeydown(event: KeyboardEvent): void {
+    if (!showEndSession || !isEndSessionShortcut(event)) return;
+    event.preventDefault();
+    // Cmd+E opens the confirmation prompt (or refocuses it) instead of ending immediately.
+    void handleRequestEndSession();
+  }
+
   function handleConfirmationKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -444,6 +452,8 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <div class="flex h-full min-h-0 w-full flex-col overflow-hidden">
   <!-- Session header -->
@@ -591,6 +601,7 @@
               class="rounded border border-red-200 px-2 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-300 dark:hover:bg-red-950/40"
               onclick={handleRequestEndSession}
               bind:this={endSessionTriggerButton}
+              title="End Session (⌘E)"
             >
               End Session
             </button>

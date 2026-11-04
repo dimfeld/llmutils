@@ -1,5 +1,9 @@
 import { describe, expect, test, vi } from 'vitest';
-import { isTypingTarget, handleGlobalShortcuts } from './keyboard_shortcuts.js';
+import {
+  isEndSessionShortcut,
+  isTypingTarget,
+  handleGlobalShortcuts,
+} from './keyboard_shortcuts.js';
 import { resolvePreservedTabForProjectSwitch, resolveTabSlugForIndex } from './tab_navigation.js';
 
 function makeKeyEvent(
@@ -22,6 +26,25 @@ function makeKeyEvent(
     preventDefault: vi.fn(),
   } as unknown as KeyboardEvent;
 }
+
+describe('isEndSessionShortcut', () => {
+  test('returns true for Cmd+E', () => {
+    expect(isEndSessionShortcut(makeKeyEvent('KeyE', { metaKey: true }))).toBe(true);
+  });
+
+  test('returns false without Cmd or with extra modifiers', () => {
+    expect(isEndSessionShortcut(makeKeyEvent('KeyE'))).toBe(false);
+    expect(isEndSessionShortcut(makeKeyEvent('KeyE', { ctrlKey: true }))).toBe(false);
+    expect(isEndSessionShortcut(makeKeyEvent('KeyE', { metaKey: true, shiftKey: true }))).toBe(
+      false
+    );
+    expect(isEndSessionShortcut(makeKeyEvent('KeyE', { metaKey: true, altKey: true }))).toBe(false);
+  });
+
+  test('returns false for other keys', () => {
+    expect(isEndSessionShortcut(makeKeyEvent('KeyK', { metaKey: true }))).toBe(false);
+  });
+});
 
 describe('isTypingTarget', () => {
   test('returns true for INPUT elements', () => {
