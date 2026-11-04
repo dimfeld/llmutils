@@ -203,6 +203,29 @@ export const workspaceCreationConfigSchema = z.object({
 
 export type WorkspaceCreationConfig = z.infer<typeof workspaceCreationConfigSchema>;
 
+/**
+ * Schema for automatic cleanup of 'auto' type workspaces.
+ * Defaults are applied in `resolveWorkspaceCleanupSettings()`, not here.
+ */
+export const workspaceCleanupConfigSchema = z
+  .object({
+    /** Whether automatic workspace cleanup runs. Defaults to true. */
+    enabled: z.boolean().optional(),
+    /**
+     * Number of days after creation before an 'auto' workspace is disabled for
+     * auto-selection. Defaults to 7.
+     */
+    disableAfterDays: z.number().nonnegative().optional(),
+    /**
+     * Number of days after a workspace is disabled before its directory is deleted.
+     * Defaults to 3.
+     */
+    deleteAfterDays: z.number().nonnegative().optional(),
+  })
+  .strict();
+
+export type WorkspaceCleanupConfig = z.infer<typeof workspaceCleanupConfigSchema>;
+
 export const syncNodeRoleSchema = z.enum(['main', 'persistent', 'ephemeral']);
 
 export const syncAllowedNodeSchema = z
@@ -1057,6 +1080,8 @@ export const timConfigSchema = z
       .describe('Per-subagent model overrides keyed by executor (claude, codex)'),
     /** Configuration for automatic workspace creation. */
     workspaceCreation: workspaceCreationConfigSchema.optional(),
+    /** Configuration for automatic disabling and deletion of old 'auto' workspaces. */
+    workspaceCleanup: workspaceCleanupConfigSchema.optional(),
     /** Planning-related configuration options */
     planning: z
       .object({

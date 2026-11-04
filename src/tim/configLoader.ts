@@ -259,6 +259,7 @@ function mergeConfigs(mainConfig: TimConfig, localConfig: TimConfig): TimConfig 
   mergeConfigKey('tags');
   mergeConfigKey('updateDocs');
   mergeConfigKey('workspaceCreation');
+  mergeConfigKey('workspaceCleanup');
 
   // Handle inbox.prs: preserve scalar overrides and concatenate ignored usernames.
   if (localConfig.inbox !== undefined) {

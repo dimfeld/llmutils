@@ -38,6 +38,8 @@ export interface WorkspaceInfo {
   issueUrls?: string[];
   workspaceType: WorkspaceType;
   updatedAt?: string;
+  /** ISO timestamp when automatic cleanup disabled this workspace. */
+  disabledAt?: string;
 }
 
 export interface WorkspaceMetadataPatch {
@@ -73,6 +75,7 @@ export function workspaceRowToInfo(
     issueUrls: issueUrls.length > 0 ? issueUrls : undefined,
     workspaceType: dbValueToWorkspaceType(row.workspace_type),
     updatedAt: row.updated_at,
+    disabledAt: row.disabled_at ?? undefined,
   };
 }
 

@@ -1621,6 +1621,18 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 61,
+    up: `SELECT 1;`,
+    afterUp: (db: Database): void => {
+      if (!tableExists(db, 'workspace')) {
+        return;
+      }
+      if (!tableColumns(db, 'workspace').has('disabled_at')) {
+        db.exec('ALTER TABLE workspace ADD COLUMN disabled_at TEXT');
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

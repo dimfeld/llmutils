@@ -309,6 +309,32 @@ Workspace types:
 - `auto` - preferred pool for `--auto-workspace` and web-launched agent runs
 - `standard` - eligible for auto-selection only when no `auto` workspaces exist
 
+### Automatic workspace cleanup
+
+`tim` removes old `auto` workspaces in two steps:
+
+1. When an `auto` workspace is older than `disableAfterDays` (default: 7), tim disables it. Auto-selection does not use a disabled workspace.
+2. When a workspace has been disabled for `deleteAfterDays` (default: 3), tim deletes its directory and its record.
+
+Cleanup runs each time tim auto-selects a workspace for the current repository. You can also run it manually:
+
+```bash
+tim workspace cleanup --dry-run   # show what would change
+tim workspace cleanup             # current repository
+tim workspace cleanup --all       # all repositories, with the current config
+```
+
+Only `auto` workspaces are affected. Cleanup does not delete a workspace that is locked, has uncommitted changes, or contains the current directory. Cleanup does not check for unpushed commits, so push your branches before a workspace becomes due. Configure it in `tim.yml`:
+
+```yaml
+workspaceCleanup:
+  enabled: true # default: true
+  disableAfterDays: 7
+  deleteAfterDays: 3
+```
+
+`tim workspace list` shows disabled workspaces as `Auto (Disabled)`.
+
 When an agent runs, `tim` locks the selected workspace, materializes the plan into `.tim/plans/`, checks out or creates the plan branch, syncs edited plan data back into SQLite, and pushes actual code changes through the remote. Plan files are temporary working material; the SQLite database is the source of truth.
 
 For the full multi-workspace model, see [`docs/multi-workspace-workflow.md`](docs/multi-workspace-workflow.md).

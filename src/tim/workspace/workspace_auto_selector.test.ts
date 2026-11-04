@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { confirm } from '@inquirer/prompts';
+import { $ } from 'bun';
 
 import { claimAssignment } from '../db/assignment.js';
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
@@ -630,6 +631,104 @@ describe('WorkspaceAutoSelector', () => {
         directorySuffix: expect.stringMatching(/^auto-\d+$/),
         workspaceType: 'auto',
       })
+    );
+  });
+
+  test('selectWorkspace disables old auto workspaces and does not select them', async () => {
+    const oldPath = path.join(testDir, 'workspace-auto-old');
+    const freshPath = path.join(testDir, 'workspace-auto-fresh');
+    await fs.mkdir(oldPath, { recursive: true });
+    await fs.mkdir(freshPath, { recursive: true });
+
+    await seedWorkspace('github.com/test/repo', freshPath, 'task-fresh', 'task-fresh', 'auto');
+    await seedWorkspace('github.com/test/repo', oldPath, 'task-old', 'task-old', 'auto');
+    const db = getDatabase();
+    db.prepare('UPDATE workspace SET created_at = ? WHERE workspace_path = ?').run(
+      new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
+      oldPath
+    );
+    // Make the old workspace sort first so that selection would pick it if it were eligible.
+    db.prepare('UPDATE workspace SET created_at = ? WHERE workspace_path = ?').run(
+      new Date(Date.now() - 1000).toISOString(),
+      freshPath
+    );
+
+    const result = await selector.selectWorkspace('task-next', '/test/plan-next.yml', {
+      interactive: false,
+    });
+
+    expect(result?.workspace.workspacePath).toBe(freshPath);
+    const oldRow = db
+      .prepare('SELECT disabled_at FROM workspace WHERE workspace_path = ?')
+      .get(oldPath) as { disabled_at: string | null };
+    expect(oldRow.disabled_at).not.toBeNull();
+  });
+
+  test('selectWorkspace skips disabled workspaces even when assigned to the plan', async () => {
+    const disabledPath = path.join(testDir, 'workspace-auto-disabled-assigned');
+    await fs.mkdir(disabledPath, { recursive: true });
+    await seedWorkspace(
+      'github.com/test/repo',
+      disabledPath,
+      'task-disabled',
+      'task-disabled',
+      'auto'
+    );
+    getDatabase()
+      .prepare('UPDATE workspace SET disabled_at = ? WHERE workspace_path = ?')
+      .run(new Date().toISOString(), disabledPath);
+    await seedAssignmentForPlan('github.com/test/repo', 'plan-uuid-disabled', 5, disabledPath);
+
+    const createWorkspaceSpy = vi
+      .spyOn(await import('./workspace_manager.js'), 'createWorkspace')
+      .mockResolvedValue(null);
+
+    const result = await selector.selectWorkspace('task-new', '/test/plan-new.yml', {
+      interactive: false,
+      preferredPlanUuid: 'plan-uuid-disabled',
+    });
+
+    expect(result).toBeNull();
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(
+      testDir,
+      'task-new',
+      '/test/plan-new.yml',
+      config,
+      expect.objectContaining({ workspaceType: 'auto' })
+    );
+  });
+
+  test('selectWorkspace keeps creating auto workspaces after cleanup deletes the last one', async () => {
+    const duePath = path.join(testDir, 'workspace-auto-due');
+    const standardPath = path.join(testDir, 'workspace-standard-other');
+    await fs.mkdir(duePath, { recursive: true });
+    await fs.mkdir(standardPath, { recursive: true });
+    await seedWorkspace('github.com/test/repo', duePath, 'task-due', 'task-due', 'auto');
+    await seedWorkspace('github.com/test/repo', standardPath, 'task-standard', 'task-standard');
+    const dayMs = 24 * 60 * 60 * 1000;
+    getDatabase()
+      .prepare('UPDATE workspace SET created_at = ?, disabled_at = ? WHERE workspace_path = ?')
+      .run(
+        new Date(Date.now() - 20 * dayMs).toISOString(),
+        new Date(Date.now() - 5 * dayMs).toISOString(),
+        duePath
+      );
+    // Cleanup only deletes a workspace when it can confirm that there are no uncommitted changes.
+    await $`git init -q`.cwd(duePath).quiet();
+
+    const createWorkspaceSpy = vi
+      .spyOn(await import('./workspace_manager.js'), 'createWorkspace')
+      .mockResolvedValue(null);
+
+    await selector.selectWorkspace('task-new', '/test/plan-new.yml', { interactive: false });
+
+    await expect(fs.stat(duePath)).rejects.toThrow();
+    expect(createWorkspaceSpy).toHaveBeenCalledWith(
+      testDir,
+      'task-new',
+      '/test/plan-new.yml',
+      config,
+      expect.objectContaining({ workspaceType: 'auto' })
     );
   });
 

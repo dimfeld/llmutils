@@ -37,6 +37,8 @@ export interface WorkspaceRow {
   workspace_type: number;
   created_at: string;
   updated_at: string;
+  /** ISO timestamp when automatic cleanup disabled this workspace, or null when enabled. */
+  disabled_at: string | null;
 }
 
 export interface RecordWorkspaceInput {
@@ -259,6 +261,21 @@ export function patchWorkspace(
 
 export function deleteWorkspace(db: Database, workspacePath: string): boolean {
   const result = db.prepare('DELETE FROM workspace WHERE workspace_path = ?').run(workspacePath);
+  return result.changes > 0;
+}
+
+/**
+ * Sets or clears the disabled timestamp for a workspace. A disabled workspace is not
+ * eligible for auto-selection. Returns true when a workspace row was updated.
+ */
+export function setWorkspaceDisabledAt(
+  db: Database,
+  workspacePath: string,
+  disabledAt: string | null
+): boolean {
+  const result = db
+    .prepare('UPDATE workspace SET disabled_at = ? WHERE workspace_path = ?')
+    .run(disabledAt, workspacePath);
   return result.changes > 0;
 }
 

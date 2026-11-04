@@ -111,6 +111,16 @@ When `--auto-workspace` needs to pick a workspace:
 
 This lets you carve out a dedicated set of workspaces for automated use while keeping other workspaces available for manual work.
 
+### Automatic Cleanup of Auto Workspaces
+
+`src/tim/workspace/workspace_cleanup.ts` disables and then deletes old `auto` workspaces. Settings come from `workspaceCleanup` in the config (`enabled`, `disableAfterDays`, `deleteAfterDays`). Defaults are 7 and 3 days and are applied in `resolveWorkspaceCleanupSettings()`, not in the zod schema.
+
+- **Disable:** an `auto` workspace whose `created_at` is older than `disableAfterDays` gets `workspace.disabled_at` set (migration v61). Disabled workspaces are excluded from auto-selection, also when the plan is assigned to that workspace.
+- **Delete:** a workspace whose `disabled_at` is older than `deleteAfterDays` is deleted. The delay starts at the disable time, so a workspace always stays disabled for the full delay before deletion. Cleanup takes a PID lock on the workspace, removes the directory, and deletes the DB row (the lock row goes with it through `ON DELETE CASCADE`).
+- **Kept:** a due workspace is kept when it is locked, has uncommitted changes, the change check fails (for example, not a repository), its path is a symbolic link, or it contains a protected path (the current directory, or the repository root of the running command).
+- **Triggers:** `WorkspaceAutoSelector.selectWorkspace()` runs cleanup for the current repository before it filters candidates. It computes the implicit "auto only" rule from the list before cleanup, so deleting the last `auto` workspace still creates the next one as `auto`. `tim workspace cleanup [--dry-run] [--all] [--repo <id>]` runs it manually. With `--all`, it uses the config of the current directory for all repositories.
+- Standard and primary workspaces are never affected.
+
 ## Workspace Switching
 
 When working with multiple workspaces, quickly switching between them can be tedious. tim provides an interactive workspace switcher using `fzf`.

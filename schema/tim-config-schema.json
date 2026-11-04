@@ -1448,6 +1448,23 @@
         }
       }
     },
+    "workspaceCleanup": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "disableAfterDays": {
+          "type": "number",
+          "minimum": 0
+        },
+        "deleteAfterDays": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
     "planning": {
       "type": "object",
       "properties": {

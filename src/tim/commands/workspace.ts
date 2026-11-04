@@ -36,6 +36,11 @@ import {
   extractIssueNumber,
 } from '../display_utils.js';
 import { WorkspaceLock } from '../workspace/workspace_lock.js';
+import {
+  cleanupWorkspaces,
+  logWorkspaceCleanupResult,
+  resolveWorkspaceCleanupSettings,
+} from '../workspace/workspace_cleanup.js';
 import type { PlanSchema } from '../planSchema.js';
 import type { TimConfig } from '../configSchema.js';
 import type { Command } from 'commander';
@@ -94,6 +99,7 @@ interface WorkspaceListEntry {
   workspaceType: WorkspaceType;
   createdAt: string;
   updatedAt?: string;
+  disabledAt?: string;
   mostRecentAssignment?: string;
   mostRecentAssignmentPlanId?: number;
   mostRecentAssignmentStatus?: string;
@@ -210,6 +216,7 @@ async function buildWorkspaceListEntries(
       workspaceType: workspace.workspaceType,
       createdAt: workspace.createdAt,
       updatedAt: workspace.updatedAt,
+      disabledAt: workspace.disabledAt,
       mostRecentAssignment: buildWorkspaceAssignmentDisplay(
         mostRecentAssignmentByWorkspace[workspace.workspacePath]
       ),
@@ -431,10 +438,11 @@ function outputWorkspaceTable(entries: WorkspaceListEntry[], showHeader: boolean
         status = chalk.blue('Primary');
       }
     } else if (entry.workspaceType === 'auto') {
+      const autoLabel = entry.disabledAt ? chalk.gray('Auto (Disabled)') : chalk.blue('Auto');
       if (entry.lockedBy) {
-        status = chalk.blue('Auto') + ' ' + chalk.red('(Locked)');
+        status = autoLabel + ' ' + chalk.red('(Locked)');
       } else {
-        status = chalk.blue('Auto');
+        status = autoLabel;
       }
     } else if (entry.lockedBy) {
       const lockType = entry.lockedBy.type;
@@ -1961,6 +1969,53 @@ async function pushJjBookmarkToWorkspace(
   if (pushResult.exitCode !== 0) {
     throw new Error(`Failed to push bookmark "${bookmark}" to ${remoteName}: ${pushResult.stderr}`);
   }
+}
+
+export interface WorkspaceCleanupCommandOptions {
+  dryRun?: boolean;
+  all?: boolean;
+  repo?: string;
+}
+
+/**
+ * Disables old 'auto' workspaces and deletes workspaces that have been disabled long enough.
+ * Uses the `workspaceCleanup` settings from the current configuration, also with `--all`.
+ */
+export async function handleWorkspaceCleanupCommand(
+  options: WorkspaceCleanupCommandOptions,
+  command: Command
+): Promise<void> {
+  const globalOpts = command.parent!.parent!.opts();
+  const config = await loadEffectiveConfig(globalOpts.config);
+  const settings = resolveWorkspaceCleanupSettings(config);
+  if (!settings.enabled) {
+    log('Workspace cleanup is disabled by the workspaceCleanup.enabled setting.');
+    return;
+  }
+
+  let workspaces: WorkspaceInfo[];
+  if (options.all) {
+    workspaces = listAllWorkspaceInfos();
+  } else {
+    const repositoryId = options.repo ?? (await determineRepositoryId());
+    workspaces = findWorkspaceInfosByRepositoryId(repositoryId);
+  }
+
+  const protectedPaths: string[] = [];
+  const gitRoot = await getGitRoot().catch(() => undefined);
+  if (gitRoot) {
+    protectedPaths.push(gitRoot);
+  }
+
+  const dryRun = options.dryRun ?? false;
+  const result = await cleanupWorkspaces(workspaces, settings, { dryRun, protectedPaths });
+  logWorkspaceCleanupResult(result, dryRun);
+
+  const verb = dryRun ? 'Would disable' : 'Disabled';
+  const deleteVerb = dryRun ? 'would delete' : 'deleted';
+  log(
+    `${verb} ${result.disabled.length} workspace(s), ${deleteVerb} ${result.deleted.length}, kept ${result.skipped.length}.`
+  );
 }
 
 async function determineRepositoryId(cwd?: string): Promise<string> {

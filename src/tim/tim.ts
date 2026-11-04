@@ -2458,6 +2458,19 @@ workspaceCommand
   });
 
 workspaceCommand
+  .command('cleanup')
+  .description(
+    "Disable old 'auto' workspaces and delete workspaces that have been disabled long enough"
+  )
+  .option('--dry-run', 'Print what would change without disabling or deleting anything')
+  .option('--all', 'Clean up workspaces across all repositories')
+  .option('--repo <id>', 'Repository ID to clean up (defaults to current repo)')
+  .action(async (options, command) => {
+    const { handleWorkspaceCleanupCommand } = await import('./commands/workspace.js');
+    await handleWorkspaceCleanupCommand(options, command).catch(handleCommandError);
+  });
+
+workspaceCommand
   .command('pull-plan <planId>')
   .description('Fetch and check out a plan branch/bookmark if it exists')
   .option('--workspace <workspace>', 'Workspace task ID or path (defaults to current workspace)')

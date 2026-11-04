@@ -8,6 +8,11 @@ import { getProject } from '../db/project.js';
 import { deleteWorkspace } from '../db/workspace.js';
 import { WorkspaceLock, type LockInfo } from './workspace_lock.js';
 import { createWorkspace } from './workspace_manager.js';
+import {
+  cleanupWorkspaces,
+  logWorkspaceCleanupResult,
+  resolveWorkspaceCleanupSettings,
+} from './workspace_cleanup.js';
 import { ensureMaterializeDir } from '../plan_materialize.js';
 import type { TimConfig } from '../configSchema.js';
 import { getRepositoryIdentity } from '../assignments/workspace_identifier.js';
@@ -74,6 +79,26 @@ export class WorkspaceAutoSelector {
   ) {}
 
   /**
+   * Disables and deletes old 'auto' workspaces. Returns the workspaces that still exist.
+   * Cleanup errors are logged and do not stop workspace selection.
+   */
+  private async runCleanup(workspaces: WorkspaceInfo[]): Promise<WorkspaceInfo[]> {
+    try {
+      const result = await cleanupWorkspaces(
+        workspaces,
+        resolveWorkspaceCleanupSettings(this.config),
+        { protectedPaths: [this.mainRepoRoot] }
+      );
+      logWorkspaceCleanupResult(result);
+      const deleted = new Set(result.deleted);
+      return workspaces.filter((workspace) => !deleted.has(workspace.workspacePath));
+    } catch (error) {
+      log(`Workspace cleanup failed: ${String(error)}`);
+      return workspaces;
+    }
+  }
+
+  /**
    * Automatically choose an available workspace or create a new one
    * @param taskId The task ID for workspace selection
    * @param planFilePath The plan file path
@@ -114,12 +139,16 @@ export class WorkspaceAutoSelector {
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
     const existingWorkspaces = await removeDeletedWorkspaceRecords(allWorkspaces);
+    // Check for 'auto' workspaces before cleanup so that deleting the last old 'auto'
+    // workspace does not make standard workspaces eligible.
     const requireAutoType =
       this.config.workspaceCreation?.requireAutoType ||
       existingWorkspaces.some((workspace) => workspace.workspaceType === 'auto');
-    const eligibleWorkspaces = existingWorkspaces.filter(
+    const remainingWorkspaces = await this.runCleanup(existingWorkspaces);
+    const eligibleWorkspaces = remainingWorkspaces.filter(
       (workspace) =>
         !excludedWorkspacePathSet.has(workspace.workspacePath) &&
+        !workspace.disabledAt &&
         (requireAutoType
           ? workspace.workspaceType === 'auto'
           : workspace.workspaceType !== 'primary')
