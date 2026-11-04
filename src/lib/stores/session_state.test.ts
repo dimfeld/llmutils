@@ -147,7 +147,7 @@ describe('SessionManager.sessionGroups', () => {
     ]);
   });
 
-  test('sorts one-off sessions below other active sessions and above inactive sessions', () => {
+  test('sorts agent sessions, then one-off sessions, below other active sessions', () => {
     const manager = new SessionManager();
     const add = (
       connectionId: string,
@@ -170,11 +170,15 @@ describe('SessionManager.sessionGroups', () => {
     add('guide-comment', 'review-guide-comment', '2026-03-18T11:00:00.000Z');
     add('old-agent', 'agent', '2026-03-18T08:00:00.000Z');
     add('chat', 'chat', '2026-03-18T09:00:00.000Z');
+    add('generate', 'generate', '2026-03-18T07:30:00.000Z');
+    add('multi', 'agent-multi', '2026-03-18T10:00:00.000Z');
     add('offline-agent', 'agent', '2026-03-18T13:00:00.000Z', 'offline');
     add('offline-guide', 'review-guide', '2026-03-18T07:00:00.000Z', 'offline');
 
     expect(manager.sessionGroups[0].sessions.map((session) => session.connectionId)).toEqual([
       'chat',
+      'generate',
+      'multi',
       'old-agent',
       'shepherd',
       'guide',

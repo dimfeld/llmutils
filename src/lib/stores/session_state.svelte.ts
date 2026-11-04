@@ -57,15 +57,20 @@ const ONE_OFF_SESSION_COMMANDS: ReadonlySet<string> = new Set([
   'review-guide-comment',
 ]);
 
+/** Long-running agent commands. They sort below other active sessions, above one-off sessions. */
+const AGENT_SESSION_COMMANDS: ReadonlySet<string> = new Set(['agent', 'agent-multi']);
+
 function sessionListRank(session: SessionData): number {
-  if (session.status === 'offline') return 2;
-  if (ONE_OFF_SESSION_COMMANDS.has(session.sessionInfo.command)) return 1;
+  if (session.status === 'offline') return 3;
+  if (ONE_OFF_SESSION_COMMANDS.has(session.sessionInfo.command)) return 2;
+  if (AGENT_SESSION_COMMANDS.has(session.sessionInfo.command)) return 1;
   return 0;
 }
 
 /**
- * Sort active sessions first, then active one-off sessions (Shepherd, review guides),
- * then inactive (offline) sessions. Within each rank, newest connection first.
+ * Sort active sessions first, then active agent sessions, then active one-off sessions
+ * (Shepherd, review guides), then inactive (offline) sessions. Within each rank, newest
+ * connection first.
  */
 export function compareSessionsForList(a: SessionData, b: SessionData): number {
   const rankDiff = sessionListRank(a) - sessionListRank(b);
