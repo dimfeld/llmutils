@@ -346,7 +346,7 @@ Pure display and state helpers are extracted to `src/routes/projects/[projectId]
 
 Tab descriptors are defined once in `src/lib/utils/tab_navigation.ts` as `BASE_TABS` and `PROJECT_TABS` (base tabs plus Settings). Both `TabNav.svelte` and the keyboard shortcut layer import from this single source of truth. **To add a tab, add a `{ label, slug }` entry to `BASE_TABS`** — rendering order, `Ctrl+1..N` shortcuts, and `Ctrl+Shift+N` project-switch preservation all derive from it automatically.
 
-The current order is: Sessions (Ctrl+1), Active Work (Ctrl+2), Plans (Ctrl+3), Pull Requests (Ctrl+4), Activity (Ctrl+5), Inbox (Ctrl+6), Shepherd (Ctrl+7), Settings (Ctrl+8, numeric projects only). Ctrl+9 does nothing.
+The current order is: Sessions (Ctrl+1), Active Work (Ctrl+2), Shepherd (Ctrl+3), Plans (Ctrl+4), Pull Requests (Ctrl+5), Activity (Ctrl+6), Inbox (Ctrl+7), Settings (Ctrl+8, numeric projects only). Ctrl+9 does nothing.
 
 `handleGlobalShortcuts` forwards **all** of Ctrl+1..9 to the tab callback (`TAB_DIGIT_MAX = 9`) and lets `resolveTabSlugForIndex()` decide validity — it returns `undefined` for an out-of-range index and for Settings on the all-projects pseudo-project. A digit cap in the key handler is a second, easy-to-forget copy of the tab count: the cap used to be 5, which silently made the Settings tab unreachable by keyboard once the list grew past five entries.
 
@@ -772,11 +772,11 @@ The root layout (`+layout.svelte`) registers a `<svelte:window onkeydown>` handl
 | **Cmd+E**                      | Open the End Session confirmation          | Session detail page for an active session; Enter confirms, Escape cancels              |
 | **Ctrl+1**                     | Navigate to Sessions tab                   | Always active, even in text inputs                                                     |
 | **Ctrl+2**                     | Navigate to Active Work tab                | Always active                                                                          |
-| **Ctrl+3**                     | Navigate to Plans tab                      | Always active                                                                          |
-| **Ctrl+4**                     | Navigate to Pull Requests tab              | Always active                                                                          |
-| **Ctrl+5**                     | Navigate to Activity tab                   | Always active                                                                          |
-| **Ctrl+6**                     | Navigate to Inbox tab                      | Always active                                                                          |
-| **Ctrl+7**                     | Navigate to Shepherd tab                   | Always active                                                                          |
+| **Ctrl+3**                     | Navigate to Shepherd tab                   | Always active                                                                          |
+| **Ctrl+4**                     | Navigate to Plans tab                      | Always active                                                                          |
+| **Ctrl+5**                     | Navigate to Pull Requests tab              | Always active                                                                          |
+| **Ctrl+6**                     | Navigate to Activity tab                   | Always active                                                                          |
+| **Ctrl+7**                     | Navigate to Inbox tab                      | Always active                                                                          |
 | **Ctrl+8**                     | Navigate to Settings tab                   | Numeric projects only; does nothing on All Projects                                    |
 
 Tab navigation uses `goto()` with `projectUrl()` to build the correct route for the current project context.

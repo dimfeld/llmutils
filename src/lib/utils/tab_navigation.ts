@@ -6,11 +6,11 @@ export interface TabDescriptor {
 export const BASE_TABS: readonly TabDescriptor[] = [
   { label: 'Sessions', slug: 'sessions' },
   { label: 'Active Work', slug: 'active' },
+  { label: 'Shepherd', slug: 'shepherd' },
   { label: 'Plans', slug: 'plans' },
   { label: 'Pull Requests', slug: 'prs' },
   { label: 'Activity', slug: 'activity' },
   { label: 'Inbox', slug: 'inbox' },
-  { label: 'Shepherd', slug: 'shepherd' },
 ] as const;
 
 const SETTINGS_TAB: TabDescriptor = { label: 'Settings', slug: 'settings' };

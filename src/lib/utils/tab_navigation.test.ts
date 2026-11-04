@@ -9,15 +9,15 @@ import {
 } from './tab_navigation.js';
 
 describe('tab_navigation', () => {
-  test('BASE_TABS has Plans after Active Work', () => {
+  test('BASE_TABS has Shepherd after Active Work, then Plans', () => {
     expect(BASE_TABS.map((t) => t.slug)).toEqual([
       'sessions',
       'active',
+      'shepherd',
       'plans',
       'prs',
       'activity',
       'inbox',
-      'shepherd',
     ]);
   });
 
@@ -34,21 +34,21 @@ describe('tab_navigation', () => {
   });
 
   describe('resolveTabSlugForIndex', () => {
-    test('Ctrl+3 resolves to plans for a specific project', () => {
-      expect(resolveTabSlugForIndex('1', 3)).toBe('plans');
+    test('Ctrl+3 resolves to the Shepherd tab in every context', () => {
+      expect(resolveTabSlugForIndex('1', 3)).toBe('shepherd');
+      expect(resolveTabSlugForIndex('all', 3)).toBe('shepherd');
     });
 
-    test('Ctrl+3 resolves to plans for the all-projects context', () => {
-      expect(resolveTabSlugForIndex('all', 3)).toBe('plans');
+    test('Ctrl+4 resolves to plans for a specific project', () => {
+      expect(resolveTabSlugForIndex('1', 4)).toBe('plans');
     });
 
-    test('Ctrl+6 resolves to the Inbox tab', () => {
-      expect(resolveTabSlugForIndex('1', 6)).toBe('inbox');
+    test('Ctrl+4 resolves to plans for the all-projects context', () => {
+      expect(resolveTabSlugForIndex('all', 4)).toBe('plans');
     });
 
-    test('Ctrl+7 resolves to the Shepherd tab in every context', () => {
-      expect(resolveTabSlugForIndex('1', 7)).toBe('shepherd');
-      expect(resolveTabSlugForIndex('all', 7)).toBe('shepherd');
+    test('Ctrl+7 resolves to the Inbox tab', () => {
+      expect(resolveTabSlugForIndex('1', 7)).toBe('inbox');
     });
 
     test('Ctrl+8 resolves to settings for a specific project', () => {
