@@ -107,6 +107,36 @@ function buildUpdateDocsPrompt(
     `updating the root README or agent instructions like AGENTS.md or CLAUDE.md, since we don't want them to become too cluttered.`
   );
 
+  parts.push(
+    '\n## Level of Detail',
+    '',
+    'Documentation is a map, not the territory. It should point the reader to the relevant code, page, or',
+    'module and explain concepts, behavior, and decisions that a reader cannot easily get from reading the',
+    'code. It should not try to be a full replacement for reading the code itself.',
+    'Keep updates concise and at a high level. It is fine, and often best, to make',
+    'a small update or no update at all if the existing documentation is still accurate.',
+    '',
+    'Write about:',
+    '- What a feature does and why it exists, from the point of view of a user or a developer working in this area',
+    '- Important behavior, constraints, invariants, and non-obvious gotchas',
+    '- How the main pieces fit together, at the level of modules or subsystems',
+    '- Configuration options and commands that users interact with',
+    '',
+    'Do not write:',
+    '- Exhaustive lists of which functions or files call a function, or what each function does internally',
+    '- Descriptions of each button, field, or element in a UI',
+    '- Step-by-step walkthroughs of the implementation, or line-level details that will go stale quickly',
+    '- A changelog of what was changed in this plan. Describe the current state of the system instead',
+    '- Repeated information that is already covered elsewhere in the documentation. Link to it instead',
+    '',
+    'Mention a specific function, file, or type only when a reader needs it as an entry point. Prefer a short',
+    'paragraph or a few bullets over a long section. When in doubt, leave it out.',
+    '',
+    'Exception: when a behavior is surprising, unexpected, or unintuitive, document it with enough detail',
+    'that a reader will not be caught off guard, even if that means going into specifics about a',
+    'particular function, UI element, or code path.'
+  );
+
   // Add include/exclude guidance
   if (include && include.length > 0) {
     parts.push('\n## Files to Include');
