@@ -46,6 +46,27 @@ export function buildRebaseInstructions(
 }
 
 /**
+ * Instructions for a jj bookmark that has more than one target, for example after the
+ * local and remote versions of a branch were changed separately. Agents often compare
+ * the two targets with a whole-tree diff, which includes the differences between their
+ * bases and makes the two versions look much more different than they are.
+ */
+export function buildJjBookmarkConflictInstructions(): string[] {
+  return [
+    '## jj Bookmark Conflicts',
+    '',
+    'If the repository uses jj and a bookmark has more than one target (a conflicted bookmark), do these steps before you change or push the bookmark:',
+    '',
+    "1. Find the base of each version's branch-specific work. Use the ancestry (`jj log`) and the evolution history (`jj evolog`) to find out if one version was rebased or rewritten from the other, or if the two versions were developed separately. Use the commit before the first commit of the branch work as the base. When the work has more than one commit, do not use the immediate parent of the target.",
+    '2. Do not use a whole-tree comparison between the two targets as the first measure of their differences. `jj diff --from TARGET_A --to TARGET_B` includes the differences that come from their different bases. The common ancestor of the two targets can also be too old to isolate the branch work.',
+    '3. Compare the complete branch-specific patch of each version against its own base: `jj diff --from BASE_A --to TARGET_A` and `jj diff --from BASE_B --to TARGET_B`. Compare the lists of changed files and the patches first. Then compare the target file contents for those files only. For each difference in a file that both versions changed, find out if it came from the branch work or from the base history.',
+    '4. Put the differences into three categories: equivalent changes, changes that come from different bases, and changes that occur in only one version. Tell the user the meaningful differences before you propose a resolution. Large whole-tree statistics alone are not evidence of competing work, removed features, or lost tests.',
+    '5. Combine the unique fixes, documentation, and tests from the two versions. Where the changes overlap, keep one shared implementation, and keep all permission checks. Validate the result before you set the bookmark to it and push. Ask the user only when a specific behavior conflict is not clear.',
+    '',
+  ];
+}
+
+/**
  * Check whether the PR branch in `workspacePath` is behind its remote base branch.
  * Returns undefined when no rebase is needed or the check cannot be done, because
  * this check is advisory and must not stop the fix run.

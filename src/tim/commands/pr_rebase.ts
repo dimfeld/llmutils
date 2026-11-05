@@ -46,6 +46,7 @@ import {
   type PrFixTarget,
   type PullRequestFixTarget,
 } from './pr.js';
+import { buildJjBookmarkConflictInstructions } from './pr_fix_rebase.js';
 import { tryCleanStackRebase } from './pr_stack_rebase.js';
 
 interface RootCommandLike {
@@ -163,6 +164,10 @@ export function buildPrRebasePrompt(
     'As you make edits, describe your reasoning. If it is not clear how to resolve a conflict, stop and ask the user what to do.',
     ''
   );
+
+  if (usingJj) {
+    prompt.push(...buildJjBookmarkConflictInstructions());
+  }
 
   return prompt.join('\n');
 }

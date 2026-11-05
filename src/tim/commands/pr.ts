@@ -78,6 +78,7 @@ import { isShuttingDown } from '../shutdown_state.js';
 import { gatherPrContext } from '../utils/pr_context_gathering.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import {
+  buildJjBookmarkConflictInstructions,
   buildRebaseInstructions,
   detectPrFixRebaseStatus,
   type PrFixRebaseStatus,
@@ -1202,6 +1203,7 @@ export function buildReviewThreadFixInstructions(
     '- Code, exports, parameters, or features that appear unused in this PR can be used by a branch further up the stack. Before you agree that something is unused or should be removed, search the stacked branches for uses. If a stacked branch uses it, keep it, and say so in your reply.',
     '- A fix in this branch can affect the code in the stacked branches. For example, a renamed or changed function signature, changed behavior, or moved code can break callers or cause conflicts upstack. Choose the correct fix, even if it is not compatible with the stacked branches. It is easy to change the code upstack, but you must make sure that it gets changed. When a fix requires changes upstack, tell the user which branches and code are affected. After you commit the fix, rebase the stacked branches onto it, update the affected upstack code so that it continues to work, and run the checks on those branches. When you push this branch, also push each stacked branch that you rebased or changed.',
     '',
+    ...buildJjBookmarkConflictInstructions(),
     '## Responsibilities',
     '',
     '1. Read the fetched PR comments, review comments, review threads, and reviews, then identify the actionable AI feedback. A single comment may enumerate several distinct issues; treat each listed issue as its own actionable item.',

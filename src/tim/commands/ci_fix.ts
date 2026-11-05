@@ -37,6 +37,7 @@ import { LifecycleManager } from '../lifecycle.js';
 import { isShuttingDown } from '../shutdown_state.js';
 import { TMP_DIR } from '../plan_materialize.js';
 import {
+  buildJjBookmarkConflictInstructions,
   buildRebaseInstructions,
   detectPrFixRebaseStatus,
   type PrFixRebaseStatus,
@@ -355,7 +356,8 @@ export function buildCiFixPrompt(
     '4. Run the relevant local checks and tests to verify the fixes.',
     '5. Commit the code changes and push them to the pull request branch. If the repository uses jj, update the current bookmark to the commit you created before pushing, for example `jj bookmark set <current-bookmark> -r @-`.',
     '6. Do not edit plan files in PR mode.',
-    ''
+    '',
+    ...buildJjBookmarkConflictInstructions()
   );
 
   return prompt.join('\n');
