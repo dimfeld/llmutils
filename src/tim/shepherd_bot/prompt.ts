@@ -201,16 +201,76 @@ function truncate(text: string, maxChars: number): string {
   return singleLine.length > maxChars ? `${singleLine.slice(0, maxChars)}...` : singleLine;
 }
 
+function uniqueSorted(names: Iterable<string>): string[] {
+  return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Lines that describe a PR's checks, split into required and optional checks, so that the
+ * bot can ignore failures of checks that do not block the merge.
+ */
+export function formatPrCheckLines(pr: StackPr): string[] {
+  const required = new Set(pr.requiredCheckNames);
+  const hasRequiredConfig = required.size > 0;
+  const namesWith = (classification: 'failing' | 'pending'): string[] =>
+    uniqueSorted(
+      pr.checks.filter((check) => classifyCheckRun(check) === classification).map((c) => c.name)
+    );
+  const failing = namesWith('failing');
+  const pending = namesWith('pending');
+  const rollup = pr.status.check_rollup_state ?? 'none';
+  const lines: string[] = [];
+
+  if (!hasRequiredConfig) {
+    lines.push(
+      'Required checks: none are configured for this branch, so every check counts as required'
+    );
+    lines.push(`Checks: ${rollup}`);
+    if (failing.length > 0) {
+      lines.push(`Failing checks: ${failing.join(', ')}`);
+    }
+    if (pending.length > 0) {
+      lines.push(`Checks still running: ${pending.join(', ')}`);
+    }
+    return lines;
+  }
+
+  const source =
+    pr.requiredChecksBranch && pr.requiredChecksBranch !== pr.status.base_branch
+      ? `from \`${pr.requiredChecksBranch}\`, the trunk branch of this stack, because the base branch has no rules`
+      : `from the rules of \`${pr.requiredChecksBranch ?? pr.status.base_branch ?? '?'}\``;
+  lines.push(`Required checks: ${[...required].sort().join(', ')} (${source})`);
+  lines.push(`Required checks state: ${rollup}`);
+
+  const reported = new Set(pr.checks.map((check) => check.name));
+  const failingRequired = failing.filter((name) => required.has(name));
+  const failingOptional = failing.filter((name) => !required.has(name));
+  const pendingRequired = pending.filter((name) => required.has(name));
+  const pendingOptional = pending.filter((name) => !required.has(name));
+  const missingRequired = [...required].filter((name) => !reported.has(name)).sort();
+
+  if (failingRequired.length > 0) {
+    lines.push(`Failing required checks: ${failingRequired.join(', ')}`);
+  }
+  if (pendingRequired.length > 0) {
+    lines.push(`Required checks still running: ${pendingRequired.join(', ')}`);
+  }
+  if (missingRequired.length > 0) {
+    lines.push(`Required checks with no result yet: ${missingRequired.join(', ')}`);
+  }
+  if (failingOptional.length > 0) {
+    lines.push(`Failing optional checks (ignore these): ${failingOptional.join(', ')}`);
+  }
+  if (pendingOptional.length > 0) {
+    lines.push(`Optional checks still running (do not wait for these): ${pendingOptional.length}`);
+  }
+  return lines;
+}
+
 function formatPr(entry: ShepherdBotStackEntry, runningJobs: JobRow[]): string {
   const { pr } = entry;
   const { status } = pr;
   const evaluation = evaluatePrShepherd(pr);
-  const failingChecks = [
-    ...new Set(
-      pr.checks.filter((check) => classifyCheckRun(check) === 'failing').map((c) => c.name)
-    ),
-  ];
-  const pendingChecks = pr.checks.filter((check) => classifyCheckRun(check) === 'pending').length;
   const unresolved = (pr.reviewThreads ?? []).filter((thread) => !thread.thread.is_resolved);
 
   const lines = [`${'  '.repeat(entry.depth)}- #${status.pr_number} ${status.title ?? 'Untitled'}`];
@@ -228,11 +288,9 @@ function formatPr(entry: ShepherdBotStackEntry, runningJobs: JobRow[]): string {
         : ''
     }`
   );
-  field(
-    `Checks: ${status.check_rollup_state ?? 'none'}${
-      failingChecks.length > 0 ? `; failing: ${failingChecks.join(', ')}` : ''
-    }${pendingChecks > 0 ? `; ${pendingChecks} still running` : ''}`
-  );
+  for (const line of formatPrCheckLines(pr)) {
+    field(line);
+  }
   field(`Mergeable: ${status.mergeable ?? 'unknown'}`);
   field(`Review decision: ${getEffectiveReviewDecision(pr) ?? 'none'}`);
   if (status.merge_queue_enqueued_at) {
@@ -314,9 +372,19 @@ Do not change files in the repository, run git or jj commands, or push. Use only
 
 ${context.triggers.map((trigger) => formatTrigger(trigger, context.stacks)).join('\n') || '- Nothing specific. Review the current state.'}
 
+These lines can name optional checks. Use the "Watched stacks" section to find out whether a check is required.
+
 ## Watched stacks
 
 Each stack is ordered from the PR nearest to the trunk to the tip. A PR's base branch is the head branch of the PR above it in the list.
+
+### Required and optional checks
+
+Only required checks block a merge. Branch protection rules or rulesets on the target branch make a check required. All other checks are optional. Each PR below lists its required checks, and puts each failing or running check in the required group or the optional group:
+
+- A PR in a stack eventually merges into the trunk branch. Thus, when its base branch has no rules, the PR uses the required checks of the trunk branch.
+- The status and the required checks state of a PR count only the required checks. A PR with failing optional checks and passing required checks has passing checks.
+- When no branch has required checks, every check counts as required.
 
 ${stacksText}
 
@@ -342,7 +410,7 @@ ${state.json.trim() || '{}'}
 
 ## Available actions
 
-- \`ci_fix\`: start a CI fix session for a PR with failing checks. The session reads the CI logs, fixes the code, and pushes. A cancelled check is not a failing check. The system reruns cancelled required checks by itself, at most twice for each head SHA, so do not start \`ci_fix\` for them. If a required check is still cancelled after the system reran it twice, tell the user with \`notify\`.
+- \`ci_fix\`: start a CI fix session for a PR with failing required checks. The session reads the CI logs, fixes the code, and pushes. Do not start \`ci_fix\` when only optional checks fail. In the \`reason\`, name the failing required checks. A cancelled check is not a failing check. The system reruns cancelled required checks by itself, at most twice for each head SHA, so do not start \`ci_fix\` for them. If a required check is still cancelled after the system reran it twice, tell the user with \`notify\`.
 - \`pr_fix\`: start a review-comment fix session for a PR with unresolved review threads. This session is interactive: it asks the user what to do about each comment, so the user always decides. The system notifies the user.
 - \`pr_rebase\`: start a session that resolves merge conflicts with the base branch and pushes. The session also rebases and pushes the PRs stacked on top of that PR.
 - \`notify\`: write a message to the user's inbox about a PR. Use this when a problem needs a human decision, when you stop retrying something, or when you see a problem that you cannot fix with the other actions.
@@ -351,14 +419,15 @@ ${state.json.trim() || '{}'}
 ## Rules
 
 1. Act only on PRs that are watched by the bot. You can use the other PRs in a stack as context.
-2. Work from the bottom of the stack up. A failure in a lower PR often causes the same failure in the PRs above it, because they contain its commits. When a lower PR has failing checks and a PR above it fails the same checks, fix only the lower PR and wait. After the lower PR is fixed, the PRs above it usually need a restack before their CI can pass. Restacking is not one of your actions, so tell the user with \`notify\` when PRs above a fixed PR need a restack.
+2. Work from the bottom of the stack up. A failure in a lower PR often causes the same failure in the PRs above it, because they contain its commits. When a lower PR has failing required checks and a PR above it fails the same checks, fix only the lower PR and wait. After the lower PR is fixed, the PRs above it usually need a restack before their CI can pass. Restacking is not one of your actions, so tell the user with \`notify\` when PRs above a fixed PR need a restack.
 3. Start at most one session for each stack. If a session for any PR in a stack is running, do not start another one in that stack. The system also rejects such actions.
-4. Running checks delay only \`ci_fix\`. Do not start \`ci_fix\` while the checks that matter are still running, unless a check already failed and the failure is clear. All other actions do not wait for the checks, because the checks cannot change what those actions are for. For example, start \`pr_fix\` for unresolved review threads and \`pr_rebase\` for merge conflicts without waiting for the checks to finish.
-5. Do not start the same fix for the same head SHA more than twice. If a fix did not work twice, stop and \`notify\` the user. The system also enforces this limit.
-6. Start \`pr_fix\` only for review threads that a previous \`pr_fix\` did not already handle. The system rejects a \`pr_fix\` for the same set of unresolved threads.
-7. Never merge PRs or add them to the merge queue. Tell the user with \`notify\` when a stack is ready to merge, but only once for each stack state: use your saved state to remember what you already told the user.
-8. Ignore PRs that are drafts, unless the user added them on purpose and they have a clear problem to fix.
-9. If nothing needs to happen, return an empty \`actions\` array. That is a normal result.
+4. Ignore failing optional checks. Do not start a session for them, do not \`notify\` the user about them, and do not let them stop you from telling the user that a stack is ready to merge.
+5. Running checks delay only \`ci_fix\`. Do not start \`ci_fix\` while required checks are still running or have no result yet, unless a required check already failed and the failure is clear. Do not wait for optional checks. All other actions do not wait for the checks, because the checks cannot change what those actions are for. For example, start \`pr_fix\` for unresolved review threads and \`pr_rebase\` for merge conflicts without waiting for the checks to finish.
+6. Do not start the same fix for the same head SHA more than twice. If a fix did not work twice, stop and \`notify\` the user. The system also enforces this limit.
+7. Start \`pr_fix\` only for review threads that a previous \`pr_fix\` did not already handle. The system rejects a \`pr_fix\` for the same set of unresolved threads.
+8. Never merge PRs or add them to the merge queue. Tell the user with \`notify\` when a stack is ready to merge, but only once for each stack state: use your saved state to remember what you already told the user.
+9. Ignore PRs that are drafts, unless the user added them on purpose and they have a clear problem to fix.
+10. If nothing needs to happen, return an empty \`actions\` array. That is a normal result.
 
 ## Output
 

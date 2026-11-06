@@ -5,25 +5,80 @@ import {
   type PrStackEntry,
   type StackablePr,
 } from '../../lib/utils/pr_shepherd.js';
-import { withRequiredCheckRollupStates } from '../../common/github/required_check_rollup.js';
+import {
+  getEffectiveCheckRollupState,
+  getRequiredCheckNames,
+  withRequiredCheckRollupStates,
+} from '../../common/github/required_check_rollup.js';
 import { getPrStatusesForRepo, type PrStatusDetail, type PrStatusRow } from '../db/pr_status.js';
 
-export type StackPr = PrStatusDetail & { requiredCheckNames: string[] };
+export type StackPr = PrStatusDetail & {
+  requiredCheckNames: string[];
+  /**
+   * The branch whose protection rules or rulesets gave `requiredCheckNames`. This is the
+   * PR's base branch, or the trunk branch of the stack when the base branch is another PR's
+   * branch without rules. Null when no branch has required checks.
+   */
+  requiredChecksBranch: string | null;
+};
 
 /**
  * All open stacks in a repository, each ordered from the PR nearest to the trunk to the tip.
  * The details include review threads and the required-check rollup state.
+ *
+ * A stacked PR's base branch is usually another PR's branch, which has no branch protection.
+ * Such a PR merges into the trunk branch in the end, so it gets the required checks of the
+ * trunk branch (the base branch of the stack root), and its rollup state uses those checks.
  */
 export function loadOpenStacksForRepo(
   db: Database,
   owner: string,
   repo: string
 ): PrStackEntry<StackPr>[][] {
-  const prs = withRequiredCheckRollupStates(
-    db,
-    getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true })
+  const details = getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true });
+  const rawRollupById = new Map(
+    details.map((detail) => [detail.status.id, detail.status.check_rollup_state])
   );
-  return groupPrsIntoStacks(prs);
+  const prs = withRequiredCheckRollupStates(db, details);
+  const groups = groupPrsIntoStacks(prs);
+
+  return groups.map((group) =>
+    group.map((entry) => {
+      const pr = entry.pr;
+      if (pr.requiredCheckNames.length > 0) {
+        return { ...entry, pr: { ...pr, requiredChecksBranch: pr.status.base_branch } };
+      }
+
+      const trunkBranch = getStackPathToPr(group, pr.status.pr_number)[0]?.status.base_branch;
+      if (!trunkBranch || trunkBranch === pr.status.base_branch) {
+        return { ...entry, pr: { ...pr, requiredChecksBranch: null } };
+      }
+
+      const trunkStatus = { owner, repo, base_branch: trunkBranch };
+      const requiredCheckNames = getRequiredCheckNames(db, trunkStatus);
+      if (requiredCheckNames.length === 0) {
+        return { ...entry, pr: { ...pr, requiredChecksBranch: null } };
+      }
+
+      const checkRollupState = getEffectiveCheckRollupState(
+        db,
+        {
+          ...trunkStatus,
+          check_rollup_state: rawRollupById.get(pr.status.id) ?? pr.status.check_rollup_state,
+        },
+        pr.checks
+      );
+      return {
+        ...entry,
+        pr: {
+          ...pr,
+          requiredCheckNames,
+          requiredChecksBranch: trunkBranch,
+          status: { ...pr.status, check_rollup_state: checkRollupState },
+        },
+      };
+    })
+  );
 }
 
 /** The open stack that contains the PR, or an empty list when the PR is not open. */
