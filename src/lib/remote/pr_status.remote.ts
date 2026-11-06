@@ -11,7 +11,12 @@ import {
 import { resolveGitHubToken } from '$common/github/token.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import { getWebhookServerUrl } from '$common/github/webhook_client.js';
-import { addIssueLabels, setPullRequestDraftState } from '$common/github/pull_requests.js';
+import {
+  addIssueLabels,
+  requestPullRequestReviewers,
+  setPullRequestDraftState,
+} from '$common/github/pull_requests.js';
+import { isBotReviewer } from '$common/github/review_requests.js';
 import { REVIEW_LABEL_NAME } from '$common/github/review_command.js';
 import { categorizePrUrls, parseJsonStringArray } from '$lib/server/db_queries.js';
 import { getServerContext } from '$lib/server/init.js';
@@ -20,7 +25,13 @@ import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_chec
 import { emitPrUpdatesForIngestResult } from '$lib/server/pr_event_utils.js';
 import { getSessionManager } from '$lib/server/session_context.js';
 import { ingestWebhookEventsWithInbox } from '$lib/server/webhook_ingest_orchestrator.js';
-import { cleanOrphanedPrStatus, getPrStatusByUrl, getPrStatusForPlan } from '$tim/db/pr_status.js';
+import { getCachedRepoAssignableUsers } from '$lib/server/repo_assignees_cache.js';
+import {
+  cleanOrphanedPrStatus,
+  getPrStatusByUrl,
+  getPrStatusForPlan,
+  getRecentRepoReviewers,
+} from '$tim/db/pr_status.js';
 import { getPlanByUuid } from '$tim/db/plan.js';
 import { getLatestReviewGuideByPrUrl } from '$tim/db/review.js';
 
@@ -47,6 +58,21 @@ const prTargetSchema = z.object({
   repo: z.string().min(1),
   prNumber: z.number().int(),
   prUrl: z.string().url(),
+});
+
+const repoSchema = z.object({
+  owner: z.string().min(1),
+  repo: z.string().min(1),
+});
+
+// GitHub logins: letters, digits, and single hyphens, at most 39 characters.
+const githubLoginSchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/, 'Invalid GitHub username');
+
+const requestPrReviewersSchema = prTargetSchema.extend({
+  reviewers: z.array(githubLoginSchema).min(1).max(15),
 });
 
 interface LatestReviewGuideSummary {
@@ -349,6 +375,70 @@ export const requestTimReviewLabel = command(
       error(
         500,
         `Failed to add the ${REVIEW_LABEL_NAME} label to pull request #${prNumber}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+
+    try {
+      await refreshPrStatusFromApi(db, prUrl);
+    } catch (err) {
+      error(500, `Failed to refresh PR: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    return { success: true };
+  }
+);
+
+/**
+ * People who reviewed or were requested on PRs in this repository, from the local cache.
+ * This needs no GitHub call, so the reviewer picker can show it at once.
+ */
+export const getRecentReviewersForRepo = query(repoSchema, async ({ owner, repo }) => {
+  const { db } = await getServerContext();
+  return getRecentRepoReviewers(db, owner, repo).filter((login) => !isBotReviewer(login));
+});
+
+/** All users who can be requested as reviewers in this repository, from the GitHub API. */
+export const getAssignableReviewersForRepo = query(repoSchema, async ({ owner, repo }) => {
+  if (!resolveGitHubToken()) {
+    error(400, 'GITHUB_TOKEN not configured');
+  }
+
+  let users;
+  try {
+    users = await getCachedRepoAssignableUsers(owner, repo);
+  } catch (err) {
+    error(
+      500,
+      `Failed to load reviewers for ${owner}/${repo}: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+
+  return users
+    .filter((user) => !user.isBot && !isBotReviewer(user.login))
+    .map((user) => user.login)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+});
+
+/** Requests reviews from one or more users, then refreshes the cached PR status. */
+export const requestPrReviewers = command(
+  requestPrReviewersSchema,
+  async ({ owner, repo, prNumber, prUrl, reviewers }) => {
+    const { db } = await getServerContext();
+
+    if (!resolveGitHubToken()) {
+      error(400, 'GITHUB_TOKEN not configured');
+    }
+
+    const uniqueReviewers = [
+      ...new Map(reviewers.map((login) => [login.toLowerCase(), login])).values(),
+    ];
+
+    try {
+      await requestPullRequestReviewers(owner, repo, prNumber, uniqueReviewers);
+    } catch (err) {
+      error(
+        500,
+        `Failed to request reviewers on pull request #${prNumber}: ${err instanceof Error ? err.message : String(err)}`
       );
     }
 

@@ -1461,6 +1461,42 @@ export function getPrStatusesForRepo(
     .filter((detail): detail is PrStatusDetail => detail !== null);
 }
 
+/**
+ * Returns the logins of people who reviewed, or were requested to review, PRs in a
+ * repository. The most recent activity comes first. Reviewer names are case-insensitive,
+ * so the first spelling seen for each name is kept.
+ */
+export function getRecentRepoReviewers(
+  db: Database,
+  owner: string,
+  repo: string,
+  limit = 50
+): string[] {
+  const rows = db
+    .prepare(
+      `
+        SELECT reviewer, MAX(activity_at) AS last_activity_at
+        FROM (
+          SELECT pr.author AS reviewer, COALESCE(pr.submitted_at, ps.updated_at) AS activity_at
+          FROM pr_review pr
+          INNER JOIN pr_status ps ON ps.id = pr.pr_status_id
+          WHERE ps.owner = ? AND ps.repo = ? AND pr.state != 'PENDING'
+          UNION ALL
+          SELECT rr.reviewer AS reviewer, COALESCE(rr.requested_at, rr.last_event_at) AS activity_at
+          FROM pr_review_request rr
+          INNER JOIN pr_status ps ON ps.id = rr.pr_status_id
+          WHERE ps.owner = ? AND ps.repo = ? AND rr.requested_at IS NOT NULL
+        )
+        GROUP BY LOWER(reviewer)
+        ORDER BY last_activity_at DESC, reviewer
+        LIMIT ?
+      `
+    )
+    .all(owner, repo, owner, repo, limit) as Array<{ reviewer: string }>;
+
+  return rows.map((row) => row.reviewer);
+}
+
 export function getLinkedPlansByPrUrl(
   db: Database,
   prUrls: string[]

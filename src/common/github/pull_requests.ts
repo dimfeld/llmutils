@@ -853,6 +853,50 @@ export async function addIssueLabels(
   });
 }
 
+/**
+ * Requests reviews from one or more users on a pull request. GitHub returns 422 when a
+ * reviewer is not a collaborator on the repository or is the PR author.
+ */
+export async function requestPullRequestReviewers(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  reviewers: string[],
+  options: GitHubRequestAuthOptions = {}
+): Promise<void> {
+  const octokit = getOctokit(options.authToken);
+  await octokit.rest.pulls.requestReviewers({
+    owner,
+    repo,
+    pull_number: prNumber,
+    reviewers,
+  });
+}
+
+export interface AssignableUser {
+  login: string;
+  isBot: boolean;
+}
+
+/**
+ * Lists the users who can be assigned to issues and PRs in a repository. These are the
+ * users with push access, which is the same group that can be requested as reviewers.
+ * This endpoint needs only read access, unlike the collaborators endpoint.
+ */
+export async function fetchRepositoryAssignableUsers(
+  owner: string,
+  repo: string,
+  options: GitHubRequestAuthOptions = {}
+): Promise<AssignableUser[]> {
+  const octokit = getOctokit(options.authToken);
+  const users = await octokit.paginate(octokit.rest.issues.listAssignees, {
+    owner,
+    repo,
+    per_page: 100,
+  });
+  return users.map((user) => ({ login: user.login, isBot: user.type === 'Bot' }));
+}
+
 /** Removes a label from a PR or issue. */
 export async function removeIssueLabel(
   owner: string,

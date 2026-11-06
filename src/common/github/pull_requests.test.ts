@@ -369,3 +369,57 @@ describe('findPullRequestCommentByMarker', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('requestPullRequestReviewers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('requests all reviewers in one call', async () => {
+    const requestReviewers = vi.fn(async () => ({ data: {} }));
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({
+      rest: { pulls: { requestReviewers } },
+    } as unknown as ReturnType<typeof octokitModule.getOctokit>);
+
+    const { requestPullRequestReviewers } = await import('./pull_requests.ts');
+    await requestPullRequestReviewers('example', 'repo', 5, ['alice', 'bob']);
+
+    expect(requestReviewers).toHaveBeenCalledWith({
+      owner: 'example',
+      repo: 'repo',
+      pull_number: 5,
+      reviewers: ['alice', 'bob'],
+    });
+  });
+});
+
+describe('fetchRepositoryAssignableUsers', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('returns every page of assignees and marks bots', async () => {
+    const listAssignees = vi.fn();
+    const paginate = vi.fn(async () => [
+      { login: 'alice', type: 'User' },
+      { login: 'deploy-bot', type: 'Bot' },
+    ]);
+    vi.mocked(octokitModule.getOctokit).mockReturnValue({
+      paginate,
+      rest: { issues: { listAssignees } },
+    } as unknown as ReturnType<typeof octokitModule.getOctokit>);
+
+    const { fetchRepositoryAssignableUsers } = await import('./pull_requests.ts');
+    const users = await fetchRepositoryAssignableUsers('example', 'repo');
+
+    expect(paginate).toHaveBeenCalledWith(listAssignees, {
+      owner: 'example',
+      repo: 'repo',
+      per_page: 100,
+    });
+    expect(users).toEqual([
+      { login: 'alice', isBot: false },
+      { login: 'deploy-bot', isBot: true },
+    ]);
+  });
+});

@@ -13,6 +13,7 @@ import {
   getLinkedPlansByPrUrl,
   getPrStatusByRepoAndNumber,
   getPrStatusesForRepo,
+  getRecentRepoReviewers,
   getPlansWithPrs,
   getPrStatusByUrl,
   getPrStatusByUrls,
@@ -1576,6 +1577,59 @@ describe('tim db/pr_status', () => {
     const results = getPrStatusesForRepo(db, 'example', 'repo');
     expect(results.map((detail) => detail.status.pr_number)).toEqual([301]);
     expect(results[0]?.status.requested_reviewers).toBe('["dimfeld"]');
+  });
+
+  test('getRecentRepoReviewers lists reviewers and requested reviewers, most recent first', () => {
+    const first = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/311',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 311,
+      state: 'merged',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [
+        { author: 'alice', state: 'APPROVED', submittedAt: '2026-03-01T00:00:00.000Z' },
+        { author: 'pending-person', state: 'PENDING', submittedAt: null },
+        { author: 'Bob', state: 'COMMENTED', submittedAt: '2026-03-05T00:00:00.000Z' },
+      ],
+    });
+    const second = upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/repo/pull/312',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 312,
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [{ author: 'bob', state: 'APPROVED', submittedAt: '2026-03-10T00:00:00.000Z' }],
+    });
+    upsertPrReviewRequestByReviewer(db, second.status.id, {
+      reviewer: 'carol',
+      action: 'requested',
+      eventAt: '2026-03-08T00:00:00.000Z',
+    });
+    upsertPrReviewRequestByReviewer(db, first.status.id, {
+      reviewer: 'never-requested',
+      action: 'removed',
+      eventAt: '2026-03-15T00:00:00.000Z',
+    });
+    upsertPrStatus(db, {
+      prUrl: 'https://github.com/example/other/pull/313',
+      owner: 'example',
+      repo: 'other',
+      prNumber: 313,
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [
+        { author: 'other-repo', state: 'APPROVED', submittedAt: '2026-03-18T00:00:00.000Z' },
+      ],
+    });
+
+    const reviewers = getRecentRepoReviewers(db, 'example', 'repo');
+    expect(reviewers.map((login) => login.toLowerCase())).toEqual(['bob', 'carol', 'alice']);
+    expect(getRecentRepoReviewers(db, 'example', 'repo', 1)).toHaveLength(1);
   });
 
   test('listExistingPrStatusProjectNumbers returns no rows for empty input', () => {

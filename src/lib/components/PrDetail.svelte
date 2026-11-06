@@ -49,6 +49,7 @@
   import NeedsReviewerBadge from './NeedsReviewerBadge.svelte';
   import PrMergeQueueBadge from './PrMergeQueueBadge.svelte';
   import PrMergedBadge from './PrMergedBadge.svelte';
+  import ReviewerPicker from './ReviewerPicker.svelte';
   import { toLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import type { ChatExecutorOption } from '$tim/configSchema.js';
   import { DEFAULT_CHAT_EXECUTOR_OPTIONS } from '$lib/utils/chat_executor_options.js';
@@ -195,6 +196,11 @@
     pr.labels.some((label) => label.name.toLowerCase() === REVIEW_LABEL_NAME)
   );
   let canRequestTimReview = $derived(tokenConfigured && pr.status.state === 'open');
+  let canRequestReviewers = $derived(tokenConfigured && pr.status.state === 'open');
+  let reviewerPickerExclude = $derived([
+    ...(pr.status.author ? [pr.status.author] : []),
+    ...pendingRequestedReviewers,
+  ]);
   let draftButtonLabel = $derived(pr.status.draft ? 'Mark ready for review' : 'Convert to draft');
   let canFixUnresolvedThreads = $derived(isOwnPr && unresolvedReviewThreadCount > 0);
   let showFixCi = $derived(canFixCi({ isOwnPr, status: pr.status }));
@@ -721,6 +727,16 @@
         >
           {shellStarting ? 'Starting...' : 'Shell'}
         </button>
+        {#if canRequestReviewers}
+          <ReviewerPicker
+            owner={pr.status.owner}
+            repo={pr.status.repo}
+            prNumber={pr.status.pr_number}
+            prUrl={pr.status.pr_url}
+            exclude={reviewerPickerExclude}
+            onRequested={() => location.reload()}
+          />
+        {/if}
         {#if canRequestTimReview}
           <button
             onclick={handleRequestTimReview}

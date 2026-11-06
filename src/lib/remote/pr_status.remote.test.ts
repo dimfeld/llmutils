@@ -12,6 +12,7 @@ import { linkPlanToPr, upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import { createReview } from '$tim/db/review.js';
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
+import { clearRepoAssigneesCache } from '$lib/server/repo_assignees_cache.js';
 
 let currentDb: Database;
 let currentWebhookServerUrl: string | null = null;
@@ -21,9 +22,16 @@ const refreshPrStatusFromApi = vi.fn();
 const ingestWebhookEvents = vi.fn();
 const mockEmitPrUpdatesForIngestResult = vi.fn();
 const mockSessionManager = { emitPrUpdate: vi.fn() };
-const { addIssueLabels, setPullRequestDraftState } = vi.hoisted(() => ({
+const {
+  addIssueLabels,
+  setPullRequestDraftState,
+  requestPullRequestReviewers,
+  fetchRepositoryAssignableUsers,
+} = vi.hoisted(() => ({
   addIssueLabels: vi.fn(),
   setPullRequestDraftState: vi.fn(),
+  requestPullRequestReviewers: vi.fn(),
+  fetchRepositoryAssignableUsers: vi.fn(),
 }));
 
 vi.mock('$lib/server/init.js', () => ({
@@ -48,6 +56,8 @@ vi.mock('$common/github/pull_requests.js', async () => {
     ...actual,
     addIssueLabels,
     setPullRequestDraftState,
+    requestPullRequestReviewers,
+    fetchRepositoryAssignableUsers,
   };
 });
 
@@ -127,6 +137,9 @@ describe('pr_status remote functions', () => {
     refreshPrStatusFromApi.mockReset();
     setPullRequestDraftState.mockReset();
     addIssueLabels.mockReset();
+    requestPullRequestReviewers.mockReset();
+    fetchRepositoryAssignableUsers.mockReset();
+    clearRepoAssigneesCache();
     ingestWebhookEvents.mockReset();
     mockEmitPrUpdatesForIngestResult.mockReset();
     mockSessionManager.emitPrUpdate.mockReset();
@@ -348,6 +361,137 @@ describe('pr_status remote functions', () => {
       })
     ).rejects.toMatchObject({ status: 500 });
     expect(refreshPrStatusFromApi).not.toHaveBeenCalled();
+  });
+
+  test('requestPrReviewers requests unique reviewers and refreshes the cache', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    requestPullRequestReviewers.mockResolvedValueOnce(undefined);
+    refreshPrStatusFromApi.mockResolvedValueOnce(undefined);
+
+    const { requestPrReviewers } = await import('./pr_status.remote.js');
+
+    const result = await invokeCommand(requestPrReviewers, {
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 1,
+      prUrl: 'https://github.com/example/repo/pull/1',
+      reviewers: ['alice', 'Bob', 'ALICE'],
+    });
+
+    expect(result).toEqual({ success: true });
+    expect(requestPullRequestReviewers).toHaveBeenCalledWith('example', 'repo', 1, [
+      'ALICE',
+      'Bob',
+    ]);
+    expect(refreshPrStatusFromApi).toHaveBeenCalledWith(
+      currentDb,
+      'https://github.com/example/repo/pull/1'
+    );
+  });
+
+  test('requestPrReviewers rejects invalid logins before calling GitHub', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+
+    const { requestPrReviewers } = await import('./pr_status.remote.js');
+
+    await expect(
+      invokeCommand(requestPrReviewers, {
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 1,
+        prUrl: 'https://github.com/example/repo/pull/1',
+        reviewers: ['not a login'],
+      })
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      invokeCommand(requestPrReviewers, {
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 1,
+        prUrl: 'https://github.com/example/repo/pull/1',
+        reviewers: [],
+      })
+    ).rejects.toMatchObject({ status: 400 });
+    expect(requestPullRequestReviewers).not.toHaveBeenCalled();
+  });
+
+  test('requestPrReviewers reports a GitHub failure and does not refresh', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    requestPullRequestReviewers.mockRejectedValueOnce(
+      new Error('Reviews may only be requested from collaborators')
+    );
+
+    const { requestPrReviewers } = await import('./pr_status.remote.js');
+
+    await expect(
+      invokeCommand(requestPrReviewers, {
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 1,
+        prUrl: 'https://github.com/example/repo/pull/1',
+        reviewers: ['outsider'],
+      })
+    ).rejects.toMatchObject({
+      status: 500,
+      body: { message: expect.stringContaining('only be requested from collaborators') },
+    });
+    expect(refreshPrStatusFromApi).not.toHaveBeenCalled();
+  });
+
+  test('getAssignableReviewersForRepo returns sorted human logins', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    fetchRepositoryAssignableUsers.mockResolvedValueOnce([
+      { login: 'zed', isBot: false },
+      { login: 'deploy-bot', isBot: true },
+      { login: 'Copilot', isBot: false },
+      { login: 'alice', isBot: false },
+    ]);
+
+    const { getAssignableReviewersForRepo } = await import('./pr_status.remote.js');
+    const result = await invokeQuery(getAssignableReviewersForRepo, {
+      owner: 'example',
+      repo: 'repo',
+    });
+
+    expect(result).toEqual(['alice', 'zed']);
+  });
+
+  test('getAssignableReviewersForRepo reports a GitHub failure', async () => {
+    process.env.GITHUB_TOKEN = 'token';
+    fetchRepositoryAssignableUsers.mockRejectedValueOnce(new Error('forbidden'));
+
+    const { getAssignableReviewersForRepo } = await import('./pr_status.remote.js');
+    await expect(
+      invokeQuery(getAssignableReviewersForRepo, { owner: 'example', repo: 'repo' })
+    ).rejects.toMatchObject({ status: 500 });
+  });
+
+  test('getRecentReviewersForRepo returns cached reviewers without bots', async () => {
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/recent-test/repo/pull/9',
+      owner: 'recent-test',
+      repo: 'repo',
+      prNumber: 9,
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-20T00:00:00.000Z',
+      reviews: [
+        { author: 'alice', state: 'APPROVED', submittedAt: '2026-03-01T00:00:00.000Z' },
+        {
+          author: 'coderabbitai[bot]',
+          state: 'COMMENTED',
+          submittedAt: '2026-03-02T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const { getRecentReviewersForRepo } = await import('./pr_status.remote.js');
+    const result = await invokeQuery(getRecentReviewersForRepo, {
+      owner: 'recent-test',
+      repo: 'repo',
+    });
+
+    expect(result).toEqual(['alice']);
   });
 
   test('getPrStatus returns cached PR status matched directly from plan URLs when plan_pr is missing', async () => {
