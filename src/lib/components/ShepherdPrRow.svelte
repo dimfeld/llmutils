@@ -290,6 +290,7 @@
   const redAction = `${actionButtonClass} border-red-200 text-red-700 hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30`;
   const amberAction = `${actionButtonClass} border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-900/60 dark:text-amber-400 dark:hover:bg-amber-950/30`;
   const neutralAction = `${actionButtonClass} border-border text-muted-foreground hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800`;
+  const skyAction = `${actionButtonClass} border-sky-400 bg-sky-50 text-sky-700 hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-300 dark:hover:bg-sky-900/40`;
 </script>
 
 <li
@@ -363,7 +364,7 @@
         type="button"
         onclick={handleToggleBot}
         disabled={togglingBot}
-        class="{neutralAction} shrink-0"
+        class="{botEnabled ? neutralAction : skyAction} shrink-0"
         title={botEnabled
           ? 'Stop the shepherd bot from watching this PR'
           : depth > 0
