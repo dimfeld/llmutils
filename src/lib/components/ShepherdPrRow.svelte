@@ -8,6 +8,7 @@
   import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
   import {
     addPrStackToShepherdBot,
+    markPrReadyForReview,
     removePrStackFromShepherdBot,
     rerunCancelledPrChecks,
     setPrShepherded,
@@ -75,6 +76,7 @@
   let launched = $state<Record<LaunchAction, boolean>>({ fix: false, ci: false, rebase: false });
   let updatingBranch = $state<'rebase' | 'merge' | null>(null);
   let rerunningChecks = $state(false);
+  let markingReady = $state(false);
   let actionMessage = $state<string | null>(null);
   let togglingShepherd = $state(false);
   let togglingBot = $state(false);
@@ -227,6 +229,25 @@
       actionError = extractRemoteErrorMessage(err);
     } finally {
       rerunningChecks = false;
+    }
+  }
+
+  async function handleMarkReady(): Promise<void> {
+    if (markingReady) {
+      return;
+    }
+    actionError = null;
+    actionMessage = null;
+    markingReady = true;
+    try {
+      await markPrReadyForReview({
+        projectId: pr.projectId,
+        prNumber: pr.status.pr_number,
+      });
+    } catch (err) {
+      actionError = extractRemoteErrorMessage(err);
+    } finally {
+      markingReady = false;
     }
   }
 
@@ -529,6 +550,19 @@
           {updatingBranch === 'merge' ? 'Merging...' : 'Merge Base In'}
         </button>
       {/if}
+    {/if}
+
+    {#if pr.status.state === 'open' && pr.status.draft}
+      <button
+        type="button"
+        class={neutralAction}
+        disabled={markingReady}
+        onclick={handleMarkReady}
+        title="Mark this draft PR as ready for review on GitHub"
+        aria-label={`Mark PR #${pr.status.pr_number} as ready for review`}
+      >
+        {markingReady ? 'Marking Ready...' : 'Mark Ready for Review'}
+      </button>
     {/if}
 
     <a

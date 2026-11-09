@@ -9,7 +9,7 @@ import {
   refreshPrStatus,
   refreshShepherdedPrBehindBy,
 } from '$common/github/pr_status_service.js';
-import { updatePullRequestBranch } from '$common/github/pull_requests.js';
+import { setPullRequestDraftState, updatePullRequestBranch } from '$common/github/pull_requests.js';
 import { withRequiredCheckRollupState } from '$common/github/required_check_rollup.js';
 import { describeRerunChecksResult, rerunActionsChecks } from '$common/github/rerun_checks.js';
 import { resolveGitHubToken } from '$common/github/token.js';
@@ -158,6 +158,38 @@ export const updateShepherdedPrBranch = command(
     }
     notifyPrChanged(db, projectId, pr.status.pr_url);
     return { status: 'updated' };
+  }
+);
+
+export const markPrReadyForReview = command(
+  prTargetSchema,
+  async ({ projectId, prNumber }): Promise<{ draft: false }> => {
+    const { db } = await getServerContext();
+    const pr = await loadOwnOpenPr(projectId, prNumber);
+    if (!resolveGitHubToken()) {
+      error(400, 'GITHUB_TOKEN not configured');
+    }
+
+    const updated = await setPullRequestDraftState(
+      pr.status.owner,
+      pr.status.repo,
+      pr.status.pr_number,
+      false
+    );
+    if (!updated) {
+      error(502, `GitHub could not mark PR #${prNumber} as ready for review`);
+    }
+
+    try {
+      await refreshPrStatus(db, pr.status.pr_url);
+    } catch (err) {
+      console.warn(
+        `[pr_shepherd] Failed to refresh ${pr.status.pr_url} after marking it ready`,
+        err
+      );
+    }
+    notifyPrChanged(db, projectId, pr.status.pr_url);
+    return { draft: false };
   }
 );
 

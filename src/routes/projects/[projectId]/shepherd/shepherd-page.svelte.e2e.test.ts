@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
   const listeners: Array<(eventName: string, event: unknown) => void> = [];
   return {
     setPrShepherded: vi.fn(),
+    markPrReadyForReview: vi.fn(),
     listeners,
     sessionManager: {
       onEvent: vi.fn((listener: (eventName: string, event: unknown) => void) => {
@@ -38,6 +39,7 @@ vi.mock('$lib/remote/project_prs.remote.js', async () => {
 
 vi.mock('$lib/remote/pr_shepherd.remote.js', () => ({
   setPrShepherded: mocks.setPrShepherded,
+  markPrReadyForReview: mocks.markPrReadyForReview,
   updateShepherdedPrBranch: vi.fn(),
   rerunCancelledPrChecks: vi.fn(),
   addPrStackToShepherdBot: vi.fn(),
@@ -305,6 +307,67 @@ describe('shepherd page', () => {
     // A PR that is not in a watched stack keeps the normal style.
     await page.getByText('Your other open PRs (1)').click();
     expect(watchButton(4).element().className).not.toContain('border-amber-200');
+  });
+
+  test('only draft PRs have a button to mark them ready for review', async () => {
+    setPrs([
+      makePr(1, { shepherded: true, draft: true }),
+      makePr(2, { shepherded: true }),
+      makePr(3, { draft: true }),
+    ]);
+
+    unmount = render(ShepherdPage, {
+      props: {
+        data: { projectId: '7', projects: [], currentUsername: 'me', prFixExecutorOptions: [] },
+      } as never,
+    }).unmount;
+
+    const readyButton = (prNumber: number) =>
+      page.getByRole('button', { name: `Mark PR #${prNumber} as ready for review` });
+    await expect.element(readyButton(1)).toBeVisible();
+    expect(readyButton(2).elements()).toHaveLength(0);
+
+    // Draft PRs that are not watched have the button too.
+    await page.getByText('Your other open PRs (1)').click();
+    await expect.element(readyButton(3)).toBeVisible();
+  });
+
+  test('marking a draft PR ready calls the server and removes the button', async () => {
+    setPrs([makePr(1, { shepherded: true, draft: true })]);
+    mocks.markPrReadyForReview.mockImplementation(async () => {
+      setPrs([makePr(1, { shepherded: true })]);
+      emitPrUpdated();
+      return { draft: false };
+    });
+
+    unmount = render(ShepherdPage, {
+      props: {
+        data: { projectId: '7', projects: [], currentUsername: 'me', prFixExecutorOptions: [] },
+      } as never,
+    }).unmount;
+
+    const button = page.getByRole('button', { name: 'Mark PR #1 as ready for review' });
+    await button.click();
+
+    expect(mocks.markPrReadyForReview).toHaveBeenCalledWith({ projectId: 7, prNumber: 1 });
+    await expect.element(button).not.toBeInTheDocument();
+  });
+
+  test('shows the error when a draft PR cannot be marked ready', async () => {
+    setPrs([makePr(1, { shepherded: true, draft: true })]);
+    mocks.markPrReadyForReview.mockRejectedValue(new Error('GitHub refused the change'));
+
+    unmount = render(ShepherdPage, {
+      props: {
+        data: { projectId: '7', projects: [], currentUsername: 'me', prFixExecutorOptions: [] },
+      } as never,
+    }).unmount;
+
+    const button = page.getByRole('button', { name: 'Mark PR #1 as ready for review' });
+    await button.click();
+
+    await expect.element(page.getByText('GitHub refused the change')).toBeVisible();
+    await expect.element(button).toBeEnabled();
   });
 
   test('recently merged PRs show in a collapsed section grouped by day', async () => {
