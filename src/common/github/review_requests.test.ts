@@ -13,6 +13,7 @@ import {
   hasHumanReviewRequest,
   isBotReviewer,
   isPrApproved,
+  isOnlyHumanReviewer,
   needsHumanReviewRequest,
 } from './review_requests.js';
 
@@ -108,6 +109,136 @@ describe('hasHumanReviewRequest', () => {
 
   test('treats an invalid snapshot as no request', () => {
     expect(hasHumanReviewRequest(makeDetail({ requested_reviewers: 'not json' }))).toBe(false);
+  });
+});
+
+describe('isOnlyHumanReviewer', () => {
+  test('is true when the user is the only human with an active request', () => {
+    const detail = makeDetail(
+      { requested_reviewers: JSON.stringify(['Copilot', 'alice']) },
+      { reviewRequests: [{ reviewer: 'Bob' }, { reviewer: 'coderabbitai[bot]' }] }
+    );
+    expect(isOnlyHumanReviewer(detail, 'bob')).toBe(true);
+    expect(isOnlyHumanReviewer(detail, 'carol')).toBe(false);
+  });
+
+  test('uses the requested reviewers snapshot when there are no request rows', () => {
+    expect(isOnlyHumanReviewer(makeDetail({ requested_reviewers: '["bob"]' }), 'bob')).toBe(true);
+    expect(isOnlyHumanReviewer(makeDetail({ requested_reviewers: '["bob","carol"]' }), 'bob')).toBe(
+      false
+    );
+  });
+
+  test('is false when another human also has an active request', () => {
+    expect(
+      isOnlyHumanReviewer(
+        makeDetail({}, { reviewRequests: [{ reviewer: 'bob' }, { reviewer: 'carol' }] }),
+        'bob'
+      )
+    ).toBe(false);
+  });
+
+  test('ignores removed requests', () => {
+    expect(
+      isOnlyHumanReviewer(
+        makeDetail(
+          {},
+          {
+            reviewRequests: [
+              { reviewer: 'bob' },
+              { reviewer: 'carol', removed_at: '2026-01-03T00:00:00Z' },
+            ],
+          }
+        ),
+        'bob'
+      )
+    ).toBe(true);
+  });
+
+  test('is false when another human already submitted a review', () => {
+    expect(
+      isOnlyHumanReviewer(
+        makeDetail(
+          {},
+          {
+            reviewRequests: [
+              { reviewer: 'bob' },
+              { reviewer: 'erin', requested_at: '2026-01-02T00:00:00Z' },
+            ],
+            reviews: [{ author: 'erin', state: 'COMMENTED', submitted_at: '2026-01-04T00:00:00Z' }],
+          }
+        ),
+        'bob'
+      )
+    ).toBe(false);
+    expect(
+      isOnlyHumanReviewer(
+        makeDetail({ requested_reviewers: '["bob"]' }, { reviews: [{ author: 'dave' }] }),
+        'bob'
+      )
+    ).toBe(false);
+  });
+
+  test('ignores reviews by bots, the author, pending reviews, and the user', () => {
+    expect(
+      isOnlyHumanReviewer(
+        makeDetail(
+          { requested_reviewers: '["bob"]' },
+          {
+            reviews: [
+              { author: 'coderabbitai[bot]', state: 'COMMENTED' },
+              { author: 'Copilot', state: 'COMMENTED' },
+              { author: 'alice', state: 'COMMENTED' },
+              { author: 'dave', state: 'PENDING' },
+            ],
+          }
+        ),
+        'bob'
+      )
+    ).toBe(true);
+    expect(
+      isOnlyHumanReviewer(
+        makeDetail(
+          {},
+          {
+            reviewRequests: [{ reviewer: 'bob', requested_at: '2026-01-05T00:00:00Z' }],
+            reviews: [{ author: 'bob', submitted_at: '2026-01-04T00:00:00Z' }],
+          }
+        ),
+        'bob'
+      )
+    ).toBe(true);
+  });
+
+  test('counts a request made again after an earlier review', () => {
+    expect(
+      isOnlyHumanReviewer(
+        makeDetail(
+          {},
+          {
+            reviewRequests: [
+              { reviewer: 'bob' },
+              { reviewer: 'carol', requested_at: '2026-01-05T00:00:00Z' },
+            ],
+            reviews: [{ author: 'carol', submitted_at: '2026-01-04T00:00:00Z' }],
+          }
+        ),
+        'bob'
+      )
+    ).toBe(false);
+  });
+
+  test('is false when the user has no active request', () => {
+    expect(isOnlyHumanReviewer(makeDetail({ requested_reviewers: '[]' }), 'bob')).toBe(false);
+    expect(
+      isOnlyHumanReviewer(
+        makeDetail(
+          {},
+          { reviewRequests: [{ reviewer: 'bob', removed_at: '2026-01-03T00:00:00Z' }] }
+        ),
+        'bob'
+      )
+    ).toBe(false);
   });
 });
 

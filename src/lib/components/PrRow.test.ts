@@ -186,6 +186,41 @@ describe('PrRow', () => {
     expect(body).toContain('text-green-600');
   });
 
+  test('renders a sole reviewer indicator when the user is the only requested reviewer', () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = 'Review Requested';
+    pr.currentUserIsOnlyReviewer = true;
+    const props = { pr, href: '/projects/123/prs/42', itemId: '123:42' };
+
+    expect(render(PrRow, { props }).body).toContain('You are the only reviewer');
+
+    pr.currentUserIsOnlyReviewer = false;
+    expect(render(PrRow, { props }).body).not.toContain('You are the only reviewer');
+  });
+
+  test('renders the approval check mark instead of the sole reviewer indicator', () => {
+    const pr = createPr();
+    pr.currentUserReviewRequestLabel = 'Review Requested';
+    pr.currentUserIsOnlyReviewer = true;
+    pr.reviews = [
+      {
+        id: 1,
+        pr_status_id: 1,
+        author: 'another-reviewer',
+        state: 'APPROVED',
+        body: null,
+        submitted_at: '2026-03-18T10:00:00.000Z',
+      },
+    ];
+
+    const { body } = render(PrRow, {
+      props: { pr, href: '/projects/123/prs/42', itemId: '123:42' },
+    });
+
+    expect(body).toContain('Approved by a reviewer');
+    expect(body).not.toContain('You are the only reviewer');
+  });
+
   test('renders compact diff stats when additions and deletions are available', () => {
     const pr = createPr();
     pr.status.additions = 42;

@@ -8,7 +8,11 @@ import { getWebhookServerUrl } from '$common/github/webhook_client.js';
 import { parseOwnerRepoFromRepositoryId } from '$common/github/pull_requests.js';
 import { getReviewerPredicate, parseRequestedReviewers } from '$common/github/pr_relevance.js';
 import { normalizeGitHubUsername } from '$common/github/username.js';
-import { isPrApproved, needsHumanReviewRequest } from '$common/github/review_requests.js';
+import {
+  isPrApproved,
+  isOnlyHumanReviewer,
+  needsHumanReviewRequest,
+} from '$common/github/review_requests.js';
 import { resolveGitHubToken } from '$common/github/token.js';
 import {
   refreshProjectPrs as refreshProjectPrsService,
@@ -64,6 +68,11 @@ export interface EnrichedProjectPr extends PrStatusDetailWithRequiredChecks {
   isStackedOnOpenPr: boolean;
   /** True for the current user's own open PRs that have no human reviewer requested yet. */
   currentUserNeedsReviewRequest: boolean;
+  /**
+   * True when the current user has an active review request and no other human has an active
+   * review request or a submitted review. Bots and the PR author are not counted.
+   */
+  currentUserIsOnlyReviewer: boolean;
   /** Set when the PR is in the shepherd list. */
   shepherd: PrShepherdSummary | null;
 }
@@ -150,6 +159,7 @@ function enrichProjectPrs(
     currentUserReviewRequestStacked: false,
     isStackedOnOpenPr: false,
     currentUserNeedsReviewRequest: getCurrentUserNeedsReviewRequest(pr, username),
+    currentUserIsOnlyReviewer: username !== null && isOnlyHumanReviewer(pr, username),
     shepherd: toShepherdSummary(shepherds.get(pr.status.id)),
   }));
 }

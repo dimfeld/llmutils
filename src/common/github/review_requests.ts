@@ -34,6 +34,103 @@ export function hasHumanReviewRequest(detail: PrStatusDetail): boolean {
 }
 
 /**
+ * Returns the normalized logins of the human reviewers that have an active review request.
+ * Bots and the PR author are not included.
+ *
+ * A review request row is active when it was not removed after it was made, and the reviewer
+ * did not submit a review after the request. A reviewer in the requested reviewers snapshot
+ * without a request row is active when that reviewer has no submitted review.
+ */
+export function getActiveHumanRequestedReviewers(
+  detail: Pick<PrStatusDetail, 'status' | 'reviews' | 'reviewRequests'>
+): Set<string> {
+  const author = detail.status.author ? normalizeGitHubUsername(detail.status.author) : null;
+
+  const latestReviewAt = new Map<string, string>();
+  for (const review of detail.reviews) {
+    if (review.state === 'PENDING' || review.submitted_at == null) {
+      continue;
+    }
+    const reviewer = normalizeGitHubUsername(review.author);
+    const previous = latestReviewAt.get(reviewer);
+    if (previous === undefined || review.submitted_at > previous) {
+      latestReviewAt.set(reviewer, review.submitted_at);
+    }
+  }
+
+  const active = new Set<string>();
+  const reviewersWithRows = new Set<string>();
+  for (const request of detail.reviewRequests) {
+    const reviewer = normalizeGitHubUsername(request.reviewer);
+    reviewersWithRows.add(reviewer);
+    if (request.requested_at === null) {
+      continue;
+    }
+    if (request.removed_at !== null && request.requested_at <= request.removed_at) {
+      continue;
+    }
+    const lastReviewAt = latestReviewAt.get(reviewer);
+    if (lastReviewAt !== undefined && request.requested_at <= lastReviewAt) {
+      continue;
+    }
+    active.add(reviewer);
+  }
+
+  for (const reviewer of parseRequestedReviewerSnapshot(detail.status.requested_reviewers)) {
+    const normalized = normalizeGitHubUsername(reviewer);
+    if (!reviewersWithRows.has(normalized) && !latestReviewAt.has(normalized)) {
+      active.add(normalized);
+    }
+  }
+
+  for (const reviewer of active) {
+    if (reviewer === author || isBotReviewer(reviewer)) {
+      active.delete(reviewer);
+    }
+  }
+  return active;
+}
+
+/**
+ * True when the given user has an active review request and is the only human reviewer on the
+ * PR. Another human counts as a reviewer when they have an active review request or submitted a
+ * review. Bots and the PR author are not counted.
+ */
+export function isOnlyHumanReviewer(
+  detail: Pick<PrStatusDetail, 'status' | 'reviews' | 'reviewRequests'>,
+  username: string
+): boolean {
+  const normalizedUsername = normalizeGitHubUsername(username);
+  const requested = getActiveHumanRequestedReviewers(detail);
+  if (requested.size !== 1 || !requested.has(normalizedUsername)) {
+    return false;
+  }
+
+  const author = detail.status.author ? normalizeGitHubUsername(detail.status.author) : null;
+  return !detail.reviews.some((review) => {
+    if (review.state === 'PENDING' || isBotReviewer(review.author)) {
+      return false;
+    }
+    const reviewer = normalizeGitHubUsername(review.author);
+    return reviewer !== author && reviewer !== normalizedUsername;
+  });
+}
+
+function parseRequestedReviewerSnapshot(requestedReviewers: string | null): string[] {
+  if (!requestedReviewers) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(requestedReviewers);
+    return Array.isArray(parsed)
+      ? parsed.filter((value): value is string => typeof value === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * True when a human other than the PR author submitted a review. Reviews by the author do not
  * count, because replies to review comments create COMMENTED reviews by the author.
  */
