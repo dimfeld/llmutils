@@ -29,6 +29,7 @@ import {
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { resolveOptionalPromptInput } from './prompt_input.js';
+import { loadClaudeProjectPermissionSettings } from '../executors/claude_code/project_permission_settings.js';
 
 type ExecutorAlias = 'claude' | 'codex';
 const RUN_PROMPT_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -179,6 +180,8 @@ interface ClaudeArgOptions {
   model?: string;
   jsonSchema?: string;
   allowAllTools?: boolean;
+  /** JSON settings string with the project's permission rules, passed through `--settings`. */
+  projectPermissionSettings?: string;
 }
 
 interface CodexArgOptions {
@@ -239,6 +242,9 @@ export function buildClaudeRunPromptArgs(options: ClaudeArgOptions): string[] {
   }
   if (options.allowAllTools) {
     args.push('--dangerously-skip-permissions');
+  }
+  if (options.projectPermissionSettings) {
+    args.push('--settings', options.projectPermissionSettings);
   }
 
   args.push('--print', options.prompt);
@@ -316,6 +322,7 @@ export async function executeClaudePrompt(
     model: resolveClaudeModel(options.model),
     jsonSchema: options.jsonSchema,
     allowAllTools: options.allowAllTools,
+    projectPermissionSettings: await loadClaudeProjectPermissionSettings(options.cwd),
   });
 
   let tunnelServer: TunnelServer | undefined;

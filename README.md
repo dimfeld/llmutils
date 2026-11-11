@@ -1346,6 +1346,10 @@ branchPrefix: di/
 
 Use a unique prefix per developer to prevent accidental PR-to-plan matching from branch names.
 
+**Claude permissions in new workspaces**
+
+Claude Code ignores `permissions.allow` entries in a project's `.claude/settings.json` and `.claude/settings.local.json` until you trust the directory. New workspaces are not trusted. When tim starts Claude, it reads the `allow`, `ask`, and `deny` rules from these files and gives them to Claude with `--settings`, so they apply in all workspaces. Claude can still show a warning that it ignored the entries from the project files.
+
 ## More Documentation
 
 - [`docs/import_command.md`](docs/import_command.md) - CLI and web issue import behavior

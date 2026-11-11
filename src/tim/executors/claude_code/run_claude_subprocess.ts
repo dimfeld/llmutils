@@ -34,6 +34,7 @@ import { executeWithTerminalInput } from './terminal_input_lifecycle.js';
 import { createOrderedClaudeCleanup } from './claude_execution_cleanup.js';
 import { PersistentClaudeSessionRuntime } from './persistent_claude_session.js';
 import { safeEndStdin } from './streaming_input.js';
+import { loadClaudeProjectPermissionSettings } from './project_permission_settings.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../../logging/tunnel_server.js';
 import { createPromptRequestHandler } from '../../../logging/tunnel_prompt_handler.js';
@@ -460,6 +461,12 @@ export async function runClaudeSubprocess(
     ];
 
     applyClaudeMcpLaunchArgs(args, mcpLaunch, claudeCodeOptions.mcpConfigFile);
+
+    // Claude ignores project permissions in untrusted directories, but applies them from --settings.
+    const projectPermissionSettings = await loadClaudeProjectPermissionSettings(options.cwd);
+    if (projectPermissionSettings) {
+      args.push('--settings', projectPermissionSettings);
+    }
 
     // Add allowed tools
     if (allowedTools.length && !allowAllTools) {

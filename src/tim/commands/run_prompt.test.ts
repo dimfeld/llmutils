@@ -209,6 +209,12 @@ describe('buildClaudeRunPromptArgs', () => {
       'hello',
     ]);
   });
+
+  test('passes project permission settings through --settings', () => {
+    const settings = '{"permissions":{"allow":["Bash(ls)"]}}';
+    const args = buildClaudeRunPromptArgs({ prompt: 'hello', projectPermissionSettings: settings });
+    expect(args.slice(-4)).toEqual(['--settings', settings, '--print', 'hello']);
+  });
 });
 
 describe('resolveClaudeModel', () => {

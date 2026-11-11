@@ -42,6 +42,7 @@ import {
 } from './claude_code/claude_mcp_launch.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
 import { createOrderedClaudeCleanup } from './claude_code/claude_execution_cleanup.js';
+import { loadClaudeProjectPermissionSettings } from './claude_code/project_permission_settings.js';
 import {
   FAST_NOOP_ORCHESTRATOR_RETRY_MS,
   shouldRetryFastNoopOrchestratorTurn,
@@ -768,6 +769,12 @@ export class ClaudeCodeExecutor implements Executor {
       }
 
       applyClaudeMcpLaunchArgs(args, mcpLaunch, mcpConfigFile);
+
+      // Claude ignores project permissions in untrusted directories, but applies them from --settings.
+      const projectPermissionSettings = await loadClaudeProjectPermissionSettings(gitRoot);
+      if (projectPermissionSettings) {
+        args.push('--settings', projectPermissionSettings);
+      }
 
       // Automatic model selection for review and planning modes
       const modelToUse = parsedModel.model;
