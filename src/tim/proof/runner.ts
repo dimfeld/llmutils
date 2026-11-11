@@ -16,6 +16,7 @@ import {
   DEFAULT_EXECUTOR,
   defaultModelForExecutor,
 } from '../executors/index.js';
+import { CodexCliExecutorName } from '../executors/schemas.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { ensureMaterializeDir, resolveProjectContext } from '../plan_materialize.js';
 import { resolvePlanByUuid } from '../plans.js';
@@ -109,7 +110,14 @@ function buildProofPrompt(options: {
   tasks: Array<{ title: string; done?: boolean }>;
   changedFiles: string[];
   instructions: string;
+  sandboxedShell: boolean;
 }): string {
+  const sandboxNote = options.sandboxedShell
+    ? `
+
+Your shell commands run inside a sandbox. Browsers such as Chrome cannot start their own sandbox inside it. Commands that are allowed by approval rules (for example \`agent-browser\`) run outside the sandbox only when the complete command matches the rule. Thus, run each browser automation command (\`agent-browser\`, Playwright, etc.) as its own command. Do not combine it with other commands, pipes, redirects, or environment variable prefixes. If the browser still fails with a sandbox error, report the blocker. Do not disable the browser sandbox.`
+    : '';
+
   return `# Proof Generation Task
 You are generating proof artifacts for a completed plan in this repository. These proof artifacts serve two purposes: to show that the plan is completed properly, and to help other developers understand how to use the new features.
 
@@ -117,7 +125,7 @@ Tests, type checking, linting, formatting, and other automated quality gates do 
 
 Decide what to demonstrate based on the plan goal, details, task list, and changed files below. First look for "Manual Testing Runbooks" sections in the plan details. Treat those runbooks as the primary instructions for what to demo, and create proof for each runbook. If there are subplans with their own runbook sections in the details, produce proof for each subplan runbook as well. You are encouraged to also create proof for valuable behavior or risks that the runbooks do not cover, especially when changed files or task details reveal additional user-facing behavior, backend behavior, integrations, edge cases, or regressions. Use whatever tools are appropriate (Playwright, scripts, curl, the dev server and database, etc.) to capture screenshots, videos, command transcripts, logs, generated files, or other evidence. Write or copy all output files into ${options.absoluteArtifactsDir}. If you create or use any scripts to generate seed data for the proof run, copy those scripts into ${options.absoluteArtifactsDir} as proof artifacts too. Do not commit or stage files under .tim/proofs; the agent harness handles uploading them as proof artifacts, and they do not belong in Git.
 
-Finish by writing report.md in that directory. The top of report.md must state whether the proof matched the plan expectations, failed to match them, or had mixed results, since that success/failure verdict is the most important thing to the reader. After that verdict, summarize what you did, map each runbook to the proof you produced, note any additional proof beyond the runbooks, and list each file you produced. Do not modify source files outside ${options.artifactsDir}. If the work is purely backend / no user-facing surface to demonstrate, still follow any backend/API/CLI runbooks if present; otherwise write a brief report.md explaining that and stop.
+Finish by writing report.md in that directory. The top of report.md must state whether the proof matched the plan expectations, failed to match them, or had mixed results, since that success/failure verdict is the most important thing to the reader. After that verdict, summarize what you did, map each runbook to the proof you produced, note any additional proof beyond the runbooks, and list each file you produced. Do not modify source files outside ${options.artifactsDir}. If the work is purely backend / no user-facing surface to demonstrate, still follow any backend/API/CLI runbooks if present; otherwise write a brief report.md explaining that and stop.${sandboxNote}
 
 
 ## Plan
@@ -186,6 +194,11 @@ export async function runProofGeneration(options: RunProofGenerationOptions): Pr
   const changedFiles = await getChangedFilesOnBranch(options.gitRoot);
   await softDeletePriorProofArtifacts(options.planUuid, options.config);
 
+  const executorName =
+    options.executor ||
+    configuredProof.executor ||
+    options.config.defaultExecutor ||
+    DEFAULT_EXECUTOR;
   const prompt = buildProofPrompt({
     absoluteArtifactsDir,
     artifactsDir,
@@ -194,13 +207,9 @@ export async function runProofGeneration(options: RunProofGenerationOptions): Pr
     tasks: plan.tasks ?? [],
     changedFiles,
     instructions,
+    sandboxedShell: executorName === CodexCliExecutorName,
   });
 
-  const executorName =
-    options.executor ||
-    configuredProof.executor ||
-    options.config.defaultExecutor ||
-    DEFAULT_EXECUTOR;
   const model =
     options.model ||
     configuredProof.model ||
