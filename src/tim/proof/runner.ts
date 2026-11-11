@@ -115,7 +115,7 @@ function buildProofPrompt(options: {
   const sandboxNote = options.sandboxedShell
     ? `
 
-Your shell commands run inside a sandbox. Browsers such as Chrome cannot start their own sandbox inside it. Commands that are allowed by approval rules (for example \`agent-browser\`) run outside the sandbox only when the complete command matches the rule. Thus, run each browser automation command (\`agent-browser\`, Playwright, etc.) as its own command. Do not combine it with other commands, pipes, redirects, or environment variable prefixes. If the browser still fails with a sandbox error, report the blocker. Do not disable the browser sandbox.`
+Your shell commands run inside a sandbox. Browsers such as Chrome cannot start their own sandbox inside it. Commands that are allowed by approval rules (for example \`agent-browser\`) run outside the sandbox only when the complete command matches the rule. Thus, run each browser automation command (\`agent-browser\`, Playwright, etc.) as its own command. Do not combine it with other commands, pipes, redirects, or environment variable prefixes. To run several \`agent-browser\` steps in one command, use \`agent-browser batch "open <url>" "screenshot <path>" ...\`. If the browser still fails with a sandbox error, report the blocker. Do not disable the browser sandbox.`
     : '';
 
   return `# Proof Generation Task
