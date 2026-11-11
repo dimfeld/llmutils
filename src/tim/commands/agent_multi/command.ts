@@ -4,6 +4,8 @@ import { buildWorkspaceCommandEnv } from '../../../common/env.js';
 import { getGitRoot } from '../../../common/git.js';
 import { createLogFile } from '../../../common/log_files.js';
 import { resolveTimExecutable } from '../../../common/tim_executable.js';
+import { getLoggerAdapter } from '../../../logging/adapter.js';
+import { HeadlessAdapter } from '../../../logging/headless_adapter.js';
 import { isTunnelActive } from '../../../logging/tunnel_client.js';
 import { getDatabase } from '../../db/database.js';
 import { getPlanByPlanId, getPlanByUuid, type PlanRow } from '../../db/plan.js';
@@ -18,6 +20,7 @@ import {
   MultiAgentRunner,
   SelectionValidationError,
   validateSelection,
+  type MultiAgentRunResult,
   type SpawnAgentFn,
   type SpawnAgentResult,
 } from './orchestrator.js';
@@ -97,6 +100,8 @@ export async function createBunSpawnAgent(_options: { cwd: string }): Promise<Sp
       return {
         exited: proc.exited,
         pid: proc.pid,
+        // Let the orchestrator exit on "end session" while the child keeps running.
+        detach: () => proc.unref(),
       };
     } catch (err) {
       fs.closeSync(logFile.fd);
@@ -244,8 +249,34 @@ async function runAgentMultiCommand(
     }),
     readPlan: async (planUuid: string) => getPlanByUuid(db, planUuid),
   });
-  const result = await runner.run();
-  if (!result.success) {
+  const result = await runWithEndSessionStop(runner);
+  if (!result.success && !result.stopped) {
     process.exitCode = 1;
+  }
+}
+
+/**
+ * Connect the headless "end session" request to the runner. Ending the session
+ * stops new agents from starting but does not kill the running agents.
+ */
+export async function runWithEndSessionStop(
+  runner: Pick<MultiAgentRunner, 'run' | 'requestStop'>
+): Promise<MultiAgentRunResult> {
+  const adapter = getLoggerAdapter();
+  if (!(adapter instanceof HeadlessAdapter)) {
+    return runner.run();
+  }
+
+  const stop = (): void => runner.requestStop();
+  adapter.setEndSessionHandler(stop);
+  adapter.setForceEndSessionHandler(stop);
+  if (adapter.hasSessionEndRequest) {
+    stop();
+  }
+  try {
+    return await runner.run();
+  } finally {
+    adapter.setEndSessionHandler(undefined);
+    adapter.setForceEndSessionHandler(undefined);
   }
 }

@@ -85,6 +85,8 @@ function createHarness(
 ): {
   runner: MultiAgentRunner;
   spawnOrder: number[];
+  detached: number[];
+  running: Set<number>;
   resolvePlan: (planId: number, status: AgentMultiPlan['status'], exitCode?: number) => void;
   setPlanStatus: (planUuid: string, status: AgentMultiPlan['status']) => void;
   statuses: Map<string, AgentMultiPlan['status']>;
@@ -98,6 +100,7 @@ function createHarness(
   const running = new Set<number>();
   let maxRunningCount = 0;
   const spawnOrder: number[] = [];
+  const detached: number[] = [];
 
   const spawnAgent: SpawnAgentFn = (planId: number) => {
     spawnOrder.push(planId);
@@ -117,6 +120,9 @@ function createHarness(
       exited: deferred.promise.finally(() => {
         running.delete(planId);
       }),
+      detach: () => {
+        detached.push(planId);
+      },
     };
   };
 
@@ -136,6 +142,8 @@ function createHarness(
   return {
     runner,
     spawnOrder,
+    detached,
+    running,
     statuses,
     maxRunning: () => maxRunningCount,
     setPlanStatus(planUuid: string, status: AgentMultiPlan['status']): void {
@@ -716,5 +724,91 @@ describe('agent-multi orchestrator', () => {
     if (result.ok) {
       expect(result.readyPlanUuids).toContain('plan-1');
     }
+  });
+
+  test('requestStop while agents run returns without waiting and starts no new agents', async () => {
+    const plans = [createPlan(1), createPlan(2), createPlan(3, { dependencies: ['plan-1'] })];
+    const harness = createHarness(plans, { maxParallel: 2 });
+
+    const run = harness.runner.run();
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1, 2]));
+
+    harness.runner.requestStop();
+    const result = await run;
+
+    expect(result.stopped).toBe(true);
+    expect(result.success).toBe(false);
+    expect(harness.spawnOrder).toEqual([1, 2]);
+    // Running children are detached, not killed.
+    expect(harness.detached.sort()).toEqual([1, 2]);
+    expect(Array.from(harness.running).sort()).toEqual([1, 2]);
+    expect(result.states.get('plan-1')?.status).toBe('running');
+    expect(result.states.get('plan-2')?.status).toBe('running');
+    expect(result.states.get('plan-3')?.status).toBe('pending');
+
+    // A late exit after the stop does not spawn the dependent plan.
+    harness.resolvePlan(1, 'done');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.spawnOrder).toEqual([1, 2]);
+  });
+
+  test('requestStop before run spawns nothing', async () => {
+    const plans = [createPlan(1), createPlan(2)];
+    const harness = createHarness(plans);
+
+    harness.runner.requestStop();
+    const result = await harness.runner.run();
+
+    expect(result.stopped).toBe(true);
+    expect(harness.spawnOrder).toEqual([]);
+    expect(Array.from(result.states.values()).map((state) => state.status)).toEqual([
+      'pending',
+      'pending',
+    ]);
+  });
+
+  test('requestStop during an async spawn does not start further agents', async () => {
+    const plans = [createPlan(1), createPlan(2), createPlan(3)];
+    const spawnOrder: number[] = [];
+    const detached: number[] = [];
+    let runner!: MultiAgentRunner;
+    const spawnAgent: SpawnAgentFn = async (planId: number) => {
+      spawnOrder.push(planId);
+      if (planId === 1) {
+        runner.requestStop();
+      }
+      return {
+        pid: planId,
+        exited: new Promise<number>(() => {}),
+        detach: () => {
+          detached.push(planId);
+        },
+      };
+    };
+    runner = new MultiAgentRunner({
+      plans,
+      maxParallel: 3,
+      cwd: '/tmp/repo',
+      spawnAgent,
+      readPlan: async () => ({ status: 'pending' }),
+      logger: createLogger(),
+    });
+
+    const result = await runner.run();
+
+    expect(result.stopped).toBe(true);
+    expect(spawnOrder).toEqual([1]);
+    expect(detached).toEqual([1]);
+    expect(result.states.get('plan-1')?.status).toBe('running');
+  });
+
+  test('a normal run reports stopped=false', async () => {
+    const harness = createHarness([createPlan(1)]);
+    const run = harness.runner.run();
+    await waitFor(() => expect(harness.spawnOrder).toEqual([1]));
+    harness.resolvePlan(1, 'done');
+    const result = await run;
+    expect(result.stopped).toBe(false);
+    expect(harness.detached).toEqual([]);
   });
 });

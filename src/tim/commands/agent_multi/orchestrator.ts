@@ -89,6 +89,11 @@ export type ValidateSelectionOptions = {
 export type SpawnAgentResult = {
   exited: Promise<number>;
   pid?: number;
+  /**
+   * Called when the orchestrator stops early. The child must keep running, but
+   * it should no longer keep the orchestrator process alive.
+   */
+  detach?: () => void;
 };
 
 export type SpawnAgentFn = (
@@ -120,6 +125,8 @@ export type PlanRunStateSnapshot = Readonly<{
 
 export type MultiAgentRunResult = {
   success: boolean;
+  /** True when requestStop() ended the run before all plans completed. */
+  stopped: boolean;
   states: Map<string, PlanRunStateSnapshot>;
 };
 
@@ -292,6 +299,9 @@ export class MultiAgentRunner {
   private readonly spawnAgent: SpawnAgentFn;
   private readonly readPlan: ReadPlanFn;
   private readonly logger: MultiAgentLogger;
+  private stopRequested = false;
+  private resolveStop!: () => void;
+  private readonly stopPromise: Promise<void>;
 
   constructor(options: MultiAgentRunnerOptions) {
     const validation = validateSelection(options.plans, {
@@ -318,26 +328,55 @@ export class MultiAgentRunner {
     this.spawnAgent = options.spawnAgent;
     this.readPlan = options.readPlan;
     this.logger = options.logger ?? defaultLogger;
+    this.stopPromise = new Promise<void>((resolve) => {
+      this.resolveStop = resolve;
+    });
+  }
+
+  /**
+   * Stop spawning new agents and make run() return without waiting for the
+   * running agents. The running agents are not killed.
+   */
+  requestStop(): void {
+    if (this.stopRequested) {
+      return;
+    }
+    this.stopRequested = true;
+    this.logger.log('agent-multi: stop requested; no new agents will start');
+    this.sendWorkflowProgress('Stop requested; no new agents will start', 'stop');
+    this.resolveStop();
+  }
+
+  get isStopRequested(): boolean {
+    return this.stopRequested;
   }
 
   async run(): Promise<MultiAgentRunResult> {
     this.logInitialSummary();
     await this.tick();
 
-    while (this.hasStatus('pending') || this.hasStatus('running')) {
+    while (!this.stopRequested && (this.hasStatus('pending') || this.hasStatus('running'))) {
       if (!this.hasStatus('running')) {
         this.markBlockedPendingPlansFailed();
         break;
       }
 
-      const exit = await this.waitForNextExit();
+      const exit = await Promise.race([this.waitForNextExit(), this.stopPromise]);
+      if (!exit || this.stopRequested) {
+        break;
+      }
       await this.handleExit(exit.planUuid, exit.exitCode);
       await this.tick();
+    }
+
+    if (this.stopRequested) {
+      this.detachRunningAgents();
     }
 
     this.logFinalSummary();
     return {
       success: Array.from(this.states.values()).every((state) => state.status === 'finished'),
+      stopped: this.stopRequested,
       states: this.snapshot(),
     };
   }
@@ -356,10 +395,27 @@ export class MultiAgentRunner {
     );
   }
 
+  private detachRunningAgents(): void {
+    for (const state of this.states.values()) {
+      if (state.status !== 'running' || !state.process?.detach) {
+        continue;
+      }
+      try {
+        state.process.detach();
+      } catch (err) {
+        this.logger.error(
+          `agent-multi: failed to detach plan ${formatPlan(state.plan)}: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      }
+    }
+  }
+
   private async tick(): Promise<void> {
-    while (this.runningCount() < this.maxParallel) {
+    while (!this.stopRequested && this.runningCount() < this.maxParallel) {
       const next = await this.nextRunnablePendingState();
-      if (!next) {
+      if (!next || this.stopRequested) {
         return;
       }
 
