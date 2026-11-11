@@ -26,6 +26,7 @@ function createActionablePr(overrides: Partial<ActionablePr> = {}): ActionablePr
     hasApprovingReview: false,
     unresolvedReviewThreadCount: 0,
     needsReviewRequest: false,
+    currentUserIsOnlyReviewer: false,
     hasConflicts: false,
     ...overrides,
   };
@@ -190,6 +191,36 @@ describe('PrAttentionCard', () => {
     });
 
     expect(body).not.toContain('Approved by a reviewer');
+  });
+
+  test('renders an only-reviewer icon when the current user is the only reviewer', () => {
+    const only = render(PrAttentionCard, {
+      props: {
+        item: createItem({ actionReason: 'review_requested', currentUserIsOnlyReviewer: true }),
+      },
+    });
+    expect(only.body).toContain('You are the only reviewer');
+
+    const notOnly = render(PrAttentionCard, {
+      props: {
+        item: createItem({ actionReason: 'review_requested', currentUserIsOnlyReviewer: false }),
+      },
+    });
+    expect(notOnly.body).not.toContain('You are the only reviewer');
+  });
+
+  test('shows the approval check mark instead of the only-reviewer icon when approved', () => {
+    const { body } = render(PrAttentionCard, {
+      props: {
+        item: createItem({
+          actionReason: 'review_requested',
+          hasApprovingReview: true,
+          currentUserIsOnlyReviewer: true,
+        }),
+      },
+    });
+    expect(body).toContain('Approved by a reviewer');
+    expect(body).not.toContain('You are the only reviewer');
   });
 
   test('renders a conflicts badge when the PR has merge conflicts', () => {

@@ -2,6 +2,7 @@
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
   import MessageSquareWarning from '@lucide/svelte/icons/message-square-warning';
+  import UserRound from '@lucide/svelte/icons/user-round';
   import type { PrAttentionItem } from '$lib/utils/dashboard_attention.js';
   import { buildLinearReviewDeepLink } from '$lib/utils/linear_review_deep_link.js';
   import { formatCompactRelativeTime } from '$lib/utils/time.js';
@@ -96,6 +97,13 @@
           class="size-3.5 shrink-0 text-green-600 dark:text-green-400"
           aria-label="Approved by a reviewer"
         />
+      {:else if pr.actionReason === 'review_requested' && pr.currentUserIsOnlyReviewer}
+        <span class="inline-flex shrink-0" title="You are the only reviewer">
+          <UserRound
+            class="size-3.5 text-yellow-700 dark:text-yellow-300"
+            aria-label="You are the only reviewer"
+          />
+        </span>
       {/if}
       {#if pr.needsReviewRequest}
         <NeedsReviewerBadge />

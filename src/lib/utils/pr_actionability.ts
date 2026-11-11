@@ -1,5 +1,6 @@
 import {
   hasHumanApproval,
+  isOnlyHumanReviewer,
   isPrApproved,
   needsHumanReviewRequest,
 } from '$common/github/review_requests.js';
@@ -219,6 +220,7 @@ export function buildActionablePrsForRepo(
           hasApprovingReview,
           unresolvedReviewThreadCount,
           needsReviewRequest: needsHumanReviewRequest(pr),
+          currentUserIsOnlyReviewer: false,
           hasConflicts,
         });
       }
@@ -245,6 +247,7 @@ export function buildActionablePrsForRepo(
         hasApprovingReview,
         unresolvedReviewThreadCount,
         needsReviewRequest: false,
+        currentUserIsOnlyReviewer: isOnlyHumanReviewer(pr, normalizedUsername),
         hasConflicts,
       });
     }

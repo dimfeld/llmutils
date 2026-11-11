@@ -603,6 +603,7 @@ describe('buildActionablePrsForRepo', () => {
         hasApprovingReview: true,
         unresolvedReviewThreadCount: 0,
         needsReviewRequest: false,
+        currentUserIsOnlyReviewer: false,
         hasConflicts: false,
       },
     ]);
@@ -654,9 +655,45 @@ describe('buildActionablePrsForRepo', () => {
         hasApprovingReview: false,
         unresolvedReviewThreadCount: 0,
         needsReviewRequest: false,
+        currentUserIsOnlyReviewer: true,
         hasConflicts: false,
       },
     ]);
+  });
+
+  test('marks a review-requested PR when the current user is the only human reviewer', () => {
+    const botReview = (id: number, author: string): PrReviewRow => ({
+      id,
+      pr_status_id: 1,
+      author,
+      state: 'COMMENTED',
+      body: null,
+      submitted_at: '2026-01-02T00:00:00Z',
+    });
+    const onlyReviewer = makePrDetail(
+      { author: 'someone-else', requested_reviewers: '["testuser"]' },
+      {
+        reviews: [
+          botReview(1, 'coderabbitai[bot]'),
+          botReview(2, 'Copilot'),
+          botReview(3, 'someone-else'),
+        ],
+      }
+    );
+    const otherHumanRequested = makePrDetail({
+      author: 'someone-else',
+      requested_reviewers: '["testuser","carol"]',
+    });
+    const otherHumanReviewed = makePrDetail(
+      { author: 'someone-else', requested_reviewers: '["testuser"]' },
+      { reviews: [botReview(4, 'carol')] }
+    );
+
+    const flag = (pr: PrStatusDetail): boolean | undefined =>
+      buildActionablePrsForRepo(7, [pr], new Map(), 'testuser')[0]?.currentUserIsOnlyReviewer;
+    expect(flag(onlyReviewer)).toBe(true);
+    expect(flag(otherHumanRequested)).toBe(false);
+    expect(flag(otherHumanReviewed)).toBe(false);
   });
 
   test('flags own open PRs that have no human reviewer requested', () => {

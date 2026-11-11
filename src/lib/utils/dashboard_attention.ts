@@ -51,6 +51,11 @@ export interface ActionablePr {
   unresolvedReviewThreadCount: number;
   /** True for the user's own open PRs that have no human reviewer requested yet. */
   needsReviewRequest: boolean;
+  /**
+   * True when the current user has an active review request and no other human has an active
+   * review request or a submitted review. Bots and the PR author are not counted.
+   */
+  currentUserIsOnlyReviewer: boolean;
   /** True when GitHub reports merge conflicts with the base branch. */
   hasConflicts: boolean;
 }
