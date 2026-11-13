@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import PrMergedBadge from '$lib/components/PrMergedBadge.svelte';
+  import ShepherdBotActivity from '$lib/components/ShepherdBotActivity.svelte';
   import ShepherdBotPanel from '$lib/components/ShepherdBotPanel.svelte';
   import ShepherdPrRow from '$lib/components/ShepherdPrRow.svelte';
   import { removePrStackFromShepherdBot } from '$lib/remote/pr_shepherd.remote.js';
@@ -80,150 +81,171 @@
 </script>
 
 <div class="h-full overflow-y-auto">
-  <div class="mx-auto max-w-5xl space-y-4 px-4 py-4 md:px-6">
-    <div class="flex items-center justify-between gap-2">
-      <div>
-        <h1 class="text-lg font-semibold text-foreground">PR Shepherd</h1>
-        <p class="text-xs text-muted-foreground">
-          {watchedCount} watched PR{watchedCount === 1 ? '' : 's'}. Your PRs are added when they
-          become ready for review.
-        </p>
+  <!--
+    With a project selected, large screens show two columns: the bot panel and the PR lists on
+    the left, and the bot activity on the right. The activity spans both rows, so the PR lists
+    start right below the bot panel. On small screens, the activity comes between them.
+  -->
+  <div
+    class="mx-auto max-w-5xl px-4 py-4 md:px-6 {isAllProjects
+      ? ''
+      : 'lg:grid lg:max-w-7xl lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:grid-rows-[auto_1fr] lg:gap-x-4'}"
+  >
+    <div class="space-y-4 lg:col-start-1 lg:row-start-1">
+      <div class="flex items-center justify-between gap-2">
+        <div>
+          <h1 class="text-lg font-semibold text-foreground">PR Shepherd</h1>
+          <p class="text-xs text-muted-foreground">
+            {watchedCount} watched PR{watchedCount === 1 ? '' : 's'}. Your PRs are added when they
+            become ready for review.
+          </p>
+        </div>
+        <button
+          type="button"
+          onclick={handleRefresh}
+          disabled={refreshing}
+          class="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+        >
+          {refreshing ? 'Refreshing...' : 'Refresh'}
+        </button>
       </div>
-      <button
-        type="button"
-        onclick={handleRefresh}
-        disabled={refreshing}
-        class="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
-      >
-        {refreshing ? 'Refreshing...' : 'Refresh'}
-      </button>
+
+      {#if refreshError}
+        <p class="text-xs text-amber-600 dark:text-amber-400">{refreshError}</p>
+      {/if}
+
+      {#if !isAllProjects}
+        <ShepherdBotPanel projectId={Number(projectId)} />
+      {/if}
     </div>
 
-    {#if refreshError}
-      <p class="text-xs text-amber-600 dark:text-amber-400">{refreshError}</p>
-    {/if}
-
     {#if !isAllProjects}
-      <ShepherdBotPanel projectId={Number(projectId)} />
+      <aside class="mt-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:mt-0">
+        <ShepherdBotActivity projectId={Number(projectId)} />
+      </aside>
     {/if}
 
-    {#if shepherdList.groups.length === 0}
-      <div
-        class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
-      >
-        No PRs are in the shepherd list. Add one with "Watch" below or from the PR page.
-      </div>
-    {:else}
-      <div class="space-y-3">
-        {#each shepherdList.groups as group (group[0].pr.status.pr_url)}
-          <section class="rounded-md border border-border">
-            {#if group.length > 1}
-              <div
-                class="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5"
-              >
-                <h2 class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                  Stack · {group.length} PRs
-                </h2>
-                {#if group.some((entry) => entry.pr.shepherd?.botEnabled)}
-                  <button
-                    type="button"
-                    onclick={() => handleRemoveStackFromBot(group[0].pr)}
-                    disabled={removingStackUrl !== null}
-                    class="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
+    <div class="mt-4 space-y-4 lg:col-start-1 lg:row-start-2">
+      {#if shepherdList.groups.length === 0}
+        <div
+          class="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground"
+        >
+          No PRs are in the shepherd list. Add one with "Watch" below or from the PR page.
+        </div>
+      {:else}
+        <div class="space-y-3">
+          {#each shepherdList.groups as group (group[0].pr.status.pr_url)}
+            <section class="rounded-md border border-border">
+              {#if group.length > 1}
+                <div
+                  class="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5"
+                >
+                  <h2
+                    class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
                   >
-                    {removingStackUrl === group[0].pr.status.pr_url
-                      ? 'Removing...'
-                      : 'Remove Stack from Bot'}
-                  </button>
-                {/if}
-              </div>
-            {/if}
-            <ul class="divide-y divide-border">
-              {#each group as entry (entry.pr.status.pr_url)}
-                <ShepherdPrRow
-                  pr={entry.pr}
-                  depth={entry.depth}
-                  projectName={isAllProjects
-                    ? (projectNamesById[entry.pr.projectId] ?? null)
-                    : null}
-                  prFixExecutorOptions={data.prFixExecutorOptions}
-                  inStack={group.length > 1}
-                />
-              {/each}
-            </ul>
-          </section>
-        {/each}
-      </div>
-    {/if}
-
-    {#if shepherdList.unwatched.length > 0}
-      <details class="rounded-md border border-border">
-        <summary
-          class="cursor-pointer px-3 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
-        >
-          Your other open PRs ({shepherdList.unwatched.length})
-        </summary>
-        <ul class="divide-y divide-border border-t border-border">
-          {#each shepherdList.unwatched as pr (pr.status.pr_url)}
-            <ShepherdPrRow
-              {pr}
-              projectName={isAllProjects ? (projectNamesById[pr.projectId] ?? null) : null}
-              prFixExecutorOptions={data.prFixExecutorOptions}
-            />
-          {/each}
-        </ul>
-      </details>
-    {/if}
-
-    {#if mergedCount > 0}
-      <details class="rounded-md border border-border">
-        <summary
-          class="cursor-pointer px-3 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
-        >
-          Recently merged ({mergedCount})
-        </summary>
-        <div class="border-t border-border">
-          {#each mergedDays as day (day.key)}
-            <section>
-              <h2
-                class="border-b border-border bg-gray-50 px-3 py-1 text-[11px] font-semibold text-muted-foreground dark:bg-gray-900/40"
-              >
-                {day.label}
-              </h2>
-              <ul class="divide-y divide-border border-b border-border last:border-b-0">
-                {#each day.prs as pr (pr.status.pr_url)}
-                  <li class="flex min-w-0 items-center gap-2 px-3 py-2">
-                    {#if pr.status.merged_at}
-                      <PrMergedBadge mergedAt={pr.status.merged_at} compact />
-                    {/if}
-                    <a
-                      href="/projects/{pr.projectId}/prs/{pr.status.pr_number}"
-                      class="min-w-0 flex-1 truncate text-sm text-foreground hover:underline"
+                    Stack · {group.length} PRs
+                  </h2>
+                  {#if group.some((entry) => entry.pr.shepherd?.botEnabled)}
+                    <button
+                      type="button"
+                      onclick={() => handleRemoveStackFromBot(group[0].pr)}
+                      disabled={removingStackUrl !== null}
+                      class="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-gray-100 hover:text-foreground disabled:opacity-50 dark:hover:bg-gray-800"
                     >
-                      <span class="text-muted-foreground">#{pr.status.pr_number}</span>
-                      {pr.status.title ?? 'Untitled'}
-                    </a>
-                    {#if isAllProjects && projectNamesById[pr.projectId]}
-                      <span class="shrink-0 text-xs text-muted-foreground">
-                        {projectNamesById[pr.projectId]}
-                      </span>
-                    {/if}
-                    <a
-                      href={pr.status.pr_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
-                      aria-label={`View PR #${pr.status.pr_number} in GitHub`}
-                    >
-                      View in GitHub
-                    </a>
-                  </li>
+                      {removingStackUrl === group[0].pr.status.pr_url
+                        ? 'Removing...'
+                        : 'Remove Stack from Bot'}
+                    </button>
+                  {/if}
+                </div>
+              {/if}
+              <ul class="divide-y divide-border">
+                {#each group as entry (entry.pr.status.pr_url)}
+                  <ShepherdPrRow
+                    pr={entry.pr}
+                    depth={entry.depth}
+                    projectName={isAllProjects
+                      ? (projectNamesById[entry.pr.projectId] ?? null)
+                      : null}
+                    prFixExecutorOptions={data.prFixExecutorOptions}
+                    inStack={group.length > 1}
+                  />
                 {/each}
               </ul>
             </section>
           {/each}
         </div>
-      </details>
-    {/if}
+      {/if}
+
+      {#if shepherdList.unwatched.length > 0}
+        <details class="rounded-md border border-border">
+          <summary
+            class="cursor-pointer px-3 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+          >
+            Your other open PRs ({shepherdList.unwatched.length})
+          </summary>
+          <ul class="divide-y divide-border border-t border-border">
+            {#each shepherdList.unwatched as pr (pr.status.pr_url)}
+              <ShepherdPrRow
+                {pr}
+                projectName={isAllProjects ? (projectNamesById[pr.projectId] ?? null) : null}
+                prFixExecutorOptions={data.prFixExecutorOptions}
+              />
+            {/each}
+          </ul>
+        </details>
+      {/if}
+
+      {#if mergedCount > 0}
+        <details class="rounded-md border border-border">
+          <summary
+            class="cursor-pointer px-3 py-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+          >
+            Recently merged ({mergedCount})
+          </summary>
+          <div class="border-t border-border">
+            {#each mergedDays as day (day.key)}
+              <section>
+                <h2
+                  class="border-b border-border bg-gray-50 px-3 py-1 text-[11px] font-semibold text-muted-foreground dark:bg-gray-900/40"
+                >
+                  {day.label}
+                </h2>
+                <ul class="divide-y divide-border border-b border-border last:border-b-0">
+                  {#each day.prs as pr (pr.status.pr_url)}
+                    <li class="flex min-w-0 items-center gap-2 px-3 py-2">
+                      {#if pr.status.merged_at}
+                        <PrMergedBadge mergedAt={pr.status.merged_at} compact />
+                      {/if}
+                      <a
+                        href="/projects/{pr.projectId}/prs/{pr.status.pr_number}"
+                        class="min-w-0 flex-1 truncate text-sm text-foreground hover:underline"
+                      >
+                        <span class="text-muted-foreground">#{pr.status.pr_number}</span>
+                        {pr.status.title ?? 'Untitled'}
+                      </a>
+                      {#if isAllProjects && projectNamesById[pr.projectId]}
+                        <span class="shrink-0 text-xs text-muted-foreground">
+                          {projectNamesById[pr.projectId]}
+                        </span>
+                      {/if}
+                      <a
+                        href={pr.status.pr_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="shrink-0 rounded-md border border-border px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-gray-100 hover:text-foreground dark:hover:bg-gray-800"
+                        aria-label={`View PR #${pr.status.pr_number} in GitHub`}
+                      >
+                        View in GitHub
+                      </a>
+                    </li>
+                  {/each}
+                </ul>
+              </section>
+            {/each}
+          </div>
+        </details>
+      {/if}
+    </div>
   </div>
 </div>
