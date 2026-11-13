@@ -453,3 +453,53 @@ export function listRecentShepherdBotActions(
     )
     .all(projectId, limit) as ShepherdBotActionRow[];
 }
+
+/**
+ * One entry in the bot history. A run entry holds the actions that the run took, oldest
+ * first. An entry without a run holds one action that the server took on its own.
+ */
+export interface ShepherdBotHistoryEntry {
+  run: ShepherdBotRunRow | null;
+  actions: ShepherdBotActionRow[];
+}
+
+/** The most recent runs with their actions, and actions without a run, newest first. */
+export function listShepherdBotHistory(
+  db: Database,
+  projectId: number,
+  limit: number
+): ShepherdBotHistoryEntry[] {
+  const runs = listRecentShepherdBotRuns(db, projectId, limit);
+  const actionsByRun = new Map<number, ShepherdBotActionRow[]>();
+  if (runs.length > 0) {
+    const runIds = runs.map((run) => run.id);
+    const rows = db
+      .prepare(
+        `SELECT * FROM shepherd_bot_action
+          WHERE project_id = ? AND run_id IN (${runIds.map(() => '?').join(', ')})
+          ORDER BY created_at, id`
+      )
+      .all(projectId, ...runIds) as ShepherdBotActionRow[];
+    for (const row of rows) {
+      const list = actionsByRun.get(row.run_id!) ?? [];
+      list.push(row);
+      actionsByRun.set(row.run_id!, list);
+    }
+  }
+
+  const unlinkedActions = db
+    .prepare(
+      `SELECT * FROM shepherd_bot_action
+        WHERE project_id = ? AND run_id IS NULL
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?`
+    )
+    .all(projectId, limit) as ShepherdBotActionRow[];
+
+  const entries: Array<ShepherdBotHistoryEntry & { at: string }> = [
+    ...runs.map((run) => ({ run, actions: actionsByRun.get(run.id) ?? [], at: run.started_at })),
+    ...unlinkedActions.map((action) => ({ run: null, actions: [action], at: action.created_at })),
+  ];
+  entries.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return entries.slice(0, limit).map(({ run, actions }) => ({ run, actions }));
+}

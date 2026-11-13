@@ -34,9 +34,9 @@ import {
   getActiveShepherdBotRun,
   isShepherdBotRunning,
   listPendingShepherdBotTriggers,
-  listRecentShepherdBotActions,
-  listRecentShepherdBotRuns,
+  listShepherdBotHistory,
   type ShepherdBotActionKind,
+  type ShepherdBotActionRow,
   type ShepherdBotActionStatus,
   type ShepherdBotRunStatus,
 } from '$tim/db/shepherd_bot.js';
@@ -225,6 +225,8 @@ export const rerunCancelledPrChecks = command(
   }
 );
 
+const SHEPHERD_BOT_HISTORY_LIMIT = 30;
+
 const projectTargetSchema = z.object({
   projectId: z.number().int().positive(),
 });
@@ -248,13 +250,20 @@ export interface ShepherdBotActionSummary {
   createdAt: string;
 }
 
+export interface ShepherdBotHistoryEntrySummary {
+  /** Null for an action that the server took without a bot run. */
+  run: ShepherdBotRunSummary | null;
+  /** Oldest first. */
+  actions: ShepherdBotActionSummary[];
+}
+
 export interface ShepherdBotStatus {
   running: boolean;
   activeRun: ShepherdBotRunSummary | null;
   pendingTriggerCount: number;
   nextDueAt: string | null;
-  recentRuns: ShepherdBotRunSummary[];
-  recentActions: ShepherdBotActionSummary[];
+  /** Newest first. */
+  history: ShepherdBotHistoryEntrySummary[];
   stateMarkdown: string;
   statePath: string;
 }
@@ -277,6 +286,18 @@ function toRunSummary(run: {
   };
 }
 
+function toActionSummary(action: ShepherdBotActionRow): ShepherdBotActionSummary {
+  return {
+    id: action.id,
+    kind: action.kind,
+    prNumber: action.pr_number,
+    status: action.status,
+    reason: action.reason,
+    result: action.result,
+    createdAt: action.created_at,
+  };
+}
+
 export const getShepherdBotStatus = query(
   projectTargetSchema,
   async ({ projectId }): Promise<ShepherdBotStatus> => {
@@ -293,15 +314,9 @@ export const getShepherdBotStatus = query(
           earliest === null || trigger.due_at < earliest ? trigger.due_at : earliest,
         null
       ),
-      recentRuns: listRecentShepherdBotRuns(db, projectId, 10).map(toRunSummary),
-      recentActions: listRecentShepherdBotActions(db, projectId, 20).map((action) => ({
-        id: action.id,
-        kind: action.kind,
-        prNumber: action.pr_number,
-        status: action.status,
-        reason: action.reason,
-        result: action.result,
-        createdAt: action.created_at,
+      history: listShepherdBotHistory(db, projectId, SHEPHERD_BOT_HISTORY_LIMIT).map((entry) => ({
+        run: entry.run ? toRunSummary(entry.run) : null,
+        actions: entry.actions.map(toActionSummary),
       })),
       stateMarkdown: state.markdown,
       statePath: getShepherdBotStatePaths(projectId).markdown,

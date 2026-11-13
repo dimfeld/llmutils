@@ -5,12 +5,14 @@
     getShepherdBotStatus,
     setShepherdBotRunning,
     type ShepherdBotActionSummary,
+    type ShepherdBotHistoryEntrySummary,
     type ShepherdBotRunSummary,
   } from '$lib/remote/pr_shepherd.remote.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { extractRemoteErrorMessage } from '$lib/utils/remote_error.js';
 
   const STATUS_POLL_MS = 10_000;
+  const HISTORY_PREVIEW_COUNT = 5;
 
   let { projectId }: { projectId: number } = $props();
 
@@ -19,6 +21,15 @@
   let status = $derived(await getShepherdBotStatus({ projectId }));
   let toggling = $state(false);
   let toggleError = $state<string | null>(null);
+  let showAllHistory = $state(false);
+
+  let visibleHistory = $derived(
+    showAllHistory ? status.history : status.history.slice(0, HISTORY_PREVIEW_COUNT)
+  );
+
+  function entryKey(entry: ShepherdBotHistoryEntrySummary): string {
+    return entry.run ? `run-${entry.run.id}` : `action-${entry.actions[0]?.id}`;
+  }
 
   let botSessionId = $derived.by(() => {
     for (const session of sessionManager.sessions?.values() ?? []) {
@@ -145,60 +156,79 @@
     <p class="px-3 pb-2 text-xs text-red-700 dark:text-red-400">{toggleError}</p>
   {/if}
 
-  {#if status.recentRuns.length > 0}
-    <details class="border-t border-border">
-      <summary
-        class="cursor-pointer px-3 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
-      >
-        Recent runs ({status.recentRuns.length})
-      </summary>
-      <ul class="divide-y divide-border border-t border-border">
-        {#each status.recentRuns as run (run.id)}
-          <li class="px-3 py-1.5 text-xs">
-            <span class="text-muted-foreground">{formatTime(run.startedAt)}</span>
-            <span class="ml-1 font-medium {runStatusClass(run)}">{run.status}</span>
-            {#if run.summary}
-              <p class="text-foreground">{run.summary}</p>
-            {/if}
-            {#if run.error}
-              <p class="text-red-700 dark:text-red-400">{run.error}</p>
-            {/if}
-          </li>
-        {/each}
-      </ul>
-    </details>
-  {/if}
+  {#snippet actionLine(action: ShepherdBotActionSummary, showTime: boolean)}
+    {#if showTime}
+      <span class="text-muted-foreground">{formatTime(action.createdAt)}</span>
+    {/if}
+    <span class="font-medium text-foreground {showTime ? 'ml-1' : ''}"
+      >{ACTION_LABELS[action.kind]}</span
+    >
+    {#if action.prNumber}
+      <span class="text-muted-foreground">#{action.prNumber}</span>
+    {/if}
+    <span class="ml-1 {actionStatusClass(action)}">{action.status}</span>
+    {#if action.result}
+      <span class="text-muted-foreground">: {action.result}</span>
+    {/if}
+    {#if action.reason}
+      <p class="text-muted-foreground">{action.reason}</p>
+    {/if}
+  {/snippet}
 
-  {#if status.recentActions.length > 0}
-    <details class="border-t border-border">
+  {#if status.history.length > 0}
+    <details class="border-t border-border" open>
       <summary
         class="cursor-pointer px-3 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
       >
-        Recent actions ({status.recentActions.length})
+        Recent activity
       </summary>
       <ul class="divide-y divide-border border-t border-border">
-        {#each status.recentActions as action (action.id)}
+        {#each visibleHistory as entry (entryKey(entry))}
           <li class="px-3 py-1.5 text-xs">
-            <span class="text-muted-foreground">{formatTime(action.createdAt)}</span>
-            <span class="ml-1 font-medium text-foreground">{ACTION_LABELS[action.kind]}</span>
-            {#if action.prNumber}
-              <span class="text-muted-foreground">#{action.prNumber}</span>
-            {/if}
-            <span class="ml-1 {actionStatusClass(action)}">{action.status}</span>
-            {#if action.result}
-              <span class="text-muted-foreground">: {action.result}</span>
-            {/if}
-            {#if action.reason}
-              <p class="text-muted-foreground">{action.reason}</p>
+            {#if entry.run}
+              {@const run = entry.run}
+              <span class="text-muted-foreground">{formatTime(run.startedAt)}</span>
+              <span class="ml-1 font-medium text-foreground">Run</span>
+              <span class="ml-1 font-medium {runStatusClass(run)}">{run.status}</span>
+              {#if run.summary}
+                <p class="text-foreground">{run.summary}</p>
+              {/if}
+              {#if run.error}
+                <p class="text-red-700 dark:text-red-400">{run.error}</p>
+              {/if}
+              {#if entry.actions.length > 0}
+                <ul class="mt-1 space-y-1 border-l-2 border-border pl-2">
+                  {#each entry.actions as action (action.id)}
+                    <li>{@render actionLine(action, false)}</li>
+                  {/each}
+                </ul>
+              {:else if run.status !== 'running'}
+                <p class="text-muted-foreground">No actions.</p>
+              {/if}
+            {:else}
+              {#each entry.actions as action (action.id)}
+                {@render actionLine(action, true)}
+              {/each}
             {/if}
           </li>
         {/each}
       </ul>
+      {#if status.history.length > HISTORY_PREVIEW_COUNT}
+        <button
+          type="button"
+          onclick={() => (showAllHistory = !showAllHistory)}
+          class="w-full border-t border-border px-3 py-1.5 text-left text-xs text-sky-700 hover:underline dark:text-sky-400"
+        >
+          {showAllHistory
+            ? 'Show less'
+            : `Show ${status.history.length - HISTORY_PREVIEW_COUNT} more`}
+        </button>
+      {/if}
     </details>
   {/if}
 
   {#if status.stateMarkdown.trim()}
-    <details class="border-t border-border">
+    <details class="border-t border-border" open>
       <summary
         class="cursor-pointer px-3 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
       >
