@@ -43,9 +43,9 @@ describe('resolveSmallTaskExecutor', () => {
   });
 
   test('command model overrides take precedence', () => {
-    expect(resolveSmallTaskExecutor({}, { model: 'gpt-6.1-sol:high' })).toEqual({
+    expect(resolveSmallTaskExecutor({}, { model: 'gpt-6.2-sol:high' })).toEqual({
       executorName: 'codex-cli',
-      model: 'gpt-6.1-sol:high',
+      model: 'gpt-6.2-sol:high',
     });
   });
 });

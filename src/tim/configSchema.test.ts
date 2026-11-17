@@ -65,9 +65,9 @@ describe('configSchema', () => {
     test('accepts executor and model without enabling the phase', () => {
       expect(
         timConfigSchema.parse({
-          prStacking: { executor: 'codex-cli', model: 'gpt-6.1-sol' },
+          prStacking: { executor: 'codex-cli', model: 'gpt-6.2-sol' },
         }).prStacking
-      ).toEqual({ executor: 'codex-cli', model: 'gpt-6.1-sol' });
+      ).toEqual({ executor: 'codex-cli', model: 'gpt-6.2-sol' });
     });
 
     test('accepts a positive integer changed-line threshold', () => {
@@ -1978,12 +1978,12 @@ describe('configSchema', () => {
     test('should accept separate guide and issue model configurations', () => {
       const result = timConfigSchema.parse({
         reviewGuide: {
-          guideModel: { codex: 'gpt-6.1-sol:high' },
+          guideModel: { codex: 'gpt-6.2-sol:high' },
           issuesModel: { codex: 'gpt-6-terra:medium' },
         },
       });
 
-      expect(result.reviewGuide?.guideModel?.codex).toBe('gpt-6.1-sol:high');
+      expect(result.reviewGuide?.guideModel?.codex).toBe('gpt-6.2-sol:high');
       expect(result.reviewGuide?.issuesModel?.codex).toBe('gpt-6-terra:medium');
     });
 

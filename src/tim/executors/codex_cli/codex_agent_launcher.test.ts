@@ -30,7 +30,7 @@ function createRequest(observer: AgentProviderLifecycleObserver): AgentLaunchReq
     preparedExecution: {
       agentType: 'implementer',
       executor: 'codex-cli',
-      model: 'gpt-6.1-sol:high',
+      model: 'gpt-6.2-sol:high',
       plan: {} as AgentLaunchRequest['preparedExecution']['plan'],
       planId: 420,
       planPath: '/repo/.tim/plans/420.plan.md',
@@ -80,7 +80,7 @@ describe('Codex AgentManager launch adapter', () => {
         }),
         prompt: 'Prepared prompt with task context.',
         cwd: '/repo',
-        model: 'gpt-6.1-sol',
+        model: 'gpt-6.2-sol',
         reasoningLevel: 'high',
         timEnvironment: { context: { planId: 420 } },
         agentEnvironmentIdentity: {
