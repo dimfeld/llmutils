@@ -877,7 +877,7 @@ describe('orchestrator_prompt review iteration policy (plan 394 task 8)', () => 
         expect(out).toContain('normally blocks');
         expect(out).toContain('normally does not');
         expect(out).toContain(
-          'Record valid findings you decide are non-blocking with the `non-blocking` state'
+          'Record a valid finding with the `non-blocking` state and a concrete reason only if you decide to leave it unaddressed'
         );
         expect(out).toContain(
           'Findings that you decide are non-blocking must NEVER by themselves trigger an implementer round or another review rerun'

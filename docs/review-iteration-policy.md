@@ -56,8 +56,10 @@ Pre-existing issues are always `info`, so they are automatically non-blocking.
 For findings from ordinary reviews inside the iteration loop, severity is a default signal, not a fixed gate. The orchestrator decides whether a finding blocks completion from its actual impact, evidence, scope, and plan context. Normally critical and major findings block, and minor and info findings do not; the orchestrator can override either default when it gives a concrete reason.
 
 - Findings that the orchestrator decides are **blocking** are fixed in-loop.
-- Findings that the orchestrator decides are **non-blocking** are recorded with
-  the `non-blocking` state and a concrete reason, or captured immediately as follow-up tasks through the bounded handoff.
+- Record a valid **non-blocking** finding with the `non-blocking` state and a
+  concrete reason only if you decide to leave it unaddressed. Skip this record
+  if you plan to fix or otherwise address the finding, including through a
+  follow-up task in the bounded handoff.
   They never by themselves trigger an implementer round or a review rerun. A
   rejection is recorded on the plan — see the rejected-findings ledger below.
 - Legacy free-text reviewer output uses `CRITICAL`/`MAJOR` as a default blocking
@@ -156,7 +158,7 @@ form instead. If multiple findings in the same review describe the same
 underlying issue, the orchestrator records only one disposition and does not
 add a separate rejected issue for the duplicate. This is most common when
 different reviewer subagents report the same issue. For a valid non-blocking
-finding, it adds the `--state non-blocking` option. `--input-file` remains
+finding that it decides to leave unaddressed, it adds the `--state non-blocking` option. `--input-file` remains
 available as a fallback.
 
 ## Structural-review marker
@@ -391,7 +393,7 @@ Two halves, so the work is never done twice:
   `tim subagent advisor <planId> --input-file <output.json>` itself for the rounds
   that section does not cover — reviews it performed itself, and task-scoped
   reviews. The plan is advice: the orchestrator still rejects what it can show is
-  wrong and records every disposition through the rejected-findings ledger.
+  wrong and follows the rejected-findings ledger rules for recording dispositions.
 
 ## Review command and delegation modes
 

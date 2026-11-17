@@ -264,7 +264,7 @@ Fixing findings one at a time, literally as written, is what makes a review loop
 - Delegate from that remediation plan, in its order, rather than from the finding list. Send the root-cause analysis and the step scope to the implementer as ONE consolidated instruction, and keep multi-site work that shares a root cause in a single assignment.
 - The formal review command already does this for you. A full-plan review that reports blocking findings consults this same advisor and returns its plan in the \`Advisor Remediation Plan\` (\`remediationPlan\` in JSON output) section of the review output. When that section is present, drive the fixes from it and do not run a second remediation consultation over the same findings.
 - Consult the advisor yourself for the rounds that section does not cover: reviews you performed yourself, task-scoped reviews, and any round where the findings changed after the plan was written.
-- The remediation plan is advice, not a verdict. Reject the parts you can show are wrong, and keep recording findings you reject or accept as non-blocking exactly as the Review Iteration Policy requires.
+- The remediation plan is advice, not a verdict. Reject the parts you can show are wrong, and follow the Review Iteration Policy when recording rejections and non-blocking findings you decide to leave unaddressed.
 `;
 }
 
