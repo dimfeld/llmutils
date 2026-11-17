@@ -1252,7 +1252,7 @@ Proof artifacts can be published to a PR with `tim pr upload-artifacts <planId>`
 
 See [`docs/proof-generation.md`](docs/proof-generation.md) for more detail.
 
-## Pull Request Stacking
+## Split a Pull Request
 
 The optional `prStacking` block adds a final `tim agent` phase for large changes. The phase runs after the main PR exists and after automatic proof upload. It asks the configured Claude Code or Codex CLI executor to rewrite the branch into one commit per vertical slice, create a branch and draft PR for each lower slice, and keep the original branch and PR at the top of the stack.
 
@@ -1266,11 +1266,11 @@ prStacking:
   model: gpt-6.2-sol # optional; falls back to models.execution
 ```
 
-The executor can decide that the change has no useful vertical split. In that case, it must leave the history and PR unchanged. When it creates a stack, each PR body contains a marked Stack section that lists the PRs in merge order and explains the scope of each slice. Tim associates every PR in the stack with the original plan without changing the plan file. New lower PRs are drafts. The original PR keeps its existing draft or ready state. Lower-slice branch names preserve a leading plan number from the original branch but do not repeat external issue-tracker IDs, such as a trailing Linear issue tag, and lower-slice PR descriptions use non-closing issue references such as `Related to ENG-123`. A stacking failure produces a warning and does not change the successful agent result.
+The executor can decide that the change has no useful vertical split. In that case, it must leave the history and PR unchanged. When it creates a stack, each PR body contains a marked Split section that lists the PRs in merge order and explains the scope of each slice. Tim associates every PR in the stack with the original plan without changing the plan file. New lower PRs are drafts. The original PR keeps its existing draft or ready state. Lower-slice branch names preserve a leading plan number from the original branch but do not repeat external issue-tracker IDs, such as a trailing Linear issue tag, and lower-slice PR descriptions use non-closing issue references such as `Related to ENG-123`. A split failure produces a warning and does not change the successful agent result.
 
-The stacking agent runs the relevant checks on each slice. It reports confirmed pre-existing failures and continues with the split if the split does not make them worse. It corrects failures that the split introduces or makes worse before publishing the stack.
+The agent runs the relevant checks on each slice. It reports confirmed pre-existing failures and continues with the split if the split does not make them worse. It corrects failures that the split introduces or makes worse before publishing the stack.
 
-Run `tim pr stack <planIdOrBranch>` to start PR stacking manually. The argument can be a plan ID or the plan's branch name. Use `--base <branch>` to override the base branch, or to stack a branch that does not belong to a known plan. In that case, Tim can rewrite the branch and its PR but cannot associate the resulting PRs with a plan. This command runs the phase even when the automatic `minChangedLines` threshold is not configured or the change is below that threshold. The same action is available from the plan detail page and the dashboard attention actions.
+Run `tim pr split <planIdOrBranch>` to split a PR manually. The previous `tim pr stack` command is an alias. The argument can be a plan ID or the plan's branch name. Use `--base <branch>` to override the base branch, or to split a branch that does not belong to a known plan. In that case, Tim can rewrite the branch and its PR but cannot associate the resulting PRs with a plan. This command runs the phase even when the automatic `minChangedLines` threshold is not configured or the change is below that threshold. Select **Split PR** on the plan detail page or in the dashboard attention actions to start the same operation.
 
 ## Subprocess Monitor
 

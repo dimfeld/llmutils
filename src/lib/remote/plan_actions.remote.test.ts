@@ -2372,7 +2372,7 @@ describe('plan remote actions', () => {
         invokeCommand(startPrStack, { planUuid: 'pr-stack-no-pr' })
       ).rejects.toMatchObject({
         status: 400,
-        body: { message: 'Plan is not eligible for PR stacking' },
+        body: { message: 'Plan is not eligible for a PR split' },
       });
       expect(spawnPrStackProcessMock).not.toHaveBeenCalled();
     });

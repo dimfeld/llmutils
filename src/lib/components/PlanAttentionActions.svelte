@@ -104,7 +104,7 @@
       await startPrStack({ planUuid });
       await invalidateAll();
     } catch (err) {
-      toast.error(`Failed to start PR stacking: ${(err as Error).message}`);
+      toast.error(`Failed to start PR split: ${(err as Error).message}`);
     } finally {
       startingPrStack = false;
     }
@@ -241,8 +241,8 @@
           ...(showPrStack
             ? [
                 {
-                  label: 'Stack PRs',
-                  startingLabel: 'Starting PR Stacking…',
+                  label: 'Split PR',
+                  startingLabel: 'Starting PR split…',
                   onclick: handlePrStack,
                   colorClass: '',
                   starting: startingPrStack,

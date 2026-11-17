@@ -230,8 +230,8 @@
       starting: startingCreatePr,
     };
     const prStackItem: ActionItem = {
-      label: 'Stack PRs',
-      startingLabel: 'Starting PR Stacking…',
+      label: 'Split PR',
+      startingLabel: 'Starting PR split…',
       onclick: handlePrStack,
       colorClass: '',
       starting: startingPrStack,
@@ -906,7 +906,7 @@
     successMessage = null;
     try {
       const result = await startPrStack({ planUuid: actionPlanUuid });
-      applyStartResult(actionPlanUuid, result, 'PR stacking started');
+      applyStartResult(actionPlanUuid, result, 'PR split started');
     } catch (err) {
       applyStartError(actionPlanUuid, err);
     } finally {
@@ -1215,8 +1215,8 @@
                     ? 'Agent Multi Running...'
                     : activeSession.command === 'update-docs'
                       ? 'Updating Docs...'
-                      : activeSession.command === 'pr-stack'
-                        ? 'PR Stacking...'
+                      : activeSession.command === 'pr-split' || activeSession.command === 'pr-stack'
+                        ? 'Splitting PR...'
                         : `${activeSession.command.charAt(0).toUpperCase() + activeSession.command.slice(1)} Running...`}
             </a>
           {:else}

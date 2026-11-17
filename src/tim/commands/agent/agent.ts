@@ -1750,7 +1750,7 @@ export async function timAgent(
         try {
           mainPrUrl ??= await detectExistingPrUrl(lastKnownPlan.branch, currentBaseDir);
           if (!mainPrUrl) {
-            log('Skipping PR stacking: no pull request exists for the plan branch.');
+            log('Skipping PR split: no pull request exists for the plan branch.');
           } else {
             await runPrStacking({
               plan: lastKnownPlan,

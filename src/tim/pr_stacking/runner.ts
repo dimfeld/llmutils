@@ -126,7 +126,7 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     '- Push every slice branch. A history rewrite of the original branch can use a force-with-lease equivalent, but do not use an unguarded force push when a guarded form is available.',
     '- Create every new lower-slice pull request as a draft. Preserve the current draft/ready state of the original pull request.',
     '- Give each pull request a focused title and a detailed body for only its slice. Both the overall stack description and the current slice description must explain why the change is needed and how it works, not only what it changes. Use the plan context as a source for this explanation when helpful. In every pull-request description, explain the goal of the complete stack, how this pull request contributes to that goal, and what remains to be implemented in higher slices.',
-    '- Add or update a clearly marked "Stack" section in every pull-request body. It must list the complete stack in merge order, identify the current pull request, link the other pull requests, state each slice scope, and explain that reviewers should start at the bottom. Preserve useful existing body content.',
+    '- Add or update a clearly marked "Split" section in every pull-request body. It must list the complete stack in merge order, identify the current pull request, link the other pull requests, state each slice scope, and explain that reviewers should start at the bottom. If a previous "Stack" section lists this same split, rename that section to "Split". Preserve useful existing body content.',
     '- In every intermediate pull-request description, refer to related issues with language such as "Related to ISSUE". Do not use "Closes", "Fixes", or other issue-closing keywords in intermediate descriptions, so the issue stays open until the complete stack is merged. The existing top pull request may keep its current issue-closing language.',
     '- After all pull requests exist, verify each head branch, base branch, draft state, title, and body with `gh pr view`.',
     '',
@@ -233,13 +233,13 @@ export async function runPrStacking(options: RunPrStackingOptions): Promise<PrSt
     return { ran: false, changedLines: 0, reason: 'not-configured' };
   }
   if (!options.plan.branch) {
-    throw new Error(`Plan ${options.plan.id ?? '(unknown)'} has no branch for PR stacking`);
+    throw new Error(`Plan ${options.plan.id ?? '(unknown)'} has no branch to split`);
   }
 
   let baseBranch = options.baseBranch;
   if (baseBranch === undefined) {
     if (options.plan.id === undefined) {
-      throw new Error('A base branch is required when stacking a branch without a plan');
+      throw new Error('A base branch is required when splitting a branch without a plan');
     }
     baseBranch = await resolveEffectivePrBase(
       options.plan as PlanSchema,
@@ -250,10 +250,10 @@ export async function runPrStacking(options: RunPrStackingOptions): Promise<PrSt
   const diffResult = await generateDiffForReview(options.baseDir, { baseBranch });
   if (!diffResult.mergeBaseCommit) {
     if (!diffResult.hasChanges) {
-      log('Skipping PR stacking: no changes against the PR base.');
+      log('Skipping PR split: no changes against the PR base.');
       return { ran: false, changedLines: 0, reason: 'no-changes' };
     }
-    throw new Error(`Could not resolve the comparison ref for PR stacking against ${baseBranch}`);
+    throw new Error(`Could not resolve the comparison ref for the PR split against ${baseBranch}`);
   }
 
   const usingJj = await getUsingJj(options.baseDir);
@@ -264,12 +264,12 @@ export async function runPrStacking(options: RunPrStackingOptions): Promise<PrSt
     vcsType
   );
   if (changedLines === 0) {
-    log('Skipping PR stacking: no changed lines against the PR base.');
+    log('Skipping PR split: no changed lines against the PR base.');
     return { ran: false, changedLines: 0, reason: 'no-changes' };
   }
   if (options.manual !== true && minChangedLines !== undefined && changedLines < minChangedLines) {
     log(
-      `Skipping PR stacking: ${changedLines} changed lines is below the configured ${minChangedLines}-line threshold.`
+      `Skipping PR split: ${changedLines} changed lines is below the configured ${minChangedLines}-line threshold.`
     );
     return { ran: false, changedLines, reason: 'below-threshold' };
   }

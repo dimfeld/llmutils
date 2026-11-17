@@ -665,10 +665,10 @@ const startPrStackSchema = z.object({
 
 export const startPrStack = command(startPrStackSchema, async ({ planUuid }) => {
   return launchTimCommand(
-    'pr stack',
+    'pr split',
     planUuid,
     isPlanEligibleForPrStack,
-    'Plan is not eligible for PR stacking',
+    'Plan is not eligible for a PR split',
     spawnPrStackProcess
   );
 });

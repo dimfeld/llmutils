@@ -582,7 +582,7 @@ export async function spawnPrStackProcess(
   return spawnPlanTimProcess(
     describeTarget('plan', planId),
     planId,
-    ['pr', 'stack', String(planId), '--auto-workspace', '--no-terminal-input'],
+    ['pr', 'split', String(planId), '--auto-workspace', '--no-terminal-input'],
     cwd
   );
 }

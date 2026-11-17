@@ -384,7 +384,7 @@ describe('runPrStacking', () => {
     expect(prompt).toContain(
       'In every pull-request description, explain the goal of the complete stack, how this pull request contributes to that goal, and what remains to be implemented in higher slices'
     );
-    expect(prompt).toContain('clearly marked "Stack" section');
+    expect(prompt).toContain('clearly marked "Split" section');
     expect(prompt).toContain('same final tree');
     expect(prompt).toContain(
       'A single changed file may have its hunks distributed across several slices and branches'

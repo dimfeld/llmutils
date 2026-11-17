@@ -42,7 +42,13 @@
     commandStyles[session.command] ??
       'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
   );
-  let commandLabel = $derived(session.command === 'ci-fix' ? 'Fix CI' : session.command);
+  let commandLabel = $derived(
+    session.command === 'pr-split' || session.command === 'pr-stack'
+      ? 'Split PR'
+      : session.command === 'ci-fix'
+        ? 'Fix CI'
+        : session.command
+  );
 
   function navigateToSession() {
     sessionManager.selectSession(session.connectionId, projectId);

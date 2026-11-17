@@ -131,7 +131,7 @@ describe('handlePrStackCommand', () => {
       '/repo',
       '/repo/12.plan.md',
       config,
-      'tim pr stack'
+      'tim pr split'
     );
     expect(runPrStackingSpy).toHaveBeenCalledWith(
       expect.objectContaining({

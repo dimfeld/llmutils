@@ -1972,7 +1972,8 @@ prCommand
   });
 
 prCommand
-  .command('stack <planIdOrBranch>')
+  .command('split <planIdOrBranch>')
+  .alias('stack')
   .description('Split a pull request into a stack (accepts a plan ID or branch name)')
   .option('--aw, --auto-workspace', 'Auto-select or create a workspace')
   .option('-w, --workspace <name>', 'Use a specific workspace')

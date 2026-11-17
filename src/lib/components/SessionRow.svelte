@@ -75,6 +75,9 @@
       return 'connecting...';
     }
 
+    if (cmd === 'pr-split' || cmd === 'pr-stack') {
+      return 'Split PR';
+    }
     return cmd === 'ci-fix' ? 'Fix CI' : cmd;
   });
 

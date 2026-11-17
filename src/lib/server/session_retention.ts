@@ -49,6 +49,7 @@ const SHORT_COMMANDS = new Set([
   'update-docs',
   'finish',
   'pr-create',
+  'pr-split',
   'pr-stack',
 ]);
 const IMPORTANT_RAW_TYPES = new Set([

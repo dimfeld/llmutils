@@ -77,7 +77,7 @@ export async function handlePrStackCommand(
   const { plan, planPath } = await resolvePlanByIdOrBranch(planIdOrBranch, repoRoot, baseBranch);
 
   if (!plan.branch) {
-    throw new Error(`Plan ${plan.id ?? planIdOrBranch} does not have a branch for PR stacking.`);
+    throw new Error(`Plan ${plan.id ?? planIdOrBranch} does not have a branch to split.`);
   }
 
   const mainPrUrl = plan.pullRequest?.[0] ?? (await detectExistingPrUrl(plan.branch, repoRoot));
@@ -93,7 +93,7 @@ export async function handlePrStackCommand(
 
   await runWithHeadlessAdapterIfEnabled({
     enabled: !isTunnelActive(),
-    command: 'pr-stack',
+    command: 'pr-split',
     interactive: effectiveTerminalInput,
     plan: {
       id: plan.id,
@@ -119,7 +119,7 @@ export async function handlePrStackCommand(
           currentBaseDir,
           currentPlanFile || undefined,
           config,
-          'tim pr stack'
+          'tim pr split'
         );
 
         currentBaseDir = workspaceResult.baseDir;

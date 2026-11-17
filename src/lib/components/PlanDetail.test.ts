@@ -634,7 +634,7 @@ describe('PlanDetail', () => {
     expect(body).not.toContain('Generate Proof');
   });
 
-  test('shows Stack PRs when a ready plan has a linked pull request', () => {
+  test('shows Split PR when a ready plan has a linked pull request', () => {
     const { body } = render(PlanDetailComponent, {
       props: {
         plan: makePlanDetail({
@@ -646,7 +646,7 @@ describe('PlanDetail', () => {
       },
     });
 
-    expect(body).toContain('Stack PRs');
+    expect(body).toContain('Split PR');
   });
 
   test('shows Run Agent without Generate for a taskless simple plan', () => {
