@@ -354,7 +354,7 @@ describe('runPrStacking', () => {
     expect(prompt).toContain('keep each slice below 400 changed lines');
     expect(prompt).toContain('inspect every large candidate slice for further coherent splits');
     expect(prompt).toContain('does not need to contain the full end-to-end functionality');
-    expect(prompt).toContain('Every PR must still pass CI');
+    expect(prompt).toContain('Each PR must remain buildable and testable on its own');
     expect(prompt).toContain(
       "After creating or updating each slice branch, run the repository's relevant validation commands on that branch"
     );
@@ -364,8 +364,12 @@ describe('runPrStacking', () => {
       'If a lower slice fails because it depends on changes that remain in a higher slice'
     );
     expect(prompt).toContain(
-      'move the required changes into the lower slice or revise the split until the lower PR passes on its own'
+      'move the required changes into the lower slice or revise the split to correct that failure'
     );
+    expect(prompt).toContain(
+      'Continue creating and publishing the stack when the only failures are confirmed pre-existing failures'
+    );
+    expect(prompt).toContain('Correct failures that the split introduces or makes worse');
     expect(prompt).toContain(
       'You may make minor implementation changes in an intermediate PR when needed to make that PR pass CI'
     );
