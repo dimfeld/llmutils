@@ -1186,7 +1186,9 @@ export function buildReviewThreadFixInstructions(
     '',
     'You can ignore the review guide comment from `tim-task-implementation-machine[bot]`. Do not list it, reply to it, or act on it, unless it points to a real problem that you have verified in the code. In that case, treat that problem as actionable feedback.',
     '',
-    'Different items often report the same issue, for example when several reviewers reviewed the PR. When two or more items describe the same underlying issue, say so in the list: on each duplicate item, name the other item(s) that it duplicates (for example, "Duplicate of #2"). This makes the list easier for the user to read. When you reply about a duplicated issue, reply on each of the duplicate threads or comments.',
+    'Do not list items that were already resolved. This includes resolved review threads, and issues in review summaries or conversation comments that a later comment shows were already fixed, resolved, or withdrawn. Listing them confuses the user. The only exception is an issue that was resolved but then raised again, for example in a newer comment or review; list that issue, and say that it was raised again.',
+    '',
+    'Different items often report the same issue, for example when several reviewers reviewed the PR. When two or more items describe the same underlying issue, group them together as one entry in the list. Show the full text of each duplicate item inside that entry, with its author, file, and line, so the user can see each source. Do not list the same issue more than one time. When you reply about a duplicated issue, reply on each of the duplicate threads or comments.',
     '',
     'Ask the user for feedback on which review comments to address and how. If the user has already given clear instructions, follow those instructions; otherwise wait for direction before implementing fixes.',
     ...(rebaseStatus
