@@ -1191,6 +1191,8 @@ export function buildReviewThreadFixInstructions(
     'Different items often report the same issue, for example when several reviewers reviewed the PR. When two or more items describe the same underlying issue, group them together as one entry in the list. Show the full text of each duplicate item inside that entry, with its author, file, and line, so the user can see each source. Do not list the same issue more than one time. When you reply about a duplicated issue, reply on each of the duplicate threads or comments.',
     '',
     'Ask the user for feedback on which review comments to address and how. If the user has already given clear instructions, follow those instructions; otherwise wait for direction before implementing fixes.',
+    '',
+    'Always reply to and resolve every outstanding issue, unless the user explicitly tells you to leave a specific issue unresolved. When the user says to "ignore", "skip", or "not fix" an issue, that does not mean to leave it alone. It means that you do not change the code for that issue, but you still reply that it will not be fixed, give the reason, and resolve the thread. If the user does not give a reason, use the reason that you can infer from the conversation, for example that the user chose not to address it.',
     ...(rebaseStatus
       ? [
           '',
