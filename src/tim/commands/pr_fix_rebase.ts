@@ -19,6 +19,30 @@ const REBASE_FIX_KIND_TEXT = {
   },
 } as const;
 
+/** Short reminder that points to the "Pushing Rebased Branches" section. */
+export const PUSH_AFTER_REBASE_RULE =
+  'Push every branch that you rebase, including stacked branches, without asking for confirmation. See "Pushing Rebased Branches" below.';
+
+/**
+ * Instructions to push every branch that the agent rebases. Skills that help with stack
+ * rebases can say not to push, so this section explicitly overrides them in PR fix
+ * commands, where the user wants all rebased branches pushed.
+ */
+export function buildPushRebasedBranchesInstructions(): string[] {
+  return [
+    '## Pushing Rebased Branches',
+    '',
+    'Each time that you rebase one or more branches, push all of the branches that the rebase changed. Do not ask the user for confirmation before you push them. This includes:',
+    '',
+    '- The PR branch.',
+    '- Each stacked branch above the PR branch, also when you did not change its code.',
+    '- With jj, each bookmark that jj rebased automatically because you rewrote one of its ancestors.',
+    '',
+    'This rule overrides other instructions that tell you not to push, or to let the user push manually. For example, a skill that helps you rebase a stack can say that the user will push the branches. In this command, push the branches yourself. With git, use `git push --force-with-lease` because the rebase rewrote the branch history.',
+    '',
+  ];
+}
+
 export function buildRebaseInstructions(
   { baseBranch }: PrFixRebaseStatus,
   fixKind: keyof typeof REBASE_FIX_KIND_TEXT = 'review'
@@ -36,7 +60,8 @@ export function buildRebaseInstructions(
     `1. Rebase the branch onto the latest remote \`${baseBranch}\`. With jj, use a command such as \`jj rebase -b @ -d ${baseBranch}@origin\`. With git, use \`git rebase origin/${baseBranch}\`.`,
     '2. Resolve all conflicts. Look at both sides of each conflict and keep the intent of both changes. If the correct resolution is not clear, ask the user.',
     '3. Run type checking, linting, and tests appropriate to the changed files to make sure that the rebased branch works.',
-    `4. Continue with the ${fixes} on top of the rebased branch. When you push, a force push is necessary because the rebase rewrote the branch history. With git, use \`git push --force-with-lease\`. With jj, \`jj git push\` handles this automatically.`,
+    `4. Push the rebased branch and all stacked branches that the rebase changed. ${PUSH_AFTER_REBASE_RULE}`,
+    `5. Continue with the ${fixes} on top of the rebased branch.`,
     '',
     staleNote,
     '',

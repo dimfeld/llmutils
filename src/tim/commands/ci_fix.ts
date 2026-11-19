@@ -40,6 +40,8 @@ import {
   buildJjBookmarkConflictInstructions,
   buildRebaseInstructions,
   detectPrFixRebaseStatus,
+  buildPushRebasedBranchesInstructions,
+  PUSH_AFTER_REBASE_RULE,
   type PrFixRebaseStatus,
 } from './pr_fix_rebase.js';
 import {
@@ -355,8 +357,10 @@ export function buildCiFixPrompt(
     '3. Apply fixes for the REQUIRED failures only. Apply fixes for not-required failures only if the user asks. When a failure is environmental or flaky, propose re-running the check instead of changing code when that is the appropriate action.',
     '4. Run the relevant local checks and tests to verify the fixes.',
     '5. Commit the code changes and push them to the pull request branch. If the repository uses jj, update the current bookmark to the commit you created before pushing, for example `jj bookmark set <current-bookmark> -r @-`.',
-    '6. Do not edit plan files in PR mode.',
+    `6. ${PUSH_AFTER_REBASE_RULE}`,
+    '7. Do not edit plan files in PR mode.',
     '',
+    ...buildPushRebasedBranchesInstructions(),
     ...buildJjBookmarkConflictInstructions()
   );
 
