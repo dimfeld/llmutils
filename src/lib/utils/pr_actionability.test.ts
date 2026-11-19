@@ -848,6 +848,104 @@ describe('buildActionablePrsForRepo', () => {
     expect(result[0]?.hasApprovingReview).toBe(true);
   });
 
+  describe('approved review-requested PRs', () => {
+    const reviewRequests: PrReviewRequestRow[] = [
+      {
+        id: 1,
+        pr_status_id: 1,
+        reviewer: 'testuser',
+        requested_at: '2026-01-01T00:00:00Z',
+        removed_at: null,
+        last_event_at: '2026-01-01T00:00:00Z',
+        request_version: 0,
+      },
+    ];
+    const humanApproval: PrReviewRow = {
+      id: 1,
+      pr_status_id: 1,
+      author: 'another-reviewer',
+      state: 'APPROVED',
+      body: null,
+      submitted_at: '2026-01-02T00:00:00Z',
+    };
+    const botApproval: PrReviewRow = {
+      ...humanApproval,
+      author: 'some-review-bot[bot]',
+    };
+
+    function makeRequested(
+      prNumber: number,
+      statusOverrides: Partial<PrStatusRow>,
+      reviews: PrReviewRow[]
+    ): PrStatusDetail {
+      return makePrDetail(
+        {
+          pr_url: `https://github.com/owner/repo/pull/${prNumber}`,
+          pr_number: prNumber,
+          author: 'someone-else',
+          ...statusOverrides,
+        },
+        { reviews, reviewRequests }
+      );
+    }
+
+    test('hides PRs approved by a human', () => {
+      const pr = makeRequested(40, { review_decision: 'APPROVED', mergeable: 'MERGEABLE' }, [
+        humanApproval,
+      ]);
+      expect(buildActionablePrsForRepo(7, [pr], new Map(), 'testuser')).toEqual([]);
+    });
+
+    test('hides approved PRs even when they have conflicts or unknown mergeability', () => {
+      const conflicting = makeRequested(
+        41,
+        { review_decision: 'APPROVED', mergeable: 'CONFLICTING' },
+        [humanApproval]
+      );
+      const unknown = makeRequested(42, { review_decision: 'APPROVED', mergeable: 'UNKNOWN' }, [
+        humanApproval,
+      ]);
+      const result = buildActionablePrsForRepo(7, [conflicting, unknown], new Map(), 'testuser');
+      expect(result).toEqual([]);
+    });
+
+    test('keeps PRs that are only approved by a bot or lack an APPROVED decision', () => {
+      const botOnly = makeRequested(43, { review_decision: 'APPROVED', mergeable: 'MERGEABLE' }, [
+        botApproval,
+      ]);
+      const needsMoreApprovals = makeRequested(
+        44,
+        { review_decision: 'REVIEW_REQUIRED', mergeable: 'MERGEABLE' },
+        [humanApproval]
+      );
+      const result = buildActionablePrsForRepo(
+        7,
+        [botOnly, needsMoreApprovals],
+        new Map(),
+        'testuser'
+      );
+      expect(result.map((pr) => pr.prNumber).sort()).toEqual([43, 44]);
+    });
+
+    test('a hidden base PR does not mark its child as stacked', () => {
+      const base = makeRequested(
+        45,
+        {
+          review_decision: 'APPROVED',
+          mergeable: 'MERGEABLE',
+          head_branch: 'feature-a',
+          base_branch: 'main',
+        },
+        [humanApproval]
+      );
+      const child = makeRequested(46, { head_branch: 'feature-b', base_branch: 'feature-a' }, []);
+      const result = buildActionablePrsForRepo(7, [base, child], new Map(), 'testuser');
+      expect(result).toHaveLength(1);
+      expect(result[0]?.prNumber).toBe(46);
+      expect(result[0]?.reviewRequestedStacked).toBe(false);
+    });
+  });
+
   test('sets hasConflicts for own and review-requested PRs with merge conflicts', () => {
     const own = makePrDetail({
       pr_url: 'https://github.com/owner/repo/pull/30',

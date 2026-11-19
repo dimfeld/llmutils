@@ -153,6 +153,15 @@ export function getReviewRequestedAtForUser(
   return null;
 }
 
+/**
+ * True when the PR has a review request for the user that still needs attention. PRs that are
+ * already approved (GitHub's review decision is APPROVED and a non-bot reviewer approved) do not
+ * need the user's review.
+ */
+function needsReviewFromUser(pr: PrStatusDetail, normalizedUsername: string): boolean {
+  return hasReviewRequestForUser(pr, normalizedUsername) && !isPrApproved(pr);
+}
+
 /** Build actionable PRs for a single repo. Pure function for testability. */
 export function buildActionablePrsForRepo(
   projectId: number,
@@ -172,7 +181,7 @@ export function buildActionablePrsForRepo(
     if (pr.status.state !== 'open') continue;
     if (pr.status.head_branch) {
       openHeadBranches.add(pr.status.head_branch);
-      if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
+      if (normalizedUsername !== null && needsReviewFromUser(pr, normalizedUsername)) {
         reviewRequestedHeadBranches.add(pr.status.head_branch);
       }
     }
@@ -224,7 +233,7 @@ export function buildActionablePrsForRepo(
           hasConflicts,
         });
       }
-    } else if (normalizedUsername !== null && hasReviewRequestForUser(pr, normalizedUsername)) {
+    } else if (normalizedUsername !== null && needsReviewFromUser(pr, normalizedUsername)) {
       results.push({
         prUrl: pr_url,
         prNumber: pr_number,
