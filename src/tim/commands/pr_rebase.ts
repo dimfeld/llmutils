@@ -1,5 +1,7 @@
 import path from 'node:path';
 
+import { $ } from 'bun';
+
 import {
   ensureLocalJjBookmark,
   fetchRemoteBranch,
@@ -19,10 +21,13 @@ import {
 } from '../executors/index.js';
 import type { ExecutorCommonOptions } from '../executors/types.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
+import type { PrStackEntry } from '../../lib/utils/pr_shepherd.js';
 import {
   findOpenStackForPr,
   getStackedBranchesAbovePr,
+  getStackPathToPr,
   type StackedBranch,
+  type StackPr,
 } from '../shepherd_bot/stack.js';
 import {
   prepareWorkspaceRoundTrip,
@@ -81,18 +86,37 @@ function formatStackedBranches(stackedBranches: StackedBranch[]): string {
     .join(', ');
 }
 
+export interface PrRebasePromptOptions {
+  /**
+   * The PR that the user asked to rebase, when it is not `target`. This occurs when the
+   * requested PR is stacked on other PRs and the stack is behind the trunk branch, so the
+   * rebase starts at the root of the stack (`target`).
+   */
+  requestedPr?: Pick<PullRequestFixTarget, 'prNumber' | 'headBranch' | 'canonicalPrUrl'>;
+}
+
 export function buildPrRebasePrompt(
   target: PullRequestFixTarget,
   usingJj: boolean,
-  stackedBranches: StackedBranch[] = []
+  stackedBranches: StackedBranch[] = [],
+  options: PrRebasePromptOptions = {}
 ): string {
   const hasStack = stackedBranches.length > 0;
   const allBranches = [target.headBranch, ...stackedBranches.map((branch) => branch.headBranch)];
+  const requestedPr = options.requestedPr;
   const prompt = [
     '# Rebase Pull Request and Resolve Conflicts',
     '',
-    'The pull request below has merge conflicts with its base branch. Rebase the pull request branch onto the latest base branch from origin, resolve all conflicts, and push the result.',
+    requestedPr
+      ? `The pull request below is the root of a stack of pull requests. The stack is behind the latest \`${target.baseBranch}\` branch. Rebase the whole stack onto the latest \`${target.baseBranch}\` from origin, resolve all conflicts, and push the result.`
+      : 'The pull request below has merge conflicts with its base branch. Rebase the pull request branch onto the latest base branch from origin, resolve all conflicts, and push the result.',
     '',
+    ...(requestedPr
+      ? [
+          `The user asked to rebase PR #${requestedPr.prNumber} (${requestedPr.canonicalPrUrl}, branch \`${requestedPr.headBranch}\`). That PR is stacked on top of the PR below, so the rebase starts at the root of the stack.`,
+          '',
+        ]
+      : []),
     '## Pull Request Context',
     '',
     `**PR URL:** ${target.canonicalPrUrl}`,
@@ -143,7 +167,9 @@ export function buildPrRebasePrompt(
     );
   } else {
     prompt.push(
-      `1. Rebase the branch onto the latest remote base branch: \`git rebase origin/${target.baseBranch}\`.`,
+      requestedPr
+        ? `1. Check out the root branch of the stack and rebase it onto the latest remote base branch: \`git checkout ${target.headBranch}\`, then \`git rebase origin/${target.baseBranch}\`.`
+        : `1. Rebase the branch onto the latest remote base branch: \`git rebase origin/${target.baseBranch}\`.`,
       '2. Run `git status` and `git diff` to see the conflicts. Make a todo list of the conflicts to fix.',
       '3. For each conflicting file, examine the conflict markers and the git log for both branches, to understand the context of each change.',
       '4. Resolve each conflict. Keep the intent of both changes. Do not discard either side without examining it. Run `git add <file>` to mark each file as resolved, then run `git rebase --continue`. More than one commit can have conflicts, so repeat until the rebase is complete.',
@@ -205,6 +231,86 @@ async function prepareStackedBranches(
     }
   }
   return prepared;
+}
+
+/**
+ * When the PR is stacked on other PRs, return a rebase target for the root PR of the stack,
+ * whose base branch is the trunk branch. Return null when the PR is not stacked, or when the
+ * stack does not give a usable root PR.
+ */
+export function getStackRootRebaseTarget(
+  prTarget: PullRequestFixTarget,
+  stack: readonly PrStackEntry<StackPr>[]
+): PullRequestFixTarget | null {
+  const stackPath = getStackPathToPr(stack, prTarget.prNumber);
+  if (stackPath.length < 2) {
+    return null;
+  }
+
+  const root = stackPath[0];
+  const { base_branch: trunkBranch, head_branch: rootHeadBranch } = root.status;
+  if (
+    !trunkBranch ||
+    !rootHeadBranch ||
+    trunkBranch === prTarget.baseBranch ||
+    rootHeadBranch === prTarget.headBranch
+  ) {
+    return null;
+  }
+
+  return {
+    kind: 'pr',
+    repoRoot: prTarget.repoRoot,
+    canonicalPrUrl: root.status.pr_url,
+    prNumber: root.status.pr_number,
+    owner: root.status.owner,
+    repo: root.status.repo,
+    title: root.status.title ?? undefined,
+    author: root.status.author ?? undefined,
+    baseBranch: trunkBranch,
+    headBranch: rootHeadBranch,
+    headSha: root.status.head_sha ?? '',
+    prStatus: root,
+  };
+}
+
+/**
+ * Fetch the trunk branch and the root branch of the stack, and check if the checked-out PR
+ * branch is behind the trunk branch. When this is true, the root branch is also ready for the
+ * rebase: in jj it has a local bookmark, and in git its local branch matches origin.
+ * Returns false when a fetch fails, so that the caller falls back to a rebase of the PR onto
+ * its own base branch.
+ */
+async function isStackBehindTrunk(
+  workspacePath: string,
+  stackRootTarget: PullRequestFixTarget,
+  usingJj: boolean
+): Promise<boolean> {
+  const trunkBranch = stackRootTarget.baseBranch;
+  try {
+    if (!(await fetchRemoteBranch(workspacePath, trunkBranch))) {
+      throw new Error(`could not fetch ${trunkBranch}`);
+    }
+    if ((await isBranchBehindRemoteBase(workspacePath, trunkBranch)) !== true) {
+      return false;
+    }
+    if (!(await fetchRemoteBranch(workspacePath, stackRootTarget.headBranch))) {
+      throw new Error(`could not fetch ${stackRootTarget.headBranch}`);
+    }
+    if (usingJj) {
+      await ensureLocalJjBookmark(workspacePath, stackRootTarget.headBranch);
+    } else {
+      await $`git branch -f ${stackRootTarget.headBranch} ${`origin/${stackRootTarget.headBranch}`}`
+        .cwd(workspacePath)
+        .quiet();
+    }
+    return true;
+  } catch (err) {
+    warn(
+      `Could not compare the stack with ${trunkBranch}; only the PR branch will be rebased: ${err as Error}`
+    );
+    return false;
+  }
 }
 
 export async function handlePrRebaseCommand(
@@ -314,23 +420,34 @@ export async function executePrRebaseCommand({
     await fetchPrFixBaseBranch(currentBaseDir, prTarget.baseBranch);
     updateCiFixHeadlessSessionInfo(db, prTarget, currentBaseDir);
 
-    // A PR can have merge conflicts only when its base branch has commits that the PR does
-    // not have. The conflict state on GitHub can be stale, for example during a push of the
-    // stack, so check before starting an agent.
-    if ((await isBranchBehindRemoteBase(currentBaseDir, prTarget.baseBranch)) === false) {
+    const usingJj = await getUsingJj(currentBaseDir);
+    const stack = findOpenStackForPr(db, prTarget.prStatus.status);
+
+    // When the PR is stacked on other PRs, the stack can be behind the trunk branch even if
+    // the PR contains its own base branch. In that case, rebase the whole stack, starting at
+    // its root, onto the trunk branch.
+    let rebaseTarget: PullRequestFixTarget = prTarget;
+    const stackRootTarget = getStackRootRebaseTarget(prTarget, stack);
+    if (stackRootTarget && (await isStackBehindTrunk(currentBaseDir, stackRootTarget, usingJj))) {
+      log(
+        `PR #${prTarget.prNumber} is stacked on PR #${stackRootTarget.prNumber}, and the stack is behind ${stackRootTarget.baseBranch}. Rebasing the whole stack onto ${stackRootTarget.baseBranch}.`
+      );
+      rebaseTarget = stackRootTarget;
+    } else if (
+      // A PR can have merge conflicts only when its base branch has commits that the PR does
+      // not have. The conflict state on GitHub can be stale, for example during a push of the
+      // stack, so check before starting an agent.
+      (await isBranchBehindRemoteBase(currentBaseDir, prTarget.baseBranch)) === false
+    ) {
       log(
         `PR #${prTarget.prNumber} already contains the latest ${prTarget.baseBranch} from origin. There is nothing to rebase.`
       );
       return;
     }
 
-    const usingJj = await getUsingJj(currentBaseDir);
     const stackedBranches = await prepareStackedBranches(
       currentBaseDir,
-      getStackedBranchesAbovePr(
-        findOpenStackForPr(db, prTarget.prStatus.status),
-        prTarget.prNumber
-      ),
+      getStackedBranchesAbovePr(stack, rebaseTarget.prNumber),
       usingJj
     );
 
@@ -349,7 +466,7 @@ export async function executePrRebaseCommand({
     // Most rebases have no conflicts, so try a rebase without an agent first.
     const cleanRebase = await tryCleanStackRebase(
       currentBaseDir,
-      prTarget,
+      rebaseTarget,
       stackedBranches,
       usingJj
     );
@@ -359,7 +476,9 @@ export async function executePrRebaseCommand({
     }
     log(`Starting an agent to finish the rebase. ${cleanRebase.reason}.`);
 
-    const rebasePrompt = buildPrRebasePrompt(prTarget, usingJj, stackedBranches);
+    const rebasePrompt = buildPrRebasePrompt(rebaseTarget, usingJj, stackedBranches, {
+      requestedPr: rebaseTarget === prTarget ? undefined : prTarget,
+    });
     const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
       config,
       currentBaseDir,
