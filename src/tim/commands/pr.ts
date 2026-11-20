@@ -81,10 +81,14 @@ import {
   buildJjBookmarkConflictInstructions,
   buildRebaseInstructions,
   detectPrFixRebaseStatus,
+  findKnownStackedBranches,
   buildPushRebasedBranchesInstructions,
+  buildRestackDescendantsInstructions,
   PUSH_AFTER_REBASE_RULE,
+  RESTACK_AFTER_CHANGE_RULE,
   type PrFixRebaseStatus,
 } from './pr_fix_rebase.js';
+import type { StackedBranch } from '../shepherd_bot/stack.js';
 
 interface RootCommandLike {
   parent?: RootCommandLike;
@@ -1067,7 +1071,8 @@ export function buildReviewThreadFixPrompt(
   planData: PlanSchema,
   threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>,
   additionalFeedback: PrAdditionalFeedback[] = [],
-  rebaseStatus?: PrFixRebaseStatus
+  rebaseStatus?: PrFixRebaseStatus,
+  knownStackedBranches?: StackedBranch[]
 ): string {
   const prUrls = [...new Set(threads.map(({ prUrl }) => prUrl))];
   const branch = planData.branch?.trim() || 'Current working branch';
@@ -1099,7 +1104,14 @@ export function buildReviewThreadFixPrompt(
     prompt.push('');
   }
 
-  prompt.push(...buildReviewThreadFixInstructions(threads, additionalFeedback, rebaseStatus));
+  prompt.push(
+    ...buildReviewThreadFixInstructions(
+      threads,
+      additionalFeedback,
+      rebaseStatus,
+      knownStackedBranches
+    )
+  );
 
   return prompt.join('\n');
 }
@@ -1108,7 +1120,8 @@ export function buildPrReviewThreadFixPrompt(
   target: PullRequestFixTarget,
   threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>,
   additionalFeedback: PrAdditionalFeedback[] = [],
-  rebaseStatus?: PrFixRebaseStatus
+  rebaseStatus?: PrFixRebaseStatus,
+  knownStackedBranches?: StackedBranch[]
 ): string {
   const prompt = [
     '# Address Pull Request Review Comments',
@@ -1138,7 +1151,14 @@ export function buildPrReviewThreadFixPrompt(
     ''
   );
 
-  prompt.push(...buildReviewThreadFixInstructions(threads, additionalFeedback, rebaseStatus));
+  prompt.push(
+    ...buildReviewThreadFixInstructions(
+      threads,
+      additionalFeedback,
+      rebaseStatus,
+      knownStackedBranches
+    )
+  );
 
   return prompt.join('\n');
 }
@@ -1146,7 +1166,8 @@ export function buildPrReviewThreadFixPrompt(
 export function buildReviewThreadFixInstructions(
   threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>,
   additionalFeedback: PrAdditionalFeedback[] = [],
-  rebaseStatus?: PrFixRebaseStatus
+  rebaseStatus?: PrFixRebaseStatus,
+  knownStackedBranches?: StackedBranch[]
 ): string[] {
   const prompt = [
     '## Unresolved Review Threads',
@@ -1204,12 +1225,14 @@ export function buildReviewThreadFixInstructions(
     '',
     '## Stacked Branches',
     '',
-    'This PR branch can have other branches stacked on top of it. Before you evaluate the feedback, check for descendant branches. With jj, use `jj log -r "descendants(<PR bookmark>) & bookmarks()"`. With git, use `git branch --contains <PR branch>`. If stacked branches exist, consider their changes when you evaluate and fix each issue:',
+    'This PR branch can have other branches stacked on top of it. Before you evaluate the feedback, check for descendant branches. With jj, use `jj log -r "descendants(<PR bookmark>) & bookmarks()"`. With git, use `git branch --contains <PR branch>`. If these commands do not show descendant branches, stacked branches can still exist on an older version of this branch. See "Restacking Descendant Branches" below for how to find them. If stacked branches exist, consider their changes when you evaluate and fix each issue:',
     '',
     '- Code, exports, parameters, or features that appear unused in this PR can be used by a branch further up the stack. Before you agree that something is unused or should be removed, search the stacked branches for uses. If a stacked branch uses it, keep it, and say so in your reply.',
     '- A fix in this branch can affect the code in the stacked branches. For example, a renamed or changed function signature, changed behavior, or moved code can break callers or cause conflicts upstack. Choose the correct fix, even if it is not compatible with the stacked branches. It is easy to change the code upstack, but you must make sure that it gets changed. When a fix requires changes upstack, tell the user which branches and code are affected. After you commit the fix, rebase the stacked branches onto it, update the affected upstack code so that it continues to work, and run the checks on those branches. When you push this branch, also push each stacked branch that you rebased or changed.',
+    `- ${RESTACK_AFTER_CHANGE_RULE}`,
     `- ${PUSH_AFTER_REBASE_RULE}`,
     '',
+    ...buildRestackDescendantsInstructions(knownStackedBranches),
     ...buildPushRebasedBranchesInstructions(),
     ...buildJjBookmarkConflictInstructions(),
     '## Responsibilities',
@@ -1774,15 +1797,26 @@ async function executePrFixCommand({
       }
     }
 
+    const knownStackedBranches = findKnownStackedBranches(
+      getDatabase(),
+      target.kind === 'plan' ? target.prStatuses : [target.prStatus]
+    );
     const fixPrompt =
       target.kind === 'plan'
         ? buildReviewThreadFixPrompt(
             target.plan,
             unresolvedThreads,
             additionalFeedback,
-            rebaseStatus
+            rebaseStatus,
+            knownStackedBranches
           )
-        : buildPrReviewThreadFixPrompt(target, unresolvedThreads, additionalFeedback, rebaseStatus);
+        : buildPrReviewThreadFixPrompt(
+            target,
+            unresolvedThreads,
+            additionalFeedback,
+            rebaseStatus,
+            knownStackedBranches
+          );
 
     if (target.kind === 'plan') {
       await executor.execute(fixPrompt, {

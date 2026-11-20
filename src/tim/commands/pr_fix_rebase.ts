@@ -1,5 +1,13 @@
 import { isBranchBehindRemoteBase } from '../../common/git.js';
+import type { Database } from 'bun:sqlite';
+
 import { log, warn } from '../../logging.js';
+import type { PrStatusDetail } from '../db/pr_status.js';
+import {
+  findOpenStackForPr,
+  getStackedBranchesAbovePr,
+  type StackedBranch,
+} from '../shepherd_bot/stack.js';
 
 export interface PrFixRebaseStatus {
   /** Base branch that has commits the PR branch does not contain. */
@@ -41,6 +49,90 @@ export function buildPushRebasedBranchesInstructions(): string[] {
     'This rule overrides other instructions that tell you not to push, or to let the user push manually. For example, a skill that helps you rebase a stack can say that the user will push the branches. In this command, push the branches yourself. With git, use `git push --force-with-lease` because the rebase rewrote the branch history.',
     '',
   ];
+}
+
+/** Short reminder that points to the "Restacking Descendant Branches" section. */
+export const RESTACK_AFTER_CHANGE_RULE =
+  'After each change to this branch, restack all descendant branches onto it. See "Restacking Descendant Branches" below.';
+
+/**
+ * The branches of the open PRs that are stacked on top of the given PRs, from the cached PR
+ * data in the database. Returns undefined when the lookup fails, because this information
+ * is advisory and must not stop the fix run.
+ */
+export function findKnownStackedBranches(
+  db: Database,
+  prStatuses: readonly PrStatusDetail[]
+): StackedBranch[] | undefined {
+  try {
+    const result: StackedBranch[] = [];
+    const seen = new Set(prStatuses.map((detail) => detail.status.head_branch).filter(Boolean));
+    for (const detail of prStatuses) {
+      const stack = findOpenStackForPr(db, detail.status);
+      for (const branch of getStackedBranchesAbovePr(stack, detail.status.pr_number)) {
+        if (!seen.has(branch.headBranch)) {
+          seen.add(branch.headBranch);
+          result.push(branch);
+        }
+      }
+    }
+    return result;
+  } catch (err) {
+    warn(`Could not look up the stacked PRs: ${err instanceof Error ? err.message : String(err)}`);
+    return undefined;
+  }
+}
+
+/**
+ * Instructions to always restack the descendant branches after the agent changes the PR
+ * branch. Descendants are easy to miss when they are based on an older version of the PR
+ * branch, because then they are not descendants of the current commit.
+ *
+ * `knownStackedBranches` is the list of stacked PR branches from the PR database. When it
+ * is undefined, the agent gets instructions to search for stacked branches itself.
+ */
+export function buildRestackDescendantsInstructions(
+  knownStackedBranches?: readonly StackedBranch[]
+): string[] {
+  const lines = [
+    '## Restacking Descendant Branches',
+    '',
+    'Each time that you change this branch (for example, you commit a fix, amend a commit, or rebase), restack all of the descendant branches onto the new version of this branch. Do this also when the change does not affect the code in the descendant branches. After you restack, run the checks on the descendant branches that the change can affect, and push the branches as described in "Pushing Rebased Branches".',
+    '',
+    'With jj, a change to a commit usually rebases its descendants automatically. Make sure that each descendant bookmark is now on top of the new version of this branch. With git, rebase each stacked branch onto the new version of its base branch, for example with `git rebase --onto <new base> <old base> <stacked branch>`.',
+    '',
+    'A stacked branch can be based on an older version of this branch, for example when this branch was rebased, amended, or updated from origin after the stacked branch was created. Then the stacked branch is not a descendant of the current commit, and `jj log -r "descendants(<PR bookmark>)"` or `git branch --contains <PR branch>` does not show it. If you find a stacked branch that is based on an older version of this branch, rebase it onto the current version of this branch, so that it contains only its own commits on top.',
+    '',
+  ];
+
+  if (knownStackedBranches && knownStackedBranches.length > 0) {
+    lines.push(
+      "These open PR branches are stacked on this branch, from tim's PR data. Each branch comes after the branch that it is based on:",
+      '',
+      ...knownStackedBranches.map(
+        (branch) => `- \`${branch.headBranch}\` (based on \`${branch.baseBranch}\`)`
+      ),
+      '',
+      'Restack all of these branches, also when the local commands above do not show them as descendants. In that case, they are probably based on an older version of this branch, so find the local or remote version of each branch and rebase it. Also restack other local descendant branches that do not have a PR.',
+      ''
+    );
+  } else if (knownStackedBranches) {
+    lines.push(
+      "tim's PR data shows no open PRs that are stacked on this branch. Restack only the local descendant branches that you find, if there are any. You do not need to search for stacked branches on older versions of this branch.",
+      ''
+    );
+  } else {
+    lines.push(
+      'If you do not find descendant branches, they can still exist. Before you decide that no descendant branches exist, do these checks:',
+      '',
+      '- Use `gh pr list --base <PR branch>` to find open PRs that use this branch as their base.',
+      '- With jj, look for bookmarks that are descendants of an earlier version of this branch. For example, use `jj evolog -r <PR bookmark>` to find the earlier commits, and `jj log -r "descendants(<earlier commit>) & bookmarks()"` to find bookmarks on top of them. Also look at the graph in `jj log -r "bookmarks() & ~::trunk()"`.',
+      '- With git, look for local and remote branches whose history contains commits with the same changes or commit messages as this branch, for example with `git log --oneline <base>..<other branch>`.',
+      ''
+    );
+  }
+
+  return lines;
 }
 
 export function buildRebaseInstructions(

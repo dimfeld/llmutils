@@ -40,10 +40,14 @@ import {
   buildJjBookmarkConflictInstructions,
   buildRebaseInstructions,
   detectPrFixRebaseStatus,
+  findKnownStackedBranches,
   buildPushRebasedBranchesInstructions,
+  buildRestackDescendantsInstructions,
   PUSH_AFTER_REBASE_RULE,
+  RESTACK_AFTER_CHANGE_RULE,
   type PrFixRebaseStatus,
 } from './pr_fix_rebase.js';
+import type { StackedBranch } from '../shepherd_bot/stack.js';
 import {
   ensurePrFixHeadBranchPushableOnOrigin,
   fetchPrFixBaseBranch,
@@ -77,6 +81,8 @@ export interface CiFixPromptOptions {
   noRequiredConfig?: boolean;
   /** Set when the PR branch is behind its base branch, so the agent offers a rebase first. */
   rebaseStatus?: PrFixRebaseStatus;
+  /** Branches of the open PRs stacked on this PR. Undefined when they are not known. */
+  knownStackedBranches?: StackedBranch[];
 }
 
 function resolveStringOption(value: unknown): string | undefined {
@@ -357,9 +363,11 @@ export function buildCiFixPrompt(
     '3. Apply fixes for the REQUIRED failures only. Apply fixes for not-required failures only if the user asks. When a failure is environmental or flaky, propose re-running the check instead of changing code when that is the appropriate action.',
     '4. Run the relevant local checks and tests to verify the fixes.',
     '5. Commit the code changes and push them to the pull request branch. If the repository uses jj, update the current bookmark to the commit you created before pushing, for example `jj bookmark set <current-bookmark> -r @-`.',
-    `6. ${PUSH_AFTER_REBASE_RULE}`,
-    '7. Do not edit plan files in PR mode.',
+    `6. ${RESTACK_AFTER_CHANGE_RULE}`,
+    `7. ${PUSH_AFTER_REBASE_RULE}`,
+    '8. Do not edit plan files in PR mode.',
     '',
+    ...buildRestackDescendantsInstructions(options.knownStackedBranches),
     ...buildPushRebasedBranchesInstructions(),
     ...buildJjBookmarkConflictInstructions()
   );
@@ -557,6 +565,7 @@ export async function executeCiFixCommand({
     const fixPrompt = buildCiFixPrompt(currentTarget, manifest, {
       noRequiredConfig: selectedChecks.noRequiredConfig,
       rebaseStatus,
+      knownStackedBranches: findKnownStackedBranches(db, [currentTarget.prStatus]),
     });
     const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
       config,
