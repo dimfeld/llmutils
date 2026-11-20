@@ -29,10 +29,13 @@ import { loadEffectiveConfig } from '$tim/configLoader.js';
 import { getProjectById, listProjects } from '$tim/db/project.js';
 import {
   getLinkedPlansByPrUrl,
+  getPrStatusByUrl,
   getPrStatusesForRepo,
   getRecentlyMergedPrStatusesForRepo,
   type LinkedPlanSummary,
+  type PrReviewThreadDetail,
   type PrStatusDetail,
+  type PrStatusRow,
 } from '$tim/db/pr_status.js';
 import {
   getActivePrShepherdsByPrStatusIds,
@@ -45,6 +48,17 @@ import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_chec
 const projectIdSchema = z.object({
   projectId: z.string().regex(/^(\d+|all)$/),
 });
+
+const prUrlSchema = z.object({
+  prUrl: z.string().url(),
+});
+
+/**
+ * The PR list queries load review threads without their comments. The lists only count
+ * unresolved threads, and the comment bodies and diff hunks can be many megabytes for a busy
+ * repository. The PR detail view loads the full threads with `getPrReviewThreads`.
+ */
+const LIST_REVIEW_THREADS = 'withoutComments' as const;
 
 const linearPrReviewUrlSchema = z.object({
   projectId: z.string().regex(/^\d+$/),
@@ -101,7 +115,9 @@ function loadRecentlyMergedPrs(
 ): PrStatusDetailWithRequiredChecks[] {
   return withRequiredCheckRollupStates(
     db,
-    getRecentlyMergedPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true })
+    getRecentlyMergedPrStatusesForRepo(db, owner, repo, {
+      includeReviewThreads: LIST_REVIEW_THREADS,
+    })
   );
 }
 
@@ -402,7 +418,7 @@ async function getAllProjectPrsData() {
     const { owner, repo } = ownerRepo;
     const prs = withRequiredCheckRollupStates(
       db,
-      getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true })
+      getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: LIST_REVIEW_THREADS })
     );
     const projectPrUrls = prs.map((pr) => pr.status.pr_url);
     prUrls.push(...projectPrUrls);
@@ -592,7 +608,56 @@ async function isProjectUsingLinearIssueTracker(projectId: number): Promise<bool
   return projectConfig.issueTracker === 'linear';
 }
 
-export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
+export const getProjectPrs = query(projectIdSchema, async ({ projectId }) =>
+  loadProjectPrsData(projectId)
+);
+
+/** A recently merged PR, with only the fields that the shepherd page shows. */
+export interface ShepherdMergedPr {
+  projectId: number;
+  status: Pick<PrStatusRow, 'pr_url' | 'pr_number' | 'title' | 'merged_at'>;
+}
+
+export interface ShepherdPrsData {
+  /** The current user's open PRs. */
+  authored: EnrichedProjectPr[];
+  /** The current user's recently merged PRs, most recently merged first. */
+  recentlyMerged: ShepherdMergedPr[];
+}
+
+/**
+ * The data for the PR shepherd page. It has only the current user's own PRs, and only a few
+ * fields of the recently merged PRs.
+ */
+export const getShepherdPrs = query(
+  projectIdSchema,
+  async ({ projectId }): Promise<ShepherdPrsData> => {
+    const data = await loadProjectPrsData(projectId);
+    return {
+      authored: data.authored,
+      recentlyMerged: data.recentlyMerged.authored.map((pr) => ({
+        projectId: pr.projectId,
+        status: {
+          pr_url: pr.status.pr_url,
+          pr_number: pr.status.pr_number,
+          title: pr.status.title,
+          merged_at: pr.status.merged_at,
+        },
+      })),
+    };
+  }
+);
+
+/** The review threads of one PR, with their comments. Empty when the PR is not cached. */
+export const getPrReviewThreads = query(
+  prUrlSchema,
+  async ({ prUrl }): Promise<PrReviewThreadDetail[]> => {
+    const { db } = await getServerContext();
+    return getPrStatusByUrl(db, prUrl, { includeReviewThreads: true })?.reviewThreads ?? [];
+  }
+);
+
+async function loadProjectPrsData(projectId: string) {
   if (projectId === 'all') {
     return getAllProjectPrsData();
   }
@@ -616,7 +681,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
   const { owner, repo } = ownerRepo;
   const prs = withRequiredCheckRollupStates(
     db,
-    getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: true })
+    getPrStatusesForRepo(db, owner, repo, { includeReviewThreads: LIST_REVIEW_THREADS })
   );
   const mergedPrs = loadRecentlyMergedPrs(db, owner, repo);
   const username = await getGitHubUsername({ githubUsername: config.githubUsername });
@@ -650,7 +715,7 @@ export const getProjectPrs = query(projectIdSchema, async ({ projectId }) => {
     tokenConfigured,
     webhookConfigured,
   };
-});
+}
 
 export const getLinearPrReviewUrl = query(
   linearPrReviewUrlSchema,

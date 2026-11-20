@@ -484,10 +484,17 @@ export function upsertPrReviewThread(
   }
 }
 
+/**
+ * `true` loads review threads with their comments. `'withoutComments'` loads only the thread
+ * rows and sets `comments` to an empty array. Use it for lists that need only thread counts,
+ * because comment bodies and diff hunks are most of the data.
+ */
+export type IncludeReviewThreadsOption = boolean | 'withoutComments';
+
 function getDetailById(
   db: Database,
   prStatusId: number,
-  options?: { includeReviewThreads?: boolean }
+  options?: { includeReviewThreads?: IncludeReviewThreadsOption }
 ): PrStatusDetail | null {
   const status =
     (db.prepare('SELECT * FROM pr_status WHERE id = ?').get(prStatusId) as PrStatusRow | null) ??
@@ -554,7 +561,7 @@ function getDetailById(
     const threadIds = threadRows.map((thread) => thread.id);
     const commentsByThreadId = new Map<number, PrReviewThreadCommentRow[]>();
 
-    if (threadIds.length > 0) {
+    if (threadIds.length > 0 && options.includeReviewThreads !== 'withoutComments') {
       const placeholders = threadIds.map(() => '?').join(', ');
       const commentRows = db
         .prepare(
@@ -1441,7 +1448,7 @@ export function getPrStatusesForRepo(
   db: Database,
   owner: string,
   repo: string,
-  options?: { includeReviewThreads?: boolean }
+  options?: { includeReviewThreads?: IncludeReviewThreadsOption }
 ): PrStatusDetail[] {
   const rows = db
     .prepare(
@@ -1810,7 +1817,7 @@ export function getRecentlyMergedPrStatusesForRepo(
   db: Database,
   owner: string,
   repo: string,
-  options?: { includeReviewThreads?: boolean; now?: Date }
+  options?: { includeReviewThreads?: IncludeReviewThreadsOption; now?: Date }
 ): PrStatusDetail[] {
   const nowMs = (options?.now ?? new Date()).getTime();
   const rows = db

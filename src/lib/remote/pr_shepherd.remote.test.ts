@@ -10,10 +10,10 @@ import { DATABASE_FILENAME, openDatabase } from '$tim/db/database.js';
 import { upsertPrStatus } from '$tim/db/pr_status.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 
-const { refreshPrStatus, setPullRequestDraftState, projectPrsRefresh } = vi.hoisted(() => ({
+const { refreshPrStatus, setPullRequestDraftState, shepherdPrsRefresh } = vi.hoisted(() => ({
   refreshPrStatus: vi.fn(),
   setPullRequestDraftState: vi.fn(),
-  projectPrsRefresh: vi.fn(),
+  shepherdPrsRefresh: vi.fn(),
 }));
 
 let currentDb: Database;
@@ -40,7 +40,7 @@ vi.mock('$common/github/pull_requests.js', async () => {
 });
 
 vi.mock('$lib/remote/project_prs.remote.js', () => ({
-  getProjectPrs: () => ({ refresh: projectPrsRefresh }),
+  getShepherdPrs: () => ({ refresh: shepherdPrsRefresh }),
 }));
 
 describe('markPrReadyForReview', () => {
@@ -76,7 +76,7 @@ describe('markPrReadyForReview', () => {
     projectId = getOrCreateProject(currentDb, 'github.com__example__repo').id;
     refreshPrStatus.mockReset();
     setPullRequestDraftState.mockReset();
-    projectPrsRefresh.mockReset();
+    shepherdPrsRefresh.mockReset();
     process.env.GITHUB_TOKEN = 'token';
     clearGitHubTokenCache();
   });
@@ -106,7 +106,7 @@ describe('markPrReadyForReview', () => {
       currentDb,
       'https://github.com/example/repo/pull/1'
     );
-    expect(projectPrsRefresh).toHaveBeenCalled();
+    expect(shepherdPrsRefresh).toHaveBeenCalled();
   });
 
   test('succeeds and updates the list when only the status refresh fails', async () => {
@@ -117,7 +117,7 @@ describe('markPrReadyForReview', () => {
 
     await expect(markReady(1)).resolves.toEqual({ draft: false });
 
-    expect(projectPrsRefresh).toHaveBeenCalled();
+    expect(shepherdPrsRefresh).toHaveBeenCalled();
     warn.mockRestore();
   });
 
@@ -128,7 +128,7 @@ describe('markPrReadyForReview', () => {
     await expect(markReady(1)).rejects.toMatchObject({ status: 502 });
 
     expect(refreshPrStatus).not.toHaveBeenCalled();
-    expect(projectPrsRefresh).not.toHaveBeenCalled();
+    expect(shepherdPrsRefresh).not.toHaveBeenCalled();
   });
 
   test('requires a GitHub token', async () => {

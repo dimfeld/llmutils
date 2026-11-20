@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { render } from 'vitest-browser-svelte';
 
-import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
+import type {
+  EnrichedProjectPr,
+  ShepherdMergedPr,
+  ShepherdPrsData,
+} from '$lib/remote/project_prs.remote.js';
 import { shepherdPageTestState } from './shepherd_page_test_state.svelte.js';
 
 const mocks = vi.hoisted(() => {
@@ -24,7 +28,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('$lib/remote/project_prs.remote.js', async () => {
   const { shepherdPageTestState: state } = await import('./shepherd_page_test_state.svelte.js');
   // Like a SvelteKit query: refresh() loads the data again after a network delay.
-  const getProjectPrs = vi.fn(() => {
+  const getShepherdPrs = vi.fn(() => {
     void state.version;
     const value = state.value;
     const promise = new Promise((resolve) => setTimeout(() => resolve(value), 30));
@@ -34,7 +38,7 @@ vi.mock('$lib/remote/project_prs.remote.js', async () => {
       }),
     });
   });
-  return { getProjectPrs, refreshProjectPrs: vi.fn(async () => ({ newLinks: [] })) };
+  return { getShepherdPrs, refreshProjectPrs: vi.fn(async () => ({ newLinks: [] })) };
 });
 
 vi.mock('$lib/remote/pr_shepherd.remote.js', () => ({
@@ -135,15 +139,21 @@ function makePr(
 }
 
 function setPrs(prs: EnrichedProjectPr[], mergedPrs: EnrichedProjectPr[] = []): void {
-  shepherdPageTestState.value = {
+  const data: ShepherdPrsData = {
     authored: prs,
-    reviewing: [],
-    recentlyMerged: { authored: mergedPrs, reviewing: [] },
-    username: 'me',
-    hasData: true,
-    tokenConfigured: true,
-    webhookConfigured: true,
+    recentlyMerged: mergedPrs.map(
+      (pr): ShepherdMergedPr => ({
+        projectId: pr.projectId,
+        status: {
+          pr_url: pr.status.pr_url,
+          pr_number: pr.status.pr_number,
+          title: pr.status.title,
+          merged_at: pr.status.merged_at,
+        },
+      })
+    ),
   };
+  shepherdPageTestState.value = data;
 }
 
 let unmount: (() => void) | null = null;

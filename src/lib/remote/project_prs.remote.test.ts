@@ -619,6 +619,122 @@ describe('project_prs remote functions', () => {
     }
   });
 
+  test('getProjectPrs loads review threads without comments and getPrReviewThreads loads them', async () => {
+    const thread = (threadId: string, isResolved: boolean) => ({
+      threadId,
+      path: 'src/a.ts',
+      line: 12,
+      isResolved,
+      isOutdated: false,
+      comments: [
+        {
+          commentId: `${threadId}-comment`,
+          author: 'reviewer',
+          body: `Body of ${threadId}`,
+          diffHunk: '@@ -1,1 +1,1 @@',
+        },
+      ],
+    });
+    const prUrl = 'https://github.com/example/repo/pull/30';
+    upsertPrStatus(currentDb, {
+      prUrl,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 30,
+      title: 'PR with threads',
+      state: 'open',
+      draft: false,
+      author: 'dimfeld',
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+      reviewThreads: [thread('thread-a', false), thread('thread-b', true)],
+    });
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/31',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 31,
+      title: 'Merged PR with threads',
+      state: 'merged',
+      draft: false,
+      author: 'dimfeld',
+      mergedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      lastFetchedAt: '2026-03-30T10:00:00.000Z',
+      reviewThreads: [thread('thread-c', false)],
+    });
+
+    const { getProjectPrs, getPrReviewThreads } = await import('./project_prs.remote.js');
+    for (const id of [String(projectId), 'all']) {
+      const result = await invokeQuery(getProjectPrs, { projectId: id });
+      const [pr] = result.authored;
+      expect(pr.reviewThreads?.map((t) => [t.thread.thread_id, t.thread.is_resolved])).toEqual([
+        ['thread-a', 0],
+        ['thread-b', 1],
+      ]);
+      expect(pr.reviewThreads?.every((t) => t.comments.length === 0)).toBe(true);
+      const [merged] = result.recentlyMerged.authored;
+      expect(merged.reviewThreads?.map((t) => t.thread.thread_id)).toEqual(['thread-c']);
+      expect(merged.reviewThreads?.[0].comments).toEqual([]);
+    }
+
+    const threads = await invokeQuery(getPrReviewThreads, { prUrl });
+    expect(threads.map((t) => t.comments.map((c) => c.body))).toEqual([
+      ['Body of thread-a'],
+      ['Body of thread-b'],
+    ]);
+    expect(
+      await invokeQuery(getPrReviewThreads, {
+        prUrl: 'https://github.com/example/repo/pull/999',
+      })
+    ).toEqual([]);
+  });
+
+  test('getShepherdPrs returns only own PRs and trimmed recently merged PRs', async () => {
+    const mergedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const insert = (
+      prNumber: number,
+      options: { state: 'open' | 'merged'; author: string; mergedAt?: string }
+    ) =>
+      upsertPrStatus(currentDb, {
+        prUrl: `https://github.com/example/repo/pull/${prNumber}`,
+        owner: 'example',
+        repo: 'repo',
+        prNumber,
+        title: `PR ${prNumber}`,
+        state: options.state,
+        draft: false,
+        author: options.author,
+        mergedAt: options.mergedAt ?? null,
+        lastFetchedAt: '2026-03-30T10:00:00.000Z',
+      });
+    insert(40, { state: 'open', author: 'dimfeld' });
+    const reviewing = insert(41, { state: 'open', author: 'alice' });
+    upsertPrReviewRequestByReviewer(currentDb, reviewing.status.id, {
+      reviewer: 'dimfeld',
+      action: 'requested',
+      eventAt: mergedAt,
+    });
+    insert(42, { state: 'merged', author: 'dimfeld', mergedAt });
+    insert(43, { state: 'merged', author: 'alice', mergedAt });
+
+    const { getShepherdPrs } = await import('./project_prs.remote.js');
+    for (const id of [String(projectId), 'all']) {
+      const result = await invokeQuery(getShepherdPrs, { projectId: id });
+      expect(Object.keys(result).toSorted()).toEqual(['authored', 'recentlyMerged']);
+      expect(result.authored.map((pr) => pr.status.pr_number)).toEqual([40]);
+      expect(result.recentlyMerged).toEqual([
+        {
+          projectId,
+          status: {
+            pr_url: 'https://github.com/example/repo/pull/42',
+            pr_number: 42,
+            title: 'PR 42',
+            merged_at: mergedAt,
+          },
+        },
+      ]);
+    }
+  });
+
   test('getProjectPrs returns recently merged PRs when no PRs are open', async () => {
     upsertPrStatus(currentDb, {
       prUrl: 'https://github.com/example/repo/pull/20',

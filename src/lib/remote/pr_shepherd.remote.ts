@@ -26,7 +26,7 @@ import {
   removeStackFromShepherdBot,
   setShepherdBotRunningForProject,
 } from '$lib/server/shepherd_bot.js';
-import { getProjectPrs } from '$lib/remote/project_prs.remote.js';
+import { getShepherdPrs } from '$lib/remote/project_prs.remote.js';
 import { getCancelledChecks } from '$lib/utils/pr_shepherd.js';
 import { enrollPrShepherd, removePrShepherd } from '$tim/db/pr_shepherd.js';
 import { getPrStatusByProjectAndNumber, type PrStatusDetail } from '$tim/db/pr_status.js';
@@ -79,7 +79,7 @@ function tryGetSessionManager(): ReturnType<typeof getSessionManager> | undefine
 }
 
 function notifyPrChanged(db: Database, projectId: number, prUrl: string): void {
-  getProjectPrs({ projectId: String(projectId) }).refresh();
+  getShepherdPrs({ projectId: String(projectId) }).refresh();
   const sessionManager = tryGetSessionManager();
   if (sessionManager?.hasPrUpdateListeners()) {
     sessionManager.emitPrUpdate([prUrl], getProjectIdsForPrUrls(db, [prUrl]));

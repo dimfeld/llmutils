@@ -5,7 +5,7 @@
   import ShepherdBotPanel from '$lib/components/ShepherdBotPanel.svelte';
   import ShepherdPrRow from '$lib/components/ShepherdPrRow.svelte';
   import { removePrStackFromShepherdBot } from '$lib/remote/pr_shepherd.remote.js';
-  import { getProjectPrs, refreshProjectPrs } from '$lib/remote/project_prs.remote.js';
+  import { getShepherdPrs, refreshProjectPrs } from '$lib/remote/project_prs.remote.js';
   import { projectDisplayName } from '$lib/stores/project.svelte.js';
   import { useSessionManager } from '$lib/stores/session_state.svelte.js';
   import { shouldRefreshProjectPrs } from '$lib/utils/pr_update_events.js';
@@ -19,9 +19,9 @@
 
   let projectId = $derived(data.projectId);
   let isAllProjects = $derived(projectId === 'all');
-  let prData = $derived(await getProjectPrs({ projectId }));
+  let prData = $derived(await getShepherdPrs({ projectId }));
   let shepherdList = $derived(buildShepherdList(prData.authored));
-  let mergedDays = $derived(groupPrsByMergedDay(prData.recentlyMerged.authored));
+  let mergedDays = $derived(groupPrsByMergedDay(prData.recentlyMerged));
   let mergedCount = $derived(mergedDays.reduce((count, day) => count + day.prs.length, 0));
   let watchedCount = $derived(
     shepherdList.groups.reduce(
@@ -64,6 +64,7 @@
     try {
       const result = await refreshProjectPrs({ projectId });
       refreshError = result.error ?? null;
+      await getShepherdPrs({ projectId }).refresh();
     } catch (err) {
       refreshError = extractRemoteErrorMessage(err);
     } finally {
@@ -74,7 +75,7 @@
   onMount(() => {
     return sessionManager.onEvent((eventName, event) => {
       if (eventName === 'pr:updated' && shouldRefreshProjectPrs(event, projectId)) {
-        getProjectPrs({ projectId }).refresh();
+        getShepherdPrs({ projectId }).refresh();
       }
     });
   });
