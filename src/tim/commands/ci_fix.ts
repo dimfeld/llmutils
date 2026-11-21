@@ -357,7 +357,7 @@ export function buildCiFixPrompt(
     '   Exception: when the fix for a REQUIRED failure is deterministic and obvious, apply it without asking for permission. Examples are running the formatter, or updating code to handle a type that has a new member. Show these fixes in the summary as already applied.',
     ...(options.rebaseStatus
       ? [
-          '   In the same message, also ask the user if they want to rebase this branch onto the updated base branch before you apply the fixes. See "Base Branch Updates" above. Wait for the answer about the rebase before you apply any fix, including the obvious ones.',
+          '   Rebase this branch onto the updated base branch before you apply any fix, including the obvious ones. See "Base Branch Updates" above. You do not need to ask the user before you rebase.',
         ]
       : []),
     '3. Apply fixes for the REQUIRED failures only. Apply fixes for not-required failures only if the user asks. When a failure is environmental or flaky, propose re-running the check instead of changing code when that is the appropriate action.',

@@ -473,13 +473,10 @@ describe('tim/commands/ci_fix', () => {
     expect(prompt).not.toContain('rebase this branch');
   });
 
-  test('asks the user about rebasing before CI fixes when the branch is behind its base', () => {
+  test('adds rebase instructions before CI fixes when the branch is behind its base', () => {
     const prompt = buildCiFixPrompt(makeTarget(), [], { rebaseStatus: { baseBranch: 'main' } });
 
     expect(prompt).toContain('## Base Branch Updates');
-    expect(prompt).toContain(
-      'Before you apply any CI fixes, ask the user if they want to rebase this branch onto the latest `main` from origin and fix any conflicts.'
-    );
     expect(prompt).toContain('jj rebase -b @ -d main@origin');
     expect(prompt.indexOf('## Base Branch Updates')).toBeLessThan(
       prompt.indexOf('## Responsibilities')

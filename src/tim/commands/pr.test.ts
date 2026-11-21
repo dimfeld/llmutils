@@ -2748,7 +2748,6 @@ describe('tim/commands/pr', () => {
       expect(mockIsBranchBehindRemoteBase).toHaveBeenCalledWith('/tmp/workspace', 'main');
       const prompt = String(mockExecutorExecute.mock.calls[0]?.[0] ?? '');
       expect(prompt).toContain('## Base Branch Updates');
-      expect(prompt).toContain('ask the user if they want to rebase this branch');
     });
 
     test('continues without rebase instructions when the rebase check fails', async () => {
@@ -2997,14 +2996,12 @@ describe('tim/commands/pr', () => {
       expect(joined).not.toContain('## Base Branch Updates');
     });
 
-    test('asks the user about rebasing before fixes when the branch is behind its base', () => {
+    test('adds rebase instructions before triage when the branch is behind its base', () => {
       const joined = buildReviewThreadFixInstructions([], [], { baseBranch: 'release' }).join('\n');
       expect(joined).toContain('## Base Branch Updates');
       expect(joined).toContain('jj rebase -b @ -d release@origin');
       expect(joined).toContain('git rebase origin/release');
-      expect(joined.indexOf('## Base Branch Updates')).toBeLessThan(
-        joined.indexOf('## User Feedback')
-      );
+      expect(joined.indexOf('## Base Branch Updates')).toBeLessThan(joined.indexOf('## Triage'));
     });
 
     test('reports when no additional feedback is provided', () => {

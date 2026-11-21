@@ -145,9 +145,7 @@ export function buildRebaseInstructions(
     '',
     `The base branch \`${baseBranch}\` has new commits that this branch does not contain. For example, the base branch may have received its own fixes after this branch was created.`,
     '',
-    `Before you apply any ${fixes}, ask the user if they want to rebase this branch onto the latest \`${baseBranch}\` from origin and fix any conflicts. Do not rebase without the user's approval.`,
-    '',
-    'If the user approves the rebase:',
+    `Before you apply any ${fixes}, rebase this branch onto the latest \`${baseBranch}\` from origin and fix any conflicts. You do not need to ask the user before you rebase.`,
     '',
     `1. Rebase the branch onto the latest remote \`${baseBranch}\`. With jj, use a command such as \`jj rebase -b @ -d ${baseBranch}@origin\`. With git, use \`git rebase origin/${baseBranch}\`.`,
     '2. Resolve all conflicts. Look at both sides of each conflict and keep the intent of both changes. If the correct resolution is not clear, ask the user.',
@@ -156,8 +154,6 @@ export function buildRebaseInstructions(
     `5. Continue with the ${fixes} on top of the rebased branch.`,
     '',
     staleNote,
-    '',
-    `If the user declines the rebase, continue with the ${fixes} on the current branch without rebasing.`,
     '',
   ];
 }
