@@ -120,6 +120,12 @@ ${OWNER_DECISION_BLOCKER_GUIDANCE}
 - Especially note what you learned while fixing review feedback and why the issue occurred, if the insights are applicable to future tasks and not just this one.
 - Update this subsection in place. Keep ongoing lessons that still matter; remove only stale lessons.
 - None
+### PR Split Hints
+- A later phase can split this branch into a stack of smaller pull requests. Record natural boundaries in the completed work where a coherent, reviewable pull request could end. For each boundary, list the tasks or changes it includes, what it depends on, and why it can be reviewed on its own.
+- Also record small, self-contained changes that later work builds on, such as a preparatory refactor, a rename, or a shared helper.
+- These are hints for the split, not requirements. Do not change how you implement or commit the work to create boundaries.
+- Update this subsection in place when later work changes an earlier boundary.
+- None
 ### Risks / Blockers
 - None
 `;
