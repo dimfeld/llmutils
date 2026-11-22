@@ -1880,4 +1880,364 @@ describe('executeCodexStepViaAppServer', () => {
       expect(harness.createTunnelServerMock).not.toHaveBeenCalled();
     });
   });
+  describe('EndTimSession dynamic tool', () => {
+    type UserInputHandler = (content: string) => void;
+
+    function endSessionCall(args: unknown, callId: string = 'call-end'): Record<string, unknown> {
+      return {
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        callId,
+        tool: 'EndTimSession',
+        arguments: args,
+      };
+    }
+
+    function trackSettled(promise: Promise<string>): { settled: boolean } {
+      const state = { settled: false };
+      promise.then(
+        () => {
+          state.settled = true;
+        },
+        () => {
+          state.settled = true;
+        }
+      );
+      return state;
+    }
+
+    async function flush(): Promise<void> {
+      for (let index = 0; index < 5; index += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+
+    async function startHeadlessChat(
+      harness: Harness,
+      extraOptions: Record<string, unknown> = {}
+    ): Promise<{ result: Promise<string> }> {
+      harness.connection.turnStart.mockImplementation(async () => ({ turnId: 'turn-1' }));
+      const result = harness.executeCodexStepViaAppServer(
+        'fix the PR',
+        '/repo',
+        {},
+        { appServerMode: 'chat-session', endSessionTool: true, ...extraOptions }
+      );
+      await waitFor(() => harness.connection.turnStart.mock.calls.length === 1);
+      // Wrap the promise: an async function would otherwise wait for the session to end.
+      return { result };
+    }
+
+    function endSessionDefinitionNames(harness: Harness): string[] {
+      const params = harness.connection.threadStart.mock.calls[0]?.[0] as
+        | { dynamicTools?: Array<{ name: string }> }
+        | undefined;
+      return params?.dynamicTools?.map((definition) => definition.name) ?? [];
+    }
+
+    test('installs the tool and ends the session after turn/completed without an interrupt', async () => {
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+      const { END_SESSION_TOOL_RESULT_TEXT } = await import('../shared/end_session_tool.js');
+      const { result } = await startHeadlessChat(harness);
+      const state = trackSettled(result);
+
+      expect(harness.connectionCreateOptions.current?.experimentalApi).toBe(true);
+      const threadParams = harness.connection.threadStart.mock.calls[0]?.[0] as {
+        dynamicTools: Array<{ name: string; inputSchema: Record<string, unknown> }>;
+      };
+      expect(threadParams.dynamicTools).toHaveLength(1);
+      expect(threadParams.dynamicTools[0]).toMatchObject({
+        type: 'function',
+        name: 'EndTimSession',
+        inputSchema: expect.objectContaining({ type: 'object' }),
+      });
+
+      const toolResult = await harness.connectionHandlers.onServerRequest?.(
+        'item/tool/call',
+        7,
+        endSessionCall({ reason: 'PR fixes are pushed' })
+      );
+      expect(toolResult).toEqual({
+        contentItems: [{ type: 'inputText', text: END_SESSION_TOOL_RESULT_TEXT }],
+        success: true,
+      });
+
+      // The turn is still running, so the session must stay open and must not be interrupted.
+      await flush();
+      expect(state.settled).toBe(false);
+      expect(harness.connection.turnInterrupt).not.toHaveBeenCalled();
+
+      harness.connectionHandlers.onNotification?.('item/completed', {
+        item: { type: 'agentMessage', text: 'All done.' },
+      });
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { id: 'turn-1', status: 'completed' },
+      });
+
+      await expect(result).resolves.toBe('final agent message');
+      expect(harness.connection.turnInterrupt).not.toHaveBeenCalled();
+      expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
+      expect(harness.connection.close).toHaveBeenCalledTimes(1);
+    });
+
+    test('ends the session on the idle-status fallback for turn completion', async () => {
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+      const { result } = await startHeadlessChat(harness);
+      const state = trackSettled(result);
+
+      await harness.connectionHandlers.onServerRequest?.(
+        'item/tool/call',
+        7,
+        endSessionCall({ reason: 'done' })
+      );
+      await flush();
+      expect(state.settled).toBe(false);
+
+      harness.connectionHandlers.onNotification?.('thread/status/changed', {
+        status: { type: 'idle' },
+      });
+
+      await expect(result).resolves.toBe('final agent message');
+      expect(harness.connection.turnInterrupt).not.toHaveBeenCalled();
+      expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
+    });
+
+    test('steers user input sent during the turn, then still ends after the turn', async () => {
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+      const { result } = await startHeadlessChat(harness);
+
+      await harness.connectionHandlers.onServerRequest?.(
+        'item/tool/call',
+        7,
+        endSessionCall({ reason: 'done' })
+      );
+
+      const userInputHandler = harness.loggerAdapter?.setUserInputHandler.mock.calls[0]?.[0] as
+        | UserInputHandler
+        | undefined;
+      expect(userInputHandler).toBeDefined();
+      userInputHandler?.('one more thing');
+      await waitFor(() => harness.connection.turnSteer.mock.calls.length === 1);
+
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { id: 'turn-1', status: 'completed' },
+      });
+      // Input that arrives after the turn completed must not start a new turn.
+      userInputHandler?.('too late');
+
+      await expect(result).resolves.toBe('final agent message');
+      expect(harness.connection.turnStart).toHaveBeenCalledTimes(1);
+      expect(harness.connection.turnInterrupt).not.toHaveBeenCalled();
+    });
+
+    test('rejects invalid arguments and keeps the session open', async () => {
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+      const { result } = await startHeadlessChat(harness);
+      const state = trackSettled(result);
+
+      const invalidResults = await Promise.all([
+        harness.connectionHandlers.onServerRequest?.('item/tool/call', 7, endSessionCall({})),
+        harness.connectionHandlers.onServerRequest?.(
+          'item/tool/call',
+          8,
+          endSessionCall({ reason: '   ' }, 'call-2')
+        ),
+        harness.connectionHandlers.onServerRequest?.(
+          'item/tool/call',
+          9,
+          endSessionCall({ reason: 'ok', extra: true }, 'call-3')
+        ),
+      ]);
+      for (const invalid of invalidResults) {
+        expect(invalid).toMatchObject({ success: false });
+      }
+
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { id: 'turn-1', status: 'completed' },
+      });
+      await flush();
+      expect(state.settled).toBe(false);
+
+      const endHandler = harness.loggerAdapter?.setEndSessionHandler?.mock.calls[0]?.[0] as
+        | (() => void)
+        | undefined;
+      endHandler?.();
+      await expect(result).resolves.toBe('final agent message');
+    });
+
+    test('does not install the tool when the flag is not set', async () => {
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+      const { result } = await startHeadlessChat(harness, { endSessionTool: undefined });
+
+      expect(endSessionDefinitionNames(harness)).toEqual([]);
+      expect(harness.connection.threadStart.mock.calls[0]?.[0]).not.toHaveProperty('dynamicTools');
+      expect(harness.connectionCreateOptions.current?.experimentalApi).toBeUndefined();
+      await expect(
+        harness.connectionHandlers.onServerRequest?.(
+          'item/tool/call',
+          7,
+          endSessionCall({ reason: 'x' })
+        )
+      ).rejects.toMatchObject({ code: -32601 });
+
+      const endHandler = harness.loggerAdapter?.setEndSessionHandler?.mock.calls[0]?.[0] as
+        | (() => void)
+        | undefined;
+      endHandler?.();
+      await result;
+    });
+
+    test('does not install the tool when the session does not stay open', async () => {
+      const harness = await createHarness();
+      harness.connection.turnStart.mockImplementationOnce(async () => {
+        harness.connectionHandlers.onNotification?.('turn/completed', {
+          turn: { status: 'completed' },
+        });
+        return { turnId: 'turn-1' };
+      });
+
+      await harness.executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        { appServerMode: 'chat-session', endSessionTool: true }
+      );
+      expect(harness.connection.threadStart.mock.calls[0]?.[0]).not.toHaveProperty('dynamicTools');
+
+      const singleTurn = await createHarness({ loggerAdapterKind: 'headless' });
+      singleTurn.connection.turnStart.mockImplementationOnce(async () => {
+        singleTurn.connectionHandlers.onNotification?.('turn/completed', {
+          turn: { status: 'completed' },
+        });
+        return { turnId: 'turn-1' };
+      });
+      await singleTurn.executeCodexStepViaAppServer(
+        'prompt',
+        '/repo',
+        {},
+        { appServerMode: 'single-turn', endSessionTool: true }
+      );
+      expect(singleTurn.connection.threadStart.mock.calls[0]?.[0]).not.toHaveProperty(
+        'dynamicTools'
+      );
+    });
+
+    test('merges with a caller provider and routes each tool to its own handler', async () => {
+      const callerHandler = vi.fn(async () => ({
+        contentItems: [{ type: 'inputText' as const, text: 'agents' }],
+        success: true,
+      }));
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+      const { result } = await startHeadlessChat(harness, {
+        dynamicToolProvider: createDynamicToolProvider(callerHandler),
+      });
+      const state = trackSettled(result);
+
+      expect(endSessionDefinitionNames(harness)).toEqual(['ListTimAgents', 'EndTimSession']);
+
+      await expect(
+        harness.connectionHandlers.onServerRequest?.('item/tool/call', 7, {
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          callId: 'call-1',
+          tool: 'ListTimAgents',
+          arguments: {},
+        })
+      ).resolves.toEqual({
+        contentItems: [{ type: 'inputText', text: 'agents' }],
+        success: true,
+      });
+      expect(callerHandler).toHaveBeenCalledTimes(1);
+
+      await expect(
+        harness.connectionHandlers.onServerRequest?.(
+          'item/tool/call',
+          8,
+          endSessionCall({ reason: 'done' })
+        )
+      ).resolves.toMatchObject({ success: true });
+      expect(callerHandler).toHaveBeenCalledTimes(1);
+
+      await flush();
+      expect(state.settled).toBe(false);
+      harness.connectionHandlers.onNotification?.('turn/completed', {
+        turn: { id: 'turn-1', status: 'completed' },
+      });
+      await expect(result).resolves.toBe('final agent message');
+    });
+
+    test('falls back to no dynamic tools when thread/start rejects only the session tool', async () => {
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+      harness.connection.threadStart
+        .mockRejectedValueOnce(new Error('unknown field dynamicTools'))
+        .mockResolvedValueOnce({ threadId: 'thread-1' });
+
+      const { result } = await startHeadlessChat(harness);
+
+      expect(harness.connection.threadStart).toHaveBeenCalledTimes(2);
+      expect(harness.connection.threadStart.mock.calls[0]?.[0]).toHaveProperty('dynamicTools');
+      expect(harness.connection.threadStart.mock.calls[1]?.[0]).not.toHaveProperty('dynamicTools');
+      expect(harness.warnMock).toHaveBeenCalledWith(expect.stringContaining('EndTimSession'));
+      await expect(
+        harness.connectionHandlers.onServerRequest?.(
+          'item/tool/call',
+          7,
+          endSessionCall({ reason: 'x' })
+        )
+      ).rejects.toMatchObject({ code: -32601 });
+
+      const endHandler = harness.loggerAdapter?.setEndSessionHandler?.mock.calls[0]?.[0] as
+        | (() => void)
+        | undefined;
+      endHandler?.();
+      await expect(result).resolves.toBe('final agent message');
+    });
+
+    test('falls back to a connection without experimental API when initialize rejects it', async () => {
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+      const { CodexDynamicToolsCompatibilityError } = await import('./app_server_dynamic_tools.js');
+      const defaultImplementation = harness.connectionCreateMock.getMockImplementation();
+      harness.connectionCreateMock.mockImplementationOnce(async () => {
+        throw new CodexDynamicToolsCompatibilityError(new Error('unknown capability'));
+      });
+
+      const { result } = await startHeadlessChat(harness);
+
+      expect(defaultImplementation).toBeDefined();
+      expect(harness.connectionCreateMock).toHaveBeenCalledTimes(2);
+      expect(harness.connectionCreateMock.mock.calls[0]?.[0]).toMatchObject({
+        experimentalApi: true,
+      });
+      expect(harness.connectionCreateMock.mock.calls[1]?.[0]).not.toHaveProperty('experimentalApi');
+      expect(harness.connection.threadStart.mock.calls[0]?.[0]).not.toHaveProperty('dynamicTools');
+      expect(harness.warnMock).toHaveBeenCalledWith(expect.stringContaining('EndTimSession'));
+
+      const endHandler = harness.loggerAdapter?.setEndSessionHandler?.mock.calls[0]?.[0] as
+        | (() => void)
+        | undefined;
+      endHandler?.();
+      await expect(result).resolves.toBe('final agent message');
+    });
+
+    test('keeps the compatibility error when a caller provider is installed', async () => {
+      const harness = await createHarness({ loggerAdapterKind: 'headless' });
+      const { CodexDynamicToolsCompatibilityError } = await import('./app_server_dynamic_tools.js');
+      harness.connection.threadStart.mockRejectedValueOnce(new Error('unknown field'));
+
+      await expect(
+        harness.executeCodexStepViaAppServer(
+          'fix the PR',
+          '/repo',
+          {},
+          {
+            appServerMode: 'chat-session',
+            endSessionTool: true,
+            dynamicToolProvider: createDynamicToolProvider(),
+          }
+        )
+      ).rejects.toBeInstanceOf(CodexDynamicToolsCompatibilityError);
+      expect(harness.connection.threadStart).toHaveBeenCalledTimes(1);
+      expect(harness.connection.close).toHaveBeenCalledTimes(1);
+    });
+  });
 });

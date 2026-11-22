@@ -22,6 +22,8 @@ export async function executeBareMode(
     terminalInput?: boolean;
     reasoningLevel?: CodexReasoningLevel;
     timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
+    /** Offer the EndTimSession tool. Ignored unless app-server chat-session input stays open. */
+    endSessionTool?: boolean;
   }
 ): Promise<void | ExecutorOutput> {
   const gitRoot = await getGitRoot(baseDir);
@@ -37,6 +39,9 @@ export async function executeBareMode(
     timEnvironment: options?.timEnvironment,
     ...(options?.appServerMode ? { appServerMode: options.appServerMode } : {}),
     ...(options?.terminalInput !== undefined ? { terminalInput: options.terminalInput } : {}),
+    // The app-server runner offers the tool only in an interactive chat session. The
+    // `codex exec` fallback cannot host dynamic tools and ignores this option.
+    ...(options?.endSessionTool === true ? { endSessionTool: true } : {}),
   } as const;
 
   const output = await executeCodexStep(contextContent, gitRoot, timConfig, codexStepOptions);

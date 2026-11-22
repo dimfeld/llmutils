@@ -19,7 +19,13 @@ import {
   type ClaudeMcpRequest,
   type ClaudeMcpResponse,
   type PermissionResponse,
+  type SessionToolResponse,
 } from './claude_mcp_protocol.js';
+import {
+  END_SESSION_TOOL_DESCRIPTION,
+  END_SESSION_TOOL_NAME,
+  endSessionToolArgumentsSchema,
+} from '../shared/end_session_tool.js';
 import {
   AGENT_TOOL_DESCRIPTIONS,
   finishAgentArgumentsSchema,
@@ -45,6 +51,8 @@ export interface ClaudeMcpServerOptions {
   readonly interactiveApprovalEnabled?: boolean;
   /** Untrusted child-side discoverability list supplied by the parent. */
   readonly agentToolNames?: readonly string[];
+  /** Whether the `EndTimSession` session-control tool should be advertised. */
+  readonly endSessionToolEnabled?: boolean;
 }
 
 export interface ClaudeMcpServerHandle {
@@ -65,7 +73,7 @@ let requestCounter = 0;
 let logFilePath: string | undefined;
 
 type PendingRequest = {
-  readonly expectedResponseType: 'permission_response' | 'agent_tool_response';
+  readonly expectedResponseType: ClaudeMcpResponse['type'];
   readonly resolve: (response: ClaudeMcpResponse) => void;
   readonly reject: (error: Error) => void;
   readonly timer: ReturnType<typeof setTimeout>;
@@ -80,6 +88,13 @@ type ClaudeMcpRequestResponseMap = {
     readonly request: Omit<Extract<ClaudeMcpRequest, { type: 'agent_tool_request' }>, 'requestId'>;
     readonly response: AgentToolResponse;
   };
+  session_tool_request: {
+    readonly request: Omit<
+      Extract<ClaudeMcpRequest, { type: 'session_tool_request' }>,
+      'requestId'
+    >;
+    readonly response: SessionToolResponse;
+  };
 };
 
 type ClaudeMcpRequestType = keyof ClaudeMcpRequestResponseMap;
@@ -89,6 +104,7 @@ const responseTypeByRequestType: {
 } = {
   permission_request: 'permission_response',
   agent_tool_request: 'agent_tool_response',
+  session_tool_request: 'session_tool_response',
 };
 
 const pendingRequests = new Map<string, PendingRequest>();
@@ -263,14 +279,13 @@ function requestParent(
   request: ClaudeMcpRequestResponseMap['agent_tool_request']['request']
 ): Promise<ClaudeMcpRequestResponseMap['agent_tool_request']['response']>;
 function requestParent(
-  request:
-    | ClaudeMcpRequestResponseMap['permission_request']['request']
-    | ClaudeMcpRequestResponseMap['agent_tool_request']['request']
+  request: ClaudeMcpRequestResponseMap['session_tool_request']['request']
+): Promise<ClaudeMcpRequestResponseMap['session_tool_request']['response']>;
+function requestParent(
+  request: ClaudeMcpRequestResponseMap[ClaudeMcpRequestType]['request']
 ): Promise<ClaudeMcpResponse>;
 async function requestParent(
-  request:
-    | ClaudeMcpRequestResponseMap['permission_request']['request']
-    | ClaudeMcpRequestResponseMap['agent_tool_request']['request']
+  request: ClaudeMcpRequestResponseMap[ClaudeMcpRequestType]['request']
 ): Promise<ClaudeMcpResponse> {
   if (!parentSocket || parentSocket.destroyed) {
     throw new Error('Not connected to tim MCP parent');
@@ -313,6 +328,20 @@ async function requestAgentToolFromParent(
   input: unknown
 ): Promise<AgentToolResponse> {
   return requestParent({ type: 'agent_tool_request', tool_name, input });
+}
+
+async function requestEndSessionFromParent(input: unknown): Promise<SessionToolResponse> {
+  return requestParent({ type: 'session_tool_request', tool_name: END_SESSION_TOOL_NAME, input });
+}
+
+function modelVisibleSessionToolResult(response: SessionToolResponse): {
+  content: [{ type: 'text'; text: string }];
+  isError?: boolean;
+} {
+  if (response.success) {
+    return { content: [{ type: 'text', text: response.result }] };
+  }
+  return { content: [{ type: 'text', text: response.error }], isError: true };
 }
 
 function modelVisibleAgentResult(response: AgentToolResponse): {
@@ -455,6 +484,36 @@ export function createClaudeMcpServer(options: ClaudeMcpServerOptions = {}): Cla
     });
   }
 
+  if (options.endSessionToolEnabled === true) {
+    const executeEndSession = async (
+      input: unknown
+    ): Promise<{ content: [{ type: 'text'; text: string }]; isError?: boolean }> => {
+      try {
+        return modelVisibleSessionToolResult(await requestEndSessionFromParent(input));
+      } catch (error) {
+        writeLog('End session request failed:', error);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `End session request failed: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    };
+    server.addTool({
+      name: END_SESSION_TOOL_NAME,
+      description: END_SESSION_TOOL_DESCRIPTION,
+      parameters: endSessionToolArgumentsSchema,
+      execute: executeEndSession,
+    });
+    toolNames.push(END_SESSION_TOOL_NAME);
+    toolDescriptions.set(END_SESSION_TOOL_NAME, END_SESSION_TOOL_DESCRIPTION);
+    toolExecutors.set(END_SESSION_TOOL_NAME, executeEndSession);
+  }
+
   return {
     server,
     toolNames: Object.freeze(toolNames),
@@ -482,6 +541,7 @@ function parseServerOptions(value: string | undefined): ClaudeMcpServerOptions {
           ? undefined
           : record.interactiveApprovalEnabled === true,
       agentToolNames,
+      endSessionToolEnabled: record.endSessionToolEnabled === true,
     };
   } catch {
     return {};

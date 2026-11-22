@@ -523,6 +523,32 @@ describe('CodexCliExecutor - planning mode routing', () => {
     });
   });
 
+  test('passes the endSessionTool shared option to bare mode for planning execution', async () => {
+    const executeBareModeMock = vi.fn(async () => ({ content: 'planning flow' }));
+
+    vi.doMock('./codex_cli/bare_mode.ts', () => ({
+      executeBareMode: executeBareModeMock,
+    }));
+
+    const { CodexCliExecutor } = await import('./codex_cli.js');
+    const executor = new CodexCliExecutor(
+      {},
+      { baseDir: tempDir, terminalInput: true, endSessionTool: true },
+      {} as any
+    );
+
+    await executor.execute('CTX', {
+      planId: '303',
+      planTitle: 'PR Fix',
+      planFilePath: `${tempDir}/plan.md`,
+      executionMode: 'planning',
+    });
+
+    expect(executeBareModeMock.mock.calls[0]?.[5]).toEqual(
+      expect.objectContaining({ appServerMode: 'chat-session', endSessionTool: true })
+    );
+  });
+
   test('planning execution honors executor reasoning override', async () => {
     const executeBareModeMock = vi.fn(async () => ({ content: 'planning flow' }));
 

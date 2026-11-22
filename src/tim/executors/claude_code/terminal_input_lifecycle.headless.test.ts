@@ -81,4 +81,48 @@ describe('terminal_input_lifecycle with a real HeadlessAdapter', () => {
       await adapter.destroy();
     }
   });
+
+  test('requestEndAfterCurrentTurn stops headless input now and closes stdin on the next result', async () => {
+    const adapter = new HeadlessAdapter({ command: 'agent' }, new ConsoleAdapter());
+    const streaming = makeStreaming();
+
+    try {
+      await runWithLogger(adapter, async () => {
+        const controller = executeWithTerminalInput({
+          streaming,
+          prompt: 'fix the PR',
+          sendStructured: () => {},
+          debugLog: () => {},
+          errorLog: () => {},
+          log: () => {},
+          label: 'Claude execution',
+          terminalInputEnabled: false,
+          tunnelForwardingEnabled: false,
+          keepInteractiveInputOpenOnResult: true,
+        });
+
+        // The headless handler makes this an interactive session that stays open on result.
+        controller.onResultMessage(true);
+        expect(streaming.stdin.end).toHaveBeenCalledTimes(0);
+        expect(handlerSlots(adapter).userInputHandler).toBeTypeOf('function');
+
+        controller.observeFormattedMessage({ type: 'assistant' });
+        controller.requestEndAfterCurrentTurn();
+
+        expect(handlerSlots(adapter).userInputHandler).toBeUndefined();
+        expect(streaming.stdin.end).toHaveBeenCalledTimes(0);
+        expect(controller.inputIsClosed()).toBe(false);
+        // The force-end control stays available until cleanup.
+        expect(handlerSlots(adapter).forceEndSessionHandler).toBeTypeOf('function');
+
+        controller.onResultMessage(true);
+        expect(streaming.stdin.end).toHaveBeenCalledTimes(1);
+        expect(controller.acceptedSuccessfulFinalResult()).toBe(true);
+
+        controller.cleanup();
+      });
+    } finally {
+      await adapter.destroy();
+    }
+  });
 });

@@ -606,6 +606,7 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
         acceptedSuccessfulFinalResult: vi.fn(() => acceptedFinalResult),
         onResultMessage,
         observeFormattedMessage: vi.fn(() => {}),
+        requestEndAfterCurrentTurn: vi.fn(() => {}),
       };
     });
 
@@ -994,6 +995,68 @@ describe('ClaudeCodeExecutor subprocess monitor wiring', () => {
       }
     }
   );
+
+  test.each([
+    { name: 'noninteractive', claudeOptions: {}, sharedOptions: { noninteractive: true } },
+    {
+      name: 'allow-all',
+      claudeOptions: { allowAllTools: true, permissionsMcp: { enabled: true } },
+      sharedOptions: {},
+    },
+    {
+      name: 'interactive approval',
+      claudeOptions: { permissionsMcp: { enabled: true } },
+      sharedOptions: {},
+    },
+  ])(
+    'installs and allows EndTimSession in $name runs when endSessionTool is set',
+    async ({ claudeOptions, sharedOptions }) => {
+      const harness = await setupHarness({
+        claudeOptions,
+        sharedOptions: { ...sharedOptions, endSessionTool: true },
+        executionMode: 'planning',
+      });
+
+      await harness.execute();
+
+      expect(harness.setupPermissionsMcpMock).toHaveBeenCalledTimes(1);
+      const setupOptions = (harness.setupPermissionsMcpMock.mock.calls[0] as unknown[])[0] as {
+        endSessionHandler?: (args: { reason: string }) => void;
+        allowedTools: string[];
+      };
+      expect(setupOptions.endSessionHandler).toBeTypeOf('function');
+      expect(setupOptions.allowedTools).toContain('mcp__tim__EndTimSession');
+
+      const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+      expect(args).toContain('--mcp-config');
+      const allowedToolsIndex = args.indexOf('--allowedTools');
+      expect(allowedToolsIndex).toBeGreaterThan(-1);
+      expect(args[allowedToolsIndex + 1]?.split(',')).toContain('mcp__tim__EndTimSession');
+
+      // The handler only marks the execution to end after the current turn.
+      const terminalInput = harness.executeWithTerminalInputMock.mock.results[0]?.value as {
+        requestEndAfterCurrentTurn: ReturnType<typeof vi.fn>;
+        cleanup: ReturnType<typeof vi.fn>;
+      };
+      const cleanupCallsBefore = terminalInput.cleanup.mock.calls.length;
+      setupOptions.endSessionHandler?.({ reason: 'done' });
+      expect(terminalInput.requestEndAfterCurrentTurn).toHaveBeenCalledTimes(1);
+      expect(terminalInput.cleanup.mock.calls.length).toBe(cleanupCallsBefore);
+    }
+  );
+
+  test('does not install the bridge or allow EndTimSession without endSessionTool', async () => {
+    const harness = await setupHarness({
+      sharedOptions: { noninteractive: true },
+      executionMode: 'planning',
+    });
+
+    await harness.execute();
+
+    expect(harness.setupPermissionsMcpMock).not.toHaveBeenCalled();
+    const args = harness.spawnWithStreamingIOMock.mock.calls[0]?.[0] as string[];
+    expect(args.join(' ')).not.toContain('mcp__tim__EndTimSession');
+  });
 
   test('passes the original user MCP config directly when no internal bridge is needed', async () => {
     const harness = await setupHarness({

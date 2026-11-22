@@ -19,6 +19,7 @@ import type {
   AgentIdentity,
 } from '../../agent_messaging/agent_manager_types.js';
 import type { AgentManager } from '../../agent_messaging/agent_manager.js';
+import { END_SESSION_TOOL_NAME } from '../shared/end_session_tool.js';
 
 export const CLAUDE_MCP_SERVER_NAME = 'tim';
 export const CLAUDE_APPROVAL_TOOL_NAME = 'approval_prompt';
@@ -40,6 +41,9 @@ export function getClaudeAgentToolNames(
 export function getClaudeAgentMcpToolId(toolName: ClaudeAgentToolName): string {
   return `mcp__${CLAUDE_MCP_SERVER_NAME}__${toolName}`;
 }
+
+/** Full Claude tool id for the session-control `EndTimSession` tool. */
+export const CLAUDE_END_SESSION_MCP_TOOL_ID = `mcp__${CLAUDE_MCP_SERVER_NAME}__${END_SESSION_TOOL_NAME}`;
 
 export const claudeRequestIdSchema = z.string().min(1).max(200);
 const unknownObjectSchema = z.object({}).passthrough();
@@ -64,9 +68,24 @@ export const agentToolRequestSchema = z
   .strict();
 export type AgentToolRequest = z.infer<typeof agentToolRequestSchema>;
 
+/**
+ * Session-control tool call. The parent validates `input` again with the shared tool schema
+ * and calls its trusted executor-side handler.
+ */
+export const sessionToolRequestSchema = z
+  .object({
+    type: z.literal('session_tool_request'),
+    requestId: claudeRequestIdSchema,
+    tool_name: z.literal(END_SESSION_TOOL_NAME),
+    input: z.unknown(),
+  })
+  .strict();
+export type SessionToolRequest = z.infer<typeof sessionToolRequestSchema>;
+
 export const claudeMcpRequestSchema = z.discriminatedUnion('type', [
   permissionRequestSchema,
   agentToolRequestSchema,
+  sessionToolRequestSchema,
 ]);
 export type ClaudeMcpRequest = z.infer<typeof claudeMcpRequestSchema>;
 
@@ -102,9 +121,32 @@ export const agentToolResponseSchema = z.discriminatedUnion('success', [
 ]);
 export type AgentToolResponse = z.infer<typeof agentToolResponseSchema>;
 
+const successfulSessionToolResponseSchema = z
+  .object({
+    type: z.literal('session_tool_response'),
+    requestId: claudeRequestIdSchema,
+    success: z.literal(true),
+    result: z.string(),
+  })
+  .strict();
+const failedSessionToolResponseSchema = z
+  .object({
+    type: z.literal('session_tool_response'),
+    requestId: claudeRequestIdSchema,
+    success: z.literal(false),
+    error: z.string().min(1),
+  })
+  .strict();
+export const sessionToolResponseSchema = z.discriminatedUnion('success', [
+  successfulSessionToolResponseSchema,
+  failedSessionToolResponseSchema,
+]);
+export type SessionToolResponse = z.infer<typeof sessionToolResponseSchema>;
+
 export const claudeMcpResponseSchema = z.discriminatedUnion('type', [
   permissionResponseSchema,
   agentToolResponseSchema,
+  sessionToolResponseSchema,
 ]);
 export type ClaudeMcpResponse = z.infer<typeof claudeMcpResponseSchema>;
 

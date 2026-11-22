@@ -42,6 +42,11 @@ import {
   type SessionLogicalExecutorLifecycle,
 } from '../../../common/session_process_control.js';
 import { CodexRootSteeringBridge } from './codex_root_steering_bridge.js';
+import {
+  createEndSessionToolProvider,
+  mergeCodexDynamicToolProviders,
+} from './end_session_dynamic_tool.js';
+import { END_SESSION_TOOL_NAME } from '../shared/end_session_tool.js';
 
 class SessionEndedError extends Error {
   constructor() {
@@ -159,9 +164,9 @@ async function executeCodexStepViaAppServerInternal(
   timConfig: TimConfig,
   options?: CodexStepOptions
 ): Promise<string> {
-  const dynamicToolProvider = options?.dynamicToolProvider;
-  if (dynamicToolProvider) {
-    validateCodexDynamicToolProvider(dynamicToolProvider);
+  const callerDynamicToolProvider = options?.dynamicToolProvider;
+  if (callerDynamicToolProvider) {
+    validateCodexDynamicToolProvider(callerDynamicToolProvider);
     if (!isCodexAppServerEnabled()) {
       throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
     }
@@ -202,6 +207,26 @@ async function executeCodexStepViaAppServerInternal(
     terminalInputEnabled || tunnelForwardingEnabled || headlessForwardingEnabled;
   const rootInputRequested = options?.orchestratorInputAdapter !== undefined;
   const keepSessionOpen = appServerMode === 'chat-session' && hasInteractiveInputSource;
+  // EndTimSession only makes sense when the session would otherwise wait for more user input.
+  const endSessionToolEnabled = options?.endSessionTool === true && keepSessionOpen;
+  // Set by the EndTimSession tool. The session closes when the current turn completes.
+  let closeAfterTurnRequested = false;
+  let closedAfterTurn = false;
+  let closeInputAfterTurn: () => void = () => {};
+  const endSessionToolProvider = endSessionToolEnabled
+    ? createEndSessionToolProvider(({ reason }) => {
+        if (!closeAfterTurnRequested) {
+          log(`${END_SESSION_TOOL_NAME}: the session will end after this turn. Reason: ${reason}`);
+        }
+        closeAfterTurnRequested = true;
+      })
+    : undefined;
+  // The dynamic tool provider that is currently installed. The compatibility fallback can
+  // remove a runner-owned provider; a caller provider is never removed.
+  let dynamicToolProvider: CodexDynamicToolProvider | undefined =
+    callerDynamicToolProvider && endSessionToolProvider
+      ? mergeCodexDynamicToolProviders([callerDynamicToolProvider, endSessionToolProvider])
+      : (callerDynamicToolProvider ?? endSessionToolProvider);
   const singleTurnSteeringEnabled =
     appServerMode === 'single-turn-with-steering' &&
     (hasInteractiveInputSource || rootInputRequested);
@@ -412,9 +437,12 @@ async function executeCodexStepViaAppServerInternal(
       };
     }
     throwIfSessionEndRequested();
-    const connectionPromise = CodexAppServerConnection.create({
+    // The experimental API is requested per attempt, so the compatibility fallback can drop it.
+    const connectionOptions: Omit<
+      Parameters<typeof CodexAppServerConnection.create>[0],
+      'experimentalApi'
+    > = {
       cwd,
-      ...(dynamicToolProvider ? { experimentalApi: true } : {}),
       sessionProcessLabel: 'Codex app-server',
       env: {
         TIM_EXECUTOR: 'codex',
@@ -456,6 +484,7 @@ async function executeCodexStepViaAppServerInternal(
           resolveCurrentTurnStatus(notification.turnStatus);
           currentAttemptActive = false;
           clearInactivityTimer();
+          closeInputAfterTurn();
         } else if (keepSessionOpen && method === 'thread/status/changed') {
           if (notification.threadStatusType === 'idle') {
             emitChatTurnReady();
@@ -463,6 +492,7 @@ async function executeCodexStepViaAppServerInternal(
             resolveCurrentTurnStatus('completed');
             currentAttemptActive = false;
             clearInactivityTimer();
+            closeInputAfterTurn();
           }
         } else if (method === 'turn/started') {
           currentTurnId = notification.turnId ?? currentTurnId;
@@ -470,10 +500,41 @@ async function executeCodexStepViaAppServerInternal(
           chatTurnId = currentTurnId ?? chatTurnId;
         }
       },
-      onServerRequest: createAppServerRequestHandler(dynamicToolProvider, approvalHandler),
-    });
+      // Read the provider at call time, so the compatibility fallback can remove it.
+      onServerRequest: (method, id, params) =>
+        createAppServerRequestHandler(dynamicToolProvider, approvalHandler)(method, id, params),
+    };
+    const createConnection = (): Promise<CodexAppServerConnection> =>
+      CodexAppServerConnection.create({
+        ...connectionOptions,
+        ...(dynamicToolProvider ? { experimentalApi: true } : {}),
+      });
 
-    connection = await connectionPromise;
+    const dropEndSessionToolAfterCompatibilityError = (err: unknown): boolean => {
+      if (
+        !(err instanceof CodexDynamicToolsCompatibilityError) ||
+        callerDynamicToolProvider ||
+        !endSessionToolProvider ||
+        dynamicToolProvider !== endSessionToolProvider
+      ) {
+        return false;
+      }
+      warn(
+        `Codex app-server does not support experimental dynamic tools; continuing without the ${END_SESSION_TOOL_NAME} tool.`
+      );
+      debugLog('Codex dynamic tools compatibility failure:', err);
+      dynamicToolProvider = undefined;
+      return true;
+    };
+
+    try {
+      connection = await createConnection();
+    } catch (err) {
+      if (!dropEndSessionToolAfterCompatibilityError(err)) {
+        throw err;
+      }
+      connection = await createConnection();
+    }
     throwIfSessionEndRequested();
 
     connection.setGracefulEndHandler(endActiveSession);
@@ -487,17 +548,26 @@ async function executeCodexStepViaAppServerInternal(
       });
     }
 
-    const threadResult = await startInitialThread(
-      connection,
-      {
-        cwd,
-        approvalPolicy,
-        ...(sandbox ? { sandbox } : {}),
-        model,
-        ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
-      },
-      dynamicToolProvider
-    );
+    const buildInitialThreadParams = (): ThreadStartParams => ({
+      cwd,
+      approvalPolicy,
+      ...(sandbox ? { sandbox } : {}),
+      model,
+      ...(dynamicToolProvider ? { dynamicTools: dynamicToolProvider.definitions } : {}),
+    });
+    let threadResult: ThreadResult;
+    try {
+      threadResult = await startInitialThread(
+        connection,
+        buildInitialThreadParams(),
+        dynamicToolProvider
+      );
+    } catch (err) {
+      if (!dropEndSessionToolAfterCompatibilityError(err)) {
+        throw err;
+      }
+      threadResult = await startInitialThread(connection, buildInitialThreadParams(), undefined);
+    }
     threadId = threadResult.threadId;
     connection.updateMetadata({ threadId });
     const activeConnection = connection;
@@ -745,6 +815,16 @@ async function executeCodexStepViaAppServerInternal(
       let clearTunnelUserInputHandler: () => void = () => {};
       let clearHeadlessUserInputHandler: () => void = () => {};
 
+      // Called when a chat turn completes. If EndTimSession was called during the turn, close
+      // the input without an interrupt, so the loop below exits with the final agent message.
+      closeInputAfterTurn = () => {
+        if (!closeAfterTurnRequested || closedAfterTurn) {
+          return;
+        }
+        closedAfterTurn = true;
+        inputQueue.close();
+      };
+
       if (prompt.trim().length > 0) {
         inputQueue.push(prompt);
       }
@@ -844,7 +924,9 @@ async function executeCodexStepViaAppServerInternal(
           throwIfConnectionExited();
           throwIfSessionEndRequested();
           const nextInput = await inputQueue.next();
-          if (nextInput == null) {
+          // Input that was queued before the tool-requested close is discarded, so it cannot
+          // start a new turn and keep the session open.
+          if (nextInput == null || closedAfterTurn) {
             break;
           }
 
@@ -853,6 +935,7 @@ async function executeCodexStepViaAppServerInternal(
         }
         throwIfSessionEndRequested();
       } finally {
+        closeInputAfterTurn = () => {};
         terminalInputReader?.stop();
         clearTunnelUserInputHandler();
         clearHeadlessUserInputHandler();

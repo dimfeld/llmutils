@@ -37,6 +37,7 @@ import { LifecycleManager } from '../lifecycle.js';
 import { isShuttingDown } from '../shutdown_state.js';
 import { TMP_DIR } from '../plan_materialize.js';
 import {
+  buildEndSessionInstructions,
   buildJjBookmarkConflictInstructions,
   buildRebaseInstructions,
   detectPrFixRebaseStatus,
@@ -83,6 +84,8 @@ export interface CiFixPromptOptions {
   rebaseStatus?: PrFixRebaseStatus;
   /** Branches of the open PRs stacked on this PR. Undefined when they are not known. */
   knownStackedBranches?: StackedBranch[];
+  /** Set when the agent has the `EndTimSession` tool. */
+  endSessionTool?: boolean;
 }
 
 function resolveStringOption(value: unknown): string | undefined {
@@ -372,6 +375,16 @@ export function buildCiFixPrompt(
     ...buildJjBookmarkConflictInstructions()
   );
 
+  if (options.endSessionTool) {
+    prompt.push(
+      ...buildEndSessionInstructions([
+        'Every failure of a required check was fixed with a deterministic and obvious fix, as described in step 2, or the only action was to re-run a check.',
+        'You did not change the runtime behavior of the code in a way that the user would want to review.',
+        'The relevant local checks and tests pass.',
+      ])
+    );
+  }
+
   return prompt.join('\n');
 }
 
@@ -566,6 +579,7 @@ export async function executeCiFixCommand({
       noRequiredConfig: selectedChecks.noRequiredConfig,
       rebaseStatus,
       knownStackedBranches: findKnownStackedBranches(db, [currentTarget.prStatus]),
+      endSessionTool: true,
     });
     const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
       config,
@@ -593,6 +607,7 @@ export async function executeCiFixCommand({
       noninteractive: noninteractive ? true : undefined,
       terminalInput: terminalInputEnabled,
       closeTerminalInputOnResult: false,
+      endSessionTool: true,
       disableInactivityTimeout: true,
       timEnvironment,
     };

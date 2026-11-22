@@ -84,6 +84,15 @@ SIGTERM (`stopActiveSessionForShutdown`) and the headless `setEndSessionHandler`
 
 When an interactive input source keeps stdin open past the result (`keepInteractiveInputOpenOnResult`), `onResultMessage()` calls `acceptResultWithoutClosing()` instead of closing. The tracker records whether the accepted final result was successful (`acceptedSuccessfulFinalResult()`), which callers use to decide turn-completion status without prematurely closing stdin. Continuations (follow-up prompts, fast-no-op retry) call `onContinuationStarted()` to clear the intercepted result window while preserving the current background-task status. The `streaming.result.finally(...)` close remains only a backstop — never the primary close decision (preserving the close-on-result-not-after-await invariant).
 
+### Close after the current turn (`EndTimSession`)
+
+`ExecuteWithTerminalInputResult.requestEndAfterCurrentTurn()` is the deferred version of `endSession()`. The Claude `EndTimSession` MCP tool calls it (see [claude-mcp-bridge.md](claude-mcp-bridge.md)). The call comes from inside the current turn, so it must not close stdin: Claude would then lose the tool result and the final assistant message. The method does these things:
+
+1. It sets a flag and clears the tunnel and headless user-input handlers at once, so remote input cannot start a new turn. It does not stop the terminal reader and does not close stdin. The headless end-session and force-end handlers stay installed.
+2. On the next `onResultMessage()` (the result of the current turn), the flag makes the call skip the `keepInteractiveInputOpenOnResult && hasInteractiveInputSource()` branch. The call uses the normal close path instead: `externalActivityChanged()` and then `tracker.onResultMessage()`. Thus running background tasks or external activity still delay the close, the drain grace and stall rules still apply, and `acceptedSuccessfulFinalResult()` records the result as usual.
+
+Without an interactive input source, the result closes stdin anyway, so the call has no effect. After `cleanup()` it does nothing. The persistent-agent lifecycle implements the method as a no-op, because its turn controller owns the close policy and persistent agents do not get the tool.
+
 ## Terminal Input Reader
 
 The `TerminalInputReader` manages a readline interface for interactive user input during agent execution.

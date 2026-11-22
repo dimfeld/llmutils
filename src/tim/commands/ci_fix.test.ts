@@ -473,6 +473,13 @@ describe('tim/commands/ci_fix', () => {
     expect(prompt).not.toContain('rebase this branch');
   });
 
+  test('adds the end session section only when the tool is enabled', () => {
+    expect(buildCiFixPrompt(makeTarget(), [])).not.toContain('## Ending the Session');
+    const prompt = buildCiFixPrompt(makeTarget(), [], { endSessionTool: true });
+    expect(prompt).toContain('## Ending the Session');
+    expect(prompt).toContain('EndTimSession');
+  });
+
   test('adds rebase instructions before CI fixes when the branch is behind its base', () => {
     const prompt = buildCiFixPrompt(makeTarget(), [], { rebaseStatus: { baseBranch: 'main' } });
 
@@ -689,6 +696,7 @@ describe('tim/commands/ci_fix', () => {
         model: 'config-model',
         noninteractive: true,
         terminalInput: false,
+        endSessionTool: true,
       }),
       state.config,
       expect.objectContaining({ reasoning: { default: 'low' } })

@@ -839,6 +839,134 @@ describe('terminal_input_lifecycle', () => {
     controller.cleanup();
   });
 
+  describe('requestEndAfterCurrentTurn', () => {
+    function makeInteractiveController(
+      stdinEndSpy: () => Promise<void>,
+      stopSpy: () => void
+    ): ReturnType<typeof executeWithTerminalInput> {
+      mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+      mockSendFollowUpMessage.mockImplementation(vi.fn(() => {}));
+      mockTerminalInputReaderFactory = (_options: TerminalInputReaderOptions) => ({
+        start: () => true,
+        stop: stopSpy,
+      });
+
+      return executeWithTerminalInput({
+        streaming: makeStreaming({
+          stdinEnd: stdinEndSpy,
+          result: new Promise<SpawnAndLogOutputResult>(() => {}),
+        }),
+        prompt: 'initial prompt',
+        sendStructured: vi.fn(() => {}),
+        debugLog: vi.fn(() => {}),
+        errorLog: vi.fn(() => {}),
+        log: vi.fn(() => {}),
+        label: 'Claude',
+        terminalInputEnabled: true,
+        tunnelForwardingEnabled: false,
+        keepInteractiveInputOpenOnResult: true,
+      });
+    }
+
+    it('does not close stdin until the next result, then closes even with keep-open', () => {
+      const stdinEndSpy = vi.fn(async () => {});
+      const stopSpy = vi.fn(() => {});
+      const controller = makeInteractiveController(stdinEndSpy, stopSpy);
+
+      controller.requestEndAfterCurrentTurn();
+
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+      expect(stopSpy).toHaveBeenCalledTimes(0);
+      expect(controller.inputIsClosed()).toBe(false);
+
+      // The rest of the current turn still runs.
+      controller.observeFormattedMessage({ type: 'assistant' });
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      controller.onResultMessage(true);
+
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+      expect(stopSpy).toHaveBeenCalled();
+      expect(controller.inputIsClosed()).toBe(true);
+      expect(controller.acceptedSuccessfulFinalResult()).toBe(true);
+
+      controller.cleanup();
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps stdin open after the result while background tasks run', () => {
+      vi.useFakeTimers();
+      const stdinEndSpy = vi.fn(async () => {});
+      const controller = makeInteractiveController(
+        stdinEndSpy,
+        vi.fn(() => {})
+      );
+
+      controller.requestEndAfterCurrentTurn();
+      controller.observeFormattedMessage({
+        type: 'system',
+        backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: true },
+      });
+      controller.onResultMessage(true);
+
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      controller.observeFormattedMessage({
+        type: 'system',
+        backgroundActivity: { kind: 'background_tasks_changed', hasRunningTasks: false },
+      });
+      vi.advanceTimersByTime(10_000);
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+      controller.cleanup();
+    });
+
+    it('is a harmless no-op without an interactive input source', () => {
+      const stdinEndSpy = vi.fn(async () => {});
+      mockSendInitialPrompt.mockImplementation(vi.fn(() => {}));
+
+      const controller = executeWithTerminalInput({
+        streaming: makeStreaming({
+          stdinEnd: stdinEndSpy,
+          result: new Promise<SpawnAndLogOutputResult>(() => {}),
+        }),
+        prompt: 'initial prompt',
+        sendStructured: vi.fn(() => {}),
+        debugLog: vi.fn(() => {}),
+        errorLog: vi.fn(() => {}),
+        log: vi.fn(() => {}),
+        label: 'Claude',
+        terminalInputEnabled: false,
+        tunnelForwardingEnabled: false,
+        keepInteractiveInputOpenOnResult: true,
+      });
+
+      controller.requestEndAfterCurrentTurn();
+      controller.requestEndAfterCurrentTurn();
+      expect(stdinEndSpy).toHaveBeenCalledTimes(0);
+
+      controller.onResultMessage(true);
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+      controller.cleanup();
+    });
+
+    it('does nothing after cleanup', () => {
+      const stdinEndSpy = vi.fn(async () => {});
+      const controller = makeInteractiveController(
+        stdinEndSpy,
+        vi.fn(() => {})
+      );
+
+      controller.cleanup();
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+
+      controller.requestEndAfterCurrentTurn();
+      controller.onResultMessage(true);
+      expect(stdinEndSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('uses the explicit persistent policy as the only stdin owner', () => {
     const stdinEndSpy = vi.fn(async () => {});
     const pendingResult = new Promise<SpawnAndLogOutputResult>(() => {});

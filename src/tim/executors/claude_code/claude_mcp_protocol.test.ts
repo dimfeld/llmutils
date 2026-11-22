@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as net from 'node:net';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { cleanupForTests, createClaudeMcpServer, setParentSocket } from './tim_mcp.js';
 import { AGENT_TOOL_DESCRIPTIONS, AGENT_TOOL_NAMES } from '../../agent_messaging/contracts.js';
 import {
@@ -12,6 +15,15 @@ import {
   claudeMcpResponseSchema,
   permissionRequestSchema,
 } from './claude_mcp_protocol.js';
+import {
+  closeClaudeMcpParentServer,
+  createClaudeMcpParentServer,
+} from './claude_mcp_parent_server.js';
+import {
+  END_SESSION_TOOL_DESCRIPTION,
+  END_SESSION_TOOL_NAME,
+  END_SESSION_TOOL_RESULT_TEXT,
+} from '../shared/end_session_tool.js';
 
 describe('Claude tim MCP child server', () => {
   afterEach(() => {
@@ -537,6 +549,124 @@ describe('Claude tim MCP child server', () => {
       socket.destroy();
       await closeServer(parentServer);
     }
+  });
+
+  test('advertises EndTimSession only when the manifest enables it', () => {
+    expect(createClaudeMcpServer({ interactiveApprovalEnabled: false }).toolNames).toEqual([]);
+    expect(
+      createClaudeMcpServer({ interactiveApprovalEnabled: false, endSessionToolEnabled: false })
+        .toolNames
+    ).toEqual([]);
+
+    const enabled = createClaudeMcpServer({
+      interactiveApprovalEnabled: true,
+      agentToolNames: ['ListTimAgents'],
+      endSessionToolEnabled: true,
+    });
+    expect(enabled.toolNames).toEqual(['approval_prompt', 'ListTimAgents', END_SESSION_TOOL_NAME]);
+    expect(enabled.toolDescriptions.get(END_SESSION_TOOL_NAME)).toBe(END_SESSION_TOOL_DESCRIPTION);
+  });
+
+  test('round-trips EndTimSession through the real parent router', async () => {
+    const child = createClaudeMcpServer({
+      interactiveApprovalEnabled: false,
+      endSessionToolEnabled: true,
+    });
+    const execute = child.toolExecutors.get(END_SESSION_TOOL_NAME);
+    expect(execute).toBeDefined();
+
+    const reasons: string[] = [];
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-end-session-test-'));
+    const resources = await createClaudeMcpParentServer(path.join(tempDir, 'parent.sock'), {
+      allowedToolsMap: new Map(),
+      interactiveApprovalEnabled: false,
+      endSessionHandler: ({ reason }) => {
+        reasons.push(reason);
+      },
+      handlePermissionRequest: async () => {},
+    });
+    const socket = net.createConnection(path.join(tempDir, 'parent.sock'));
+    try {
+      await onceConnected(socket);
+      setParentSocket(socket);
+
+      await expect(execute!({ reason: 'Work is pushed' })).resolves.toEqual({
+        content: [{ type: 'text', text: END_SESSION_TOOL_RESULT_TEXT }],
+      });
+      expect(reasons).toEqual(['Work is pushed']);
+
+      await expect(execute!({ reason: '' })).resolves.toMatchObject({ isError: true });
+      expect(reasons).toEqual(['Work is pushed']);
+    } finally {
+      socket.destroy();
+      await closeClaudeMcpParentServer(resources);
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('renders EndTimSession as an error when the parent has no handler', async () => {
+    const child = createClaudeMcpServer({
+      interactiveApprovalEnabled: false,
+      endSessionToolEnabled: true,
+    });
+    const execute = child.toolExecutors.get(END_SESSION_TOOL_NAME);
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-end-session-test-'));
+    const resources = await createClaudeMcpParentServer(path.join(tempDir, 'parent.sock'), {
+      allowedToolsMap: new Map(),
+      interactiveApprovalEnabled: false,
+      handlePermissionRequest: async () => {},
+    });
+    const socket = net.createConnection(path.join(tempDir, 'parent.sock'));
+    try {
+      await onceConnected(socket);
+      setParentSocket(socket);
+
+      const result = (await execute!({ reason: 'done' })) as {
+        content: Array<{ text: string }>;
+        isError?: boolean;
+      };
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain(END_SESSION_TOOL_NAME);
+    } finally {
+      socket.destroy();
+      await closeClaudeMcpParentServer(resources);
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('validates session-tool envelopes', () => {
+    expect(
+      claudeMcpRequestSchema.safeParse({
+        type: 'session_tool_request',
+        requestId: 'r1',
+        tool_name: END_SESSION_TOOL_NAME,
+        input: { reason: 'done' },
+      }).success
+    ).toBe(true);
+    expect(
+      claudeMcpRequestSchema.safeParse({
+        type: 'session_tool_request',
+        requestId: 'r1',
+        tool_name: 'ListTimAgents',
+        input: {},
+      }).success
+    ).toBe(false);
+    expect(
+      claudeMcpResponseSchema.safeParse({
+        type: 'session_tool_response',
+        requestId: 'r1',
+        success: true,
+        result: 'ok',
+      }).success
+    ).toBe(true);
+    expect(
+      claudeMcpResponseSchema.safeParse({
+        type: 'session_tool_response',
+        requestId: 'r1',
+        success: false,
+      }).success
+    ).toBe(false);
   });
 
   test('clears a pending request timer when the child bridge is cleaned up', async () => {

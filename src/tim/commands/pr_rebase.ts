@@ -51,7 +51,10 @@ import {
   type PrFixTarget,
   type PullRequestFixTarget,
 } from './pr.js';
-import { buildJjBookmarkConflictInstructions } from './pr_fix_rebase.js';
+import {
+  buildEndSessionInstructions,
+  buildJjBookmarkConflictInstructions,
+} from './pr_fix_rebase.js';
 import { tryCleanStackRebase } from './pr_stack_rebase.js';
 
 interface RootCommandLike {
@@ -93,6 +96,8 @@ export interface PrRebasePromptOptions {
    * rebase starts at the root of the stack (`target`).
    */
   requestedPr?: Pick<PullRequestFixTarget, 'prNumber' | 'headBranch' | 'canonicalPrUrl'>;
+  /** Set when the agent has the `EndTimSession` tool. */
+  endSessionTool?: boolean;
 }
 
 export function buildPrRebasePrompt(
@@ -193,6 +198,16 @@ export function buildPrRebasePrompt(
 
   if (usingJj) {
     prompt.push(...buildJjBookmarkConflictInstructions());
+  }
+
+  if (options.endSessionTool) {
+    prompt.push(
+      ...buildEndSessionInstructions([
+        'The rebase is complete, and every branch that you had to rebase is pushed.',
+        'Each conflict resolution kept the intent of both sides, and no resolution required a choice between different behaviors.',
+        'Type checking, linting, and the relevant tests pass on the rebased branches.',
+      ])
+    );
   }
 
   return prompt.join('\n');
@@ -478,6 +493,7 @@ export async function executePrRebaseCommand({
 
     const rebasePrompt = buildPrRebasePrompt(rebaseTarget, usingJj, stackedBranches, {
       requestedPr: rebaseTarget === prTarget ? undefined : prTarget,
+      endSessionTool: true,
     });
     const timEnvironment = buildTimWorkspaceCommandEnvironmentOptionsForPath(
       config,
@@ -492,6 +508,7 @@ export async function executePrRebaseCommand({
       noninteractive: noninteractive ? true : undefined,
       terminalInput: terminalInputEnabled,
       closeTerminalInputOnResult: false,
+      endSessionTool: true,
       disableInactivityTimeout: true,
       timEnvironment,
     };

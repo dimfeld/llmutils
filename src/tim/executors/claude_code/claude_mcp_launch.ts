@@ -1,8 +1,10 @@
 import * as path from 'node:path';
 
 import { setupPermissionsMcp } from './permissions_mcp_setup.js';
+import type { EndSessionToolHandler } from '../shared/end_session_tool.js';
 import {
   CLAUDE_APPROVAL_MCP_TOOL_ID,
+  CLAUDE_END_SESSION_MCP_TOOL_ID,
   getClaudeAgentMcpToolId,
   type ClaudeAgentToolContext,
   type ClaudePermissionPromptCoordinator,
@@ -24,11 +26,17 @@ export interface ClaudeMcpLaunchOptions {
   readonly trackedFiles: Set<string>;
   readonly agentToolContext?: ClaudeAgentToolContext;
   readonly permissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
+  /**
+   * Trusted handler for the `EndTimSession` tool. When set, the bridge is installed (also in
+   * allow-all and noninteractive runs) and the tool is allowed.
+   */
+  readonly endSessionHandler?: EndSessionToolHandler;
 }
 
 export interface ClaudeMcpCapabilities {
   readonly interactiveApprovalEnabled: boolean;
   readonly agentToolsEnabled: boolean;
+  readonly endSessionToolEnabled: boolean;
   readonly internalMcpNeeded: boolean;
   readonly agentToolIds: string[];
 }
@@ -65,16 +73,19 @@ export function resolveClaudeMcpCapabilities(options: {
   readonly noninteractive: boolean;
   readonly agentToolContext: ClaudeAgentToolContext | undefined;
   readonly disallowedTools: readonly string[] | undefined;
+  readonly endSessionToolEnabled?: boolean;
 }): ClaudeMcpCapabilities {
   const interactiveApprovalEnabled =
     options.interactiveApprovalRequested && !options.allowAllTools && !options.noninteractive;
   const agentToolsEnabled = options.agentToolContext !== undefined;
   const agentToolIds = getAgentToolIds(options.agentToolContext);
   validateAgentToolDisallowConflict(options.agentToolContext, options.disallowedTools);
+  const endSessionToolEnabled = options.endSessionToolEnabled === true;
   return {
     interactiveApprovalEnabled,
     agentToolsEnabled,
-    internalMcpNeeded: interactiveApprovalEnabled || agentToolsEnabled,
+    endSessionToolEnabled,
+    internalMcpNeeded: interactiveApprovalEnabled || agentToolsEnabled || endSessionToolEnabled,
     agentToolIds,
   };
 }
@@ -89,8 +100,13 @@ export async function prepareClaudeMcpLaunch(
     noninteractive: options.noninteractive,
     agentToolContext: options.agentToolContext,
     disallowedTools: options.disallowedTools,
+    endSessionToolEnabled: options.endSessionHandler !== undefined,
   });
-  const allowedTools = [...options.allowedTools, ...capabilities.agentToolIds];
+  const allowedTools = [
+    ...options.allowedTools,
+    ...capabilities.agentToolIds,
+    ...(capabilities.endSessionToolEnabled ? [CLAUDE_END_SESSION_MCP_TOOL_ID] : []),
+  ];
 
   if (!capabilities.internalMcpNeeded) {
     return { capabilities, allowedTools };
@@ -110,6 +126,7 @@ export async function prepareClaudeMcpLaunch(
     interactiveApprovalEnabled: capabilities.interactiveApprovalEnabled,
     agentToolContext: options.agentToolContext,
     permissionPromptCoordinator: options.permissionPromptCoordinator,
+    endSessionHandler: options.endSessionHandler,
   });
 
   return {

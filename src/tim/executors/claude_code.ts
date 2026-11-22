@@ -41,6 +41,7 @@ import {
   type ClaudeMcpLaunchResult,
 } from './claude_code/claude_mcp_launch.js';
 import { executeWithTerminalInput } from './claude_code/terminal_input_lifecycle.ts';
+import type { EndSessionToolHandler } from './shared/end_session_tool.ts';
 import { createOrderedClaudeCleanup } from './claude_code/claude_execution_cleanup.js';
 import { loadClaudeProjectPermissionSettings } from './claude_code/project_permission_settings.js';
 import {
@@ -670,6 +671,14 @@ export class ClaudeCodeExecutor implements Executor {
     });
 
     const agentToolContext = this.sharedOptions.claudeAgentToolContext;
+    let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
+    const endSessionHandler: EndSessionToolHandler | undefined =
+      this.sharedOptions.endSessionTool === true
+        ? ({ reason }): void => {
+            log(`Agent requested to end the session after this turn: ${reason}`);
+            terminalInputResult?.requestEndAfterCurrentTurn();
+          }
+        : undefined;
     const mcpLaunch: ClaudeMcpLaunchResult = await prepareClaudeMcpLaunch({
       cwd: gitRoot,
       allowedTools: baseAllowedTools,
@@ -682,6 +691,7 @@ export class ClaudeCodeExecutor implements Executor {
       trackedFiles: this.trackedFiles,
       agentToolContext,
       permissionPromptCoordinator: this.sharedOptions.claudePermissionPromptCoordinator,
+      endSessionHandler,
     });
     interactiveApprovalEnabled = mcpLaunch.capabilities.interactiveApprovalEnabled;
     const tempMcpConfigDir = mcpLaunch.tempDir;
@@ -699,7 +709,6 @@ export class ClaudeCodeExecutor implements Executor {
     // The orchestrator prompt references `tim subagent` Bash commands instead.
     // Other modes (bare, planning, review) also don't use agent definitions.
 
-    let terminalInputResult: ReturnType<typeof executeWithTerminalInput> | undefined;
     let rootInputAdapter: CallbackAgentInputAdapter | undefined;
     let monitorHandle: SubprocessMonitorHandle | undefined;
     let sessionProcessLifecycle: SessionExecutorLifecycle | undefined;

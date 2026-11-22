@@ -75,4 +75,48 @@ describe('Codex CLI bare mode', () => {
     expect(result?.content).toBe('BARE MODE OUTPUT');
     expect(result?.metadata?.phase).toBe('bare');
   });
+
+  test('passes endSessionTool into the Codex step options', async () => {
+    const { executeBareMode } = await import('./codex_cli/bare_mode.js');
+    const { executeCodexStep } = await import('./codex_cli/codex_runner.js');
+
+    await executeBareMode(
+      'BARE PROMPT CONTENT',
+      {
+        planId: 'bare-plan',
+        planTitle: 'Bare Plan',
+        planFilePath: '/tmp/repo-bare/plan.yml',
+        executionMode: 'planning',
+      },
+      '/tmp/repo-bare',
+      undefined,
+      {},
+      { appServerMode: 'chat-session', endSessionTool: true }
+    );
+
+    expect(vi.mocked(executeCodexStep).mock.calls[0]?.[3]).toEqual(
+      expect.objectContaining({ appServerMode: 'chat-session', endSessionTool: true })
+    );
+  });
+
+  test('does not set endSessionTool in the Codex step options when it is not requested', async () => {
+    const { executeBareMode } = await import('./codex_cli/bare_mode.js');
+    const { executeCodexStep } = await import('./codex_cli/codex_runner.js');
+
+    await executeBareMode(
+      'BARE PROMPT CONTENT',
+      {
+        planId: 'bare-plan',
+        planTitle: 'Bare Plan',
+        planFilePath: '/tmp/repo-bare/plan.yml',
+        executionMode: 'bare',
+      },
+      '/tmp/repo-bare',
+      undefined,
+      {},
+      { appServerMode: 'chat-session' }
+    );
+
+    expect(vi.mocked(executeCodexStep).mock.calls[0]?.[3]).not.toHaveProperty('endSessionTool');
+  });
 });

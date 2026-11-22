@@ -4,6 +4,7 @@ import * as fs from 'node:fs/promises';
 import { setupPermissionsMcp, validateClaudeAgentToolContext } from './permissions_mcp_setup.js';
 import {
   CLAUDE_AGENT_TOOL_NAMES,
+  CLAUDE_MCP_SERVER_NAME,
   CLAUDE_ORCHESTRATOR_TOOL_NAMES,
   CLAUDE_SUBAGENT_TOOL_NAMES,
   createClaudeAgentToolDispatcher,
@@ -11,6 +12,7 @@ import {
   type ClaudeAgentToolContext,
 } from './claude_mcp_protocol.js';
 import type { AgentManager } from '../../agent_messaging/agent_manager.js';
+import { END_SESSION_TOOL_NAME, END_SESSION_TOOL_RESULT_TEXT } from '../shared/end_session_tool.js';
 import type { AgentId, AgentName } from '../../agent_messaging/agent_names.js';
 
 type TestSocket = {
@@ -789,6 +791,145 @@ describe('Claude MCP parent agent-tool router', () => {
 
     expect(cancelled).toHaveLength(2);
     expect(new Set(cancelled).size).toBe(2);
+  });
+});
+
+describe('Claude MCP parent session-tool router', () => {
+  const cleanups: Array<() => Promise<void>> = [];
+
+  afterEach(async () => {
+    for (const cleanup of cleanups.splice(0)) await cleanup();
+  });
+
+  async function readChildManifest(tempDir: string): Promise<unknown> {
+    const config = JSON.parse(await fs.readFile(`${tempDir}/mcp-config.json`, 'utf8')) as {
+      mcpServers: Record<string, { args: string[] }>;
+    };
+    const manifest = config.mcpServers[CLAUDE_MCP_SERVER_NAME]?.args[3];
+    return manifest === undefined ? undefined : JSON.parse(manifest);
+  }
+
+  test('routes a valid EndTimSession request to the trusted handler', async () => {
+    const endSessionHandler = vi.fn();
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: false,
+      endSessionHandler,
+    });
+    cleanups.push(result.cleanup);
+
+    expect(await readChildManifest(result.tempDir)).toMatchObject({
+      interactiveApprovalEnabled: false,
+      agentToolNames: [],
+      endSessionToolEnabled: true,
+    });
+
+    const client = await connectAndSend(pathFor(result), [
+      {
+        type: 'session_tool_request',
+        requestId: 'end-1',
+        tool_name: END_SESSION_TOOL_NAME,
+        input: { reason: 'All fixes are pushed' },
+      },
+      {
+        type: 'session_tool_request',
+        requestId: 'end-invalid',
+        tool_name: END_SESSION_TOOL_NAME,
+        input: { reason: 'ok', extra: true },
+      },
+    ]);
+    const responses = await client.responses;
+    const responseById = new Map(responses.map((response) => [response.requestId, response]));
+
+    expect(responseById.get('end-1')).toEqual({
+      type: 'session_tool_response',
+      requestId: 'end-1',
+      success: true,
+      result: END_SESSION_TOOL_RESULT_TEXT,
+    });
+    expect(responseById.get('end-invalid')).toMatchObject({
+      type: 'session_tool_response',
+      requestId: 'end-invalid',
+      success: false,
+    });
+    expect(endSessionHandler).toHaveBeenCalledOnce();
+    expect(endSessionHandler).toHaveBeenCalledWith({ reason: 'All fixes are pushed' });
+    client.socket.destroy();
+  });
+
+  test('returns an error when no end-session handler is configured', async () => {
+    const result = await setupPermissionsMcp({
+      allowedTools: ['Read'],
+      interactiveApprovalEnabled: true,
+    });
+    cleanups.push(result.cleanup);
+
+    expect(await readChildManifest(result.tempDir)).toBeUndefined();
+
+    const client = await connectAndSend(pathFor(result), [
+      {
+        type: 'session_tool_request',
+        requestId: 'end-unconfigured',
+        tool_name: END_SESSION_TOOL_NAME,
+        input: { reason: 'done' },
+      },
+    ]);
+    const [response] = await client.responses;
+    expect(response).toMatchObject({
+      type: 'session_tool_response',
+      requestId: 'end-unconfigured',
+      success: false,
+    });
+    expect(response?.error).toContain(END_SESSION_TOOL_NAME);
+    client.socket.destroy();
+  });
+
+  test('returns handler failures and oversized frames as correlated errors', async () => {
+    const endSessionHandler = vi.fn(() => {
+      throw new Error('session already closed');
+    });
+    const result = await setupPermissionsMcp({
+      allowedTools: [],
+      interactiveApprovalEnabled: false,
+      endSessionHandler,
+    });
+    cleanups.push(result.cleanup);
+
+    const oversized = JSON.stringify({
+      requestId: 'end-oversized',
+      type: 'session_tool_request',
+      tool_name: END_SESSION_TOOL_NAME,
+      input: { reason: 'x'.repeat(1024 * 1024) },
+    });
+    const client = await connectRawAndCollect(
+      pathFor(result),
+      [
+        `${oversized}\n`,
+        `${JSON.stringify({
+          type: 'session_tool_request',
+          requestId: 'end-throws',
+          tool_name: END_SESSION_TOOL_NAME,
+          input: { reason: 'done' },
+        })}\n`,
+      ],
+      2
+    );
+    const responses = await client.responses;
+
+    expect(responses).toContainEqual({
+      type: 'session_tool_response',
+      requestId: 'end-oversized',
+      success: false,
+      error: 'Claude MCP request exceeded the maximum JSON line size',
+    });
+    expect(responses).toContainEqual({
+      type: 'session_tool_response',
+      requestId: 'end-throws',
+      success: false,
+      error: 'session already closed',
+    });
+    expect(endSessionHandler).toHaveBeenCalledOnce();
+    client.socket.destroy();
   });
 });
 

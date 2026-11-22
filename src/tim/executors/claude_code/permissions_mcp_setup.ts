@@ -35,6 +35,7 @@ import {
   type ClaudeAgentToolContext,
   type ClaudePermissionPromptCoordinator,
 } from './claude_mcp_protocol.js';
+import type { EndSessionToolHandler } from '../shared/end_session_tool.js';
 import { isClaudePermissionPromptCancelledError } from './claude_permission_prompt_coordinator.js';
 import type { AgentIdentity } from '../../agent_messaging/agent_manager_types.js';
 import { isRecord } from '../../../common/type_guards.js';
@@ -79,6 +80,8 @@ export interface PermissionsMcpOptions {
   permissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
   /** Optional user MCP config to preserve when installing the internal bridge. */
   mcpConfigFile?: string;
+  /** Trusted handler that installs the `EndTimSession` tool when set. */
+  endSessionHandler?: EndSessionToolHandler;
 }
 
 function validateAgentIdentity(identity: AgentIdentity): void {
@@ -779,6 +782,7 @@ export async function setupPermissionsMcp(
     agentToolContext: trustedAgentToolContext,
     permissionPromptCoordinator: options.permissionPromptCoordinator,
     mcpConfigFile: options.mcpConfigFile,
+    endSessionHandler: options.endSessionHandler,
     handlePermissionRequest: (rawMessage, socket, requester) =>
       handlePermissionLine(rawMessage, socket, allowedToolsMap, requester, {
         defaultResponse: options.defaultResponse,

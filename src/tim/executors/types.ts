@@ -32,6 +32,11 @@ export interface ExecutorCommonOptions {
    */
   closeTerminalInputOnResult?: boolean;
   /**
+   * When true, give the agent the `EndTimSession` tool (see `shared/end_session_tool.ts`),
+   * so that it can end an interactive session after its current turn.
+   */
+  endSessionTool?: boolean;
+  /**
    * When true, executors should run in the streamlined implement → review flow.
    */
   simpleMode?: boolean;

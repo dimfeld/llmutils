@@ -89,6 +89,13 @@ describe('buildPrRebasePrompt with stacked branches', () => {
     expect(prompt).toContain('git push --force-with-lease origin feature-x feature-y feature-z');
   });
 
+  test('adds the end session section only when the tool is enabled', () => {
+    expect(buildPrRebasePrompt(makeTarget(), true)).not.toContain('## Ending the Session');
+    const prompt = buildPrRebasePrompt(makeTarget(), true, [], { endSessionTool: true });
+    expect(prompt).toContain('## Ending the Session');
+    expect(prompt).toContain('EndTimSession');
+  });
+
   test('does not mention a stack when no PRs are stacked on top', () => {
     const prompt = buildPrRebasePrompt(makeTarget(), true, []);
 

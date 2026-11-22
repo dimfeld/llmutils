@@ -72,6 +72,12 @@ export interface CodexStepOptions {
   dynamicToolProvider?: CodexDynamicToolProvider;
   /** Deferred root input bound by the active orchestrator app-server turn. */
   orchestratorInputAdapter?: DeferredAgentInputAdapter;
+  /**
+   * Offer the `EndTimSession` dynamic tool. App-server only, and only takes effect in an
+   * interactive `chat-session` that would otherwise wait for more input. The session closes
+   * after the turn in which the agent calls the tool completes.
+   */
+  endSessionTool?: boolean;
 }
 
 /**

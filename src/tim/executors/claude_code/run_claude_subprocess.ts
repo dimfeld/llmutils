@@ -391,6 +391,7 @@ export async function runClaudeSubprocess(
       capabilities: {
         interactiveApprovalEnabled: false,
         agentToolsEnabled: false,
+        endSessionToolEnabled: false,
         internalMcpNeeded: false,
         agentToolIds: [],
       },

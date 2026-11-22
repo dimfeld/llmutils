@@ -78,6 +78,12 @@ export function executePersistentWithTerminalInput(
       if (cleanupStarted) return;
       controller.forceCloseInputNow();
     },
+    requestEndAfterCurrentTurn: (): void => {
+      // Persistent agents are not interactive top-level sessions, and their turn controller
+      // owns the close policy. The EndTimSession tool is not installed for them, so this is
+      // a no-op.
+      debugLog('Ignoring end-after-current-turn request for a persistent Claude agent');
+    },
     cleanup: (): void => {
       if (cleanupStarted) return;
       cleanupStarted = true;

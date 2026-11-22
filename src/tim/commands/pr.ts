@@ -78,6 +78,7 @@ import { isShuttingDown } from '../shutdown_state.js';
 import { gatherPrContext } from '../utils/pr_context_gathering.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import {
+  buildEndSessionInstructions,
   buildJjBookmarkConflictInstructions,
   buildRebaseInstructions,
   detectPrFixRebaseStatus,
@@ -1072,7 +1073,8 @@ export function buildReviewThreadFixPrompt(
   threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>,
   additionalFeedback: PrAdditionalFeedback[] = [],
   rebaseStatus?: PrFixRebaseStatus,
-  knownStackedBranches?: StackedBranch[]
+  knownStackedBranches?: StackedBranch[],
+  options: ReviewThreadFixPromptOptions = {}
 ): string {
   const prUrls = [...new Set(threads.map(({ prUrl }) => prUrl))];
   const branch = planData.branch?.trim() || 'Current working branch';
@@ -1109,7 +1111,8 @@ export function buildReviewThreadFixPrompt(
       threads,
       additionalFeedback,
       rebaseStatus,
-      knownStackedBranches
+      knownStackedBranches,
+      options
     )
   );
 
@@ -1121,7 +1124,8 @@ export function buildPrReviewThreadFixPrompt(
   threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>,
   additionalFeedback: PrAdditionalFeedback[] = [],
   rebaseStatus?: PrFixRebaseStatus,
-  knownStackedBranches?: StackedBranch[]
+  knownStackedBranches?: StackedBranch[],
+  options: ReviewThreadFixPromptOptions = {}
 ): string {
   const prompt = [
     '# Address Pull Request Review Comments',
@@ -1156,18 +1160,25 @@ export function buildPrReviewThreadFixPrompt(
       threads,
       additionalFeedback,
       rebaseStatus,
-      knownStackedBranches
+      knownStackedBranches,
+      options
     )
   );
 
   return prompt.join('\n');
 }
 
+export interface ReviewThreadFixPromptOptions {
+  /** Set when the agent has the `EndTimSession` tool. */
+  endSessionTool?: boolean;
+}
+
 export function buildReviewThreadFixInstructions(
   threads: Array<{ thread: PrReviewThreadDetail; prUrl: string }>,
   additionalFeedback: PrAdditionalFeedback[] = [],
   rebaseStatus?: PrFixRebaseStatus,
-  knownStackedBranches?: StackedBranch[]
+  knownStackedBranches?: StackedBranch[],
+  options: ReviewThreadFixPromptOptions = {}
 ): string[] {
   const prompt = [
     '## Unresolved Review Threads',
@@ -1260,6 +1271,13 @@ export function buildReviewThreadFixInstructions(
     '',
     'Always reply to and resolve every outstanding issue, unless the user explicitly tells you to leave a specific issue unresolved. When the user says to "ignore", "skip", or "not fix" an issue, that does not mean to leave it alone. It means that you do not change the code for that issue, but you still reply that it will not be fixed, give the reason, and resolve the thread. If the user does not give a reason, use the reason that you can infer from the conversation, for example that the user chose not to address it.',
     '',
+    ...(options.endSessionTool
+      ? buildEndSessionInstructions([
+          'The report has no items that need a decision, or the user already decided all of them and you applied the decisions.',
+          'Every fix that you made without a decision from the user has `Behavior change: no`. Auto-decline items do not prevent you from ending the session.',
+          'The user is not in a conversation with you that is still continuing.',
+        ])
+      : []),
     '## Stacked Branches',
     '',
     'This PR branch can have other branches stacked on top of it. Before you evaluate the feedback, check for descendant branches. With jj, use `jj log -r "descendants(<PR bookmark>) & bookmarks()"`. With git, use `git branch --contains <PR branch>`. If these commands do not show descendant branches, stacked branches can still exist on an older version of this branch. See "Restacking Descendant Branches" below for how to find them. If stacked branches exist, consider their changes when you evaluate and fix each issue:',
@@ -1805,6 +1823,7 @@ async function executePrFixCommand({
       noninteractive: noninteractive ? true : undefined,
       terminalInput: terminalInputEnabled,
       closeTerminalInputOnResult: false,
+      endSessionTool: true,
       disableInactivityTimeout: true,
       timEnvironment,
     };
@@ -1845,14 +1864,16 @@ async function executePrFixCommand({
             unresolvedThreads,
             additionalFeedback,
             rebaseStatus,
-            knownStackedBranches
+            knownStackedBranches,
+            { endSessionTool: true }
           )
         : buildPrReviewThreadFixPrompt(
             target,
             unresolvedThreads,
             additionalFeedback,
             rebaseStatus,
-            knownStackedBranches
+            knownStackedBranches,
+            { endSessionTool: true }
           );
 
     if (target.kind === 'plan') {

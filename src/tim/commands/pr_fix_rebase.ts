@@ -3,6 +3,7 @@ import type { Database } from 'bun:sqlite';
 
 import { log, warn } from '../../logging.js';
 import type { PrStatusDetail } from '../db/pr_status.js';
+import { END_SESSION_TOOL_NAME } from '../executors/shared/end_session_tool.js';
 import {
   findOpenStackForPr,
   getStackedBranchesAbovePr,
@@ -164,6 +165,25 @@ export function buildRebaseInstructions(
  * the two targets with a whole-tree diff, which includes the differences between their
  * bases and makes the two versions look much more different than they are.
  */
+/**
+ * Instructions for the `EndTimSession` tool, which lets the agent end its interactive session
+ * after its turn. `conditions` lists when the agent may end the session without the user.
+ */
+export function buildEndSessionInstructions(conditions: string[]): string[] {
+  return [
+    '## Ending the Session',
+    '',
+    `If the \`${END_SESSION_TOOL_NAME}\` tool is available, you can use it to end this session after your turn, so that the user does not have to end it. Call it only when all of these conditions are true:`,
+    '',
+    ...conditions.map((condition) => `- ${condition}`),
+    '- All of your work is committed and pushed, and all replies that you must post are posted.',
+    '- You have no open question for the user, and you do not need an answer from the user.',
+    '',
+    `When you call \`${END_SESSION_TOOL_NAME}\`, give a short reason. Write your final message (for example, the report) in the same turn, because the user cannot reply after the session ends. If you are not sure that the user can skip a review of your work, do not call the tool; stop and wait for the user.`,
+    '',
+  ];
+}
+
 export function buildJjBookmarkConflictInstructions(): string[] {
   return [
     '## jj Bookmark Conflicts',

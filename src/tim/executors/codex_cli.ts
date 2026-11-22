@@ -76,6 +76,7 @@ export class CodexCliExecutor implements Executor {
               : 'single-turn',
           terminalInput: this.sharedOptions.terminalInput,
           timEnvironment: this.sharedOptions.timEnvironment,
+          endSessionTool: this.sharedOptions.endSessionTool,
           reasoningLevel:
             planInfo.executionMode === 'planning'
               ? (parsedModel.reasoningLevel ??

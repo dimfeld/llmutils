@@ -1,13 +1,17 @@
 # Claude `tim` MCP Bridge
 
 The Claude executor installs one internal MCP server, named `tim`, into each
-Claude process it launches. That server carries two independent capabilities:
+Claude process it launches. That server carries three independent capabilities:
 
 - **Interactive permission approval** (`approval_prompt`), the legacy behavior
   described in [tutorials/claude-permissions-mcp.md](tutorials/claude-permissions-mcp.md).
 - **Role-scoped agent-management tools** (`StartTimAgent`, `ListTimAgents`,
   `SendTimAgentMessage`, `StopTimAgent`, `FinishTimAgent`), which route to the
   `AgentManager` documented in [agent-manager.md](agent-manager.md).
+- **Session control** (`EndTimSession`), which lets the agent of an interactive
+  top-level session end its own session after its current turn. The contract
+  (name, description, argument schema, result text) is in
+  `src/tim/executors/shared/end_session_tool.ts` and is shared with Codex.
 
 The bridge is transport only. It does not define naming, capacity, delivery, or
 lifecycle policy; those belong to [agent-messaging.md](agent-messaging.md) and
@@ -40,16 +44,18 @@ Relevant code:
 
 ## Installation states
 
-Approval and agent tools are separate switches. `prepareClaudeMcpLaunch()`
+Approval, agent tools, and session control are separate switches. `prepareClaudeMcpLaunch()`
 resolves them with `resolveClaudeMcpCapabilities()`:
 
 - `interactiveApprovalEnabled` = approval requested (config `permissionsMcp.enabled`
   or the `CLAUDE_CODE_MCP` env override) **and not** `allowAllTools` **and not**
   noninteractive.
 - `agentToolsEnabled` = an explicit trusted `agentToolContext` was supplied.
-- `internalMcpNeeded` = either capability.
+- `endSessionToolEnabled` = a trusted `endSessionHandler` was supplied. The main
+  executor supplies it only when `ExecutorCommonOptions.endSessionTool` is true.
+- `internalMcpNeeded` = any capability.
 
-That gives four states:
+That gives these states (session control can be added to any of them):
 
 | State           | Registered tools                       | Claude arguments                                        |
 | --------------- | -------------------------------------- | ------------------------------------------------------- |
@@ -57,6 +63,8 @@ That gives four states:
 | Permission-only | `approval_prompt`                      | `--mcp-config <generated>` + `--permission-prompt-tool` |
 | Tools-only      | role-scoped agent tools                | `--mcp-config <generated>` only                         |
 | Combined        | `approval_prompt` + role-scoped agents | `--mcp-config <generated>` + `--permission-prompt-tool` |
+| Session-only    | `EndTimSession`                        | `--mcp-config <generated>` only                         |
+| + session       | the tools above + `EndTimSession`      | as for the state without session control                |
 
 `--permission-prompt-tool mcp__tim__approval_prompt` is emitted **only** when
 interactive approval is enabled, so a tools-only run never points Claude at an
@@ -66,6 +74,24 @@ needs them most.
 
 Review, planning, proof, bare, and legacy one-shot subagent runs get no agent
 tools, because they pass no `agentToolContext`.
+
+The child learns about session control from the manifest field
+`endSessionToolEnabled: true`. The manifest is pushed when agent tools exist,
+approval is disabled, or session control is enabled. Like agent tools,
+`EndTimSession` stays available in noninteractive and allow-all runs.
+
+### Session control (`EndTimSession`)
+
+The main Claude executor (`claude_code.ts`) passes an `endSessionHandler` when
+`endSessionTool` is set. Interactive top-level sessions such as `tim pr fix`,
+`tim pr fix-ci`, and `tim pr rebase` use it. The handler logs the reason and
+calls `requestEndAfterCurrentTurn()` on the terminal-input lifecycle. It does
+**not** close stdin. The MCP call happens inside the turn, so the turn must
+continue: Claude receives the tool result, writes its final message, and emits
+its `result`. The session then closes through the normal result path (see
+[executor-stdin-conventions.md](executor-stdin-conventions.md)). The effect is
+the same as the web UI "End session" button, but it waits for the turn to end.
+`runClaudeSubprocess()` and persistent agents never install this tool.
 
 ## Trusted context and role scoping
 
@@ -115,6 +141,9 @@ bridge temp directory. Both directions use discriminated unions
 - `permission_request` / `permission_response`
 - `agent_tool_request` / `agent_tool_response` (`success: true` with `result`,
   or `success: false` with `error`)
+- `session_tool_request` (`tool_name: 'EndTimSession'`, `input`) /
+  `session_tool_response` (`success: true` with the `result` text, or
+  `success: false` with `error`)
 
 Every frame carries a `requestId`. The child stores the **expected response
 type** with each pending request, so a permission response can never resolve an
@@ -132,6 +161,10 @@ Failure isolation is deliberate:
 - `approval_prompt` transport failure stays default-deny.
 - Agent-tool failure returns a model-visible tool error (`isError: true`). It
   never becomes a permission decision or affects another request.
+- Session-tool failure also returns `isError: true`. The parent validates the
+  arguments again with `endSessionToolArgumentsSchema`. If the parent has no
+  `endSessionHandler`, it returns an error and changes nothing. Oversized
+  session frames get a correlated error.
 
 ## Merging the user MCP config
 
@@ -157,6 +190,8 @@ path is passed through unchanged.
 added to the global default Claude allow list. If `disallowedTools` names any
 required agent tool, `validateAgentToolDisallowConflict()` throws before any
 resource is allocated, rather than advertising a tool the CLI would block.
+When session control is enabled, `mcp__tim__EndTimSession` is appended to the
+allowed tools in the same way.
 
 Setup failure is treated differently by capability: when an `agentToolContext`
 (or a user MCP config) is present, `runClaudeSubprocess()` rethrows so the
@@ -216,7 +251,7 @@ Server-side suites run with `bun run test`:
 
 - `claude_mcp_protocol.test.ts` — schemas, role tool sets, dispatcher adapter.
 - `permissions_mcp_agent_tools.test.ts` — role matrices, forged requests,
-  correlation isolation, context validation.
+  correlation isolation, context validation, session-tool routing.
 - `permissions_mcp_setup.test.ts` — real Unix-socket permission behavior, JSONL
   framing, config merge, cleanup.
 - `claude_permission_prompt_coordinator.test.ts` — FIFO order, atomic

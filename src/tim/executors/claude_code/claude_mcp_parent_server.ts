@@ -9,9 +9,16 @@ import {
   callerIdentityFromAgent,
   getClaudeAgentArgumentSchema,
   getClaudeAgentToolNames,
+  sessionToolRequestSchema,
   type ClaudeAgentToolContext,
   type ClaudePermissionPromptCoordinator,
 } from './claude_mcp_protocol.js';
+import {
+  END_SESSION_TOOL_NAME,
+  END_SESSION_TOOL_RESULT_TEXT,
+  endSessionToolArgumentsSchema,
+  type EndSessionToolHandler,
+} from '../shared/end_session_tool.js';
 
 const MAX_CLAUDE_MCP_JSON_SIZE = 1024 * 1024;
 
@@ -25,6 +32,8 @@ export interface ClaudeMcpParentServerOptions {
   readonly interactiveApprovalEnabled?: boolean;
   readonly agentToolContext?: ClaudeAgentToolContext;
   readonly permissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
+  /** Trusted handler for `EndTimSession`. Without it, session tool requests fail. */
+  readonly endSessionHandler?: EndSessionToolHandler;
   readonly handlePermissionRequest: (
     rawMessage: unknown,
     socket: net.Socket,
@@ -44,6 +53,15 @@ export function writeClaudeMcpSocketMessage(socket: net.Socket, value: unknown):
   } catch (error) {
     debugLog('Could not write Claude MCP response:', error);
   }
+}
+
+function writeSessionToolError(socket: net.Socket, requestId: string, error: unknown): void {
+  writeClaudeMcpSocketMessage(socket, {
+    type: 'session_tool_response',
+    requestId,
+    success: false,
+    error: error instanceof Error ? error.message : String(error),
+  });
 }
 
 function writeAgentToolError(socket: net.Socket, requestId: string, error: unknown): void {
@@ -106,7 +124,9 @@ function handleOversizedFrame(prefix: string, socket: net.Socket): void {
   const requestId = parseJsonStringCapture(
     /"requestId"\s*:\s*"((?:\\.|[^"\\])*)"/.exec(prefix)?.[1]
   );
-  const type = /"type"\s*:\s*"(permission_request|agent_tool_request)"/.exec(prefix)?.[1];
+  const type = /"type"\s*:\s*"(permission_request|agent_tool_request|session_tool_request)"/.exec(
+    prefix
+  )?.[1];
   log(chalk.yellow('Claude MCP rejected an oversized request frame'));
   if (requestId === undefined) return;
   if (type === 'permission_request') {
@@ -121,7 +141,59 @@ function handleOversizedFrame(prefix: string, socket: net.Socket): void {
       requestId,
       'Claude MCP request exceeded the maximum JSON line size'
     );
+  } else if (type === 'session_tool_request') {
+    writeSessionToolError(
+      socket,
+      requestId,
+      'Claude MCP request exceeded the maximum JSON line size'
+    );
   }
+}
+
+async function handleSessionToolRequest(
+  rawMessage: unknown,
+  socket: net.Socket,
+  endSessionHandler: EndSessionToolHandler | undefined
+): Promise<void> {
+  const requestId = getRequestId(rawMessage);
+  if (requestId === undefined) {
+    debugLog('Session tool request is missing requestId');
+    return;
+  }
+
+  const parsed = sessionToolRequestSchema.safeParse(rawMessage);
+  if (!parsed.success) {
+    writeSessionToolError(socket, requestId, 'Session tool request is invalid');
+    return;
+  }
+
+  if (endSessionHandler === undefined) {
+    writeSessionToolError(
+      socket,
+      requestId,
+      `Session tool ${END_SESSION_TOOL_NAME} is not available for this session`
+    );
+    return;
+  }
+
+  const validatedInput = endSessionToolArgumentsSchema.safeParse(parsed.data.input);
+  if (!validatedInput.success) {
+    writeSessionToolError(socket, requestId, `Arguments for ${END_SESSION_TOOL_NAME} are invalid`);
+    return;
+  }
+
+  try {
+    await endSessionHandler(validatedInput.data);
+  } catch (error) {
+    writeSessionToolError(socket, requestId, error);
+    return;
+  }
+  writeClaudeMcpSocketMessage(socket, {
+    type: 'session_tool_response',
+    requestId,
+    success: true,
+    result: END_SESSION_TOOL_RESULT_TEXT,
+  });
 }
 
 async function handleAgentToolRequest(
@@ -232,6 +304,11 @@ async function handleClaudeMcpLine(
 
   if (rawMessage.type === 'agent_tool_request') {
     await handleAgentToolRequest(rawMessage, socket, options.agentToolContext);
+    return;
+  }
+
+  if (rawMessage.type === 'session_tool_request') {
+    await handleSessionToolRequest(rawMessage, socket, options.endSessionHandler);
   }
 }
 

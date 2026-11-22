@@ -7,6 +7,7 @@ import type {
   ClaudeAgentToolContext,
   ClaudePermissionPromptCoordinator,
 } from './claude_mcp_protocol.js';
+import type { EndSessionToolHandler } from '../shared/end_session_tool.js';
 import {
   assertClaudeMcpServerNameAvailable,
   mergeClaudeMcpConfig,
@@ -27,6 +28,8 @@ export interface ClaudeMcpBridgeSetupOptions {
   readonly agentToolContext?: ClaudeAgentToolContext;
   readonly permissionPromptCoordinator?: ClaudePermissionPromptCoordinator;
   readonly mcpConfigFile?: string;
+  /** Trusted handler that installs the `EndTimSession` tool when set. */
+  readonly endSessionHandler?: EndSessionToolHandler;
   readonly handlePermissionRequest: (
     rawMessage: unknown,
     socket: net.Socket,
@@ -115,18 +118,25 @@ export async function setupClaudeMcpBridge(
       interactiveApprovalEnabled: options.interactiveApprovalEnabled,
       agentToolContext: options.agentToolContext,
       permissionPromptCoordinator: options.permissionPromptCoordinator,
+      endSessionHandler: options.endSessionHandler,
       handlePermissionRequest: options.handlePermissionRequest,
     });
 
     const timMcpPath = await resolvePermissionsMcpPath();
     const childArgs = [timMcpPath, socketPath, logFile];
-    if (options.agentToolContext !== undefined || options.interactiveApprovalEnabled === false) {
+    const endSessionToolEnabled = options.endSessionHandler !== undefined;
+    if (
+      options.agentToolContext !== undefined ||
+      options.interactiveApprovalEnabled === false ||
+      endSessionToolEnabled
+    ) {
       childArgs.push(
         JSON.stringify({
           interactiveApprovalEnabled: options.interactiveApprovalEnabled !== false,
           agentToolNames: options.agentToolContext
             ? [...options.agentToolContext.allowedTools]
             : [],
+          ...(endSessionToolEnabled ? { endSessionToolEnabled: true } : {}),
         })
       );
     }

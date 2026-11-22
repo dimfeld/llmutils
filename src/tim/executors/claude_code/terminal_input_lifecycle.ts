@@ -168,6 +168,12 @@ export interface ExecuteWithTerminalInputResult {
   sendFollowUpForInterceptedResult: (content: string) => boolean | Promise<boolean>;
   acceptedSuccessfulFinalResult: () => boolean;
   endSession: () => void;
+  /**
+   * Mark the session to end after the current turn. This does not close input now. The next
+   * result message uses the normal close path, also when interactive input would otherwise
+   * keep stdin open. This is safe to call from inside a tool handler during the turn.
+   */
+  requestEndAfterCurrentTurn: () => void;
   cleanup: () => void;
   persistentAgent?: PersistentClaudeTurnController;
 }
@@ -220,6 +226,7 @@ function executeOneShotWithTerminalInput(
   let tunnelUserInputHandlerRegistered = false;
   let headlessUserInputHandlerRegistered = false;
   let cleanupStarted = false;
+  let endAfterCurrentTurnRequested = false;
   let clearTunnelUserInputHandler = (): void => {};
   let clearHeadlessUserInputHandler = (): void => {};
 
@@ -336,7 +343,11 @@ function executeOneShotWithTerminalInput(
   // onResultMessage is called by the formatStdout callback when a result message is detected
   const onResultMessage = (resultWasSuccessful: boolean, _resultText?: string): void => {
     if (cleanupStarted) return;
-    if (keepInteractiveInputOpenOnResult && hasInteractiveInputSource()) {
+    if (
+      !endAfterCurrentTurnRequested &&
+      keepInteractiveInputOpenOnResult &&
+      hasInteractiveInputSource()
+    ) {
       backgroundActivityTracker.acceptResultWithoutClosing(resultWasSuccessful);
       return;
     }
@@ -441,6 +452,14 @@ function executeOneShotWithTerminalInput(
       clearTunnelUserInputHandler();
       clearHeadlessUserInputHandler();
       forceCloseInputNow();
+    },
+    requestEndAfterCurrentTurn: () => {
+      if (cleanupStarted || endAfterCurrentTurnRequested) return;
+      endAfterCurrentTurnRequested = true;
+      // Stop remote user input now, so that no new message starts another turn. Do not close
+      // stdin here: the current turn must still finish and emit its result.
+      clearTunnelUserInputHandler();
+      clearHeadlessUserInputHandler();
     },
     cleanup: () => {
       if (cleanupStarted) return;

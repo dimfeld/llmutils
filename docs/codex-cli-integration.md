@@ -111,13 +111,40 @@ Tim fails before the first turn with a compatibility error:
 > Codex app-server does not support experimental dynamic tools. Update Codex CLI or disable experimental.agentMessaging.
 
 Tim does not retry the unsupported thread without tools. Existing connection and
-resource cleanup still runs.
+resource cleanup still runs. The one exception is the runner-owned
+`EndTimSession` tool (see below): when it is the only installed tool, Tim logs a
+warning and starts again without dynamic tools, so the session runs without it.
 
 The compatibility message covers only the two wire points that establish
 support: `initialize` and the first `thread/start`. Process spawn, socket,
 transport, and later replacement-thread failures keep their real errors, so a
 crashed or unreachable app-server is not misreported as an out-of-date Codex
 CLI. The original error is preserved as the `cause` for diagnostics.
+
+### Runner-owned `EndTimSession` tool
+
+`CodexStepOptions.endSessionTool` (set from `ExecutorCommonOptions.endSessionTool`
+and passed through bare/planning mode) lets the agent of an interactive top-level
+session (`tim pr fix`, `tim pr fix-ci`, `tim pr rebase`) end its own session. The
+shared contract (name, description, strict `{ reason }` schema, and result text)
+is in `src/tim/executors/shared/end_session_tool.ts`; the Codex provider is in
+`src/tim/executors/codex_cli/end_session_dynamic_tool.ts`.
+
+- The app-server runner installs the tool only when the option is set and the
+  session is an app-server `chat-session` that stays open for input (terminal,
+  tunnel, or headless input source). Otherwise no definition is sent. The
+  `codex exec` fallback ignores the option.
+- When a caller also supplies `dynamicToolProvider`, the runner merges the two
+  providers. Each call goes to the provider that defines the tool name. The
+  merged provider is validated, so duplicate names are rejected.
+- The handler validates the arguments and only marks the session to close.
+  Invalid arguments return a `success: false` result and the session stays open.
+- The session does not close while the turn runs, and Tim does not send
+  `turn/interrupt`. When the turn completes (`turn/completed`, or the
+  `thread/status/changed` idle fallback), the runner closes the chat input
+  queue. The chat loop then exits and returns the final agent message. User
+  input that arrives during the turn is steered into that turn as usual; input
+  that is still queued when the turn completes is discarded.
 
 ### Dynamic call dispatch and results
 

@@ -1704,6 +1704,7 @@ describe('tim/commands/pr', () => {
       expect.objectContaining({
         model: LATEST_GPT5_MODEL,
         terminalInput: true,
+        endSessionTool: true,
       }),
       expect.any(Object),
       undefined
@@ -1713,6 +1714,7 @@ describe('tim/commands/pr', () => {
       expect.objectContaining({ executionMode: 'planning', planId: '248' })
     );
     const context = String(mockExecutorExecute.mock.calls[0]?.[0] ?? '');
+    expect(context).toContain('## Ending the Session');
     expect(mockRefreshPrStatus).toHaveBeenCalledWith(
       dbHandle,
       'https://github.com/example/repo/pull/701'
@@ -2989,6 +2991,17 @@ describe('tim/commands/pr', () => {
       const joined = lines.join('\n');
       expect(joined).toContain('- PRRT thread ID: shared-thread');
       expect(joined).toContain('Shared comment.');
+    });
+
+    test('adds the end session section only when the tool is enabled', () => {
+      expect(buildReviewThreadFixInstructions([]).join('\n')).not.toContain(
+        '## Ending the Session'
+      );
+      const joined = buildReviewThreadFixInstructions([], [], undefined, undefined, {
+        endSessionTool: true,
+      }).join('\n');
+      expect(joined).toContain('## Ending the Session');
+      expect(joined.indexOf('## Report')).toBeLessThan(joined.indexOf('## Ending the Session'));
     });
 
     test('omits rebase instructions when no rebase is needed', () => {
