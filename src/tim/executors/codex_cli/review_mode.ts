@@ -7,10 +7,6 @@ import { log } from '../../../logging';
 import { parseFailedReport } from '../failure_detection';
 import { getReviewOutputJsonSchema } from '../../formatters/review_output_schema';
 import { executeCodexStep } from './codex_runner';
-import { isCodexAppServerEnabled } from './app_server_mode';
-import * as fs from 'fs/promises';
-import * as os from 'os';
-import * as path from 'path';
 
 /**
  * Options for executing review mode with testable dependencies.
@@ -93,8 +89,7 @@ export async function executeReviewMode(
 const REVIEW_TIMEOUT_MS = 30 * 60 * 1000;
 
 /**
- * Executes a Codex review step with JSON schema for structured output.
- * Writes the schema to a temporary file and passes it via --output-schema flag.
+ * Executes a Codex review step with a JSON schema for structured output.
  */
 async function executeCodexReviewWithSchema(
   prompt: string,
@@ -105,49 +100,25 @@ async function executeCodexReviewWithSchema(
   timEnvironment?: TimWorkspaceCommandEnvironmentOptions,
   reasoningLevel?: CodexReasoningLevel
 ): Promise<string> {
-  const useAppServer = isCodexAppServerEnabled();
-  let tempDir: string | undefined;
-  let schemaFilePath: string | undefined;
+  const jsonSchema = getReviewOutputJsonSchema();
+  // Codex requires this or else it throws an error
+  jsonSchema.additionalProperties = false;
 
-  try {
-    const jsonSchema = getReviewOutputJsonSchema();
-    // Codex requires this or else it throws an error
-    jsonSchema.additionalProperties = false;
+  // Get reasoning level from config, with defaults: medium for scoped, high for full
+  const codexOptions = timConfig.executors?.[CodexCliExecutorName];
+  const resolvedReasoningLevel: CodexReasoningLevel =
+    reasoningLevel ??
+    (isTaskScoped
+      ? (codexOptions?.reasoning?.scopedReview ?? 'medium')
+      : (codexOptions?.reasoning?.fullReview ?? 'high'));
 
-    if (!useAppServer) {
-      // Create a temporary file for codex exec --output-schema
-      tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'codex-review-schema-'));
-      schemaFilePath = path.join(tempDir, 'review-schema.json');
-      await fs.writeFile(schemaFilePath, JSON.stringify(jsonSchema, null, 2));
-    }
-
-    // Get reasoning level from config, with defaults: medium for scoped, high for full
-    const codexOptions = timConfig.executors?.[CodexCliExecutorName];
-    const resolvedReasoningLevel: CodexReasoningLevel =
-      reasoningLevel ??
-      (isTaskScoped
-        ? (codexOptions?.reasoning?.scopedReview ?? 'medium')
-        : (codexOptions?.reasoning?.fullReview ?? 'high'));
-
-    // Use executeCodexStep with the schema file path and 30-minute timeout for reviews
-    return await executeCodexStep(prompt, cwd, timConfig, {
-      model,
-      ...(schemaFilePath ? { outputSchemaPath: schemaFilePath } : {}),
-      outputSchema: jsonSchema,
-      inactivityTimeoutMs: REVIEW_TIMEOUT_MS,
-      reasoningLevel: resolvedReasoningLevel,
-      timEnvironment,
-    });
-  } finally {
-    // Clean up the temporary directory and schema file
-    if (tempDir) {
-      try {
-        await fs.rm(tempDir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
-  }
+  return await executeCodexStep(prompt, cwd, timConfig, {
+    model,
+    outputSchema: jsonSchema,
+    inactivityTimeoutMs: REVIEW_TIMEOUT_MS,
+    reasoningLevel: resolvedReasoningLevel,
+    timEnvironment,
+  });
 }
 
 function buildAggregatedOutput(

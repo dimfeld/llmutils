@@ -18,7 +18,7 @@ export type CodexCliExecutorOptions = z.infer<typeof codexCliOptionsSchema>;
  */
 export class CodexCliExecutor implements Executor {
   static name = CodexCliExecutorName;
-  static description = 'Executes the plan using OpenAI Codex CLI (codex exec)';
+  static description = 'Executes the plan using the OpenAI Codex CLI app-server';
   static optionsSchema = codexCliOptionsSchema;
   static defaultModel = {
     execution: 'gpt-6.2-sol',

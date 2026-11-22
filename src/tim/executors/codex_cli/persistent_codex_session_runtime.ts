@@ -20,12 +20,8 @@ import { CodexAppServerConnection } from './app_server_connection.js';
 import type { ThreadStartParams } from './app_server_connection.js';
 import { createApprovalHandler } from './app_server_approval.js';
 import { createAppServerRequestHandler, startInitialThread } from './app_server_runner.js';
-import {
-  CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE,
-  type CodexDynamicToolProvider,
-} from './app_server_dynamic_tools.js';
+import { type CodexDynamicToolProvider } from './app_server_dynamic_tools.js';
 import { normalizeCodexAppServerNotification } from './app_server_notifications.js';
-import { isCodexAppServerEnabled } from './app_server_mode.js';
 import type { CodexAgentToolContext } from './codex_agent_tools.js';
 import type { CodexPersistentAgentLaunchOptions } from './persistent_codex_session.js';
 
@@ -398,9 +394,6 @@ export class PersistentCodexSessionRuntime {
   private throwIfClosing(): void {
     if (this.isClosing) {
       throw new Error('Persistent Codex provider closed during startup.');
-    }
-    if (!isCodexAppServerEnabled()) {
-      throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
     }
   }
 }

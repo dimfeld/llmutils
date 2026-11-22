@@ -14,15 +14,8 @@ import {
   type CodexPersistentAgentLaunchOptions,
 } from './persistent_codex_session.js';
 
-const originalAppServerMode = process.env.CODEX_USE_APP_SERVER;
-
 afterEach(() => {
   vi.restoreAllMocks();
-  if (originalAppServerMode === undefined) {
-    delete process.env.CODEX_USE_APP_SERVER;
-  } else {
-    process.env.CODEX_USE_APP_SERVER = originalAppServerMode;
-  }
 });
 
 function createIdentity(): AgentIdentity {
@@ -149,26 +142,6 @@ describe('persistent Codex launch validation', () => {
         createOptions({ dynamicToolProvider: createProvider(otherIdentity) })
       )
     ).toThrow('not bound to the persistent agent identity');
-  });
-
-  it('rejects disabled app-server mode before allocation', () => {
-    process.env.CODEX_USE_APP_SERVER = 'false';
-    expect(() => validateCodexPersistentAgentLaunchOptions(createOptions())).toThrow(
-      /require Codex app-server mode/i
-    );
-  });
-
-  it('launcher rejects disabled app-server mode before allocation', async () => {
-    process.env.CODEX_USE_APP_SERVER = 'false';
-    const spawnSpy = vi.spyOn(Bun, 'spawn');
-    const prepareLogicalExecutor = vi.fn();
-
-    await expect(
-      startPersistentCodexAgent(createOptions({ sessionProcessOwner: { prepareLogicalExecutor } }))
-    ).rejects.toThrow(/require Codex app-server mode/i);
-
-    expect(spawnSpy).not.toHaveBeenCalled();
-    expect(prepareLogicalExecutor).not.toHaveBeenCalled();
   });
 
   it('rejects through the launcher before setup when validation fails', async () => {

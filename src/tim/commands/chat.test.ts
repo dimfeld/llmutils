@@ -129,7 +129,6 @@ describe('handleChatCommand', () => {
   };
 
   const originalStdinIsTTY = process.stdin.isTTY;
-  const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
   const originalCwd = process.cwd();
 
   beforeEach(() => {
@@ -192,7 +191,6 @@ describe('handleChatCommand', () => {
     vi.mocked(writePlanToDb).mockResolvedValue({} as any);
     watchPlanFileSpy.mockReturnValue({ close: vi.fn(), closeAndFlush: vi.fn() });
 
-    delete process.env.CODEX_USE_APP_SERVER;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
   });
 
@@ -202,11 +200,6 @@ describe('handleChatCommand', () => {
       value: originalStdinIsTTY,
       configurable: true,
     });
-    if (originalCodexUseAppServer == null) {
-      delete process.env.CODEX_USE_APP_SERVER;
-    } else {
-      process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
-    }
   });
 
   test('defaults to claude-code executor and enables terminal input', async () => {
@@ -322,19 +315,7 @@ describe('handleChatCommand', () => {
     expect(mockExecutorExecute.mock.calls[0][0]).toBeUndefined();
   });
 
-  test('allows codex-cli without an explicit prompt when app-server mode is disabled', async () => {
-    process.env.CODEX_USE_APP_SERVER = 'false';
-
-    await expect(
-      handleChatCommand(undefined, { executor: 'codex-cli' }, {})
-    ).resolves.toBeUndefined();
-
-    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
-    expect(mockExecutorExecute).toHaveBeenCalledTimes(1);
-    expect(mockExecutorExecute.mock.calls[0][0]).toBe('');
-  });
-
-  test('allows codex-cli without an explicit prompt when app-server mode is enabled', async () => {
+  test('allows codex-cli without an explicit prompt', async () => {
     await expect(
       handleChatCommand(undefined, { executor: 'codex-cli' }, {})
     ).resolves.toBeUndefined();
@@ -372,8 +353,7 @@ describe('handleChatCommand', () => {
     });
   });
 
-  test('allows codex-cli when tunnel is active without an initial prompt and app-server is disabled', async () => {
-    process.env.CODEX_USE_APP_SERVER = 'false';
+  test('allows codex-cli when tunnel is active without an initial prompt', async () => {
     vi.mocked(isTunnelActive).mockReturnValue(true);
 
     await expect(

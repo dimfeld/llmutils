@@ -13,11 +13,7 @@ import {
   validateCodexDynamicToolCaller,
   type CodexAgentToolContext,
 } from './codex_agent_tools.js';
-import {
-  CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE,
-  type CodexDynamicToolProvider,
-} from './app_server_dynamic_tools.js';
-import { isCodexAppServerEnabled } from './app_server_mode.js';
+import { type CodexDynamicToolProvider } from './app_server_dynamic_tools.js';
 import type { CodexReasoningLevel } from '../schemas.js';
 import {
   agentEnvironmentIdentitySchema,
@@ -121,9 +117,6 @@ export function validateCodexPersistentAgentLaunchOptions(
   const provider = value.dynamicToolProvider as CodexDynamicToolProvider<CodexAgentToolContext>;
   validateCodexAgentToolProvider(provider);
   assertProviderIdentity(provider, identity);
-  if (!isCodexAppServerEnabled()) {
-    throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
-  }
 }
 
 /** Start one private, named Codex app-server session and its first turn. */

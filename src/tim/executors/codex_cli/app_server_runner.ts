@@ -25,12 +25,10 @@ import { createApprovalHandler } from './app_server_approval';
 import { createAppServerFormatter } from './app_server_format';
 import type { CodexStepOptions } from './codex_runner';
 import {
-  CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE,
   CodexDynamicToolsCompatibilityError,
   validateCodexDynamicToolProvider,
   type CodexDynamicToolProvider,
 } from './app_server_dynamic_tools.js';
-import { isCodexAppServerEnabled } from './app_server_mode.js';
 import {
   buildOutputSchemaConversionPrompt,
   buildOutputSchemaCorrectionPrompt,
@@ -167,9 +165,6 @@ async function executeCodexStepViaAppServerInternal(
   const callerDynamicToolProvider = options?.dynamicToolProvider;
   if (callerDynamicToolProvider) {
     validateCodexDynamicToolProvider(callerDynamicToolProvider);
-    if (!isCodexAppServerEnabled()) {
-      throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
-    }
   }
 
   // Validate subprocess monitor rules up front, before any resource allocation,

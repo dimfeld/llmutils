@@ -73,14 +73,10 @@ When no provider is supplied, `initialize.params` contains exactly the existing
 request has no `dynamicTools` field. Tim does not send an empty capabilities
 object, `experimentalApi: false`, or an empty tool list.
 
-Codex app-server selection also stays unchanged. Without a provider, an explicit
-`CODEX_USE_APP_SERVER=false` value still selects the existing `codex exec`
-fallback. With a provider, app-server mode is required. Tim rejects the request
-before reading an output-schema file or allocating tunnel, process, or other
-execution resources; it never falls back to `codex exec` for a dynamic-tool run.
-The app-server-required error is:
-
-> Codex dynamic tools require Codex app-server mode; enable CODEX_USE_APP_SERVER or disable experimental agent tools.
+All Codex execution goes through the Codex app-server. There is no `codex exec`
+fallback and no `CODEX_USE_APP_SERVER` toggle. Tim validates a supplied provider
+before it reads an output-schema file or allocates tunnel, process, or other
+execution resources.
 
 ### Negotiation and role tool sets
 
@@ -132,8 +128,7 @@ is in `src/tim/executors/shared/end_session_tool.ts`; the Codex provider is in
 
 - The app-server runner installs the tool only when the option is set and the
   session is an app-server `chat-session` that stays open for input (terminal,
-  tunnel, or headless input source). Otherwise no definition is sent. The
-  `codex exec` fallback ignores the option.
+  tunnel, or headless input source). Otherwise no definition is sent.
 - When a caller also supplies `dynamicToolProvider`, the runner merges the two
   providers. Each call goes to the provider that defines the tool name. The
   merged provider is validated, so duplicate names are rejected.
@@ -204,8 +199,7 @@ chat modes. In short:
 - A completed turn leaves the process and thread alive and idle. FinishTimAgent,
   graceful stop, and forced stop close through provider-neutral controls.
 
-Persistent sessions require app-server experimental dynamic-tool support; the
-`codex exec` fallback cannot host one. The full contract, state machine, and
+Persistent sessions require app-server experimental dynamic-tool support. The full contract, state machine, and
 cleanup order are in [persistent-codex-agent.md](persistent-codex-agent.md).
 
 ## Shared orchestration prompt

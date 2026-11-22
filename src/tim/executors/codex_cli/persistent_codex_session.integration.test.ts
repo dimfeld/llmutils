@@ -267,7 +267,6 @@ async function withFixtureEnvironment<T>(
 ): Promise<T> {
   const originalPath = process.env.PATH;
   const originalSocket = process.env[TIM_CODEX_APP_SERVER_SOCKET];
-  const originalMode = process.env.CODEX_USE_APP_SERVER;
   const originalMockMode = process.env.PERSISTENT_CODEX_MOCK_MODE;
   const originalServerPath = process.env.PERSISTENT_CODEX_SERVER_PATH;
   const originalSpawnLog = process.env.PERSISTENT_CODEX_SPAWN_LOG;
@@ -276,7 +275,6 @@ async function withFixtureEnvironment<T>(
 
   process.env.PATH = `${fixture.rootDir}:${originalPath ?? ''}`;
   process.env[TIM_CODEX_APP_SERVER_SOCKET] = path.join(fixture.rootDir, 'inherited.sock');
-  delete process.env.CODEX_USE_APP_SERVER;
   process.env.PERSISTENT_CODEX_MOCK_MODE = fixture.mode;
   process.env.PERSISTENT_CODEX_SERVER_PATH = fixture.serverPath;
   process.env.PERSISTENT_CODEX_SPAWN_LOG = fixture.spawnLogPath;
@@ -290,8 +288,6 @@ async function withFixtureEnvironment<T>(
     else process.env.PATH = originalPath;
     if (originalSocket === undefined) delete process.env[TIM_CODEX_APP_SERVER_SOCKET];
     else process.env[TIM_CODEX_APP_SERVER_SOCKET] = originalSocket;
-    if (originalMode === undefined) delete process.env.CODEX_USE_APP_SERVER;
-    else process.env.CODEX_USE_APP_SERVER = originalMode;
     if (originalMockMode === undefined) delete process.env.PERSISTENT_CODEX_MOCK_MODE;
     else process.env.PERSISTENT_CODEX_MOCK_MODE = originalMockMode;
     if (originalServerPath === undefined) delete process.env.PERSISTENT_CODEX_SERVER_PATH;

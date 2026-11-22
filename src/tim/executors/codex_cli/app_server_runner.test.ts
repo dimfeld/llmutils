@@ -307,12 +307,10 @@ async function createHarness(options?: {
 describe('executeCodexStepViaAppServer', () => {
   const originalAllowAllTools = process.env.ALLOW_ALL_TOOLS;
   const originalOutputTimeout = process.env.CODEX_OUTPUT_TIMEOUT_MS;
-  const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
   beforeEach(() => {
     delete process.env.ALLOW_ALL_TOOLS;
     delete process.env.CODEX_OUTPUT_TIMEOUT_MS;
-    delete process.env.CODEX_USE_APP_SERVER;
   });
 
   afterEach(() => {
@@ -325,11 +323,6 @@ describe('executeCodexStepViaAppServer', () => {
       delete process.env.CODEX_OUTPUT_TIMEOUT_MS;
     } else {
       process.env.CODEX_OUTPUT_TIMEOUT_MS = originalOutputTimeout;
-    }
-    if (originalCodexUseAppServer === undefined) {
-      delete process.env.CODEX_USE_APP_SERVER;
-    } else {
-      process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
     }
     vi.resetModules();
   });
@@ -1077,26 +1070,6 @@ describe('executeCodexStepViaAppServer', () => {
     expect(harness.connection.threadStart.mock.calls[1]?.[0]).toEqual(
       expect.objectContaining({ dynamicTools: provider.definitions })
     );
-  });
-
-  test('rejects dynamic tools before tunnel or connection allocation when app-server is disabled', async () => {
-    process.env.CODEX_USE_APP_SERVER = 'false';
-    const harness = await createHarness({ tunnelActive: false });
-    const provider = createDynamicToolProvider();
-
-    await expect(
-      harness.executeCodexStepViaAppServer(
-        'prompt',
-        '/repo',
-        {},
-        {
-          dynamicToolProvider: provider,
-          outputSchemaPath: '/path/that/must/not/be/read.json',
-        }
-      )
-    ).rejects.toThrow(/require Codex app-server mode/i);
-    expect(harness.connectionCreateMock).not.toHaveBeenCalled();
-    expect(harness.createTunnelServerMock).not.toHaveBeenCalled();
   });
 
   test('wraps dynamic thread-start rejection without starting a turn', async () => {

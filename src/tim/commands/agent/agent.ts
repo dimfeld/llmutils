@@ -96,8 +96,6 @@ import { autoCreatePrForPlan, detectExistingPrUrl } from '../create_pr.js';
 import { autoUploadArtifactsToPr } from '../upload_artifacts.js';
 import { runPrStacking } from '../../pr_stacking/runner.js';
 import { withPlanAutoSync } from '../../plan_materialize.js';
-import { isCodexAppServerEnabled } from '../../executors/codex_cli/app_server_mode.js';
-import { CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE } from '../../executors/codex_cli/app_server_dynamic_tools.js';
 import {
   CollaborativeAgentSession,
   isCollaborativeAgentExecutor,
@@ -499,9 +497,6 @@ export async function timAgent(
       throw new Error(
         `Experimental agent messaging requires the Claude or Codex orchestrator executor; received ${executorName}`
       );
-    }
-    if (agentMessagingEnabled && executorName === 'codex-cli' && !isCodexAppServerEnabled()) {
-      throw new Error(CODEX_DYNAMIC_TOOLS_APP_SERVER_REQUIRED_ERROR_MESSAGE);
     }
     currentBaseDir = await getGitRoot();
     let initialResolvedPlan = await resolvePlanByNumericId(planId, currentBaseDir);

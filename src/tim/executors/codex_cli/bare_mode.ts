@@ -39,8 +39,7 @@ export async function executeBareMode(
     timEnvironment: options?.timEnvironment,
     ...(options?.appServerMode ? { appServerMode: options.appServerMode } : {}),
     ...(options?.terminalInput !== undefined ? { terminalInput: options.terminalInput } : {}),
-    // The app-server runner offers the tool only in an interactive chat session. The
-    // `codex exec` fallback cannot host dynamic tools and ignores this option.
+    // The app-server runner offers the tool only in an interactive chat session.
     ...(options?.endSessionTool === true ? { endSessionTool: true } : {}),
   } as const;
 

@@ -14,7 +14,6 @@ import {
   type PrStatusRow,
 } from '../db/pr_status.js';
 import { buildExecutorAndLog } from '../executors/index.js';
-import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
 import {
   ClaudeCodeExecutorName,
   CodexCliExecutorName,
@@ -520,11 +519,9 @@ export async function handleAutoreviewCommand(
     baseDir: reviewTarget.repoRoot,
     model: resolvedModel,
     noninteractive,
-    executorName,
     requestedTerminalInput: options.terminalInput,
     configTerminalInput: config.terminalInput,
     stdinIsTTY: process.stdin.isTTY,
-    codexAppServerEnabled: isCodexAppServerEnabled(),
   });
 
   await runWithHeadlessAdapterIfEnabled({

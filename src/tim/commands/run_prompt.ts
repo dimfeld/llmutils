@@ -10,22 +10,12 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { TIM_OUTPUT_SOCKET } from '../../logging/tunnel_protocol.js';
 import { createExecutorTunnelServer, type TunnelServer } from '../../logging/tunnel_server.js';
 import { loadEffectiveConfig } from '../configLoader.js';
-import {
-  buildWorkspaceCommandEnv,
-  type TimWorkspaceCommandEnvironmentOptions,
-} from '../../common/env.js';
-import {
-  getCodexModelProviderArgs,
-  TIM_CODEX_MODEL_PROVIDER,
-} from '../executors/codex_cli/model_provider.js';
+import type { TimWorkspaceCommandEnvironmentOptions } from '../../common/env.js';
 import { codexReasoningLevelSchema, type CodexReasoningLevel } from '../executors/schemas.js';
 import { createClaudeOutputStreamFormatter } from '../executors/claude_code/output_stream_formatter.js';
-import { createCodexStdoutFormatter } from '../executors/codex_cli/format.js';
-import {
-  buildOutputSchemaConversionPrompt,
-  buildOutputSchemaCorrectionPrompt,
-  validateJsonOutputAgainstSchema,
-} from '../executors/codex_cli/schema_output.js';
+import { executeCodexStep } from '../executors/codex_cli/codex_runner.js';
+import { detectFailedLine } from '../executors/failure_detection.js';
+import type { TimConfig } from '../configSchema.js';
 import { runWithHeadlessAdapterIfEnabled } from '../headless.js';
 import { buildTimWorkspaceCommandEnvironmentOptionsForPath } from '../environment_options.js';
 import { resolveOptionalPromptInput } from './prompt_input.js';
@@ -184,16 +174,6 @@ interface ClaudeArgOptions {
   projectPermissionSettings?: string;
 }
 
-interface CodexArgOptions {
-  modelProvider?: string;
-  prompt: string;
-  outputSchemaPath?: string;
-  reasoningLevel?: CodexReasoningLevel;
-  allowAllTools?: boolean;
-  externalRepositoryConfigDir?: string;
-  isUsingExternalStorage?: boolean;
-}
-
 interface RunPromptCommandDeps {
   loadEffectiveConfigFn?: typeof loadEffectiveConfig;
   runWithHeadlessAdapterIfEnabledFn?: typeof runWithHeadlessAdapterIfEnabled;
@@ -248,40 +228,6 @@ export function buildClaudeRunPromptArgs(options: ClaudeArgOptions): string[] {
   }
 
   args.push('--print', options.prompt);
-  return args;
-}
-
-export function buildCodexRunPromptArgs(options: CodexArgOptions): string[] {
-  const reasoningLevel = options.reasoningLevel ?? 'medium';
-  const sandboxSettings = options.allowAllTools
-    ? ['--dangerously-bypass-approvals-and-sandbox']
-    : ['--sandbox', 'workspace-write'];
-
-  const args = [
-    'codex',
-    '--enable',
-    'web_search_request',
-    'exec',
-    '-c',
-    `model_reasoning_effort=${reasoningLevel}`,
-    ...sandboxSettings,
-    ...getCodexModelProviderArgs({ [TIM_CODEX_MODEL_PROVIDER]: options.modelProvider }),
-  ];
-
-  if (
-    !options.allowAllTools &&
-    options.isUsingExternalStorage &&
-    options.externalRepositoryConfigDir
-  ) {
-    const writableRoots = JSON.stringify([options.externalRepositoryConfigDir]);
-    args.push('-c', `sandbox_workspace_write.writable_roots=${writableRoots}`);
-  }
-
-  if (options.outputSchemaPath) {
-    args.push('--output-schema', options.outputSchemaPath);
-  }
-
-  args.push('--json', options.prompt);
   return args;
 }
 
@@ -425,257 +371,27 @@ async function executeCodexPrompt(
   options: {
     jsonSchema?: string;
     reasoningLevel?: CodexReasoningLevel;
-    allowAllTools?: boolean;
     cwd: string;
-    externalRepositoryConfigDir?: string;
-    isUsingExternalStorage?: boolean;
+    config: TimConfig;
     timEnvironment?: TimWorkspaceCommandEnvironmentOptions;
   }
 ): Promise<string> {
-  let tempDir: string | undefined;
-  let outputSchemaPath: string | undefined;
-  let tunnelServer: TunnelServer | undefined;
-  let tunnelSocketPath: string | undefined;
+  const outputSchema = options.jsonSchema
+    ? (JSON.parse(options.jsonSchema) as Record<string, unknown>)
+    : undefined;
+  const output = await executeCodexStep(prompt, options.cwd, options.config, {
+    outputSchema,
+    reasoningLevel: options.reasoningLevel ?? 'medium',
+    inactivityTimeoutMs: RUN_PROMPT_INACTIVITY_TIMEOUT_MS,
+    timEnvironment: options.timEnvironment,
+  });
 
-  try {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-run-prompt-'));
-    if (options.jsonSchema) {
-      outputSchemaPath = path.join(tempDir, 'output-schema.json');
-      await fs.writeFile(outputSchemaPath, options.jsonSchema, 'utf8');
-    }
-
-    if (!isTunnelActive()) {
-      try {
-        tunnelSocketPath = path.join(tempDir, 'output.sock');
-        tunnelServer = await createExecutorTunnelServer(tunnelSocketPath);
-      } catch (err) {
-        debugLog('Could not create tunnel server for output forwarding:', err);
-      }
-    }
-
-    const providerEnv = await buildWorkspaceCommandEnv(options.cwd, undefined, {
-      timEnvironment: options.timEnvironment,
-    });
-    const args = buildCodexRunPromptArgs({
-      modelProvider: providerEnv[TIM_CODEX_MODEL_PROVIDER],
-      prompt,
-      outputSchemaPath,
-      reasoningLevel: options.reasoningLevel,
-      allowAllTools: options.allowAllTools,
-      externalRepositoryConfigDir: options.externalRepositoryConfigDir,
-      isUsingExternalStorage: options.isUsingExternalStorage,
-    });
-
-    const formatter = createCodexStdoutFormatter();
-    let killedByTimeout = false;
-    const result = await spawnAndLogOutput(args, {
-      sessionProcessLabel: 'Codex prompt',
-      cwd: options.cwd,
-      env: {
-        ...(providerEnv[TIM_CODEX_MODEL_PROVIDER]
-          ? { [TIM_CODEX_MODEL_PROVIDER]: providerEnv[TIM_CODEX_MODEL_PROVIDER] }
-          : {}),
-        TIM_EXECUTOR: 'codex',
-        AGENT: process.env.AGENT || '1',
-        TIM_NOTIFY_SUPPRESS: '1',
-        ...(tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
-      },
-      timEnvironment: options.timEnvironment,
-      formatStdout: formatter.formatChunk,
-      inactivityTimeoutMs: RUN_PROMPT_INACTIVITY_TIMEOUT_MS,
-      initialInactivityTimeoutMs: RUN_PROMPT_INITIAL_INACTIVITY_TIMEOUT_MS,
-      onInactivityKill: () => {
-        killedByTimeout = true;
-        debugLog(
-          `Codex run-prompt timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes; terminating.`
-        );
-      },
-    });
-
-    const failedMessage = formatter.getFailedAgentMessage();
-    if (failedMessage) {
-      warn('Codex reported a FAILED agent message; returning that message.');
-      process.exitCode = 1;
-    }
-
-    let finalMessage =
-      failedMessage ?? formatter.getFinalAgentResponseMessage() ?? formatter.getFinalAgentMessage();
-    const timedOut = killedByTimeout || result.killedByInactivity;
-    const hasFinalMessage = !!finalMessage;
-
-    if (timedOut && !hasFinalMessage) {
-      throw new Error(
-        `Codex run-prompt timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes`
-      );
-    }
-
-    if (result.exitCode !== 0 && !(timedOut && hasFinalMessage)) {
-      throw new Error(`Codex exited with non-zero exit code: ${result.exitCode}`);
-    }
-
-    if (!finalMessage) {
-      throw new Error('No final agent message found in Codex output.');
-    }
-
-    const outputSchema = options.jsonSchema ? JSON.parse(options.jsonSchema) : undefined;
-    if (outputSchema) {
-      let validation = validateJsonOutputAgainstSchema(finalMessage, outputSchema);
-      if (validation.valid) {
-        return normalizeStructuredJsonOutput(finalMessage);
-      }
-
-      const threadId = formatter.getThreadId();
-      if (!threadId) {
-        throw new Error(
-          `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
-        );
-      }
-
-      warn(
-        'Codex returned output that does not match the schema; requesting corrected JSON output.'
-      );
-      const correctionFormatter = createCodexStdoutFormatter();
-      const correctionArgs = args.slice(0, -2);
-      correctionArgs.push(
-        '--json',
-        'resume',
-        threadId,
-        buildOutputSchemaCorrectionPrompt(outputSchema, validation.error)
-      );
-      let correctionKilledByTimeout = false;
-      const correctionResult = await spawnAndLogOutput(correctionArgs, {
-        sessionProcessLabel: 'Codex schema correction',
-        cwd: options.cwd,
-        env: {
-          ...(providerEnv[TIM_CODEX_MODEL_PROVIDER]
-            ? { [TIM_CODEX_MODEL_PROVIDER]: providerEnv[TIM_CODEX_MODEL_PROVIDER] }
-            : {}),
-          TIM_EXECUTOR: 'codex',
-          AGENT: process.env.AGENT || '1',
-          TIM_NOTIFY_SUPPRESS: '1',
-          ...(tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
-        },
-        timEnvironment: options.timEnvironment,
-        formatStdout: correctionFormatter.formatChunk,
-        inactivityTimeoutMs: RUN_PROMPT_INACTIVITY_TIMEOUT_MS,
-        initialInactivityTimeoutMs: RUN_PROMPT_INITIAL_INACTIVITY_TIMEOUT_MS,
-        onInactivityKill: () => {
-          correctionKilledByTimeout = true;
-          debugLog(
-            `Codex run-prompt schema correction timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes; terminating.`
-          );
-        },
-      });
-
-      const correctionFinalMessage =
-        correctionFormatter.getFailedAgentMessage() ??
-        correctionFormatter.getFinalAgentResponseMessage() ??
-        correctionFormatter.getFinalAgentMessage();
-      const correctionTimedOut = correctionKilledByTimeout || correctionResult.killedByInactivity;
-      const hasCorrectionFinalMessage = !!correctionFinalMessage;
-
-      if (correctionTimedOut && !hasCorrectionFinalMessage) {
-        throw new Error(
-          `Codex run-prompt schema correction timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes`
-        );
-      }
-
-      if (correctionResult.exitCode !== 0 && !(correctionTimedOut && hasCorrectionFinalMessage)) {
-        throw new Error(
-          `Codex schema correction exited with non-zero exit code: ${correctionResult.exitCode}`
-        );
-      }
-
-      if (!correctionFinalMessage) {
-        throw new Error('No final agent message found in Codex output.');
-      }
-
-      validation = validateJsonOutputAgainstSchema(correctionFinalMessage, outputSchema);
-      if (!validation.valid) {
-        warn(
-          'Codex schema correction still did not match the schema; starting a fresh JSON conversion run.'
-        );
-        const conversionFormatter = createCodexStdoutFormatter();
-        const conversionArgs = args.slice(0, -1);
-        conversionArgs.push(
-          buildOutputSchemaConversionPrompt({
-            schema: outputSchema,
-            failedOutput: finalMessage,
-            validationError: validation.error,
-          })
-        );
-        let conversionKilledByTimeout = false;
-        const conversionResult = await spawnAndLogOutput(conversionArgs, {
-          sessionProcessLabel: 'Codex schema conversion',
-          cwd: options.cwd,
-          env: {
-            ...(providerEnv[TIM_CODEX_MODEL_PROVIDER]
-              ? { [TIM_CODEX_MODEL_PROVIDER]: providerEnv[TIM_CODEX_MODEL_PROVIDER] }
-              : {}),
-            TIM_EXECUTOR: 'codex',
-            AGENT: process.env.AGENT || '1',
-            TIM_NOTIFY_SUPPRESS: '1',
-            ...(tunnelServer && tunnelSocketPath ? { [TIM_OUTPUT_SOCKET]: tunnelSocketPath } : {}),
-          },
-          timEnvironment: options.timEnvironment,
-          formatStdout: conversionFormatter.formatChunk,
-          inactivityTimeoutMs: RUN_PROMPT_INACTIVITY_TIMEOUT_MS,
-          initialInactivityTimeoutMs: RUN_PROMPT_INITIAL_INACTIVITY_TIMEOUT_MS,
-          onInactivityKill: () => {
-            conversionKilledByTimeout = true;
-            debugLog(
-              `Codex run-prompt schema conversion timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes; terminating.`
-            );
-          },
-        });
-
-        const conversionFinalMessage =
-          conversionFormatter.getFailedAgentMessage() ??
-          conversionFormatter.getFinalAgentResponseMessage() ??
-          conversionFormatter.getFinalAgentMessage();
-        const conversionTimedOut = conversionKilledByTimeout || conversionResult.killedByInactivity;
-        const hasConversionFinalMessage = !!conversionFinalMessage;
-
-        if (conversionTimedOut && !hasConversionFinalMessage) {
-          throw new Error(
-            `Codex run-prompt schema conversion timed out after ${Math.round(RUN_PROMPT_INACTIVITY_TIMEOUT_MS / 60000)} minutes`
-          );
-        }
-
-        if (conversionResult.exitCode !== 0 && !(conversionTimedOut && hasConversionFinalMessage)) {
-          throw new Error(
-            `Codex schema conversion exited with non-zero exit code: ${conversionResult.exitCode}`
-          );
-        }
-
-        if (!conversionFinalMessage) {
-          throw new Error('No final agent message found in Codex output.');
-        }
-
-        validation = validateJsonOutputAgainstSchema(conversionFinalMessage, outputSchema);
-        if (!validation.valid) {
-          throw new Error(
-            `Codex returned output that does not match the schema.${validation.error ? ` ${validation.error}` : ''}`
-          );
-        }
-
-        finalMessage = conversionFinalMessage;
-      } else {
-        finalMessage = correctionFinalMessage;
-      }
-    }
-
-    if (options.jsonSchema) {
-      return normalizeStructuredJsonOutput(finalMessage);
-    }
-
-    return finalMessage;
-  } finally {
-    tunnelServer?.close();
-    if (tempDir) {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    }
+  if (detectFailedLine(output).failed) {
+    warn('Codex reported a FAILED agent message; returning that message.');
+    process.exitCode = 1;
   }
+
+  return outputSchema ? normalizeStructuredJsonOutput(output) : output;
 }
 
 export async function handleRunPromptCommand(
@@ -736,10 +452,8 @@ export async function handleRunPromptCommand(
           return executeCodexPromptFn(prompt, {
             jsonSchema: schema,
             reasoningLevel,
-            allowAllTools,
             cwd,
-            externalRepositoryConfigDir: config.externalRepositoryConfigDir,
-            isUsingExternalStorage: config.isUsingExternalStorage,
+            config,
             timEnvironment,
           });
         },

@@ -264,8 +264,7 @@ process-control changes.
 
 - **Claude Code**: requires the `tim` MCP bridge installed by
   `setupPermissionsMcp()`. See [claude-mcp-bridge.md](claude-mcp-bridge.md).
-- **Codex CLI**: requires app-server experimental dynamic-tool support. The
-  `codex exec` fallback cannot host persistent sessions. See
+- **Codex CLI**: requires app-server experimental dynamic-tool support. See
   [codex-cli-integration.md](codex-cli-integration.md).
 
 ### Disabled compatibility

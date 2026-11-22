@@ -197,18 +197,12 @@ async function closeScriptedAppServer(fixture: ScriptedAppServer): Promise<void>
 
 describe('Codex app-server runner dynamic-tool integration', () => {
   const originalSocket = process.env[TIM_CODEX_APP_SERVER_SOCKET];
-  const originalAppServerMode = process.env.CODEX_USE_APP_SERVER;
 
   afterEach(() => {
     if (originalSocket === undefined) {
       delete process.env[TIM_CODEX_APP_SERVER_SOCKET];
     } else {
       process.env[TIM_CODEX_APP_SERVER_SOCKET] = originalSocket;
-    }
-    if (originalAppServerMode === undefined) {
-      delete process.env.CODEX_USE_APP_SERVER;
-    } else {
-      process.env.CODEX_USE_APP_SERVER = originalAppServerMode;
     }
   });
 
@@ -218,7 +212,6 @@ describe('Codex app-server runner dynamic-tool integration', () => {
   ] as const)('negotiates and dispatches the exact %s role tool set', async (role, toolNames) => {
     const fixture = await createScriptedAppServer('normal');
     process.env[TIM_CODEX_APP_SERVER_SOCKET] = fixture.socketPath;
-    delete process.env.CODEX_USE_APP_SERVER;
 
     try {
       const provider = createProvider(role);
@@ -270,7 +263,6 @@ describe('Codex app-server runner dynamic-tool integration', () => {
     async (mode, rejectedMethod) => {
       const fixture = await createScriptedAppServer(mode);
       process.env[TIM_CODEX_APP_SERVER_SOCKET] = fixture.socketPath;
-      delete process.env.CODEX_USE_APP_SERVER;
       const provider = createProvider('orchestrator');
       const spawnSpy = vi.spyOn(Bun, 'spawn');
 

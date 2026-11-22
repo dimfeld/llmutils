@@ -274,7 +274,6 @@ function completeTurn(
 describe('persistent Codex turn state machine', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    delete process.env.CODEX_USE_APP_SERVER;
   });
 
   it('steers an active turn only after Codex accepts the expected turn', async () => {

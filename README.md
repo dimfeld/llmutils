@@ -1112,7 +1112,7 @@ The web UI **Settings** tab stores per-project settings in SQLite. The project-l
 
 ### Project Environment Variables
 
-The top-level `environment` map defines project-level environment variables that tim renders with explicit plan and workspace context at process launch time. These variables and the reserved built-ins are applied across every tim-launched user process: lifecycle commands (startup/check/shutdown/daemon), post-apply commands, workspace post-clone/update commands, the Claude and Codex executor subprocesses (including Codex app-server mode), and the subagent, proof, review, and run-prompt workflows. Internal git/jj repository-maintenance plumbing is intentionally excluded.
+The top-level `environment` map defines project-level environment variables that tim renders with explicit plan and workspace context at process launch time. These variables and the reserved built-ins are applied across every tim-launched user process: lifecycle commands (startup/check/shutdown/daemon), post-apply commands, workspace post-clone/update commands, the Claude and Codex executor subprocesses, and the subagent, proof, review, and run-prompt workflows. Internal git/jj repository-maintenance plumbing is intentionally excluded.
 
 ```yaml
 environment:

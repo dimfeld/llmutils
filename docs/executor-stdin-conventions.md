@@ -290,7 +290,7 @@ The `logSpawn()` function returns a Bun `Subprocess` where `exitCode` may be `nu
 
 ## Subprocess Stream Processing
 
-These patterns apply to any executor that manages a subprocess with piped stdio (e.g., app-server connections, `codex exec`, Claude Code stream-json).
+These patterns apply to any executor that manages a subprocess with piped stdio (e.g., Codex app-server connections, Claude Code stream-json).
 
 - **Guard write paths during shutdown**: When a class manages both readable streams and writable sinks, closing the writable side while still consuming the readable side can cause writes-to-closed-sink errors. Use a `closing` flag checked before every write to the sink, and set it before initiating close.
 - **Flush line splitters unconditionally at stream end**: `createLineSplitter()` has its own internal buffer separate from any decoder. Always call its flush/end method when the stream ends, not just when the decoder has remaining content.

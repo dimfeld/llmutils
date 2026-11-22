@@ -36,10 +36,6 @@ vi.mock('../plan_repo_root.js', () => ({
   resolveRepoRoot: vi.fn(),
 }));
 
-vi.mock('../executors/codex_cli/app_server_mode.js', () => ({
-  isCodexAppServerEnabled: vi.fn(),
-}));
-
 vi.mock('../environment_options.js', () => ({
   buildTimWorkspaceCommandEnvironmentOptionsForPath: vi.fn(),
   getWorkspaceInfoByPathIfAvailable: vi.fn(),
@@ -114,7 +110,6 @@ import type {
 } from './review_target.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { buildExecutorAndLog } from '../executors/index.js';
-import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
 import {
   getUsingJj,
   getCurrentBranchName,
@@ -536,7 +531,6 @@ describe('handleAutoreviewCommand', () => {
   };
 
   const originalStdinIsTTY = process.stdin.isTTY;
-  const originalCodexUseAppServer = process.env.CODEX_USE_APP_SERVER;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -549,7 +543,6 @@ describe('handleAutoreviewCommand', () => {
     lifecycleMocks.shutdown.mockResolvedValue(undefined);
 
     vi.mocked(buildExecutorAndLog).mockReturnValue(mockExecutor as any);
-    vi.mocked(isCodexAppServerEnabled).mockReturnValue(false);
     vi.mocked(getUsingJj).mockResolvedValue(false);
     vi.mocked(getDatabase).mockReturnValue(emptyPrStatusDb as any);
     vi.mocked(getCurrentBranchName).mockResolvedValue('main');
@@ -585,7 +578,6 @@ describe('handleAutoreviewCommand', () => {
       planPath: '/repo-root/.tim/plans/376.plan.md',
     });
 
-    delete process.env.CODEX_USE_APP_SERVER;
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
   });
 
@@ -595,11 +587,6 @@ describe('handleAutoreviewCommand', () => {
       value: originalStdinIsTTY,
       configurable: true,
     });
-    if (originalCodexUseAppServer == null) {
-      delete process.env.CODEX_USE_APP_SERVER;
-    } else {
-      process.env.CODEX_USE_APP_SERVER = originalCodexUseAppServer;
-    }
   });
 
   // ── Target resolution ─────────────────────────────────────────────────────
@@ -1304,19 +1291,6 @@ describe('handleAutoreviewCommand', () => {
 
   // ── codex executor selection ───────────────────────────────────────────────
 
-  test('codex-cli with app server disabled (isCodexAppServerEnabled: false) disables terminal input', async () => {
-    vi.mocked(isCodexAppServerEnabled).mockReturnValue(false);
-    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
-
-    const options: AutoreviewCommandOptions = { current: true, executor: 'codex-cli' };
-    await handleAutoreviewCommand(undefined, options, {});
-
-    expect(vi.mocked(buildExecutorAndLog)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(buildExecutorAndLog).mock.calls[0][0]).toBe('codex-cli');
-    const buildOpts = vi.mocked(buildExecutorAndLog).mock.calls[0][1];
-    expect(buildOpts.terminalInput).toBe(false);
-  });
-
   test('codex alias resolves to codex-cli executor', async () => {
     const options: AutoreviewCommandOptions = {
       current: true,
@@ -1328,8 +1302,7 @@ describe('handleAutoreviewCommand', () => {
     expect(vi.mocked(buildExecutorAndLog).mock.calls[0][0]).toBe('codex-cli');
   });
 
-  test('codex-cli with app server enabled keeps terminal input based on TTY', async () => {
-    vi.mocked(isCodexAppServerEnabled).mockReturnValue(true);
+  test('codex-cli keeps terminal input based on TTY', async () => {
     Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
 
     const options: AutoreviewCommandOptions = { current: true, executor: 'codex-cli' };
@@ -1407,7 +1380,6 @@ describe('handleAutoreviewCommand - target resolution with real git', () => {
       terminalInput: true,
     } as any);
     vi.mocked(buildTimWorkspaceCommandEnvironmentOptionsForPath).mockReturnValue({} as any);
-    vi.mocked(isCodexAppServerEnabled).mockReturnValue(false);
     vi.mocked(resolvePlanByNumericId).mockResolvedValue({
       plan: {
         id: 376,

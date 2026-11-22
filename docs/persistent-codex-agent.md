@@ -47,9 +47,7 @@ tunnel, socket, process node, or child process is allocated. It rejects:
 - `outputSchema` / `outputSchemaPath` — one agent keeps one thread identity,
 - an explicit `appServerMode`, a one-shot `inactivityTimeoutMs`, or
   `terminalInput: true`,
-- a missing lifecycle observer or dynamic-tool provider,
-- app-server mode being disabled. The `codex exec` fallback cannot host a
-  persistent provider.
+- a missing lifecycle observer or dynamic-tool provider.
 
 ## Three boundaries
 

@@ -15,7 +15,6 @@ import * as z from 'zod';
 import { buildReferenceArtifactsSection } from '../prompt_builder.js';
 import { buildExecutorAndLog, DEFAULT_EXECUTOR } from '../executors/index.js';
 import { ClaudeCodeExecutorName, CodexCliExecutorName } from '../executors/schemas.js';
-import { isCodexAppServerEnabled } from '../executors/codex_cli/app_server_mode.js';
 import { buildInteractiveExecutorOptions } from '../executors/shared/interactive_options.js';
 import { watchPlanFile } from '../plan_file_watcher.js';
 import { resolveProjectContext } from '../plan_materialize.js';
@@ -244,16 +243,13 @@ export async function handleChatCommand(
     resolvedModel,
     commandName: 'tim chat',
   });
-  const codexAppServerEnabled = isCodexAppServerEnabled();
   const { sharedExecutorOptions, terminalInputEnabled } = buildInteractiveExecutorOptions({
     baseDir: process.cwd(),
     model: resolvedModel,
     noninteractive,
-    executorName,
     requestedTerminalInput: options.terminalInput,
     configTerminalInput: workspaceConfig.terminalInput,
     stdinIsTTY: process.stdin.isTTY,
-    codexAppServerEnabled,
   });
   const prompt = await resolveOptionalPromptText(promptText, {
     promptFile: options.promptFile,
