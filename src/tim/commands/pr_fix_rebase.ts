@@ -160,20 +160,14 @@ export function buildRebaseInstructions(
 }
 
 /**
- * Instructions for a jj bookmark that has more than one target, for example after the
- * local and remote versions of a branch were changed separately. Agents often compare
- * the two targets with a whole-tree diff, which includes the differences between their
- * bases and makes the two versions look much more different than they are.
- */
-/**
  * Instructions for the `EndTimSession` tool, which lets the agent end its interactive session
- * after its turn. `conditions` lists when the agent may end the session without the user.
+ * after its turn. `conditions` lists when the agent must end the session without the user.
  */
 export function buildEndSessionInstructions(conditions: string[]): string[] {
   return [
     '## Ending the Session',
     '',
-    `If the \`${END_SESSION_TOOL_NAME}\` tool is available, you can use it to end this session after your turn, so that the user does not have to end it. Call it only when all of these conditions are true:`,
+    `The \`${END_SESSION_TOOL_NAME}\` tool ends this session after your turn, so that the user does not have to end it. Before you end each turn, examine each of these conditions. If all of them are true, you must call \`${END_SESSION_TOOL_NAME}\`. This is not optional, and it is not a choice that you make. If one or more conditions are false, do not call it:`,
     '',
     ...conditions.map((condition) => `- ${condition}`),
     '- All of your work is committed and pushed, and all replies that you must post are posted.',
@@ -184,6 +178,12 @@ export function buildEndSessionInstructions(conditions: string[]): string[] {
   ];
 }
 
+/**
+ * Instructions for a jj bookmark that has more than one target, for example after the
+ * local and remote versions of a branch were changed separately. Agents often compare
+ * the two targets with a whole-tree diff, which includes the differences between their
+ * bases and makes the two versions look much more different than they are.
+ */
 export function buildJjBookmarkConflictInstructions(): string[] {
   return [
     '## jj Bookmark Conflicts',
