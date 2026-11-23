@@ -1271,10 +1271,13 @@ export function buildReviewThreadFixInstructions(
     '',
     'Always reply to and resolve every outstanding issue, unless the user explicitly tells you to leave a specific issue unresolved. When the user says to "ignore", "skip", or "not fix" an issue, that does not mean to leave it alone. It means that you do not change the code for that issue, but you still reply that it will not be fixed, give the reason, and resolve the thread. If the user does not give a reason, use the reason that you can infer from the conversation, for example that the user chose not to address it.',
     '',
+    'A reply alone is not sufficient. After you publish the replies for the decided items, you must also run `tim pr resolve <PRRT thread ID>` for each of those review threads. This applies to items that you fixed and to items that the user chose not to fix. Before you finish, examine each review thread from the "Needs your decision" section and make sure that it is resolved.',
+    '',
     ...(options.endSessionTool
       ? buildEndSessionInstructions([
           'The report has no items that need a decision, or the user already decided all of them and you applied the decisions.',
-          'Every fix that you made without a decision from the user has `Behavior change: no`. Auto-decline items do not prevent you from ending the session.',
+          'One of these is true: every fix that you made without a decision from the user has `Behavior change: no`, or the report had items that needed a decision and the user answered them. In the second case, the user saw the behavior-changing automatic fixes in the same report when they gave their decisions, so those fixes do not prevent you from ending the session. Auto-decline items also do not prevent you from ending the session.',
+          'Every review thread that you replied to is resolved (see "Resolving Review Threads" below), unless the user told you to leave it unresolved.',
           'The user is not in a conversation with you that is still continuing.',
         ])
       : []),
@@ -1305,7 +1308,7 @@ export function buildReviewThreadFixInstructions(
     '   `tim pr comment <PR URL or owner/repo#number> "explanation of fix"`',
     '10. For each actionable issue that you decide not to fix, or that the user tells you not to fix, also leave a reply that gives the reason. Use the same pending GraphQL review for review threads, and `tim pr comment` for other feedback. Give the specific reason, for example: the suggestion is incorrect, the behavior is intentional, the issue is out of scope for this PR, or the user chose to defer it. When one comment lists several issues, a single reply can cover both the fixed issues and the issues not fixed. You do not need to reply about issues that later comments show were already handled, or about purely informational items.',
     '11. After the replies are published, resolve each review thread that you replied to, but only when every issue in that thread was actually fixed or was intentionally not fixed (with the reason given in your reply). Do not resolve a thread when any of its issues is still open, for example because you are waiting for the user to decide, or because a fix failed or was not pushed. See "Resolving Review Threads" below.',
-    '12. Before finishing, make sure you have reviewed all provided AI comments, that each actionable issue has a reply that says it was fixed or why it was not fixed, and that each fully handled review thread is resolved.',
+    '12. Before finishing, make sure you have reviewed all provided AI comments, that each actionable issue has a reply that says it was fixed or why it was not fixed, and that each fully handled review thread is resolved. Do this check for the automatic items and again for the items that the user decided. A thread that has a reply but is not resolved is not finished.',
     '',
     'Every comment posted to the PR, including review-thread replies and standalone PR comments, must start with `AI Response: ` so it is clear the message came from the bot and not the actual user.',
     '',
@@ -1330,7 +1333,7 @@ export function buildReviewThreadFixInstructions(
     'After the pending review is submitted, resolve each fully handled review thread with its PRRT thread ID:',
     '   `tim pr resolve <PRRT thread ID>`',
     '',
-    'Resolve a thread only after its reply was published successfully. Do not resolve threads that you did not reply to. PR-level review summaries and conversation comments are not review threads and cannot be resolved.',
+    'Resolve a thread only after its reply was published successfully. Do not resolve threads that you did not reply to. Do not stop after the reply: each fully handled thread that you replied to must also be resolved, including threads for items that the user decided. PR-level review summaries and conversation comments are not review threads and cannot be resolved.',
     '',
     'Do not update the status of the issue or PR.',
     'Do not request or re-request reviews.',
