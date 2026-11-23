@@ -834,6 +834,77 @@ describe('createAppServerFormatter', () => {
     });
   });
 
+  test('formats sub-agent activity items only on completion', () => {
+    const formatter = createAppServerFormatter();
+    const item = {
+      type: 'subAgentActivity',
+      model: 'gpt-6.2-sol',
+      reasoningEffort: 'low',
+      id: 'call_8d8b2faca6e34608806abcb3dc86a2b6',
+      kind: 'started',
+      agentThreadId: '01a209bd-16ac-7b80-b20d-461b7a1a3fdf',
+      agentPath: '/root/fixture_quality',
+      startedAtMs: 1795459716840,
+      completedAtMs: null,
+    };
+
+    expect(formatter.handleNotification('item/started', { item })).toEqual({
+      type: 'item/started',
+    });
+
+    expect(
+      formatter.handleNotification('item/completed', {
+        item: { ...item, completedAtMs: 1795459716840 },
+      })
+    ).toEqual({
+      type: 'item/completed',
+      structured: {
+        type: 'workflow_progress',
+        timestamp: expect.any(String),
+        phase: 'subagent_activity',
+        message: 'Subagent /root/fixture_quality started (gpt-6.2-sol, reasoning: low)',
+      },
+    });
+  });
+
+  test('formats completed sub-agent activity without model details', () => {
+    const formatter = createAppServerFormatter();
+    const message = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'subAgentActivity',
+        model: null,
+        reasoningEffort: null,
+        id: 'subagent-completed-01a209bd-16e8-7602-aeb3-fcaa91d7b8bd',
+        kind: 'completed',
+        agentThreadId: '01a209bd-16ac-7b80-b20d-461b7a1a3fdf',
+        agentPath: '/root/fixture_quality',
+        startedAtMs: 1795459760224,
+        completedAtMs: 1795459760224,
+      },
+    });
+
+    expect(message.structured).toMatchObject({
+      type: 'workflow_progress',
+      message: 'Subagent /root/fixture_quality completed',
+    });
+  });
+
+  test('falls back to the agent thread id when sub-agent activity has no path', () => {
+    const formatter = createAppServerFormatter();
+    const message = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'subAgentActivity',
+        id: 'x',
+        kind: 'interrupted',
+        agentThreadId: '01a209bd-16ac-7b80-b20d-461b7a1a3fdf',
+      },
+    });
+
+    expect(message.structured).toMatchObject({
+      message: 'Subagent 01a209bd-16ac-7b80-b20d-461b7a1a3fdf interrupted',
+    });
+  });
+
   test('formats completed collab agent tool call items as tool results', () => {
     const formatter = createAppServerFormatter();
     const message = formatter.handleNotification('item/completed', {

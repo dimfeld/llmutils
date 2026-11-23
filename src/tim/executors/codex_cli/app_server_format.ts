@@ -217,6 +217,23 @@ function buildCollabAgentToolInput(item: Record<string, unknown>): Record<string
   };
 }
 
+function formatSubAgentActivity(item: Record<string, unknown>): string {
+  const agent =
+    extractTextField(item.agentPath) ?? extractTextField(item.agentThreadId) ?? 'unknown';
+  const kind = extractTextField(item.kind) ?? 'updated';
+  const details: string[] = [];
+  const model = extractTextField(item.model);
+  const reasoningEffort = extractTextField(item.reasoningEffort);
+  if (model) {
+    details.push(model);
+  }
+  if (reasoningEffort) {
+    details.push(`reasoning: ${reasoningEffort}`);
+  }
+  const suffix = details.length > 0 ? ` (${details.join(', ')})` : '';
+  return `Subagent ${agent} ${kind}${suffix}`;
+}
+
 function extractItemText(item: Record<string, unknown>): string {
   const text = item.text;
   if (typeof text === 'string') {
@@ -659,6 +676,23 @@ export function createAppServerFormatter(model?: string) {
       return {
         type: method,
         structured,
+      };
+    }
+
+    if (itemType === 'subagentactivity') {
+      // Codex sends both item/started and item/completed for each activity, with the
+      // same content. Show only the completed notification to avoid duplicates.
+      if (method !== 'item/completed') {
+        return { type: method };
+      }
+      return {
+        type: method,
+        structured: {
+          type: 'workflow_progress',
+          timestamp: ts,
+          phase: 'subagent_activity',
+          message: formatSubAgentActivity(item),
+        },
       };
     }
 
