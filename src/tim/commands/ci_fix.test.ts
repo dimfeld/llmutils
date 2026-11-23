@@ -341,6 +341,7 @@ describe('tim/commands/ci_fix', () => {
           required: true,
         },
       ],
+      ignoredChecks: [],
       noRequiredConfig: false,
     };
     state.config = {};
@@ -508,7 +509,11 @@ describe('tim/commands/ci_fix', () => {
   });
 
   test('returns before workspace and executor allocation when no checks fail', async () => {
-    mockSelectFailingChecks.mockReturnValue({ checks: [], noRequiredConfig: false } as never);
+    mockSelectFailingChecks.mockReturnValue({
+      checks: [],
+      noRequiredConfig: false,
+      ignoredChecks: [],
+    } as never);
 
     await executeCiFixCommand({
       target: state.target as never,
@@ -523,13 +528,42 @@ describe('tim/commands/ci_fix', () => {
       'https://github.com/example/repo/pull/42'
     );
     expect(mockGetRequiredCheckNames).toHaveBeenCalledWith(state.db, state.refreshedStatus.status);
-    expect(mockSelectFailingChecks).toHaveBeenCalledWith(state.refreshedStatus.checks, ['unit']);
+    expect(mockSelectFailingChecks).toHaveBeenCalledWith(state.refreshedStatus.checks, ['unit'], {
+      ignoredCheckPatterns: [],
+    });
     expect(mockSetupWorkspace).not.toHaveBeenCalled();
     expect(mockEnsurePrFixHeadBranchPushableOnOrigin).not.toHaveBeenCalled();
     expect(mockBuildExecutorAndLog).not.toHaveBeenCalled();
     expect(mockCollectFailingCheckLogs).not.toHaveBeenCalled();
     expect(mockLog).toHaveBeenCalledWith('No failing checks for PR #42');
     expect(CleanupRegistry.getInstance().size).toBe(0);
+  });
+
+  test('passes ciFix.ignoredChecks to check selection and stops when only ignored checks fail', async () => {
+    state.config = { ciFix: { ignoredChecks: ['review-bot', 'docs *'] } };
+    mockSelectFailingChecks.mockReturnValue({
+      checks: [],
+      ignoredChecks: [{ name: 'review-bot' }, { name: 'docs preview' }],
+      noRequiredConfig: false,
+    } as never);
+
+    await executeCiFixCommand({
+      target: state.target as never,
+      options: {},
+      config: state.config as never,
+      noninteractive: false,
+      terminalInputEnabled: true,
+    });
+
+    expect(mockSelectFailingChecks).toHaveBeenCalledWith(state.refreshedStatus.checks, ['unit'], {
+      ignoredCheckPatterns: ['review-bot', 'docs *'],
+    });
+    expect(mockLog).toHaveBeenCalledWith(
+      'Ignoring failing checks from ciFix.ignoredChecks: review-bot, docs preview'
+    );
+    expect(mockLog).toHaveBeenCalledWith('No failing checks for PR #42');
+    expect(mockSetupWorkspace).not.toHaveBeenCalled();
+    expect(mockCollectFailingCheckLogs).not.toHaveBeenCalled();
   });
 
   test('proceeds with a plan target that has exactly one linked pull request', async () => {
@@ -750,6 +784,7 @@ describe('tim/commands/ci_fix', () => {
           required: false,
         },
       ],
+      ignoredChecks: [],
       noRequiredConfig: true,
     };
     mockSelectFailingChecks.mockReturnValue(state.selectedChecks as never);
@@ -954,7 +989,11 @@ describe('tim/commands/ci_fix', () => {
   });
 
   test('wraps execution with the ci-fix headless command and PR metadata', async () => {
-    mockSelectFailingChecks.mockReturnValue({ checks: [], noRequiredConfig: false } as never);
+    mockSelectFailingChecks.mockReturnValue({
+      checks: [],
+      noRequiredConfig: false,
+      ignoredChecks: [],
+    } as never);
     const command = makeNestedCommand();
 
     await handleCiFixCommand(undefined, { pr: '42' }, command);
@@ -983,7 +1022,11 @@ describe('tim/commands/ci_fix', () => {
     state.target = makePlanTarget([makePlanPrStatus(42)]);
     mockResolvePrFixTargetIntent.mockReturnValueOnce({ mode: 'plan', planId: 401 });
     mockResolvePrFixTarget.mockResolvedValueOnce(state.target as never);
-    mockSelectFailingChecks.mockReturnValueOnce({ checks: [], noRequiredConfig: false } as never);
+    mockSelectFailingChecks.mockReturnValueOnce({
+      checks: [],
+      noRequiredConfig: false,
+      ignoredChecks: [],
+    } as never);
 
     await handleCiFixCommand(401, {}, makeNestedCommand());
 

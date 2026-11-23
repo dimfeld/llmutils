@@ -611,7 +611,7 @@ prFix:
       model: gpt-5-codex
 ```
 
-`tim pr fix-ci --pr <pr-url-or-number>` diagnoses failing CI checks for a pull request. It downloads available GitHub Actions logs into the selected workspace, asks the agent to diagnose each failure and confirm the proposed actions, then applies the requested fixes and pushes them to the PR branch. The agent does the push. When the agent finishes, tim commits any leftover changes in the workspace but does not push them. Configure defaults with `ciFix.executor`, `ciFix.model`, and `ciFix.effort`; CLI flags override these values.
+`tim pr fix-ci --pr <pr-url-or-number>` diagnoses failing CI checks for a pull request. It downloads available GitHub Actions logs into the selected workspace, asks the agent to diagnose each failure and confirm the proposed actions, then applies the requested fixes and pushes them to the PR branch. The agent does the push. When the agent finishes, tim commits any leftover changes in the workspace but does not push them. Configure defaults with `ciFix.executor`, `ciFix.model`, and `ciFix.effort`; CLI flags override these values. Use `ciFix.ignoredChecks` to list failing checks that fix-ci must not handle, for example checks that `tim pr fix` handles. Each entry matches the full check name, and `*` matches any characters.
 
 `tim pr rebase --pr <pr-url-or-number>` checks out the PR branch in a managed workspace and fetches the base branch. First, tim tries to rebase the branch and the branches stacked on top of it without an agent. If that rebase has no conflicts, tim pushes all the branches and stops. Otherwise, tim restores the original state and asks the agent to rebase onto the latest base branch from origin, resolve the conflicts, run the relevant checks, and force-push the result. When other open PRs are stacked on top of the PR, tim also fetches their branches. The agent rebases those branches onto the rebased branches below them and pushes the whole stack, so that GitHub does not report conflicts for the stacked PRs. If the PR already contains the latest base branch, there is nothing to rebase, and the command stops before it starts the agent. When the PR is stacked on other open PRs, tim also fetches the trunk branch (the base branch of the root PR of the stack) and compares the PR branch with it. If the PR branch is behind the trunk branch, tim rebases the whole stack onto the trunk branch, starting at the root PR, and pushes all the branches of the stack. The agent asks the user when a conflict has no clear resolution. When the agent finishes, tim commits any leftover changes in the workspace but does not push them. It uses `defaultExecutor` and `models.execution`; CLI flags override these values.
 
@@ -622,6 +622,9 @@ ciFix:
   executor: codex-cli
   model: gpt-5-codex
   effort: high
+  ignoredChecks:
+    - review-bot
+    - 'Claude Review *'
 ```
 
 ### Automatic PR review-guide comments

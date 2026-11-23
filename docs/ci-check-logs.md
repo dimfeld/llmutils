@@ -165,7 +165,9 @@ same option block as `pr fix` (`--pr`, `--plan`, `-x/--executor`, `-m/--model`, 
    semantics as `pr fix`. A plan target must resolve to exactly one linked PR, otherwise the
    command errors and asks for `--pr`. `GITHUB_TOKEN` (or `gh` auth) is required.
 2. `refreshPrCheckStatus` force-refreshes the check status, then `getRequiredCheckNames` and
-   `selectFailingChecks` pick the failing checks. **With no failing check the command logs
+   `selectFailingChecks` pick the failing checks. Failing checks whose names match a
+   `ciFix.ignoredChecks` pattern are removed here (and logged), so the command downloads no logs
+   for them and the prompt does not mention them. **With no failing check the command logs
    `No failing checks for PR #n` and returns** — before any workspace or lock is taken, per the
    repo rule that validation runs before resource allocation.
 3. `ensurePrFixHeadBranchPushableOnOrigin` rejects fork PRs whose head branch is missing on
@@ -217,7 +219,13 @@ absolute path only.
 
 ### Configuration
 
-`ciFix: {executor, model, effort}` in `configSchema.ts`, the same shape as `prFix`. No zod
+`ciFix: {executor, model, effort, ignoredChecks}` in `configSchema.ts`. The first three fields have
+the same shape as in `prFix`. `ignoredChecks` is a list of check-name patterns: each pattern
+matches the full check name, `*` matches any characters, and all other characters match
+literally (`compileCheckNamePatterns` in `src/common/github/select_failing_checks.ts`). Use it for
+checks that another command handles, for example review-bot checks that `tim pr fix` addresses.
+The web UI **Fix CI** button does not read this list, so it can show when only ignored checks
+fail; the command then stops with `No failing checks for PR #n`. No zod
 defaults — fallbacks are applied at the read site. `configLoader.ts` merges the key with
 `mergeConfigKey('ciFix')`, so a local config overlay merges per field instead of replacing the
 block. `schema/tim-config-schema.json` carries the generated JSON schema.

@@ -451,7 +451,17 @@ export async function executeCiFixCommand({
   const db = getDatabase();
   const refreshedStatus = await refreshPrCheckStatus(db, prTarget.canonicalPrUrl);
   const requiredCheckNames = getRequiredCheckNames(db, refreshedStatus.status);
-  const selectedChecks = selectFailingChecks(refreshedStatus.checks, requiredCheckNames);
+  const selectedChecks = selectFailingChecks(refreshedStatus.checks, requiredCheckNames, {
+    ignoredCheckPatterns: config.ciFix?.ignoredChecks ?? [],
+  });
+
+  if (selectedChecks.ignoredChecks.length > 0) {
+    log(
+      `Ignoring failing checks from ciFix.ignoredChecks: ${selectedChecks.ignoredChecks
+        .map((check) => check.name)
+        .join(', ')}`
+    );
+  }
 
   if (selectedChecks.checks.length === 0) {
     log(`No failing checks for PR #${prTarget.prNumber}`);

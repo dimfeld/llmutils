@@ -902,6 +902,13 @@
               ]
             }
           ]
+        },
+        "ignoredChecks": {
+          "description": "Failing check names that fix-ci should ignore, for example checks that pr fix handles. Each entry matches the full check name; * matches any characters.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false

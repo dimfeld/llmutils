@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { PrStatusCheckRun } from './pr_status.js';
-import { selectFailingChecks } from './select_failing_checks.ts';
+import { compileCheckNamePatterns, selectFailingChecks } from './select_failing_checks.ts';
 
 function makeCheck(overrides: Partial<PrStatusCheckRun> = {}): PrStatusCheckRun {
   return {
@@ -28,6 +28,7 @@ describe('selectFailingChecks', () => {
         { ...makeCheck({ name: 'required-check' }), required: true },
         { ...makeCheck({ name: 'optional-check' }), required: false },
       ],
+      ignoredChecks: [],
       noRequiredConfig: false,
     });
   });
@@ -51,7 +52,62 @@ describe('selectFailingChecks', () => {
 
     expect(result).toEqual({
       checks: [{ ...makeCheck({ name: 'unconfigured-failure' }), required: false }],
+      ignoredChecks: [],
       noRequiredConfig: true,
     });
+  });
+
+  test('leaves out failing checks whose names match an ignored pattern', () => {
+    const result = selectFailingChecks(
+      [
+        makeCheck({ name: 'review-bot' }),
+        makeCheck({ name: 'CI / lint (ubuntu)' }),
+        makeCheck({ name: 'CI / test (ubuntu)' }),
+        makeCheck({ name: 'review-bot-extra' }),
+      ],
+      ['review-bot', 'CI / test (ubuntu)'],
+      { ignoredCheckPatterns: ['review-bot', 'CI / lint *'] }
+    );
+
+    expect(result.checks.map((check) => check.name)).toEqual([
+      'CI / test (ubuntu)',
+      'review-bot-extra',
+    ]);
+    expect(result.ignoredChecks).toEqual([
+      { ...makeCheck({ name: 'review-bot' }), required: true },
+      { ...makeCheck({ name: 'CI / lint (ubuntu)' }), required: false },
+    ]);
+  });
+
+  test('does not put passing checks that match an ignored pattern in ignoredChecks', () => {
+    const result = selectFailingChecks(
+      [makeCheck({ name: 'review-bot', conclusion: 'success' })],
+      [],
+      { ignoredCheckPatterns: ['review-bot'] }
+    );
+
+    expect(result.checks).toEqual([]);
+    expect(result.ignoredChecks).toEqual([]);
+  });
+});
+
+describe('compileCheckNamePatterns', () => {
+  test('matches full names, treats * as a wildcard and other characters literally', () => {
+    const matches = compileCheckNamePatterns(['build (*)', 'a.b', '*-review', '  ', 'x+y?']);
+
+    expect(matches('build (linux)')).toBe(true);
+    expect(matches('build ()')).toBe(true);
+    expect(matches('prefix build (linux)')).toBe(false);
+    expect(matches('a.b')).toBe(true);
+    expect(matches('aXb')).toBe(false);
+    expect(matches('claude-review')).toBe(true);
+    expect(matches('claude-review-2')).toBe(false);
+    expect(matches('x+y?')).toBe(true);
+    expect(matches('xxy')).toBe(false);
+    expect(matches('')).toBe(false);
+  });
+
+  test('matches nothing with no patterns', () => {
+    expect(compileCheckNamePatterns([])('anything')).toBe(false);
   });
 });

@@ -870,6 +870,12 @@ export const timConfigSchema = z
           .union([claudeCodeReasoningEffortSchema, codexReasoningLevelSchema])
           .optional()
           .describe('Reasoning effort to use for CI failure fixes'),
+        ignoredChecks: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Failing check names that fix-ci should ignore, for example checks that pr fix handles. Each entry matches the full check name; * matches any characters.'
+          ),
       })
       .strict()
       .optional()
