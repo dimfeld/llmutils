@@ -150,6 +150,54 @@ function appendPlanContext(prompt: string[], options: PrCreationPromptOptions): 
   }
 }
 
+/**
+ * The scope of a pull request body.
+ * - `plan`: the PR delivers the whole plan, so plan-wide sections such as
+ *   out-of-scope work and manual testing runbooks apply.
+ * - `slice`: the PR is one slice of a split stack, so only sections that
+ *   describe the slice's own changes apply.
+ */
+export type PrBodyScope = 'plan' | 'slice';
+
+/**
+ * Returns the bullet lines that describe the required sections of a PR body.
+ * `tim pr create` and the PR split share these so their PRs look the same.
+ */
+export function buildPrBodySectionGuidance(scope: PrBodyScope): string[] {
+  const changeSubject =
+    scope === 'plan' ? 'the changes on this branch' : 'the changes in this slice';
+  const lines = ['- Summary section with bullet points'];
+  if (scope === 'plan') {
+    lines.push(
+      '- In the Summary section, include an "Out of scope" subsection. It must describe anything explicitly out of scope in the plan and any adjacent work assigned to sibling plans from the Plan Context. If nothing is out of scope and no sibling-plan scope is listed, write "None identified."'
+    );
+  }
+  lines.push(
+    `- Changes section with a detailed report of what ${changeSubject} do`,
+    `- Decisions section that notes any decisions made in ${changeSubject} where other choices were possible, such as business logic choices, how ambiguity was handled, and similar judgment calls. If there were no such decisions, write "None identified."`
+  );
+  if (scope === 'plan') {
+    lines.push(
+      '- Manual Testing Runbooks section copied from the Plan Context when the plan details contain "Manual Testing Runbooks"; omit this section when the plan details do not contain "Manual Testing Runbooks"; preserve the runbook titles, steps, and expected outcomes so reviewers can manually walk through the delivered feature'
+    );
+  }
+  return lines;
+}
+
+/**
+ * Returns the rules for publishing a PR body safely: no attribution lines and a
+ * check that line breaks are real newlines. `viewCommand` is the command that
+ * prints the published body.
+ */
+export function buildPrBodyPublishingGuidance(viewCommand: string): string[] {
+  return [
+    `After creating or editing a PR, verify the published body with \`${viewCommand}\`.`,
+    'Be very careful with shell quoting and backslash escaping when you create or update the body. Markdown line breaks must be real newline characters, not the two literal characters `\\n`.',
+    'If the verification shows literal `\\n` text where line breaks should be, immediately rewrite the body with a body file or stdin that contains real newlines, then verify the body again. Do not finish until this check passes.',
+    'Do not include generated-by or co-author lines in PR titles, bodies, or commit messages.',
+  ];
+}
+
 export function buildPrCreationPrompt(options: PrCreationPromptOptions): string {
   const createAsDraft = options.prCreationConfig?.draft !== false;
   const titlePrefix = options.prCreationConfig?.titlePrefix?.trim();
@@ -237,20 +285,15 @@ export function buildPrCreationPrompt(options: PrCreationPromptOptions): string 
     prTitleInstruction,
     '',
     `5c. If no PR exists, create one directly with \`gh pr create ${draftFlag}--head <branch-name> --base ${options.baseBranch}\` and include:`,
-    '- Summary section with bullet points',
-    '- In the Summary section, include an "Out of scope" subsection. It must describe anything explicitly out of scope in the plan and any adjacent work assigned to sibling plans from the Plan Context. If nothing is out of scope and no sibling-plan scope is listed, write "None identified."',
-    '- Changes section with a detailed report of what the changes on this branch do',
-    '- Decisions section that notes any decisions made where other choices were possible, such as business logic choices, how ambiguity was handled, and similar judgment calls. If there were no such decisions, write "None identified."',
-    '- Manual Testing Runbooks section copied from the Plan Context when the plan details contain "Manual Testing Runbooks"; omit this section when the plan details do not contain "Manual Testing Runbooks"; preserve the runbook titles, steps, and expected outcomes so reviewers can manually walk through the delivered feature',
+    ...buildPrBodySectionGuidance('plan'),
     `- PR title: ${prTitleInstruction.replace(/\n/g, ' ')}`,
     titlePrefixLine,
     '- Include issue references when available (for Linear keep the full key, e.g. DF-123)',
     '',
-    '5d. After creating or editing the PR, verify the published body with `gh pr view <branch-name> --json body --jq .body`.',
-    'Be very careful with shell quoting and backslash escaping when you create or update the body. Markdown line breaks must be real newline characters, not the two literal characters `\\n`.',
-    'If the verification shows literal `\\n` text where line breaks should be, immediately rewrite the body with a body file or stdin that contains real newlines, then verify the body again. Do not finish until this check passes.',
+    '5d. Publishing rules:',
+    ...buildPrBodyPublishingGuidance('gh pr view <branch-name> --json body --jq .body'),
     '',
-    'Do not include generated-by or co-author lines. Do not make any changes to the code. You are only creating the PR right now.',
+    'Do not make any changes to the code. You are only creating the PR right now.',
   ];
 
   appendPlanContext(prompt, options);

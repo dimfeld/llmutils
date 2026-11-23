@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { TimConfig } from '../configSchema.js';
 import type { PlanSchema } from '../planSchema.js';
+import {
+  buildPrBodyPublishingGuidance,
+  buildPrBodySectionGuidance,
+} from '../commands/create_pr.js';
 import { buildPrStackingPrompt, runPrStacking } from './runner.js';
 
 const {
@@ -54,7 +58,8 @@ vi.mock('../../common/github/pr_status_service.js', () => ({
   refreshPrStatus: refreshPrStatusSpy,
 }));
 
-vi.mock('../commands/create_pr.js', () => ({
+vi.mock('../commands/create_pr.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../commands/create_pr.js')>()),
   resolveEffectivePrBase: resolveEffectivePrBaseSpy,
 }));
 
@@ -402,6 +407,37 @@ describe('runPrStacking', () => {
     expect(prompt).toContain('refer to related issues with language such as "Related to ISSUE"');
     expect(prompt).toContain('Do not use "Closes", "Fixes", or other issue-closing keywords');
     expect(prompt).toContain('leave all commits, branches, and pull requests unchanged');
+  });
+
+  test('prompt uses the shared PR body guidance for slices and leaves out plan-wide sections', () => {
+    const prompt = buildPrStackingPrompt({
+      plan,
+      vcsType: 'git',
+      mainBranch: 'feature/stack-review',
+      mainPrUrl: 'https://github.com/acme/repo/pull/20',
+      baseBranch: 'main',
+      comparisonRef: 'abc1234',
+      changedLines: 500,
+    });
+
+    const sliceSections = buildPrBodySectionGuidance('slice');
+    const planOnlySections = buildPrBodySectionGuidance('plan').filter(
+      (line) => !sliceSections.includes(line)
+    );
+    expect(sliceSections.length).toBeGreaterThan(0);
+    expect(planOnlySections.length).toBeGreaterThan(0);
+
+    for (const line of sliceSections) {
+      expect(prompt).toContain(line);
+    }
+    for (const line of planOnlySections) {
+      expect(prompt).not.toContain(line);
+    }
+    for (const line of buildPrBodyPublishingGuidance(
+      'gh pr view <pr-url> --json body --jq .body'
+    )) {
+      expect(prompt).toContain(line);
+    }
   });
 
   test('passes the normalized configured branch prefix to the stacking prompt', async () => {

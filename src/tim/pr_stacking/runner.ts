@@ -2,7 +2,11 @@ import { getGitRepository, getUsingJj } from '../../common/git.js';
 import { fetchOpenPullRequests, type OpenPullRequest } from '../../common/github/pull_requests.js';
 import { refreshPrStatus } from '../../common/github/pr_status_service.js';
 import { boldMarkdownHeaders, log } from '../../logging.js';
-import { resolveEffectivePrBase } from '../commands/create_pr.js';
+import {
+  buildPrBodyPublishingGuidance,
+  buildPrBodySectionGuidance,
+  resolveEffectivePrBase,
+} from '../commands/create_pr.js';
 import { normalizeBranchPrefix } from '../commands/branch.js';
 import type { TimConfig } from '../configSchema.js';
 import { getDatabase } from '../db/database.js';
@@ -128,9 +132,15 @@ export function buildPrStackingPrompt(options: PrStackingPromptOptions): string 
     '- Push every slice branch. A history rewrite of the original branch can use a force-with-lease equivalent, but do not use an unguarded force push when a guarded form is available.',
     '- Create every new lower-slice pull request as a draft. Preserve the current draft/ready state of the original pull request.',
     '- Give each pull request a focused title and a detailed body for only its slice. Both the overall stack description and the current slice description must explain why the change is needed and how it works, not only what it changes. Use the plan context as a source for this explanation when helpful. In every pull-request description, explain the goal of the complete stack, how this pull request contributes to that goal, and what remains to be implemented in higher slices.',
+    '- Every new lower-slice pull-request body must include these sections, written for that slice only:',
+    ...buildPrBodySectionGuidance('slice').map((line) => `  ${line}`),
+    '- Do not put plan-wide sections, such as Manual Testing Runbooks or the plan-level "Out of scope" subsection, in lower-slice pull requests. Keep those sections in the original top pull request, because it completes the plan. In the original pull request, update the Summary, Changes, and Decisions sections so that they describe only its slice.',
     '- Add or update a clearly marked "Split" section in every pull-request body. It must list the complete stack in merge order, identify the current pull request, link the other pull requests, state each slice scope, and explain that reviewers should start at the bottom. If a previous "Stack" section lists this same split, rename that section to "Split". Preserve useful existing body content.',
     '- In every intermediate pull-request description, refer to related issues with language such as "Related to ISSUE". Do not use "Closes", "Fixes", or other issue-closing keywords in intermediate descriptions, so the issue stays open until the complete stack is merged. The existing top pull request may keep its current issue-closing language.',
     '- After all pull requests exist, verify each head branch, base branch, draft state, title, and body with `gh pr view`.',
+    ...buildPrBodyPublishingGuidance('gh pr view <pr-url> --json body --jq .body').map(
+      (line) => `- ${line}`
+    ),
     '',
     '## Safe no-op',
     '',
