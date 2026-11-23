@@ -905,6 +905,71 @@ describe('createAppServerFormatter', () => {
     });
   });
 
+  test('formats sleep items when they start and when they complete', () => {
+    const formatter = createAppServerFormatter();
+    const item = {
+      type: 'sleep',
+      id: 'call_ee0d9186c4f74589908deac86cba18ff',
+      durationMs: 35000,
+      startedAtMs: 1795459803665,
+      completedAtMs: null,
+    };
+
+    expect(formatter.handleNotification('item/started', { item })).toEqual({
+      type: 'item/started',
+      structured: {
+        type: 'llm_status',
+        timestamp: expect.any(String),
+        source: 'codex',
+        status: 'codex.sleep',
+        detail: 'Sleeping for 35s',
+      },
+    });
+
+    expect(
+      formatter.handleNotification('item/completed', {
+        item: { ...item, completedAtMs: 1795459838665 },
+      })
+    ).toEqual({
+      type: 'item/completed',
+      structured: {
+        type: 'llm_status',
+        timestamp: expect.any(String),
+        source: 'codex',
+        status: 'codex.sleep',
+        detail: 'Slept for 35s',
+      },
+    });
+  });
+
+  test('reports sleep items that end early', () => {
+    const formatter = createAppServerFormatter();
+    const message = formatter.handleNotification('item/completed', {
+      item: {
+        type: 'sleep',
+        id: 'x',
+        durationMs: 90000,
+        startedAtMs: 1000,
+        completedAtMs: 13000,
+      },
+    });
+
+    expect(message.structured).toMatchObject({
+      type: 'llm_status',
+      status: 'codex.sleep',
+      detail: 'Sleep interrupted after 12s of 1m 30s',
+    });
+  });
+
+  test('formats sleep items without a duration', () => {
+    const formatter = createAppServerFormatter();
+    const message = formatter.handleNotification('item/started', {
+      item: { type: 'sleep', id: 'x' },
+    });
+
+    expect(message.structured).toMatchObject({ status: 'codex.sleep', detail: 'Sleeping' });
+  });
+
   test('formats completed collab agent tool call items as tool results', () => {
     const formatter = createAppServerFormatter();
     const message = formatter.handleNotification('item/completed', {

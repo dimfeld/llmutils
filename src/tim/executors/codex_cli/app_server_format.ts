@@ -234,6 +234,16 @@ function formatSubAgentActivity(item: Record<string, unknown>): string {
   return `Subagent ${agent} ${kind}${suffix}`;
 }
 
+function formatSleepDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) {
+    return `${seconds}s`;
+  }
+  return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+}
+
 function extractItemText(item: Record<string, unknown>): string {
   const text = item.text;
   if (typeof text === 'string') {
@@ -692,6 +702,51 @@ export function createAppServerFormatter(model?: string) {
           timestamp: ts,
           phase: 'subagent_activity',
           message: formatSubAgentActivity(item),
+        },
+      };
+    }
+
+    if (itemType === 'sleep') {
+      const durationMs = toNumber(item.durationMs);
+      if (method === 'item/started') {
+        return {
+          type: method,
+          structured: {
+            type: 'llm_status',
+            timestamp: ts,
+            source: 'codex',
+            status: 'codex.sleep',
+            detail:
+              durationMs != null ? `Sleeping for ${formatSleepDuration(durationMs)}` : 'Sleeping',
+          },
+        };
+      }
+
+      if (method !== 'item/completed') {
+        return { type: method };
+      }
+
+      // The sleep can end early because the clock.sleep tool is interruptible.
+      const startedAtMs = toNumber(item.startedAtMs);
+      const completedAtMs = toNumber(item.completedAtMs);
+      const elapsedMs =
+        startedAtMs != null && completedAtMs != null ? completedAtMs - startedAtMs : undefined;
+      let detail: string;
+      if (durationMs != null && elapsedMs != null && elapsedMs < durationMs - 1000) {
+        detail = `Sleep interrupted after ${formatSleepDuration(elapsedMs)} of ${formatSleepDuration(durationMs)}`;
+      } else if (elapsedMs != null || durationMs != null) {
+        detail = `Slept for ${formatSleepDuration(elapsedMs ?? durationMs!)}`;
+      } else {
+        detail = 'Sleep finished';
+      }
+      return {
+        type: method,
+        structured: {
+          type: 'llm_status',
+          timestamp: ts,
+          source: 'codex',
+          status: 'codex.sleep',
+          detail,
         },
       };
     }
