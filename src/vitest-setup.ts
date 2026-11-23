@@ -68,6 +68,27 @@ const tmpPath = await fs.mkdtemp(path.join(os.tmpdir(), 'tim-test-'));
 process.env.XDG_CONFIG_HOME = tmpPath;
 process.env.XDG_DATA_HOME = path.join(tmpPath, 'data');
 process.env.XDG_CACHE_HOME = path.join(tmpPath, 'cache');
+
+// Bun.spawn and Bun.spawnSync without `env` use the environment from process start. They do not
+// see the changes above, so jj and git child processes would read and write the real user config
+// (for example, `jj config set --repo` writes into ~/.config/jj/repos). Default `env` to the
+// current process.env. A caller that passes `env` keeps its own value.
+function withCurrentEnv<T extends object>(options: T | undefined): T {
+  const resolved = (options ?? {}) as T & { env?: Record<string, string | undefined> };
+  return resolved.env ? resolved : { ...resolved, env: process.env };
+}
+
+const originalSpawn = Bun.spawn;
+const originalSpawnSync = Bun.spawnSync;
+// Bun.spawn accepts either (cmd, options) or a single options object that includes `cmd`.
+(Bun as { spawn: unknown }).spawn = (first: unknown, second?: object) =>
+  Array.isArray(first)
+    ? originalSpawn(first, withCurrentEnv(second as Parameters<typeof originalSpawn>[1]))
+    : originalSpawn(withCurrentEnv(first as Parameters<typeof originalSpawn>[0]));
+(Bun as { spawnSync: unknown }).spawnSync = (first: unknown, second?: object) =>
+  Array.isArray(first)
+    ? originalSpawnSync(first, withCurrentEnv(second as Parameters<typeof originalSpawnSync>[1]))
+    : originalSpawnSync(withCurrentEnv(first as Parameters<typeof originalSpawnSync>[0]));
 afterEach(() => {
   closeDatabaseForTesting();
 });

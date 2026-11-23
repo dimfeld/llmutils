@@ -18,9 +18,6 @@ async function runGit(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(['git', ...args], {
     cwd: dir,
-    // Pass the test environment so that config writes go to the temporary
-    // XDG_CONFIG_HOME and not to the real user config.
-    env: process.env,
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -60,9 +57,6 @@ async function runJj(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(['jj', ...args], {
     cwd: dir,
-    // Pass the test environment so that config writes go to the temporary
-    // XDG_CONFIG_HOME and not to the real user config.
-    env: process.env,
     stdout: 'pipe',
     stderr: 'pipe',
   });
