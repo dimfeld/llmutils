@@ -5,7 +5,7 @@ import * as path from 'node:path';
 
 import { closeDatabaseForTesting, getDatabase } from '../db/database.js';
 import { getOrCreateProject } from '../db/project.js';
-import { recordWorkspace } from '../db/workspace.js';
+import { recordWorkspace, type WorkspaceType } from '../db/workspace.js';
 import type { TimConfig } from '../configSchema.js';
 import * as git from '../../common/git.js';
 import { resolvePlanByNumericId } from '../plans.js';
@@ -42,7 +42,11 @@ describe('setupWorkspace', () => {
     },
   };
 
-  async function seedWorkspace(workspacePath: string, taskId: string): Promise<void> {
+  async function seedWorkspace(
+    workspacePath: string,
+    taskId: string,
+    workspaceType?: WorkspaceType
+  ): Promise<void> {
     const db = getDatabase();
     const project = getOrCreateProject(db, 'github.com/test/repo');
     recordWorkspace(db, {
@@ -50,6 +54,7 @@ describe('setupWorkspace', () => {
       workspacePath,
       taskId,
       originalPlanFilePath: planFile,
+      ...(workspaceType && { workspaceType }),
     });
   }
 
@@ -764,7 +769,7 @@ describe('setupWorkspace', () => {
     await WorkspaceLock.releaseLock(fallbackWorkspacePath, { force: true });
   });
 
-  test('auto-workspace creates branch directly in workspace', async () => {
+  test('auto-workspace creates branch directly in workspace and resets an auto workspace to remote', async () => {
     const autoWorkspacePath = path.join(tempDir, 'workspace-auto-existing-plan-branch');
     await fs.mkdir(autoWorkspacePath, { recursive: true });
     await seedWorkspace(autoWorkspacePath, 'task-auto-existing-plan-branch');
@@ -783,6 +788,7 @@ describe('setupWorkspace', () => {
         workspacePath: autoWorkspacePath,
         originalPlanFilePath: validPlanFile,
         createdAt: new Date().toISOString(),
+        workspaceType: 'auto',
       },
       isNew: false,
       clearedStaleLock: false,
@@ -814,10 +820,11 @@ describe('setupWorkspace', () => {
       baseBranch: undefined,
       branchName: '42-sync-base-before-plan-branch-reuse',
       createBranch: true,
+      resetToRemote: true,
     });
   });
 
-  test('auto-workspace skips branch creation when createBranch is false', async () => {
+  test('auto-workspace skips branch creation and does not reset a standard workspace', async () => {
     const autoWorkspacePath = path.join(tempDir, 'workspace-auto-existing-no-branch');
     await fs.mkdir(autoWorkspacePath, { recursive: true });
     await seedWorkspace(autoWorkspacePath, 'task-auto-existing-no-branch');
@@ -828,6 +835,7 @@ describe('setupWorkspace', () => {
         workspacePath: autoWorkspacePath,
         originalPlanFilePath: planFile,
         createdAt: new Date().toISOString(),
+        workspaceType: 'standard',
       },
       isNew: false,
       clearedStaleLock: false,
@@ -857,6 +865,36 @@ describe('setupWorkspace', () => {
       baseBranch: undefined,
       branchName: 'task-auto-existing-no-branch',
       createBranch: false,
+    });
+  });
+
+  test('resets an existing auto workspace chosen by task ID', async () => {
+    const existingWorkspacePath = path.join(tempDir, 'workspace-existing-auto-type');
+    await fs.mkdir(existingWorkspacePath, { recursive: true });
+    await seedWorkspace(existingWorkspacePath, 'task-existing-auto-type', 'auto');
+
+    vi.spyOn(git, 'getWorkingCopyStatus').mockResolvedValue({
+      hasChanges: false,
+      checkFailed: false,
+    });
+    const prepareSpy = vi.spyOn(workspaceManager, 'prepareExistingWorkspace').mockResolvedValue({
+      success: true,
+    });
+    vi.spyOn(workspaceManager, 'runWorkspaceUpdateCommands').mockResolvedValue(true);
+
+    await setupWorkspace(
+      { workspace: 'task-existing-auto-type' },
+      baseDir,
+      planFile,
+      config,
+      'tim generate'
+    );
+
+    expect(prepareSpy).toHaveBeenCalledWith(existingWorkspacePath, {
+      baseBranch: undefined,
+      branchName: 'task-existing-auto-type',
+      createBranch: true,
+      resetToRemote: true,
     });
   });
 

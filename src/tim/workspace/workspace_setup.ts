@@ -35,7 +35,7 @@ import {
 } from '../plans/base_plan_resolution.js';
 import type { PlanSchema } from '../planSchema.js';
 import { WorkspaceAutoSelector } from './workspace_auto_selector.js';
-import { findWorkspaceInfosByTaskId } from './workspace_info.js';
+import { findWorkspaceInfosByTaskId, getWorkspaceInfoByPath } from './workspace_info.js';
 import { WorkspaceAlreadyLocked, WorkspaceLock } from './workspace_lock.js';
 import {
   createWorkspace,
@@ -552,6 +552,14 @@ export async function setupWorkspace(
           !(isNewWorkspace && effectiveCreateBranch)
         );
 
+        // A reused workspace of type "auto" can hold leftover work and bookmarks from an
+        // earlier task, and its branches can be rebased on the remote since that task. Start
+        // it from the remote state. Other workspace types keep their local state.
+        const chosenWorkspaceType =
+          selectedWorkspace?.workspace.workspaceType ??
+          getWorkspaceInfoByPath(workspace.path)?.workspaceType;
+        const shouldResetToRemote = !isNewWorkspace && chosenWorkspaceType === 'auto';
+
         let reusedExistingBranch = false;
         let preparedBranchName = branchName;
         if (shouldPrepareWorkspaceBranch) {
@@ -559,6 +567,7 @@ export async function setupWorkspace(
             baseBranch: effectiveCheckoutBranch,
             branchName,
             createBranch: shouldCreateBranch,
+            ...(shouldResetToRemote && { resetToRemote: true }),
             ...(branchContext.fallbackToTrunkOnMissingBase && {
               fallbackToTrunkOnMissingBase: true,
               baseBranchSource,

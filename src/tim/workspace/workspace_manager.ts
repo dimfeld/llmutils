@@ -1808,6 +1808,13 @@ export interface PrepareWorkspaceOptions {
   fallbackToTrunkOnMissingBase?: boolean;
   /** Where `baseBranch` came from; affects how its existence is checked */
   baseBranchSource?: BaseBranchSource;
+  /**
+   * After a successful fetch, reset a jj workspace to the remote state before branch
+   * preparation: forget all local bookmarks, track again the bookmarks that match
+   * `remotes.<name>.auto-track-bookmarks` and the trunk, and abandon all local-only commits.
+   * Has no effect for Git workspaces or when the fetch did not succeed.
+   */
+  resetToRemote?: boolean;
 }
 
 /**
@@ -1972,6 +1979,150 @@ async function checkoutAndUpdateBaseBranch(
 }
 
 /**
+ * Revset of the commits that a jj reset to the remote state abandons. It excludes the
+ * ancestors of every working copy so that the new working copy and any other jj workspace
+ * that shares this repository stay in place.
+ */
+const JJ_LOCAL_ONLY_COMMITS_REVSET = 'mutable() ~ ::remote_bookmarks() ~ ::working_copies()';
+
+/**
+ * Resets a jj workspace to match the fetched remote state.
+ *
+ * Call this only after a successful fetch. Unpushed local commits are abandoned; the
+ * operation ID from before the reset is logged so that `jj op restore` can recover them.
+ */
+export async function resetJjWorkspaceToRemote(
+  workspacePath: string
+): Promise<{ success: boolean; error?: string }> {
+  // Read the trunk before forgetting bookmarks, because trunk detection reads local bookmarks.
+  const trunkBranch = await getTrunkBranch(workspacePath);
+  const trunkRemoteRev = `${trunkBranch}@origin`;
+  const trunkCheck = await spawnAndLogOutput(
+    ['jj', 'log', '-r', trunkRemoteRev, '--no-graph', '-T', 'commit_id'],
+    { cwd: workspacePath, quiet: true }
+  );
+  if (trunkCheck.exitCode !== 0) {
+    log(
+      `Warning: Remote trunk "${trunkRemoteRev}" not found; skipping reset of workspace to remote state.`
+    );
+    return { success: true };
+  }
+
+  const opResult = await spawnAndLogOutput(
+    ['jj', 'op', 'log', '-n', '1', '--no-graph', '-T', 'id.short()'],
+    { cwd: workspacePath, quiet: true }
+  );
+  const opIdBeforeReset = opResult.exitCode === 0 ? opResult.stdout.trim() : undefined;
+
+  log('Resetting workspace to remote state...');
+
+  const forgetResult = await spawnAndLogOutput(['jj', 'bookmark', 'forget', 'glob:*'], {
+    cwd: workspacePath,
+    quiet: true,
+  });
+  if (forgetResult.exitCode !== 0) {
+    return {
+      success: false,
+      error: `Failed to forget local bookmarks: ${forgetResult.stderr}`,
+    };
+  }
+
+  // `jj git fetch` applies auto-track rules only to remote bookmarks it has not seen before,
+  // so apply them again here for the bookmarks that were just forgotten.
+  const remoteList = await spawnAndLogOutput(['jj', 'git', 'remote', 'list'], {
+    cwd: workspacePath,
+    quiet: true,
+  });
+  const remoteNames =
+    remoteList.exitCode === 0
+      ? remoteList.stdout
+          .split('\n')
+          .map((line) => line.trim().split(/\s+/)[0])
+          .filter((name): name is string => Boolean(name))
+      : [];
+  for (const remoteName of remoteNames) {
+    const configResult = await spawnAndLogOutput(
+      ['jj', 'config', 'get', `remotes.${remoteName}.auto-track-bookmarks`],
+      { cwd: workspacePath, quiet: true }
+    );
+    const pattern = configResult.exitCode === 0 ? configResult.stdout.trim() : '';
+    if (!pattern) {
+      continue;
+    }
+
+    const trackResult = await spawnAndLogOutput(
+      ['jj', 'bookmark', 'track', pattern, '--remote', `exact:${remoteName}`],
+      { cwd: workspacePath, quiet: true }
+    );
+    if (trackResult.exitCode !== 0) {
+      log(
+        `Warning: Failed to track bookmarks matching "${pattern}" on remote "${remoteName}": ${trackResult.stderr}`
+      );
+    }
+  }
+
+  const trackTrunkResult = await spawnAndLogOutput(
+    ['jj', 'bookmark', 'track', trunkBranch, '--remote', 'origin'],
+    { cwd: workspacePath, quiet: true }
+  );
+  if (trackTrunkResult.exitCode !== 0) {
+    return {
+      success: false,
+      error: `Failed to track trunk bookmark "${trunkRemoteRev}": ${trackTrunkResult.stderr}`,
+    };
+  }
+
+  // Move the working copy off any leftover work so that the abandon step can remove it.
+  const newResult = await switchJjRevision(workspacePath, trunkRemoteRev);
+  if (newResult.exitCode !== 0) {
+    return {
+      success: false,
+      error: `Failed to check out "${trunkRemoteRev}": ${newResult.stderr}`,
+    };
+  }
+
+  const localOnlyResult = await spawnAndLogOutput(
+    [
+      'jj',
+      'log',
+      '-r',
+      JJ_LOCAL_ONLY_COMMITS_REVSET,
+      '--no-graph',
+      '--color',
+      'never',
+      '-T',
+      'change_id.short() ++ " " ++ commit_id.short() ++ " " ++ description.first_line() ++ "\\n"',
+    ],
+    { cwd: workspacePath, quiet: true }
+  );
+  if (localOnlyResult.exitCode !== 0) {
+    return {
+      success: false,
+      error: `Failed to list local-only commits: ${localOnlyResult.stderr}`,
+    };
+  }
+
+  const localOnlyCommits = localOnlyResult.stdout.trim();
+  if (localOnlyCommits) {
+    log(
+      `Abandoning local-only commits${opIdBeforeReset ? ` (restore with \`jj op restore ${opIdBeforeReset}\`)` : ''}:\n${localOnlyCommits}`
+    );
+    const abandonResult = await spawnAndLogOutput(['jj', 'abandon', JJ_LOCAL_ONLY_COMMITS_REVSET], {
+      cwd: workspacePath,
+      quiet: true,
+    });
+    if (abandonResult.exitCode !== 0) {
+      return {
+        success: false,
+        error: `Failed to abandon local-only commits: ${abandonResult.stderr}`,
+      };
+    }
+  }
+
+  return { success: true };
+}
+
+/**
  * Prepares an existing workspace for reuse by fetching, checking out base branch,
  * and creating a new working branch.
  *
@@ -2045,6 +2196,15 @@ export async function prepareExistingWorkspace(
       }
     } else {
       fetchSucceeded = true;
+    }
+  }
+
+  // Reset only with fresh remote data. With old data, the reset deletes local work and
+  // gives nothing in return.
+  if (options.resetToRemote && workspaceIsJj && fetchSucceeded) {
+    const resetResult = await resetJjWorkspaceToRemote(workspacePath);
+    if (!resetResult.success) {
+      return resetResult;
     }
   }
 

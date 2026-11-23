@@ -18,6 +18,9 @@ async function runGit(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(['git', ...args], {
     cwd: dir,
+    // Pass the test environment so that config writes go to the temporary
+    // XDG_CONFIG_HOME and not to the real user config.
+    env: process.env,
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -57,6 +60,9 @@ async function runJj(
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(['jj', ...args], {
     cwd: dir,
+    // Pass the test environment so that config writes go to the temporary
+    // XDG_CONFIG_HOME and not to the real user config.
+    env: process.env,
     stdout: 'pipe',
     stderr: 'pipe',
   });
@@ -1156,6 +1162,196 @@ describe.skipIf(!process.env.SLOW_TESTS)('prepareExistingWorkspace with Jujutsu'
       await fs.rm(remoteDir, { recursive: true, force: true });
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }
+  });
+
+  describe('resetToRemote', () => {
+    let remoteDir: string;
+    let seedDir: string;
+    let workspaceDir: string;
+
+    async function listLocalBookmarks(dir: string): Promise<string[]> {
+      const result = await runJj(dir, [
+        'bookmark',
+        'list',
+        '--color',
+        'never',
+        '-T',
+        'if(!remote, name ++ "\\n")',
+      ]);
+      expect(result.exitCode).toBe(0);
+      return result.stdout.split('\n').filter(Boolean).sort();
+    }
+
+    async function visibleCommitsWithDescription(dir: string, text: string): Promise<string> {
+      const result = await runJj(dir, [
+        'log',
+        '-r',
+        `description(substring:${JSON.stringify(text)})`,
+        '--no-graph',
+        '-T',
+        'commit_id ++ "\\n"',
+      ]);
+      expect(result.exitCode).toBe(0);
+      return result.stdout.trim();
+    }
+
+    beforeEach(async () => {
+      if (!hasJj) {
+        return;
+      }
+
+      remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-reset-remote-'));
+      seedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-reset-seed-'));
+      workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-jj-reset-ws-'));
+
+      expect((await runGit(remoteDir, ['init', '--bare', '--initial-branch=main'])).exitCode).toBe(
+        0
+      );
+      await initGitRepository(seedDir);
+      await runGit(seedDir, ['remote', 'add', 'origin', remoteDir]);
+      for (const branch of ['di/feature', 'other']) {
+        await runGit(seedDir, ['checkout', '-b', branch, 'main']);
+        await fs.writeFile(path.join(seedDir, `${branch.replace('/', '-')}.txt`), branch);
+        await runGit(seedDir, ['add', '.']);
+        await runGit(seedDir, ['commit', '-m', `Remote ${branch}`]);
+      }
+      await runGit(seedDir, ['checkout', 'main']);
+      expect(
+        (await runGit(seedDir, ['push', 'origin', 'main', 'di/feature', 'other'])).exitCode
+      ).toBe(0);
+
+      await cloneJjRepository(remoteDir, workspaceDir);
+      // Repo config overrides any user-level rule so that the test does not depend on it.
+      expect(
+        (
+          await runJj(workspaceDir, [
+            'config',
+            'set',
+            '--repo',
+            'remotes.origin.auto-track-bookmarks',
+            'di/*',
+          ])
+        ).exitCode
+      ).toBe(0);
+      expect((await runJj(workspaceDir, ['git', 'fetch'])).exitCode).toBe(0);
+
+      // Leftover state from an earlier task: a local-only commit with its own bookmark,
+      // a local rewrite of a remote branch, and uncommitted changes.
+      expect((await runJj(workspaceDir, ['new', 'main'])).exitCode).toBe(0);
+      await fs.writeFile(path.join(workspaceDir, 'leftover.txt'), 'leftover');
+      expect((await runJj(workspaceDir, ['commit', '-m', 'Leftover local work'])).exitCode).toBe(0);
+      expect(
+        (await runJj(workspaceDir, ['bookmark', 'set', '-r', '@-', 'leftover'])).exitCode
+      ).toBe(0);
+
+      expect(
+        (await runJj(workspaceDir, ['bookmark', 'track', 'di/feature', '--remote', 'origin']))
+          .exitCode
+      ).toBe(0);
+      expect((await runJj(workspaceDir, ['new', 'main'])).exitCode).toBe(0);
+      await fs.writeFile(path.join(workspaceDir, 'rewrite.txt'), 'local rewrite');
+      expect(
+        (await runJj(workspaceDir, ['commit', '-m', 'Local rewrite of feature'])).exitCode
+      ).toBe(0);
+      expect(
+        (
+          await runJj(workspaceDir, [
+            'bookmark',
+            'set',
+            '--allow-backwards',
+            '-r',
+            '@-',
+            'di/feature',
+          ])
+        ).exitCode
+      ).toBe(0);
+      await fs.writeFile(path.join(workspaceDir, 'dirty.txt'), 'uncommitted');
+    });
+
+    afterEach(async () => {
+      for (const dir of [remoteDir, seedDir, workspaceDir]) {
+        if (dir) {
+          await fs.rm(dir, { recursive: true, force: true });
+        }
+      }
+    });
+
+    test('resets bookmarks and abandons local-only work after a fetch (Jujutsu)', async () => {
+      if (!hasJj) {
+        console.log('Skipping Jujutsu test - jj not installed');
+        return;
+      }
+
+      const result = await prepareExistingWorkspace(workspaceDir, {
+        baseBranch: 'main',
+        branchName: 'new-task',
+        createBranch: true,
+        resetToRemote: true,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.actualBranchName).toBe('new-task');
+
+      // `di/*` matches the auto-track rule and `main` is the trunk. `other` and the
+      // leftover bookmark are not restored.
+      expect(await listLocalBookmarks(workspaceDir)).toEqual(['di/feature', 'main', 'new-task']);
+      expect(await getJjRevision(workspaceDir, 'di/feature')).toBe(
+        await getJjRevision(workspaceDir, 'di/feature@origin')
+      );
+      expect(await getJjRevision(workspaceDir, '@-')).toBe(
+        await getJjRevision(workspaceDir, 'main@origin')
+      );
+
+      expect(await visibleCommitsWithDescription(workspaceDir, 'Leftover local work')).toBe('');
+      expect(await visibleCommitsWithDescription(workspaceDir, 'Local rewrite of feature')).toBe(
+        ''
+      );
+      for (const file of ['leftover.txt', 'rewrite.txt', 'dirty.txt']) {
+        await expect(fs.access(path.join(workspaceDir, file))).rejects.toThrow();
+      }
+    });
+
+    test('keeps local work when the fetch fails in offline mode (Jujutsu)', async () => {
+      if (!hasJj) {
+        console.log('Skipping Jujutsu test - jj not installed');
+        return;
+      }
+
+      const originalAllowOffline = process.env.ALLOW_OFFLINE;
+      try {
+        process.env.ALLOW_OFFLINE = 'true';
+        expect(
+          (
+            await runJj(workspaceDir, [
+              'git',
+              'remote',
+              'set-url',
+              'origin',
+              path.join(remoteDir, 'missing'),
+            ])
+          ).exitCode
+        ).toBe(0);
+
+        const result = await prepareExistingWorkspace(workspaceDir, {
+          baseBranch: 'main',
+          branchName: 'new-task',
+          createBranch: true,
+          resetToRemote: true,
+        });
+
+        expect(result.success).toBe(true);
+        expect(await listLocalBookmarks(workspaceDir)).toContain('leftover');
+        expect(await visibleCommitsWithDescription(workspaceDir, 'Leftover local work')).not.toBe(
+          ''
+        );
+      } finally {
+        if (originalAllowOffline === undefined) {
+          delete process.env.ALLOW_OFFLINE;
+        } else {
+          process.env.ALLOW_OFFLINE = originalAllowOffline;
+        }
+      }
+    });
   });
 });
 

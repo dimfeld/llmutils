@@ -307,7 +307,7 @@ tim workspace register /path/to/existing-checkout --auto --name agent-a
 Workspace types:
 
 - `primary` - anchor checkout for the project; not selected for agent execution
-- `auto` - preferred pool for `--auto-workspace` and web-launched agent runs
+- `auto` - preferred pool for `--auto-workspace` and web-launched agent runs. When tim reuses a Jujutsu `auto` workspace, it first resets it to the remote state: it removes local bookmarks and unpushed commits, then tracks the bookmarks that match `remotes.<name>.auto-track-bookmarks` and the trunk again.
 - `standard` - eligible for auto-selection only when no `auto` workspaces exist
 
 ### Automatic workspace cleanup

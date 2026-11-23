@@ -203,7 +203,16 @@ When creating a new workspace (`tim workspace add`), a branch is created by defa
 
 `tim chat` runs the post-execution sync only when the workspace is still on the chat's own branch, because the agent can move to other branches during a chat. In Git, the current branch must be the chat branch. In Jujutsu, the chat bookmark must be an ancestor of the working copy, and the commits after it must not carry other bookmarks, except commits that are already on trunk. If the check fails, tim does not commit or push, and the changes stay in the workspace. Trunk chats (`tim chat --trunk`) never run the round trip. They only link the primary workspace's local config files and create the materialized plans directory.
 
-When tim reuses an existing Git workspace that has uncommitted changes, it stashes them with `git stash push --include-untracked` and a `tim: leftover changes before workspace reuse` message, and continues. If a rebase, merge, cherry-pick, or revert is in progress and blocks the stash, tim aborts it first. Use `git stash list` in the workspace to find the stashed changes. Jujutsu workspaces keep their changes in the working-copy commit.
+When tim reuses an existing Git workspace that has uncommitted changes, it stashes them with `git stash push --include-untracked` and a `tim: leftover changes before workspace reuse` message, and continues. If a rebase, merge, cherry-pick, or revert is in progress and blocks the stash, tim aborts it first. Use `git stash list` in the workspace to find the stashed changes. Jujutsu workspaces of type `standard` keep their changes in the working-copy commit.
+
+When tim reuses a Jujutsu workspace of type `auto`, it resets the workspace to the remote state after a successful fetch (`resetJjWorkspaceToRemote` in `workspace_manager.ts`). This removes leftover work and local bookmarks from an earlier task, including old copies of branches that were rebased on the remote since then. The reset does these steps:
+
+1. Forget all local bookmarks (`jj bookmark forget 'glob:*'`). The remote bookmarks stay.
+2. For each remote, read `remotes.<name>.auto-track-bookmarks` and run `jj bookmark track '<pattern>' --remote <name>`. `jj git fetch` applies this rule only to remote bookmarks it has not seen before, so tim must apply it again here.
+3. Track the trunk bookmark on `origin`, then run `jj new <trunk>@origin`.
+4. Abandon `mutable() ~ ::remote_bookmarks() ~ ::working_copies()`. Before this step, tim logs the commits and the operation ID to use with `jj op restore`.
+
+Then the usual branch preparation runs. tim does not reset when the fetch fails, when the remote trunk is missing, for new workspaces, or for workspaces of other types. Unpushed commits are not kept, because tim pushes at the end of each run.
 
 In a Jujutsu workspace, setup checks `jj status` after each `jj new`. It removes files that
 Jujutsu reports as added. These files can remain from the previous branch when that branch ignored
