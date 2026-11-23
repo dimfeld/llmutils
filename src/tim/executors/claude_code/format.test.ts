@@ -1528,6 +1528,151 @@ describe('formatJsonMessage', () => {
       });
     });
 
+    test('maps tool_progress heartbeat to llm_status', () => {
+      const message = JSON.stringify({
+        type: 'tool_progress',
+        tool_use_id: 'toolu_019ENUbAhtADXBAo848BGB2v-heartbeat-0',
+        tool_name: 'Bash',
+        parent_tool_use_id: 'toolu_019ENUbAhtADXBAo848BGB2v',
+        elapsed_time_seconds: 30,
+        heartbeat: true,
+        session_id: 'b1f683a3-face-42bd-92b3-59a257bbb3a5',
+        uuid: 'b97e7f58-1c1e-4b04-9b3b-1cc5e7557955',
+      });
+
+      const result = formatJsonMessage(message);
+      expect(result.type).toBe('tool_progress');
+      expect(result.structured).toEqual({
+        type: 'llm_status',
+        timestamp: expect.any(String),
+        source: 'claude',
+        status: 'Bash still running (30s)',
+      });
+    });
+
+    test('formats tool_progress elapsed time in minutes and tolerates missing elapsed time', () => {
+      const long = formatJsonMessage(
+        JSON.stringify({
+          type: 'tool_progress',
+          tool_use_id: 'toolu_1',
+          tool_name: 'Bash',
+          elapsed_time_seconds: 125,
+          session_id: 's',
+        })
+      );
+      expect((long.structured as { status: string }).status).toBe('Bash still running (2m 5s)');
+
+      const missing = formatJsonMessage(
+        JSON.stringify({
+          type: 'tool_progress',
+          tool_use_id: 'toolu_2',
+          tool_name: 'Read',
+          session_id: 's',
+        })
+      );
+      expect((missing.structured as { status: string }).status).toBe('Read still running');
+    });
+
+    test('labels tool_progress with the background task from task_started', () => {
+      formatJsonMessage(
+        JSON.stringify({
+          type: 'system',
+          subtype: 'task_started',
+          task_id: 'bwgvv5e28',
+          tool_use_id: 'toolu_bash1',
+          description: 'Type check and lint at stack top',
+          task_type: 'local_bash',
+          uuid: 'u1',
+          session_id: 's',
+        })
+      );
+
+      const heartbeat = formatJsonMessage(
+        JSON.stringify({
+          type: 'tool_progress',
+          tool_use_id: 'toolu_bash1-heartbeat-0',
+          tool_name: 'Bash',
+          parent_tool_use_id: 'toolu_bash1',
+          elapsed_time_seconds: 30,
+          heartbeat: true,
+          session_id: 's',
+        })
+      );
+      expect((heartbeat.structured as { status: string }).status).toBe(
+        'Task bwgvv5e28 (Bash) still running (30s): Type check and lint at stack top'
+      );
+
+      const withTaskId = formatJsonMessage(
+        JSON.stringify({
+          type: 'tool_progress',
+          tool_use_id: 'toolu_other',
+          tool_name: 'Bash',
+          parent_tool_use_id: null,
+          elapsed_time_seconds: 60,
+          task_id: 'bwgvv5e28',
+          session_id: 's',
+        })
+      );
+      expect((withTaskId.structured as { status: string }).status).toBe(
+        'Task bwgvv5e28 (Bash) still running (1m 0s): Type check and lint at stack top'
+      );
+    });
+
+    test('labels tool_progress for a foreground tool call with its input description', () => {
+      formatJsonMessage(
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_fg',
+                name: 'Bash',
+                input: { command: 'bun run test', description: 'Run the test suite' },
+              },
+              {
+                type: 'tool_use',
+                id: 'toolu_nodesc',
+                name: 'Bash',
+                input: { command: 'bun run check\necho done' },
+              },
+            ],
+          },
+          session_id: 's',
+        })
+      );
+
+      const described = formatJsonMessage(
+        JSON.stringify({
+          type: 'tool_progress',
+          tool_use_id: 'toolu_fg-heartbeat-0',
+          tool_name: 'Bash',
+          parent_tool_use_id: 'toolu_fg',
+          elapsed_time_seconds: 30,
+          heartbeat: true,
+          session_id: 's',
+        })
+      );
+      expect((described.structured as { status: string }).status).toBe(
+        'Bash still running (30s): Run the test suite'
+      );
+
+      const commandOnly = formatJsonMessage(
+        JSON.stringify({
+          type: 'tool_progress',
+          tool_use_id: 'toolu_nodesc-heartbeat-0',
+          tool_name: 'Bash',
+          parent_tool_use_id: 'toolu_nodesc',
+          elapsed_time_seconds: 30,
+          heartbeat: true,
+          session_id: 's',
+        })
+      );
+      expect((commandOnly.structured as { status: string }).status).toBe(
+        'Bash still running (30s): bun run check'
+      );
+    });
+
     test('maps rate_limit_event to llm_status with detail for terminal/gui rendering', () => {
       const resetsAt = 1771610400;
       const expectedReset = new Date(resetsAt * 1000).toISOString();

@@ -84,6 +84,7 @@ export type Message =
       type: 'system';
       subtype: 'task_started';
       task_id: string;
+      tool_use_id?: string;
       description: string;
       task_type: string;
       uuid: string;
@@ -157,6 +158,19 @@ export type Message =
         trigger: string;
         pre_tokens: number;
       };
+    }
+
+  // Periodic progress for a tool call that is still running
+  | {
+      type: 'tool_progress';
+      tool_use_id: string;
+      tool_name: string;
+      parent_tool_use_id?: string | null;
+      elapsed_time_seconds: number;
+      task_id?: string;
+      heartbeat?: boolean;
+      uuid?: string;
+      session_id: string;
     }
 
   // Rate limit warning/info event
@@ -243,6 +257,32 @@ function truncateString(result: string, maxLines = 15): string {
 
 function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1).replace(/\.0$/, '')}%`;
+}
+
+/** Returns a one-line label for a tool call: its `description` input, or else the first line of its `command`. */
+function describeToolInput(input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') {
+    return undefined;
+  }
+  const record = input as Record<string, unknown>;
+  if (typeof record.description === 'string' && record.description.trim()) {
+    return record.description.trim();
+  }
+  if (typeof record.command === 'string' && record.command.trim()) {
+    const firstLine = record.command.trim().split('\n')[0];
+    return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
+  }
+  return undefined;
+}
+
+function formatElapsedSeconds(seconds: unknown): string | undefined {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) {
+    return undefined;
+  }
+  const total = Math.round(seconds);
+  const minutes = Math.floor(total / 60);
+  const secs = total % 60;
+  return minutes > 0 ? `${minutes}m ${secs}s` : `${secs}s`;
 }
 
 function formatResetAtUnix(seconds: number): string | undefined {
@@ -352,6 +392,10 @@ function withMessage(result: Omit<FormattedClaudeMessage, 'message'>): Formatted
 export class ClaudeMessageFormatter {
   // Cache for tool use IDs mapped to their names.
   private readonly toolUseCache = new Map<string, string>();
+  // Short descriptions of tool calls and background tasks, used to label tool_progress messages.
+  private readonly toolUseDescriptions = new Map<string, string>();
+  private readonly taskDescriptions = new Map<string, string>();
+  private readonly taskIdsByToolUseId = new Map<string, string>();
   private readonly sessionTaskLists: Map<string, Map<string, ClaudeTaskItem>> = new Map();
   private readonly pendingTaskCreates: Map<string, PendingTaskCreate> = new Map();
   private readonly appliedTaskUpdates: Map<
@@ -367,6 +411,9 @@ export class ClaudeMessageFormatter {
   /** Clears only this execution's formatter state. */
   public reset(): void {
     this.toolUseCache.clear();
+    this.toolUseDescriptions.clear();
+    this.taskDescriptions.clear();
+    this.taskIdsByToolUseId.clear();
     this.sessionTaskLists.clear();
     this.pendingTaskCreates.clear();
     this.appliedTaskUpdates.clear();
@@ -438,6 +485,12 @@ export class ClaudeMessageFormatter {
         },
       });
     } else if (message.type === 'system' && message.subtype === 'task_started') {
+      if (message.description) {
+        this.taskDescriptions.set(message.task_id, message.description);
+      }
+      if (message.tool_use_id) {
+        this.taskIdsByToolUseId.set(message.tool_use_id, message.task_id);
+      }
       return withMessage({
         type: message.type,
         structured: {
@@ -516,6 +569,27 @@ export class ClaudeMessageFormatter {
           timestamp: timestamp(),
           status: `Compacting (${message.compact_metadata.trigger})`,
           detail: `${message.compact_metadata.pre_tokens} tokens before compact`,
+        },
+      });
+    } else if (message.type === 'tool_progress') {
+      const elapsed = formatElapsedSeconds(message.elapsed_time_seconds);
+      const parentToolUseId = message.parent_tool_use_id ?? undefined;
+      const taskId =
+        message.task_id ??
+        (parentToolUseId ? this.taskIdsByToolUseId.get(parentToolUseId) : undefined);
+      const description =
+        (taskId ? this.taskDescriptions.get(taskId) : undefined) ??
+        (parentToolUseId ? this.toolUseDescriptions.get(parentToolUseId) : undefined);
+      const subject = taskId ? `Task ${taskId} (${message.tool_name})` : message.tool_name;
+      const elapsedSuffix = elapsed ? ` (${elapsed})` : '';
+      const descriptionSuffix = description ? `: ${description}` : '';
+      return withMessage({
+        type: message.type,
+        structured: {
+          type: 'llm_status',
+          timestamp: timestamp(),
+          source: 'claude',
+          status: `${subject} still running${elapsedSuffix}${descriptionSuffix}`,
         },
       });
     } else if (message.type === 'rate_limit_event') {
@@ -597,6 +671,10 @@ export class ClaudeMessageFormatter {
           // Store tool use ID mapping
           if ('id' in content) {
             this.toolUseCache.set(content.id, content.name);
+            const description = describeToolInput(content.input);
+            if (description) {
+              this.toolUseDescriptions.set(content.id, description);
+            }
           }
 
           // Special handling for Write tool to show file_path and line count
