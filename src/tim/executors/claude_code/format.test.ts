@@ -1618,6 +1618,110 @@ describe('formatJsonMessage', () => {
       );
     });
 
+    test.each([
+      [
+        'task_notification',
+        {
+          type: 'system',
+          subtype: 'task_notification',
+          task_id: 'bdone',
+          tool_use_id: 'toolu_done',
+          status: 'completed',
+          output_file: '',
+          summary: '',
+          session_id: 's',
+        },
+      ],
+      [
+        'terminal task_updated',
+        {
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'bdone',
+          patch: { status: 'completed', end_time: 1771610400000 },
+          uuid: 'u3',
+          session_id: 's',
+        },
+      ],
+    ])('forgets the task label after %s', (_name, endMessage) => {
+      formatJsonMessage(
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_done',
+                name: 'Bash',
+                input: {
+                  command: 'sleep 100',
+                  description: 'Wait a while',
+                  run_in_background: true,
+                },
+              },
+            ],
+          },
+          session_id: 's',
+        })
+      );
+      formatJsonMessage(
+        JSON.stringify({
+          type: 'system',
+          subtype: 'task_started',
+          task_id: 'bdone',
+          tool_use_id: 'toolu_done',
+          description: 'Wait a while',
+          task_type: 'local_bash',
+          uuid: 'u2',
+          session_id: 's',
+        })
+      );
+      const ended = formatJsonMessage(JSON.stringify(endMessage));
+      expect((ended.structured as { message: string }).message).toBe(
+        'Task bdone (Wait a while): completed'
+      );
+
+      const late = formatJsonMessage(
+        JSON.stringify({
+          type: 'tool_progress',
+          tool_use_id: 'toolu_done-heartbeat-0',
+          tool_name: 'Bash',
+          parent_tool_use_id: 'toolu_done',
+          elapsed_time_seconds: 30,
+          heartbeat: true,
+          session_id: 's',
+        })
+      );
+      expect((late.structured as { status: string }).status).toBe('Bash still running (30s)');
+    });
+
+    test('task_updated uses a description changed by the patch', () => {
+      formatJsonMessage(
+        JSON.stringify({
+          type: 'system',
+          subtype: 'task_started',
+          task_id: 'bmove',
+          description: 'Old name',
+          task_type: 'local_bash',
+          uuid: 'u4',
+          session_id: 's',
+        })
+      );
+      const moved = formatJsonMessage(
+        JSON.stringify({
+          type: 'system',
+          subtype: 'task_updated',
+          task_id: 'bmove',
+          patch: { is_backgrounded: true, description: 'New name' },
+          uuid: 'u5',
+          session_id: 's',
+        })
+      );
+      expect((moved.structured as { message: string }).message).toBe(
+        'Task bmove (New name): moved to background'
+      );
+    });
+
     test('labels tool_progress for a foreground tool call with its input description', () => {
       formatJsonMessage(
         JSON.stringify({

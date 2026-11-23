@@ -73,6 +73,7 @@ export type Message =
       type: 'system';
       subtype: 'task_notification';
       task_id: string;
+      tool_use_id?: string;
       status: string;
       output_file: string;
       summary: string;
@@ -116,6 +117,7 @@ export type Message =
       patch: {
         is_backgrounded?: boolean;
         status?: string;
+        description?: string;
         end_time?: number;
       };
       uuid: string;
@@ -419,6 +421,27 @@ export class ClaudeMessageFormatter {
     this.appliedTaskUpdates.clear();
   }
 
+  /** Returns "Task <id> (<description>)", or "Task <id>" when no description is known. */
+  private taskSubject(taskId: string): string {
+    const description = this.taskDescriptions.get(taskId);
+    return description ? `Task ${taskId} (${description})` : `Task ${taskId}`;
+  }
+
+  /** Removes the tool_progress labels of a background task that has finished. */
+  private forgetTask(taskId: string, toolUseId?: string): void {
+    this.taskDescriptions.delete(taskId);
+    for (const [mappedToolUseId, mappedTaskId] of this.taskIdsByToolUseId) {
+      if (mappedTaskId === taskId) {
+        this.taskIdsByToolUseId.delete(mappedToolUseId);
+        this.toolUseDescriptions.delete(mappedToolUseId);
+      }
+    }
+    if (toolUseId) {
+      this.taskIdsByToolUseId.delete(toolUseId);
+      this.toolUseDescriptions.delete(toolUseId);
+    }
+  }
+
   public formatJsonMessage(input: string, model?: string): FormattedClaudeMessage {
     debugLog(input);
 
@@ -475,13 +498,16 @@ export class ClaudeMessageFormatter {
         }),
       });
     } else if (message.type === 'system' && message.subtype === 'task_notification') {
+      const subject = this.taskSubject(message.task_id);
+      this.forgetTask(message.task_id, message.tool_use_id);
+      const summarySuffix = message.summary ? `\n${message.summary}` : '';
       return withMessage({
         type: message.type,
         structured: {
           type: 'workflow_progress',
           timestamp: timestamp(),
           phase: 'task_notification',
-          message: `Task ${message.task_id}: ${message.status}\n${message.summary}`,
+          message: `${subject}: ${message.status}${summarySuffix}`,
         },
       });
     } else if (message.type === 'system' && message.subtype === 'task_started') {
@@ -502,10 +528,17 @@ export class ClaudeMessageFormatter {
       });
     } else if (message.type === 'system' && message.subtype === 'task_updated') {
       const isTerminalUpdate = message.patch?.end_time != null;
+      if (message.patch?.description) {
+        this.taskDescriptions.set(message.task_id, message.patch.description);
+      }
+      const subject = this.taskSubject(message.task_id);
+      if (isTerminalUpdate) {
+        this.forgetTask(message.task_id);
+      }
       const updateMessage =
         message.patch?.is_backgrounded === true && !isTerminalUpdate
-          ? `Task ${message.task_id}: moved to background`
-          : `Task ${message.task_id}: ${message.patch?.status ?? 'updated'}`;
+          ? `${subject}: moved to background`
+          : `${subject}: ${message.patch?.status ?? 'updated'}`;
 
       return withMessage({
         type: message.type,
