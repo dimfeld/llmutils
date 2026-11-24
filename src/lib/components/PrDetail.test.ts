@@ -2,7 +2,7 @@ import { renderWithTooltipProvider } from '$lib/test-utils/render_with_tooltip_p
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { EnrichedProjectPr } from '$lib/remote/project_prs.remote.js';
-import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
+import { getLinearPrReviewUrl, getPrContent } from '$lib/remote/project_prs.remote.js';
 import { getPrReviews } from '$lib/remote/pr_reviews.remote.js';
 import type { PrReviewThreadDetail } from '$tim/db/pr_status.js';
 import PrDetail from './PrDetail.svelte';
@@ -29,6 +29,7 @@ vi.mock('$lib/remote/project_prs.remote.js', async () => {
   return {
     ...actual,
     getLinearPrReviewUrl: vi.fn(async () => null),
+    getPrContent: vi.fn(async () => ({ body: null, reviewGuideComment: null })),
   };
 });
 
@@ -166,6 +167,45 @@ describe('PrDetail', () => {
 
     expect(body).not.toContain('View in Graphite');
     expect(body).not.toContain('href="https://app.graphite.com/github/pr/example/repo/42"');
+  });
+
+  test('renders the PR description and the review guide comment', async () => {
+    vi.mocked(getPrContent).mockResolvedValueOnce({
+      body: 'This PR adds **feature X**.',
+      reviewGuideComment: {
+        body: '## Review Guide\n\nThe guide text.',
+        url: 'https://github.com/example/repo/pull/42#issuecomment-7',
+        updatedAt: '2026-03-18T10:00:00.000Z',
+      },
+    });
+
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr: createPr(),
+        projectId: '123',
+      },
+    });
+
+    expect(body).toMatch(/<summary[^>]*>\s*Description\s*<\/summary>/);
+    expect(body).toContain('<strong>feature X</strong>');
+    expect(body).toContain('Review Guide Comment');
+    expect(body).toContain('The guide text.');
+    expect(body).toContain('href="https://github.com/example/repo/pull/42#issuecomment-7"');
+    expect(getPrContent).toHaveBeenCalledWith({
+      prUrl: 'https://github.com/example/repo/pull/42',
+    });
+  });
+
+  test('omits the description and guide comment sections when there is no content', async () => {
+    const { body } = await renderWithTooltipProvider(PrDetail, {
+      props: {
+        pr: createPr(),
+        projectId: '123',
+      },
+    });
+
+    expect(body).not.toContain('Review Guide Comment');
+    expect(body).not.toMatch(/<summary[^>]*>\s*Description\s*<\/summary>/);
   });
 
   test('renders the Linear review link resolved during server render', async () => {

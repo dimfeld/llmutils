@@ -6,12 +6,15 @@ import {
   fetchPrCheckStatus,
   fetchPrDigestTimeline,
   fetchPrFullStatus,
+  fetchPrIssueComments,
   fetchPrMergeableAndReviewDecision,
   fetchPrReviewThread,
   fetchPrReviewThreads,
   type PrDigestTimeline,
   type PrFullStatus,
+  type PrIssueComment,
 } from './pr_status.js';
+import { isReviewGuideCommentBody } from './review_guide_comment_marker.js';
 import {
   getPrStatusByUrl,
   getPrStatusByRepoAndNumber,
@@ -27,6 +30,10 @@ import {
   type UpsertPrStatusInput,
 } from '../../tim/db/pr_status.js';
 import { isPrShepherded } from '../../tim/db/pr_shepherd.js';
+import {
+  clearPrReviewGuideComment,
+  upsertPrReviewGuideComment,
+} from '../../tim/db/pr_status_content.js';
 
 const BRANCH_MERGE_REQUIREMENTS_MAX_AGE_MS = 30 * 60 * 1000;
 
@@ -62,6 +69,7 @@ export async function refreshPrStatus(
   const fetchOptions = githubFetchOptions(options);
   let fullStatus: PrFullStatus;
   let reviewThreadsResult: PromiseSettledResult<StoredPrReviewThreadInput[]> | null = null;
+  let issueCommentsResult: PromiseSettledResult<PrIssueComment[]> | null = null;
   let digestTimeline: PrDigestTimeline | null = null;
 
   if (options.refreshDigestMetadata) {
@@ -95,7 +103,7 @@ export async function refreshPrStatus(
       digestTimeline = timelineResult.value;
     }
   } else {
-    const [fullStatusResult, threadsResult] = await Promise.allSettled([
+    const [fullStatusResult, threadsResult, commentsResult] = await Promise.allSettled([
       fetchPrFullStatus(
         parsed.owner,
         parsed.repo,
@@ -108,12 +116,26 @@ export async function refreshPrStatus(
         parsed.number,
         ...(fetchOptions ? [fetchOptions] : [])
       ),
+      fetchPrIssueComments(
+        parsed.owner,
+        parsed.repo,
+        parsed.number,
+        ...(fetchOptions ? [fetchOptions] : [])
+      ),
     ]);
     if (fullStatusResult.status === 'rejected') {
       throw fullStatusResult.reason;
     }
     fullStatus = fullStatusResult.value;
     reviewThreadsResult = threadsResult;
+    issueCommentsResult = commentsResult;
+  }
+
+  if (issueCommentsResult?.status === 'rejected') {
+    console.warn(
+      `[pr_status] Failed to fetch issue comments for ${canonicalPrUrl}:`,
+      issueCommentsResult.reason
+    );
   }
 
   if (reviewThreadsResult?.status === 'rejected') {
@@ -149,6 +171,7 @@ export async function refreshPrStatus(
         prNumber: parsed.number,
         author: fullStatus.author,
         title: fullStatus.title,
+        body: fullStatus.body,
         state: fullStatus.state,
         draft: fullStatus.isDraft,
         mergeable: fullStatus.mergeable,
@@ -193,6 +216,10 @@ export async function refreshPrStatus(
           reviewThreadsResult?.status === 'fulfilled' ? reviewThreadsResult.value : undefined,
       });
 
+      if (issueCommentsResult?.status === 'fulfilled') {
+        storeReviewGuideCommentFromIssueComments(db, detail.status.id, issueCommentsResult.value);
+      }
+
       if (digestTimeline) {
         const latestEventByReviewer = new Map<
           string,
@@ -236,6 +263,30 @@ export async function refreshPrStatus(
     return getPrStatusByUrl(db, canonicalPrUrl, reloadOptions) ?? updatedDetail;
   }
   return updatedDetail;
+}
+
+/**
+ * Store the review guide comment from the full list of PR issue comments, or remove the
+ * stored one when the PR no longer has it.
+ */
+export function storeReviewGuideCommentFromIssueComments(
+  db: Database,
+  prStatusId: number,
+  comments: PrIssueComment[]
+): boolean {
+  const guideComment = comments.find(
+    (comment) => comment.databaseId !== null && isReviewGuideCommentBody(comment.body)
+  );
+  if (!guideComment || guideComment.databaseId === null || guideComment.body === null) {
+    return clearPrReviewGuideComment(db, prStatusId);
+  }
+
+  return upsertPrReviewGuideComment(db, prStatusId, {
+    commentId: guideComment.databaseId,
+    body: guideComment.body,
+    url: guideComment.url,
+    updatedAt: guideComment.updatedAt,
+  });
 }
 
 /**
@@ -501,6 +552,7 @@ export async function syncPlanPrLinks(
       prNumber: parsed.number,
       author: fullStatus.author,
       title: fullStatus.title,
+      body: fullStatus.body,
       state: fullStatus.state,
       draft: fullStatus.isDraft,
       mergeable: fullStatus.mergeable,

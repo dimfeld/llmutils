@@ -43,6 +43,9 @@ import {
   type PrShepherdSource,
 } from '$tim/db/pr_shepherd.js';
 import { getPreferredProjectGitRoot } from '$tim/workspace/workspace_info.js';
+import { getPrStatusContentByUrl } from '$tim/db/pr_status_content.js';
+import { tryCanonicalizePrUrl } from '$common/github/identifiers.js';
+import { stripReviewGuideCommentMarker } from '$common/github/review_guide_comment_marker.js';
 import type { PrStatusDetailWithRequiredChecks } from '$lib/server/required_check_rollup.js';
 
 const projectIdSchema = z.object({
@@ -656,6 +659,36 @@ export const getPrReviewThreads = query(
     return getPrStatusByUrl(db, prUrl, { includeReviewThreads: true })?.reviewThreads ?? [];
   }
 );
+
+export interface PrContent {
+  /** The PR description, or null when it is empty or not fetched yet. */
+  body: string | null;
+  reviewGuideComment: {
+    body: string;
+    url: string | null;
+    updatedAt: string | null;
+  } | null;
+}
+
+/** The PR description and the tim review guide comment, for the PR detail view. */
+export const getPrContent = query(prUrlSchema, async ({ prUrl }): Promise<PrContent> => {
+  const { db } = await getServerContext();
+  const canonicalPrUrl = tryCanonicalizePrUrl(prUrl);
+  const content = canonicalPrUrl ? getPrStatusContentByUrl(db, canonicalPrUrl) : null;
+  const guideBody = content?.review_guide_comment_body
+    ? stripReviewGuideCommentMarker(content.review_guide_comment_body)
+    : null;
+  return {
+    body: content?.body?.trim() ? content.body : null,
+    reviewGuideComment: guideBody
+      ? {
+          body: guideBody,
+          url: content?.review_guide_comment_url ?? null,
+          updatedAt: content?.review_guide_comment_updated_at ?? null,
+        }
+      : null,
+  };
+});
 
 async function loadProjectPrsData(projectId: string) {
   if (projectId === 'all') {

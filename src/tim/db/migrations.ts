@@ -1672,6 +1672,21 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 64,
+    // Large PR text (the PR description and the tim review guide comment). This is a
+    // separate table so that the PR list queries, which read pr_status rows, do not load it.
+    up: `
+      CREATE TABLE IF NOT EXISTS pr_status_content (
+        pr_status_id INTEGER PRIMARY KEY REFERENCES pr_status(id) ON DELETE CASCADE,
+        body TEXT,
+        review_guide_comment_id INTEGER,
+        review_guide_comment_body TEXT,
+        review_guide_comment_url TEXT,
+        review_guide_comment_updated_at TEXT
+      );
+    `,
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

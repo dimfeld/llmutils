@@ -9,6 +9,8 @@ import { getOrCreateProject } from '$tim/db/project.js';
 import { upsertBranchMergeRequirements } from '$tim/db/branch_merge_requirements.js';
 import { upsertPrReviewRequestByReviewer, upsertPrStatus } from '$tim/db/pr_status.js';
 import { invokeCommand, invokeQuery } from '$lib/test-utils/invoke_command.js';
+import { upsertPrReviewGuideComment } from '$tim/db/pr_status_content.js';
+import { REVIEW_GUIDE_COMMENT_MARKER } from '$common/github/review_guide_comment_marker.js';
 
 let currentDb: Database;
 let currentConfig: Record<string, unknown> = {};
@@ -200,6 +202,65 @@ describe('project_prs remote functions', () => {
     expect(ingestWebhookEvents).toHaveBeenCalledWith(currentDb, {
       getSessionManager: expect.any(Function),
     });
+  });
+
+  test('getPrContent returns the PR body and the guide comment without its marker', async () => {
+    const prUrl = 'https://github.com/example/repo/pull/42';
+    const detail = upsertPrStatus(currentDb, {
+      prUrl,
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 42,
+      title: 'PR 42',
+      body: 'The description',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+    });
+    upsertPrReviewGuideComment(currentDb, detail.status.id, {
+      commentId: 7,
+      body: `${REVIEW_GUIDE_COMMENT_MARKER}\n## Review Guide\nText`,
+      url: `${prUrl}#issuecomment-7`,
+      updatedAt: '2026-03-30T12:00:00.000Z',
+    });
+    const { getPrContent } = await import('./project_prs.remote.js');
+
+    // A non-canonical URL still finds the PR.
+    const result = await invokeQuery(getPrContent, { prUrl: `${prUrl}/files` });
+
+    expect(result).toEqual({
+      body: 'The description',
+      reviewGuideComment: {
+        body: '## Review Guide\nText',
+        url: `${prUrl}#issuecomment-7`,
+        updatedAt: '2026-03-30T12:00:00.000Z',
+      },
+    });
+  });
+
+  test('getPrContent returns empty content for a PR with no stored text', async () => {
+    upsertPrStatus(currentDb, {
+      prUrl: 'https://github.com/example/repo/pull/43',
+      owner: 'example',
+      repo: 'repo',
+      prNumber: 43,
+      title: 'PR 43',
+      body: '   ',
+      state: 'open',
+      draft: false,
+      lastFetchedAt: '2026-03-30T12:00:00.000Z',
+    });
+    const { getPrContent } = await import('./project_prs.remote.js');
+
+    for (const prUrl of [
+      'https://github.com/example/repo/pull/43',
+      'https://github.com/example/repo/pull/999',
+    ]) {
+      expect(await invokeQuery(getPrContent, { prUrl })).toEqual({
+        body: null,
+        reviewGuideComment: null,
+      });
+    }
   });
 
   test('getLinearPrReviewUrl returns null for non-Linear projects', async () => {

@@ -18,6 +18,7 @@ describe('common/github/pr_status', () => {
           number: 42,
           author: { __typename: 'Bot', login: 'dependabot' },
           title: 'Add PR status monitoring',
+          body: 'Line one\r\nLine two',
           state: 'OPEN',
           isDraft: false,
           mergeable: 'MERGEABLE',
@@ -121,6 +122,7 @@ describe('common/github/pr_status', () => {
       author: 'dependabot[bot]',
       number: 42,
       title: 'Add PR status monitoring',
+      body: 'Line one\nLine two',
       state: 'open',
       isDraft: false,
       mergeable: 'MERGEABLE',
@@ -1240,9 +1242,11 @@ describe('common/github/pr_status', () => {
                 pageInfo: { hasNextPage: true, endCursor: 'cursor-1' },
                 nodes: [
                   {
+                    databaseId: 101,
                     author: { login: 'reviewer' },
                     body: 'First issue\r\nSecond issue',
                     createdAt: '2026-03-20T00:00:00.000Z',
+                    updatedAt: '2026-03-20T00:30:00.000Z',
                     url: 'https://github.com/owner/repo/pull/12#issuecomment-1',
                   },
                   null,
@@ -1289,21 +1293,27 @@ describe('common/github/pr_status', () => {
     expect(graphql).toHaveBeenCalledTimes(2);
     expect(comments).toEqual([
       {
+        databaseId: 101,
         author: 'reviewer',
         body: 'First issue\nSecond issue',
         createdAt: '2026-03-20T00:00:00.000Z',
+        updatedAt: '2026-03-20T00:30:00.000Z',
         url: 'https://github.com/owner/repo/pull/12#issuecomment-1',
       },
       {
+        databaseId: null,
         author: null,
         body: null,
         createdAt: '2026-03-20T01:00:00.000Z',
+        updatedAt: null,
         url: 'https://github.com/owner/repo/pull/12#issuecomment-2',
       },
       {
+        databaseId: null,
         author: 'tim-task-implementation-machine[bot]',
         body: 'Review guide',
         createdAt: '2026-03-20T02:00:00.000Z',
+        updatedAt: null,
         url: 'https://github.com/owner/repo/pull/12#issuecomment-3',
       },
     ]);

@@ -1,4 +1,5 @@
 import * as fs from 'node:fs/promises';
+import { REVIEW_GUIDE_COMMENT_MARKER } from '../../common/github/review_guide_comment_marker.js';
 import * as path from 'node:path';
 import { $ } from 'bun';
 import type { Database } from 'bun:sqlite';
@@ -57,7 +58,7 @@ import { withReviewQueue } from './review_queue.js';
 import { runAutomaticPrReview, type AutomaticPrReviewResult } from './review_guide_auto_review.js';
 
 /** Hidden marker used to detect an existing review-guide comment so we post at most one per PR. */
-export const REVIEW_GUIDE_COMMENT_MARKER = '<!-- tim:pr-review-guide -->';
+export { REVIEW_GUIDE_COMMENT_MARKER };
 const UPDATED_AT_FOOTER_PREFIX = 'Updated at';
 interface RootCommandLike {
   parent?: RootCommandLike;

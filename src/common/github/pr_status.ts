@@ -52,9 +52,12 @@ export interface PrStatusReview {
 }
 
 export interface PrIssueComment {
+  /** The REST API comment id. */
+  databaseId: number | null;
   author: string | null;
   body: string | null;
   createdAt: string | null;
+  updatedAt: string | null;
   url: string | null;
 }
 
@@ -72,6 +75,8 @@ export interface PrFullStatus {
   number: number;
   author: string | null;
   title: string;
+  /** The PR description. */
+  body: string | null;
   state: PrState;
   isDraft: boolean;
   createdAt?: string | null;
@@ -185,6 +190,7 @@ interface GraphQlPullRequestFullStatus {
   number: number;
   author: GraphQlActor | null;
   title: string;
+  body: string | null;
   state: string;
   isDraft: boolean;
   createdAt: string | null;
@@ -314,9 +320,11 @@ interface ReviewThreadGraphQlResponse {
 }
 
 interface GraphQlIssueCommentNode {
+  databaseId: number | null;
   author: GraphQlActor | null;
   body: string | null;
   createdAt: string | null;
+  updatedAt: string | null;
   url: string | null;
 }
 
@@ -344,6 +352,7 @@ const fullStatusQuery = `
           login
         }
         title
+        body
         state
         isDraft
         createdAt
@@ -666,12 +675,14 @@ const issueCommentsQuery = `
             endCursor
           }
           nodes {
+            databaseId
             author {
               __typename
               login
             }
             body
             createdAt
+            updatedAt
             url
           }
         }
@@ -1198,6 +1209,7 @@ export async function fetchPrFullStatus(
     number: pullRequest.number,
     author: pullRequest.author ? normalizeGraphQlActorLogin(pullRequest.author) : null,
     title: pullRequest.title,
+    body: normalizeMultilineText(pullRequest.body ?? null),
     state: normalizePrState(pullRequest.state),
     isDraft: pullRequest.isDraft,
     createdAt: pullRequest.createdAt,
@@ -1352,9 +1364,11 @@ export async function fetchPrIssueComments(
       (node: GraphQlIssueCommentNode | null): node is GraphQlIssueCommentNode => node !== null
     )) {
       comments.push({
+        databaseId: node.databaseId ?? null,
         author: node.author ? normalizeGraphQlActorLogin(node.author) : null,
         body: normalizeMultilineText(node.body),
         createdAt: node.createdAt,
+        updatedAt: node.updatedAt ?? null,
         url: node.url,
       });
     }

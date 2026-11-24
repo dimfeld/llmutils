@@ -11,6 +11,8 @@ import { getPrStatusByUrl, getPrStatusForPlan, upsertPrStatus } from '../../tim/
 import { nonSyncedUpsertPlan } from '../../tim/db/plan.js';
 import { enrollPrShepherd } from '../../tim/db/pr_shepherd.js';
 import { getOrCreateProject } from '../../tim/db/project.js';
+import { getPrStatusContentByUrl } from '../../tim/db/pr_status_content.js';
+import { REVIEW_GUIDE_COMMENT_MARKER } from './review_guide_comment_marker.js';
 
 // Mock the GitHub modules
 vi.mock('../../common/github/identifiers.ts', () => ({
@@ -27,6 +29,7 @@ vi.mock('../../common/github/pr_status.ts', () => ({
   fetchPrMergeableAndReviewDecision: vi.fn(),
   fetchPrReviewThread: vi.fn(),
   fetchPrReviewThreads: vi.fn(),
+  fetchPrIssueComments: vi.fn(),
   fetchBranchBehindBy: vi.fn(),
 }));
 
@@ -48,6 +51,7 @@ import {
   fetchPrMergeableAndReviewDecision,
   fetchPrReviewThread,
   fetchPrReviewThreads,
+  fetchPrIssueComments,
   fetchBranchBehindBy,
 } from '../../common/github/pr_status.ts';
 import { fetchBranchMergeRequirements } from '../../common/github/branch_merge_requirements.ts';
@@ -93,6 +97,7 @@ describe('common/github/pr_status_service', () => {
 
     // Reset all mocks
     vi.clearAllMocks();
+    vi.mocked(fetchPrIssueComments).mockResolvedValue([]);
   });
 
   afterEach(async () => {
@@ -170,6 +175,99 @@ describe('common/github/pr_status_service', () => {
       1
     );
     expect(getBranchMergeRequirements(db, 'example', 'repo', 'main')?.requirements).toHaveLength(1);
+  });
+
+  test('refreshPrStatus stores the PR body and the review guide comment', async () => {
+    const prUrl = 'https://github.com/example/repo/pull/210';
+    vi.mocked(parsePrOrIssueNumber).mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      number: 210,
+    });
+    vi.mocked(canonicalizePrUrl).mockReturnValue(prUrl);
+    vi.mocked(tryCanonicalizePrUrl).mockReturnValue(prUrl);
+    vi.mocked(fetchBranchMergeRequirements).mockResolvedValue({
+      owner: 'example',
+      repo: 'repo',
+      branchName: 'main',
+      requirements: [],
+    });
+    vi.mocked(fetchPrFullStatus).mockResolvedValue({
+      number: 210,
+      title: 'Body PR',
+      body: 'The PR description',
+      state: 'open' as const,
+      isDraft: false,
+      mergeable: 'MERGEABLE' as const,
+      mergedAt: null,
+      headSha: 'body-sha',
+      baseRefName: 'main',
+      headRefName: 'feature/body',
+      reviewDecision: null,
+      labels: [],
+      reviews: [],
+      checks: [],
+      checkRollupState: null,
+      additions: 1,
+      deletions: 1,
+      changedFiles: 1,
+    } as Awaited<ReturnType<typeof fetchPrFullStatus>>);
+    vi.mocked(fetchPrReviewThreads).mockResolvedValue([]);
+    vi.mocked(fetchPrIssueComments).mockResolvedValue([
+      {
+        databaseId: 1,
+        author: 'bob',
+        body: 'An ordinary comment',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+        url: 'https://github.com/example/repo/pull/210#issuecomment-1',
+      },
+      {
+        databaseId: 2,
+        author: 'tim-bot',
+        body: `${REVIEW_GUIDE_COMMENT_MARKER}\n## Review Guide\nGuide text`,
+        createdAt: '2026-01-02T00:00:00Z',
+        updatedAt: '2026-01-03T00:00:00Z',
+        url: 'https://github.com/example/repo/pull/210#issuecomment-2',
+      },
+    ]);
+
+    await refreshPrStatus(db, prUrl);
+
+    expect(getPrStatusContentByUrl(db, prUrl)).toMatchObject({
+      body: 'The PR description',
+      review_guide_comment_id: 2,
+      review_guide_comment_body: `${REVIEW_GUIDE_COMMENT_MARKER}\n## Review Guide\nGuide text`,
+      review_guide_comment_url: 'https://github.com/example/repo/pull/210#issuecomment-2',
+      review_guide_comment_updated_at: '2026-01-03T00:00:00Z',
+    });
+
+    // The guide comment was deleted on GitHub, so a later refresh removes it.
+    vi.mocked(fetchPrIssueComments).mockResolvedValue([]);
+    await refreshPrStatus(db, prUrl);
+    expect(getPrStatusContentByUrl(db, prUrl)).toMatchObject({
+      body: 'The PR description',
+      review_guide_comment_id: null,
+      review_guide_comment_body: null,
+    });
+
+    // A failed comment fetch keeps the stored guide comment.
+    vi.mocked(fetchPrIssueComments).mockResolvedValue([
+      {
+        databaseId: 3,
+        author: 'tim-bot',
+        body: `${REVIEW_GUIDE_COMMENT_MARKER}\nNew guide`,
+        createdAt: '2026-01-04T00:00:00Z',
+        updatedAt: '2026-01-04T00:00:00Z',
+        url: null,
+      },
+    ]);
+    await refreshPrStatus(db, prUrl);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.mocked(fetchPrIssueComments).mockRejectedValue(new Error('GitHub is down'));
+    await refreshPrStatus(db, prUrl);
+    warn.mockRestore();
+    expect(getPrStatusContentByUrl(db, prUrl)?.review_guide_comment_id).toBe(3);
   });
 
   test('digest refresh skips review detail queries for a PR that is still draft', async () => {

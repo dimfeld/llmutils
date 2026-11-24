@@ -26,6 +26,8 @@ import {
   handlePushEvent,
 } from './webhook_event_handlers.js';
 import { enrollPrShepherd } from '../../tim/db/pr_shepherd.js';
+import { getPrStatusContentByUrl } from '../../tim/db/pr_status_content.js';
+import { REVIEW_GUIDE_COMMENT_MARKER } from './review_guide_comment_marker.js';
 
 describe('common/github/webhook_event_handlers', () => {
   let tempDir: string;
@@ -1453,6 +1455,37 @@ describe('common/github/webhook_event_handlers', () => {
     expect(detail?.status.changed_files).toBe(3);
   });
 
+  test('handlePullRequestEvent stores the PR body and ignores it from stale events', () => {
+    const prUrl = 'https://github.com/example/repo/pull/205';
+    const payload = (body: string | null, updatedAt: string): Record<string, unknown> => ({
+      action: 'edited',
+      repository: { full_name: 'example/repo' },
+      pull_request: {
+        number: 205,
+        title: 'PR with a body',
+        body,
+        state: 'open',
+        draft: false,
+        merged_at: null,
+        user: { login: 'alice' },
+        head: { sha: 'sha-205', ref: 'feature/body' },
+        base: { ref: 'main' },
+        labels: [],
+        requested_reviewers: [],
+        updated_at: updatedAt,
+      },
+    });
+
+    handlePullRequestEvent(db, payload('First\r\nbody', '2026-03-30T12:00:00.000Z'));
+    expect(getPrStatusContentByUrl(db, prUrl)?.body).toBe('First\nbody');
+
+    handlePullRequestEvent(db, payload('Stale body', '2026-03-30T11:00:00.000Z'));
+    expect(getPrStatusContentByUrl(db, prUrl)?.body).toBe('First\nbody');
+
+    handlePullRequestEvent(db, payload(null, '2026-03-30T13:00:00.000Z'));
+    expect(getPrStatusContentByUrl(db, prUrl)?.body).toBeNull();
+  });
+
   test('handlePullRequestEvent stores null diff stats when not provided in payload', () => {
     handlePullRequestEvent(db, {
       action: 'opened',
@@ -1619,6 +1652,142 @@ describe('common/github/webhook_event_handlers', () => {
   });
 
   describe('handleIssueCommentEvent', () => {
+    const guidePrUrl = 'https://github.com/example/repo/pull/90';
+
+    function seedGuidePr(): void {
+      upsertPrStatus(db, {
+        prUrl: guidePrUrl,
+        owner: 'example',
+        repo: 'repo',
+        prNumber: 90,
+        title: 'Guide PR',
+        state: 'open',
+        draft: false,
+        lastFetchedAt: '2026-03-30T12:00:00.000Z',
+      });
+    }
+
+    function guideCommentPayload(
+      action: string,
+      comment: { id?: number; body?: string; updated_at?: string }
+    ): Record<string, unknown> {
+      return {
+        action,
+        repository: { full_name: 'example/repo' },
+        issue: {
+          number: 90,
+          title: 'Guide PR',
+          user: { login: 'pr-author' },
+          pull_request: {},
+        },
+        comment: {
+          id: comment.id ?? 5001,
+          body: comment.body,
+          html_url: `${guidePrUrl}#issuecomment-${comment.id ?? 5001}`,
+          user: { login: 'tim-bot[bot]', type: 'Bot' },
+          created_at: '2026-03-30T12:00:00.000Z',
+          updated_at: comment.updated_at ?? '2026-03-30T12:00:00.000Z',
+        },
+      };
+    }
+
+    test('stores, updates, and removes the review guide comment', () => {
+      seedGuidePr();
+
+      const created = handleIssueCommentEvent(
+        db,
+        guideCommentPayload('created', {
+          body: `${REVIEW_GUIDE_COMMENT_MARKER}\r\n## Review Guide\r\nFirst version`,
+        })
+      );
+      expect(created.updated).toBe(true);
+      expect(created.prUrl).toBe(guidePrUrl);
+      expect(created.inboxSignals).toHaveLength(1);
+      expect(getPrStatusContentByUrl(db, guidePrUrl)).toMatchObject({
+        review_guide_comment_id: 5001,
+        review_guide_comment_body: `${REVIEW_GUIDE_COMMENT_MARKER}\n## Review Guide\nFirst version`,
+        review_guide_comment_url: `${guidePrUrl}#issuecomment-5001`,
+        review_guide_comment_updated_at: '2026-03-30T12:00:00.000Z',
+      });
+
+      const edited = handleIssueCommentEvent(
+        db,
+        guideCommentPayload('edited', {
+          body: `${REVIEW_GUIDE_COMMENT_MARKER}\nSecond version`,
+          updated_at: '2026-03-30T13:00:00.000Z',
+        })
+      );
+      expect(edited).toEqual({ updated: true, prUrl: guidePrUrl });
+      expect(getPrStatusContentByUrl(db, guidePrUrl)?.review_guide_comment_body).toBe(
+        `${REVIEW_GUIDE_COMMENT_MARKER}\nSecond version`
+      );
+
+      // An older edit that arrives late does not replace the newer text.
+      const stale = handleIssueCommentEvent(
+        db,
+        guideCommentPayload('edited', {
+          body: `${REVIEW_GUIDE_COMMENT_MARKER}\nStale version`,
+          updated_at: '2026-03-30T12:30:00.000Z',
+        })
+      );
+      expect(stale).toEqual({ updated: false });
+      expect(getPrStatusContentByUrl(db, guidePrUrl)?.review_guide_comment_body).toBe(
+        `${REVIEW_GUIDE_COMMENT_MARKER}\nSecond version`
+      );
+
+      // Deleting a different comment does not remove the guide comment.
+      expect(
+        handleIssueCommentEvent(db, guideCommentPayload('deleted', { id: 9999, body: 'other' }))
+      ).toEqual({ updated: false });
+      expect(getPrStatusContentByUrl(db, guidePrUrl)?.review_guide_comment_id).toBe(5001);
+
+      const deleted = handleIssueCommentEvent(
+        db,
+        guideCommentPayload('deleted', { body: `${REVIEW_GUIDE_COMMENT_MARKER}\nSecond version` })
+      );
+      expect(deleted).toEqual({ updated: true, prUrl: guidePrUrl });
+      expect(getPrStatusContentByUrl(db, guidePrUrl)).toMatchObject({
+        review_guide_comment_id: null,
+        review_guide_comment_body: null,
+        review_guide_comment_url: null,
+      });
+    });
+
+    test('removes the guide comment when an edit removes the marker', () => {
+      seedGuidePr();
+      handleIssueCommentEvent(
+        db,
+        guideCommentPayload('created', { body: `${REVIEW_GUIDE_COMMENT_MARKER}\nGuide` })
+      );
+
+      const result = handleIssueCommentEvent(
+        db,
+        guideCommentPayload('edited', {
+          body: 'No longer a guide',
+          updated_at: '2026-03-30T13:00:00.000Z',
+        })
+      );
+
+      expect(result).toEqual({ updated: true, prUrl: guidePrUrl });
+      expect(getPrStatusContentByUrl(db, guidePrUrl)?.review_guide_comment_id).toBeNull();
+    });
+
+    test('ignores guide comments for PRs that are not cached and ordinary comment edits', () => {
+      const uncached = handleIssueCommentEvent(
+        db,
+        guideCommentPayload('created', { body: `${REVIEW_GUIDE_COMMENT_MARKER}\nGuide` })
+      );
+      expect(uncached.updated).toBe(false);
+      expect(uncached.inboxSignals).toHaveLength(1);
+      expect(getPrStatusContentByUrl(db, guidePrUrl)).toBeNull();
+
+      seedGuidePr();
+      expect(
+        handleIssueCommentEvent(db, guideCommentPayload('edited', { body: 'Just a comment' }))
+      ).toEqual({ updated: false });
+      expect(getPrStatusContentByUrl(db, guidePrUrl)).toBeNull();
+    });
+
     test('emits a pr_comment signal for a newly created PR conversation comment', () => {
       const result = handleIssueCommentEvent(db, {
         action: 'created',

@@ -25,7 +25,10 @@
     togglePrDraftStatus,
   } from '$lib/remote/pr_status.remote.js';
   import { REVIEW_LABEL_NAME } from '$common/github/review_command.js';
-  import { getLinearPrReviewUrl } from '$lib/remote/project_prs.remote.js';
+  import { getLinearPrReviewUrl, getPrContent } from '$lib/remote/project_prs.remote.js';
+  import { renderMarkdown } from '$lib/utils/markdown_parser.js';
+  import { hasRelevantPrUpdate } from '$lib/utils/pr_update_events.js';
+  import { onMount } from 'svelte';
   import { setPrShepherded } from '$lib/remote/pr_shepherd.remote.js';
   import {
     startPrAutoreview,
@@ -160,6 +163,16 @@
   );
   let linkedPlanUuids = $derived(pr.linkedPlans.map((plan) => plan.planUuid));
   let reviews = $derived(await getPrReviews({ prUrl: pr.status.pr_url, linkedPlanUuids }));
+  let prContent = $derived(await getPrContent({ prUrl: pr.status.pr_url }));
+
+  onMount(() => {
+    return sessionManager.onEvent((eventName, event) => {
+      const prUrl = pr.status.pr_url;
+      if (eventName === 'pr:updated' && hasRelevantPrUpdate(event, [prUrl])) {
+        void getPrContent({ prUrl }).refresh();
+      }
+    });
+  });
   let latestCompletedReview = $derived(reviews?.find((r) => r.status === 'complete') ?? null);
   let hasNewCommitsSinceReview = $derived(
     pr.status.head_sha != null &&
@@ -1012,6 +1025,51 @@
           {/each}
         </ul>
       </div>
+    {/if}
+
+    <!-- Description -->
+    {#if prContent.body}
+      <details open>
+        <summary
+          class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+        >
+          Description
+        </summary>
+        <div class="plan-rendered-content mt-1.5 pl-2 text-sm text-foreground">
+          {@html renderMarkdown(prContent.body)}
+        </div>
+      </details>
+    {/if}
+
+    <!-- Review Guide Comment -->
+    {#if prContent.reviewGuideComment}
+      <details open>
+        <summary
+          class="cursor-pointer text-xs font-semibold tracking-wide text-muted-foreground uppercase hover:text-foreground"
+        >
+          <span class="inline-flex items-center gap-2">
+            Review Guide Comment
+            {#if prContent.reviewGuideComment.url}
+              <a
+                href={prContent.reviewGuideComment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="font-medium text-blue-600 normal-case hover:underline dark:text-blue-400"
+              >
+                View on GitHub
+              </a>
+            {/if}
+            {#if prContent.reviewGuideComment.updatedAt}
+              <span class="font-normal normal-case">
+                updated {formatRelativeTime(prContent.reviewGuideComment.updatedAt)}
+              </span>
+            {/if}
+          </span>
+        </summary>
+        <div class="plan-rendered-content mt-1.5 pl-2 text-sm text-foreground">
+          {@html renderMarkdown(prContent.reviewGuideComment.body)}
+        </div>
+      </details>
     {/if}
 
     <!-- Linked Plans -->

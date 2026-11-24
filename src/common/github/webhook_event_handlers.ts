@@ -7,6 +7,11 @@ import type { BranchMergeRequirementsDetail } from '../../tim/db/branch_merge_re
 import { getProject } from '../../tim/db/project.js';
 import { findOpenShepherdedPrsByBranch } from '../../tim/db/pr_shepherd.js';
 import {
+  clearPrReviewGuideComment,
+  upsertPrReviewGuideComment,
+} from '../../tim/db/pr_status_content.js';
+import { isReviewGuideCommentBody } from './review_guide_comment_marker.js';
+import {
   clearPrCheckRuns,
   getKnownRepoFullNames,
   getPrStatusByRepoAndNumber,
@@ -121,6 +126,7 @@ interface ParsedPullRequestPayload {
   pullRequest: {
     number: number;
     title: string | null;
+    body: string | null;
     author: string | null;
     state: string;
     draft: boolean;
@@ -149,10 +155,13 @@ interface ParsedIssueCommentPayload {
     isPullRequest: boolean;
   };
   comment: {
+    id: number | null;
     body: string | null;
     author: string;
     authorType: string | null;
     createdAt: string | null;
+    updatedAt: string | null;
+    url: string | null;
   };
 }
 
@@ -338,6 +347,7 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
   const deletions = (pullRequest as { deletions?: unknown }).deletions;
   const changedFiles = (pullRequest as { changed_files?: unknown }).changed_files;
   const title = (pullRequest as { title?: unknown }).title;
+  const body = (pullRequest as { body?: unknown }).body;
   const reason = (payload as { reason?: unknown }).reason;
   const sender = parseActor((payload as { sender?: unknown }).sender);
   const requestedReviewer =
@@ -355,6 +365,7 @@ function parsePullRequestPayload(payload: unknown): ParsedPullRequestPayload | n
     pullRequest: {
       number,
       title: typeof title === 'string' ? title : null,
+      body: normalizeLineEndings(typeof body === 'string' ? body : null),
       author:
         user && typeof user === 'object' && typeof (user as { login?: unknown }).login === 'string'
           ? ((user as { login: string }).login ?? null)
@@ -408,8 +419,11 @@ function parseIssueCommentPayload(payload: unknown): ParsedIssueCommentPayload |
   const issueAuthor = parseActor((issue as { user?: unknown }).user);
   const issuePullRequest = (issue as { pull_request?: unknown }).pull_request;
   const commentAuthor = parseActor((comment as { user?: unknown }).user);
+  const commentId = (comment as { id?: unknown }).id;
   const body = (comment as { body?: unknown }).body;
   const createdAt = (comment as { created_at?: unknown }).created_at;
+  const updatedAt = (comment as { updated_at?: unknown }).updated_at;
+  const htmlUrl = (comment as { html_url?: unknown }).html_url;
 
   if (typeof number !== 'number' || !commentAuthor) {
     return null;
@@ -428,10 +442,13 @@ function parseIssueCommentPayload(payload: unknown): ParsedIssueCommentPayload |
       isPullRequest: Boolean(issuePullRequest && typeof issuePullRequest === 'object'),
     },
     comment: {
-      body: typeof body === 'string' ? body : null,
+      id: typeof commentId === 'number' ? commentId : null,
+      body: normalizeLineEndings(typeof body === 'string' ? body : null),
       author: commentAuthor.login,
       authorType: commentAuthor.type,
       createdAt: typeof createdAt === 'string' ? createdAt : null,
+      updatedAt: typeof updatedAt === 'string' ? updatedAt : null,
+      url: typeof htmlUrl === 'string' ? htmlUrl : null,
     },
   };
 }
@@ -645,6 +662,10 @@ export interface WebhookHandlerOptions {
   receivedAt?: string;
 }
 
+function normalizeLineEndings(value: string | null): string | null {
+  return value?.replaceAll(/\r\n|\r/g, '\n') ?? null;
+}
+
 function getSignalEventAt(eventAt: string | null, options?: WebhookHandlerOptions): string {
   return eventAt ?? options?.receivedAt ?? getNowIsoString();
 }
@@ -671,6 +692,53 @@ function getPullRequestEventActor(
   return null;
 }
 
+/**
+ * Store, update, or remove the tim review guide comment for an issue comment event.
+ * Returns true when the stored value changed.
+ */
+function applyReviewGuideCommentEvent(db: Database, parsed: ParsedIssueCommentPayload): boolean {
+  const commentId = parsed.comment.id;
+  const isDelete = parsed.action === 'deleted';
+  if (
+    commentId === null ||
+    (!isDelete && parsed.action !== 'created' && parsed.action !== 'edited')
+  ) {
+    return false;
+  }
+
+  const guideBody = isReviewGuideCommentBody(parsed.comment.body) ? parsed.comment.body : null;
+  if (parsed.action === 'created' && guideBody === null) {
+    // A new comment that is not the guide comment cannot change the stored guide comment.
+    return false;
+  }
+
+  return db
+    .transaction((): boolean => {
+      const existing = getPrStatusByRepoAndNumber(
+        db,
+        parsed.repository.owner,
+        parsed.repository.repo,
+        parsed.issue.number
+      );
+      if (!existing) {
+        return false;
+      }
+
+      if (isDelete || guideBody === null) {
+        // An edit can remove the marker. Then the comment is no longer the guide comment.
+        return clearPrReviewGuideComment(db, existing.id, commentId);
+      }
+
+      return upsertPrReviewGuideComment(db, existing.id, {
+        commentId,
+        body: guideBody,
+        url: parsed.comment.url,
+        updatedAt: parsed.comment.updatedAt ?? parsed.comment.createdAt,
+      });
+    })
+    .immediate();
+}
+
 export function handleIssueCommentEvent(
   db: Database,
   payload: unknown,
@@ -680,21 +748,27 @@ export function handleIssueCommentEvent(
   if (
     !parsed ||
     !isKnownRepository(db, parsed.repository.fullName, options?.knownRepos) ||
-    parsed.action !== 'created' ||
     !parsed.issue.isPullRequest
   ) {
     return { updated: false };
   }
 
   const { owner, repo } = parsed.repository;
+  const prUrl = getCanonicalPrUrl(owner, repo, parsed.issue.number);
+  const guideCommentChanged = applyReviewGuideCommentEvent(db, parsed);
+  if (parsed.action !== 'created') {
+    return guideCommentChanged ? { updated: true, prUrl } : { updated: false };
+  }
+
   return {
-    updated: false,
+    updated: guideCommentChanged,
+    ...(guideCommentChanged ? { prUrl } : {}),
     inboxSignals: [
       {
         kind: 'pr_comment',
         repo: parsed.repository.fullName,
         prNumber: parsed.issue.number,
-        prUrl: getCanonicalPrUrl(owner, repo, parsed.issue.number),
+        prUrl,
         prTitle: parsed.issue.title,
         prAuthor: parsed.issue.author,
         actor: parsed.comment.author,
@@ -749,6 +823,7 @@ export function handlePullRequestEvent(
         prNumber: pullRequest.number,
         author: pullRequest.author,
         title: pullRequest.title,
+        body: pullRequest.body,
         state,
         draft: pullRequest.draft,
         mergeable: null,

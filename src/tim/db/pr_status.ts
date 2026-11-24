@@ -3,6 +3,7 @@ import { deriveCheckRollupState } from '../../common/github/check_classification
 import { tryCanonicalizePrUrl } from '../../common/github/identifiers.js';
 import { parseOwnerRepoFromRepositoryId } from '../../common/github/pull_requests.js';
 import { getProjectById } from './project.js';
+import { setPrBody } from './pr_status_content.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface PrStatusRow {
@@ -196,6 +197,8 @@ export interface UpsertPrStatusInput {
   deletions?: number | null;
   changedFiles?: number | null;
   latestCommitPushedAt?: string | null;
+  /** The PR description. Omit (or pass undefined) to keep the stored value. */
+  body?: string | null;
   /** Omit (or pass undefined) to keep the stored value. */
   readyAt?: string | null;
   /** When the PR entered the merge queue, or null when it is not queued. Omit (or pass undefined) to keep the stored value. */
@@ -701,6 +704,9 @@ export function upsertPrStatus(db: Database, input: UpsertPrStatusInput): PrStat
     replaceCheckRuns(db, row.id, nextInput.checks ?? []);
     replaceReviews(db, row.id, nextInput.reviews ?? []);
     replaceLabels(db, row.id, nextInput.labels ?? []);
+    if (nextInput.body !== undefined) {
+      setPrBody(db, row.id, nextInput.body);
+    }
     if (nextInput.reviewThreads !== undefined) {
       replaceReviewThreads(db, row.id, nextInput.reviewThreads);
     }
@@ -827,6 +833,9 @@ export function upsertPrStatusMetadata(
 
       if (result.changes > 0) {
         replaceLabels(db, row.id, nextInput.labels ?? []);
+        if (nextInput.body !== undefined) {
+          setPrBody(db, row.id, nextInput.body);
+        }
       }
 
       const detail = getDetailById(db, row.id);

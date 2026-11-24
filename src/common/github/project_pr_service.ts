@@ -68,6 +68,7 @@ function buildUpsertPrStatusInput(
     prNumber: fullStatus.number,
     author: fullStatus.author,
     title: fullStatus.title,
+    body: fullStatus.body,
     state: fullStatus.state,
     draft: fullStatus.isDraft,
     mergeable: fullStatus.mergeable,
