@@ -4,6 +4,7 @@ import { isTunnelActive } from '../../logging/tunnel_client.js';
 import { log } from '../../logging.js';
 import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
+import { retryOnSqliteBusy } from '../db/sqlite_retry.js';
 import { upsertInboxItem } from '../db/inbox_item.js';
 import {
   finishShepherdBotRun,
@@ -52,8 +53,15 @@ function findWatchedPr(
 }
 
 /**
- * Save the bot's state and record the actions that it asked for. Fix sessions are only
- * recorded as `requested` here; the web server checks the guardrails and starts them.
+ * Save the bot's state, record the actions that it asked for, and mark the run completed.
+ * Fix sessions are only recorded as `requested` here; the web server checks the guardrails
+ * and starts them.
+ *
+ * The database writes and the run completion are one transaction, so a run never records
+ * its actions and then fails. Another tim process can hold the write lock for longer than
+ * busy_timeout, so the transaction is retried on SQLITE_BUSY.
+ *
+ * Returns false when the run had already finished, for example because it was marked stale.
  */
 export async function applyShepherdBotOutput(
   db: Database,
@@ -61,12 +69,34 @@ export async function applyShepherdBotOutput(
   context: ShepherdBotContext,
   output: ShepherdBotOutput,
   now: Date = new Date()
-): Promise<void> {
+): Promise<boolean> {
   await writeShepherdBotState(run.project_id, {
     markdown: output.stateMarkdown,
     json: output.stateJson,
   });
 
+  return retryOnSqliteBusy(
+    () =>
+      db
+        .transaction((): boolean => {
+          if (!finishShepherdBotRun(db, run.id, 'completed', { summary: output.summary })) {
+            return false;
+          }
+          recordShepherdBotActions(db, run, context, output, now);
+          return true;
+        })
+        .immediate(),
+    { label: `complete shepherd bot run ${run.id}` }
+  );
+}
+
+function recordShepherdBotActions(
+  db: Database,
+  run: Pick<ShepherdBotRunRow, 'id' | 'project_id'>,
+  context: ShepherdBotContext,
+  output: ShepherdBotOutput,
+  now: Date
+): void {
   let recheckScheduled = false;
   for (const action of output.actions) {
     if (action.type === 'recheck') {
@@ -199,15 +229,29 @@ export async function handleShepherdBotRunCommand(
         const text = typeof result === 'string' ? result : (result?.content ?? '');
         const output = parseShepherdBotOutput(text);
 
-        await applyShepherdBotOutput(db, run, context, output);
-        finishShepherdBotRun(db, runId, 'completed', { summary: output.summary });
-        log(`Shepherd bot run ${runId}: ${output.summary}`);
+        const finished = await applyShepherdBotOutput(db, run, context, output);
+        if (finished) {
+          log(`Shepherd bot run ${runId}: ${output.summary}`);
+        } else {
+          log(
+            `Shepherd bot run ${runId} had already finished; its actions were not recorded: ${output.summary}`
+          );
+        }
       },
     });
   } catch (err) {
-    finishShepherdBotRun(db, runId, 'failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    try {
+      await retryOnSqliteBusy(
+        () =>
+          finishShepherdBotRun(db, runId, 'failed', {
+            error: err instanceof Error ? err.message : String(err),
+          }),
+        { label: `fail shepherd bot run ${runId}` }
+      );
+    } catch (finishErr) {
+      // Keep the original error. The web server marks a run with no heartbeat as interrupted.
+      console.warn(`[shepherd_bot] Could not mark run ${runId} as failed`, finishErr);
+    }
     throw err;
   } finally {
     clearInterval(heartbeat);

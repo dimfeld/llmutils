@@ -6,6 +6,7 @@ import { getTimConfigRoot } from '../../common/config_paths.js';
 import { debugLog } from '../../logging.js';
 import { importFromJsonFiles, markImportCompleted, shouldRunImport } from './json_import.js';
 import { runMigrations } from './migrations.js';
+import { installSlowTransactionLogging } from './sqlite_lock_timing.js';
 import { isForeignKeyConstraintError, logForeignKeyCheck } from './sqlite_debug.js';
 
 let databaseSingleton: Database | null = null;
@@ -30,6 +31,9 @@ export function openDatabase(dbPath: string = getDefaultDatabasePath()): Databas
   try {
     applyPragmas(db);
     debugLog(`[sqlite] Applied pragmas for ${dbPath}`);
+    if (dbPath !== ':memory:') {
+      installSlowTransactionLogging(db, dbPath);
+    }
     runMigrations(db);
     debugLog(`[sqlite] Migrations completed for ${dbPath}`);
 

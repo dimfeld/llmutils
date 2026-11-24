@@ -10,6 +10,8 @@ import { listRecentInboxItems } from '../db/inbox_item.js';
 import { setPrShepherdBotEnabled } from '../db/pr_shepherd.js';
 import { getOrCreateProject } from '../db/project.js';
 import {
+  finishShepherdBotRun,
+  getShepherdBotRun,
   listPendingShepherdBotTriggers,
   listRecentShepherdBotActions,
   startShepherdBotRun,
@@ -86,6 +88,10 @@ describe('applyShepherdBotOutput', () => {
       ['recheck', null, 'done'],
     ]);
 
+    const run = getShepherdBotRun(db, runId)!;
+    expect(run.status).toBe('completed');
+    expect(run.summary).toBe('ok');
+
     const [recheck] = listPendingShepherdBotTriggers(db, projectId);
     expect(recheck.kind).toBe('recheck');
     expect(recheck.due_at).toBe(new Date(NOW.getTime() + 5 * 60_000).toISOString());
@@ -94,5 +100,35 @@ describe('applyShepherdBotOutput', () => {
     expect(inbox.map((item) => [item.kind, item.pr_number, item.summary])).toEqual([
       ['shepherd_bot', 1, 'Stack is ready to merge'],
     ]);
+  });
+
+  test('records nothing when the run already finished', async () => {
+    const watched = addFixturePr(db, 1, { head: 'stack-1' });
+    setPrShepherdBotEnabled(db, watched, true, null);
+    const runId = startShepherdBotRun(db, projectId, [])!;
+    const context = loadShepherdBotContext(db, projectId, []);
+    finishShepherdBotRun(db, runId, 'interrupted', { error: 'stale', now: NOW });
+
+    const finished = await applyShepherdBotOutput(
+      db,
+      { id: runId, project_id: projectId },
+      context,
+      {
+        summary: 'late',
+        stateMarkdown: '# Late\n',
+        stateJson: {},
+        actions: [
+          { type: 'notify', pr: 1, message: 'late' },
+          { type: 'recheck', afterMinutes: 5, reason: 'late' },
+        ],
+      },
+      NOW
+    );
+
+    expect(finished).toBe(false);
+    expect(getShepherdBotRun(db, runId)!.status).toBe('interrupted');
+    expect(listRecentShepherdBotActions(db, projectId, 20)).toEqual([]);
+    expect(listPendingShepherdBotTriggers(db, projectId)).toEqual([]);
+    expect(listRecentInboxItems(db, { projectId, includeRead: true })).toEqual([]);
   });
 });
