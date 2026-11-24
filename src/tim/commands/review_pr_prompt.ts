@@ -491,7 +491,9 @@ ${hasPrecomputedNonTestStats ? '<copy the precomputed summary line and, when use
 `
     : '';
 
-  return `You are preparing a short review guide that will be posted as a comment on a GitHub pull request to help a human reviewer.
+  const step = (n: number): number => (shouldIncludeNonTestStats ? n + 1 : n);
+
+  return `You are preparing a review guide that will be posted as a comment on a GitHub pull request to help a human reviewer understand the change before they read the diff.
 
 ## PR Metadata
 ${formatPrMetadata(metadata)}
@@ -503,23 +505,18 @@ ${precomputedNonTestStatsSection}
 ${ASSUME_CHECKS_PASS_SECTION}
 
 ## Review Guide Focus
-Use the short comment to give the reviewer an architectural map of the PR at a glance. Explain the PR's purpose, the main components or layers it changes, and how those pieces fit together.
+Write a detailed report of what the changes in this PR do, structured like a good PR description. Explain the purpose of the change, how existing behavior changes, how the new code integrates with the rest of the system, and why it was done this way.
 
-Place special focus on interactions across module or component boundaries. For each important changed module or component, explain how existing code uses it, when applicable, how new or changed code uses it, and what data, control flow, lifecycle, or contract crosses the boundary. Do not stop at listing callers or dependencies; trace representative flows and identify whether the change preserves or alters the assumptions made by existing callers and consumers.
+In addition to describing the changes, identify the decisions in the PR that could reasonably have gone another way: business logic choices, how ambiguous requirements or edge cases are handled, defaults, error-handling behavior, compatibility trade-offs, and similar judgment calls. For each one, state what the PR chose and what the plausible alternatives were, so the reviewer can confirm the choice is the right one.
 
-Include a concise call-graph view for the code touched by the PR: show how execution reaches the changed code, what important functions or components it calls, and the representative paths through it. Explicitly call out added, removed, rerouted, or otherwise changed call-graph edges. If an important call relationship is unchanged, say so when that helps the reviewer understand the impact.
-
-At the section level, summarize what changed, how it works, and how it interacts with the rest of the system. Keep this concise: do not turn the comment into a file-by-file inventory.
+Explain the "why" behind the changes, not just the "what". Reference specific files, functions, and modules when that helps, but do not turn the comment into a file-by-file inventory.
 
 ## Required Workflow
-1. Determine the full set of changed files from the PR diff.
+1. Determine the full set of changed files from the PR diff, and read enough of the surrounding code to understand how the changed code is used.
 ${nonTestStatsInstructions}
-${shouldIncludeNonTestStats ? '3' : '2'}. Group the changes into a small number of logical sections (e.g. core logic, data model, API, UI, tests, docs). Aim for the fewest sections that capture the shape of the change.
-${shouldIncludeNonTestStats ? '4' : '3'}. Write a brief overview that explains the PR's purpose, its main components or layers, the key control or data flow between them, and the relevant call graph through the changed code. Include a diagram of the call graph and explicitly note important changes to that call graph.
-${shouldIncludeNonTestStats ? '5' : '4'}. For each section, write 1-3 sentences that explain what changed, how the change works, how existing code and new or changed code use the affected modules or components, and how those pieces connect across their boundaries. Mention relevant call-graph paths and changes when they help explain the section. Mention the most important files when useful, but do not list every file. Use parallel subagents if it makes sense.
-${shouldIncludeNonTestStats ? '6' : '5'}. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth changes, complex data migrations, public API or schema changes, architectural boundary changes, changed cross-module contracts, altered data or control flow between components, or anything subtle-but-important. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
-${shouldIncludeNonTestStats ? '7' : '6'}. After generating the comment, examine it critically to find special-attention items that are not really worthy of attention. This often happens when comment generation is not finding much but is looking to say something rather than nothing. Remove or trim down any items that fall into this trap.
-${shouldIncludeNonTestStats ? '8' : '7'}. If nothing in the PR qualifies for this special scrutiny, say so plainly instead of inventing concerns.
+${step(2)}. Write each section of the output format below. Use parallel subagents if it makes sense.
+${step(3)}. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth changes, complex data migrations, public API or schema changes, changed cross-module contracts, or anything subtle-but-important. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
+${step(4)}. After generating the comment, examine it critically to find decisions and special-attention items that are not really worthy of attention. This often happens when comment generation is not finding much but is looking to say something rather than nothing. Remove or trim down any items that fall into this trap. If a section has nothing real to say, write "None." for it instead of inventing content.
 
 ## Output Format
 Write GitHub-flavored markdown using this structure:
@@ -527,12 +524,26 @@ Write GitHub-flavored markdown using this structure:
 \`\`\`markdown
 ## Review Guide
 
-_Brief one or two sentence overview of the change, including its purpose, main components, and how they fit together._
+_One or two sentence overview of the change and its purpose._
 ${nonTestStatsFormat}
+### Summary
+<What was implemented and the main functionality added or modified. Explain how the pieces work.>
 
-### Sections
-- **<section name>** — what changed, how it works, and how it connects to the rest of the system.
-- ... (one bullet per section)
+### Changes to existing functionality
+<Modifications to existing code or behavior, why they were necessary, how existing callers and users are affected, and any breaking changes or compatibility considerations.>
+
+### Decisions and alternatives
+- **<decision>** — what the PR chose, the plausible alternatives, and why the choice matters.
+- ... (one bullet per decision that could reasonably have gone another way)
+
+### Intentionally not changed
+<Areas that could have been modified but were left alone, and the apparent reason. Omit this section if nothing notable applies.>
+
+### How it fits together
+<How the new and changed components integrate with the existing codebase: the main control and data flow, and the call paths that reach the changed code. Include a Mermaid diagram only if it adds real clarity.>
+
+### Limitations and follow-up
+<Limitations of the current implementation, technical debt, or follow-up work that the change implies. Omit this section if nothing notable applies.>
 
 ### Pay special attention to
 - \`path/to/file.ts:42\` — why this needs a careful look.
@@ -540,9 +551,9 @@ ${nonTestStatsFormat}
 \`\`\`
 
 ## Constraints
-- Keep the whole comment concise — it should be skimmable in under a minute. Do not paste diffs or large code blocks.
+- Match the length to what the change needs: cover the substance, but do not pad the comment with filler, redundant summaries, or boilerplate. Do not paste diffs or large code blocks.
 - Do not include a verdict, approval, or request-changes language; this is a guide, not a review.
-- Do not invent files or changes that are not in the diff.
+- Do not invent files, changes, or decisions that are not in the diff.
 
 ## Output File
 Write the finished markdown comment (and nothing else) to:

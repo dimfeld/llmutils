@@ -99,7 +99,7 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain('Assume automated checks pass');
   });
 
-  test('buildReviewGuideCommentPrompt produces a concise, comment-oriented prompt', () => {
+  test('buildReviewGuideCommentPrompt includes PR metadata, diff instructions, and output path', () => {
     const prompt = buildReviewGuideCommentPrompt({
       metadata: METADATA,
       outputPath: '/work/.tim/tmp/pr-review-guide-comment-42.md',
@@ -110,28 +110,6 @@ describe('review_pr_prompt', () => {
     expect(prompt).toContain(METADATA.prUrl);
     expect(prompt).toContain('The calculated review base is commit SHA `base-sha-42`');
     expect(prompt).toContain("git diff 'base-sha-42' HEAD");
-    expect(prompt).toContain('Pay special attention to');
-    expect(prompt).toContain('Group the changes into a small number of logical sections');
-    expect(prompt).toContain('architectural map of the PR at a glance');
-    expect(prompt).toContain(
-      'what changed, how it works, and how it interacts with the rest of the system'
-    );
-    expect(prompt).toContain('interactions across module or component boundaries');
-    expect(prompt).toContain('how existing code uses it');
-    expect(prompt).toContain('how new or changed code uses it');
-    expect(prompt).toContain(
-      'what data, control flow, lifecycle, or contract crosses the boundary'
-    );
-    expect(prompt).toContain('Include a concise call-graph view for the code touched by the PR');
-    expect(prompt).toContain(
-      'Explicitly call out added, removed, rerouted, or otherwise changed call-graph edges'
-    );
-    expect(prompt).toContain('changed cross-module contracts');
-    expect(prompt).toContain('do not turn the comment into a file-by-file inventory');
-    expect(prompt).toContain('architectural boundary changes');
-    expect(prompt).toContain('examine it critically to find special-attention items');
-    expect(prompt).toContain('Remove or trim down any items that fall into this trap');
-    expect(prompt).toContain('Do not paste diffs or large code blocks');
     expect(prompt).not.toContain('Non-test change stats');
     expect(prompt).not.toContain('Not available');
     expect(prompt).not.toContain('jj diff');
