@@ -515,7 +515,6 @@ Reference specific files, functions, and modules when that helps, but do not tur
 1. Determine the full set of changed files from the PR diff, and read enough of the surrounding code to understand how the changed code is used.
 ${nonTestStatsInstructions}
 ${step(2)}. Write each section of the output format below. Use parallel subagents if it makes sense.
-${step(3)}. After generating the comment, examine it critically to find decisions that are not really worthy of attention. This often happens when comment generation is not finding much but is looking to say something rather than nothing. Remove or trim down any items that fall into this trap. If a section has nothing real to say, write "None." for it instead of inventing content.
 
 ## Output Format
 Write GitHub-flavored markdown using this structure:
