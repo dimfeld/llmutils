@@ -440,8 +440,9 @@ describe('sync write router', () => {
     );
 
     expect(result.mode).toBe('applied');
-    // The project announcement runs first: it repairs the gap markers and
-    // takes sequence 3, so the routed operation lands at sequence 4.
+    // The project announcement runs first: it adds a marker at the top of the
+    // gap (sequence 2) and takes sequence 3, so the routed operation lands at
+    // sequence 4. Sequence 1 stays empty because checkFifo only uses the max.
     expect(
       db
         .prepare(
@@ -455,7 +456,6 @@ describe('sync write router', () => {
         .all(NODE_ID)
     ).toEqual([
       { local_sequence: 0, status: 'applied', operation_type: 'plan.add_tag' },
-      { local_sequence: 1, status: 'cleared_rejected', operation_type: 'sync.cleared_rejected' },
       { local_sequence: 2, status: 'cleared_rejected', operation_type: 'sync.cleared_rejected' },
       { local_sequence: 3, status: 'applied', operation_type: 'project.upsert' },
       { local_sequence: 4, status: 'applied', operation_type: 'plan.add_tag' },

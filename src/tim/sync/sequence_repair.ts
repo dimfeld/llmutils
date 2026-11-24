@@ -2,6 +2,15 @@ import { randomUUID } from 'node:crypto';
 import type { Database } from 'bun:sqlite';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 
+/**
+ * Make sure that the highest allocated local sequence of each origin has a sync_operation
+ * row. `checkFifo` takes the next expected sequence from MAX(local_sequence), so only a
+ * gap at the top of the sequence can block new operations. Gaps lower down (for example,
+ * from rejected rows that an older version deleted) have no effect and are not filled.
+ *
+ * When the top slot is missing, one `cleared_rejected` marker row is added at
+ * `next_sequence - 1`. Returns the number of marker rows added.
+ */
 export function repairClearedRejectedSequenceMarkers(
   db: Database,
   options: { originNodeId?: string } = {}
@@ -13,8 +22,9 @@ export function repairClearedRejectedSequenceMarkers(
     : (db
         .prepare('SELECT node_id, next_sequence FROM tim_node_sequence ORDER BY node_id')
         .all() as Array<{ node_id: string; next_sequence: number }>);
-  const hasSequence = db.prepare(
-    'SELECT 1 FROM sync_operation WHERE origin_node_id = ? AND local_sequence = ? LIMIT 1'
+  // Uses the UNIQUE(origin_node_id, local_sequence) index.
+  const maxSequence = db.prepare(
+    'SELECT MAX(local_sequence) AS max_sequence FROM sync_operation WHERE origin_node_id = ?'
   );
   const insertMarker = db.prepare(
     `
@@ -44,19 +54,16 @@ export function repairClearedRejectedSequenceMarkers(
   );
   let repaired = 0;
   for (const row of nodeRows) {
-    for (let localSequence = 0; localSequence < row.next_sequence; localSequence++) {
-      const existing = hasSequence.get(row.node_id, localSequence);
-      if (existing) {
-        continue;
-      }
-      insertMarker.run(
-        randomUUID(),
-        row.node_id,
-        localSequence,
-        `sync:${row.node_id}:${localSequence}`
-      );
-      repaired += 1;
+    const topSequence = row.next_sequence - 1;
+    if (topSequence < 0) {
+      continue;
     }
+    const { max_sequence } = maxSequence.get(row.node_id) as { max_sequence: number | null };
+    if (max_sequence !== null && max_sequence >= topSequence) {
+      continue;
+    }
+    insertMarker.run(randomUUID(), row.node_id, topSequence, `sync:${row.node_id}:${topSequence}`);
+    repaired += 1;
   }
   return repaired;
 }

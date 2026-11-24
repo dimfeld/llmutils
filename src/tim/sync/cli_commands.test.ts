@@ -433,12 +433,10 @@ describe('tim sync CLI node commands', () => {
         .all(PERSISTENT_NODE)
     ).toEqual([
       { local_sequence: 0, status: 'applied' },
-      { local_sequence: 1, status: 'cleared_rejected' },
-      { local_sequence: 2, status: 'cleared_rejected' },
       { local_sequence: 3, status: 'cleared_rejected' },
     ]);
     expect(mockLog).toHaveBeenCalledWith('Cleared 0 rejected sync operations.');
-    expect(mockLog).toHaveBeenCalledWith('Repaired 3 cleared sync sequence slots.');
+    expect(mockLog).toHaveBeenCalledWith('Repaired 1 cleared sync sequence slot.');
   });
 
   test('sync show-rejected lists rejected operation records', async () => {
