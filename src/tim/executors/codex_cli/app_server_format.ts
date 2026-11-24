@@ -974,7 +974,8 @@ export function createAppServerFormatter(model?: string) {
       if (
         method === 'turn/diff/updated' ||
         lowerMethod === 'turn/moderationmetadata' ||
-        lowerMethod === 'thread/readstate/changed'
+        lowerMethod === 'thread/readstate/changed' ||
+        lowerMethod === 'skills/changed'
       ) {
         return { type: method };
       }

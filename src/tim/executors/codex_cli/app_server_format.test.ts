@@ -1121,6 +1121,9 @@ describe('createAppServerFormatter', () => {
     expect(
       formatter.handleNotification('thread/readState/changed', { threadId: 'thread-1' })
     ).toEqual({ type: 'thread/readState/changed' });
+    expect(formatter.handleNotification('skills/changed', {})).toEqual({
+      type: 'skills/changed',
+    });
 
     const plan = formatter.handleNotification('turn/plan/updated', {
       turnId: 'turn-1',
