@@ -267,19 +267,149 @@ export function formatPrCheckLines(pr: StackPr): string[] {
   return lines;
 }
 
-function formatPr(entry: ShepherdBotStackEntry, runningJobs: JobRow[]): string {
+interface StackShape {
+  parentOf: Map<ShepherdBotStackEntry, ShepherdBotStackEntry>;
+  childrenOf: Map<ShepherdBotStackEntry, ShepherdBotStackEntry[]>;
+  roots: ShepherdBotStackEntry[];
+}
+
+/** The parent and child links of a stack, found from the base and head branches. */
+function getStackShape(group: readonly ShepherdBotStackEntry[]): StackShape {
+  const byHead = new Map<string, ShepherdBotStackEntry>();
+  for (const entry of group) {
+    if (entry.pr.status.head_branch) {
+      byHead.set(entry.pr.status.head_branch, entry);
+    }
+  }
+  const parentOf = new Map<ShepherdBotStackEntry, ShepherdBotStackEntry>();
+  const childrenOf = new Map<ShepherdBotStackEntry, ShepherdBotStackEntry[]>();
+  const roots: ShepherdBotStackEntry[] = [];
+  for (const entry of group) {
+    const baseBranch = entry.pr.status.base_branch;
+    const parent = baseBranch ? byHead.get(baseBranch) : undefined;
+    if (parent && parent !== entry) {
+      parentOf.set(entry, parent);
+      const children = childrenOf.get(parent) ?? [];
+      children.push(entry);
+      childrenOf.set(parent, children);
+    } else {
+      roots.push(entry);
+    }
+  }
+  // A branch cycle has no root. The group starts at its first entry in that case.
+  if (roots.length === 0 && group.length > 0) {
+    roots.push(group[0]);
+  }
+  return { parentOf, childrenOf, roots };
+}
+
+/** A tree drawing of the stack, one line for each PR. */
+function formatStackTree(group: readonly ShepherdBotStackEntry[], shape: StackShape): string[] {
+  const lines: string[] = [];
+  const seen = new Set<ShepherdBotStackEntry>();
+  const walk = (entry: ShepherdBotStackEntry, prefix: string, connector: string): void => {
+    if (seen.has(entry)) {
+      return;
+    }
+    seen.add(entry);
+    const { status } = entry.pr;
+    const base = shape.parentOf.has(entry) ? '' : ` (on \`${status.base_branch ?? '?'}\`)`;
+    const watched = entry.botEnabled ? '' : ' [not watched]';
+    lines.push(`${prefix}${connector}#${status.pr_number}${base}${watched}`);
+    const children = shape.childrenOf.get(entry) ?? [];
+    const childPrefix =
+      connector === '' ? prefix : `${prefix}${connector === '├─ ' ? '│  ' : '   '}`;
+    children.forEach((child, index) => {
+      walk(child, childPrefix, index === children.length - 1 ? '└─ ' : '├─ ');
+    });
+  };
+  for (const root of shape.roots) {
+    walk(root, '', '');
+  }
+  // Entries that the walk did not reach (only possible with odd branch data).
+  for (const entry of group) {
+    walk(entry, '', '');
+  }
+  return lines;
+}
+
+function formatStackHeader(group: readonly ShepherdBotStackEntry[], shape: StackShape): string {
+  const numbers = group.map((entry) => `#${entry.pr.status.pr_number}`);
+  if (group.length === 1) {
+    return `### Single PR ${numbers[0]}`;
+  }
+  const branched = [...shape.childrenOf.values()].some((children) => children.length > 1);
+  return branched
+    ? `### Stack: ${numbers.join(', ')} (branched)`
+    : `### Stack: ${numbers.join(' → ')}`;
+}
+
+function formatStackSessions(
+  group: readonly ShepherdBotStackEntry[],
+  runningJobsByUrl: Map<string, JobRow[]>
+): string {
+  const running = group.flatMap((entry) =>
+    (runningJobsByUrl.get(entry.pr.status.pr_url) ?? []).map(
+      (job) => `\`${job.job_type}\` on #${entry.pr.status.pr_number} since ${job.started_at}`
+    )
+  );
+  const subject = group.length === 1 ? 'this PR' : 'this stack';
+  return running.length > 0
+    ? `Running sessions in ${subject}: ${running.join('; ')}. Do not start another session in ${subject}.`
+    : `Running sessions in ${subject}: none. You can start one session in ${subject}.`;
+}
+
+function formatStack(
+  group: readonly ShepherdBotStackEntry[],
+  runningJobsByUrl: Map<string, JobRow[]>
+): string {
+  const shape = getStackShape(group);
+  const lines = [formatStackHeader(group, shape), '', formatStackSessions(group, runningJobsByUrl)];
+  if (group.length > 1) {
+    lines.push('', '```', ...formatStackTree(group, shape), '```');
+  }
+  lines.push('');
+  for (const entry of group) {
+    lines.push(
+      formatPr(
+        entry,
+        shape.parentOf.get(entry) ?? null,
+        shape.childrenOf.get(entry) ?? [],
+        runningJobsByUrl.get(entry.pr.status.pr_url) ?? []
+      )
+    );
+  }
+  return lines.join('\n');
+}
+
+function formatPr(
+  entry: ShepherdBotStackEntry,
+  parent: ShepherdBotStackEntry | null,
+  children: readonly ShepherdBotStackEntry[],
+  runningJobs: JobRow[]
+): string {
   const { pr } = entry;
   const { status } = pr;
   const evaluation = evaluatePrShepherd(pr);
   const unresolved = (pr.reviewThreads ?? []).filter((thread) => !thread.thread.is_resolved);
 
-  const lines = [`${'  '.repeat(entry.depth)}- #${status.pr_number} ${status.title ?? 'Untitled'}`];
-  const indent = '  '.repeat(entry.depth + 1);
+  const lines = [`- #${status.pr_number} ${status.title ?? 'Untitled'}`];
+  const indent = '  ';
   const field = (text: string): void => {
     lines.push(`${indent}- ${text}`);
   };
   field(`Watched by the bot: ${entry.botEnabled ? 'yes' : 'no (do not act on this PR)'}`);
   field(`Branch: \`${status.head_branch ?? '?'}\` -> \`${status.base_branch ?? '?'}\``);
+  field(
+    parent
+      ? `Stacked on: #${parent.pr.status.pr_number}`
+      : `Stacked on: no PR (bottom of the stack, targets \`${status.base_branch ?? '?'}\`)`
+  );
+  if (children.length > 0) {
+    field(
+      `PRs stacked on this PR: ${children.map((child) => `#${child.pr.status.pr_number}`).join(', ')}`
+    );
+  }
   field(`Head SHA: ${status.head_sha ?? 'unknown'}${status.draft ? ' (draft)' : ''}`);
   field(
     `Status: ${PR_SHEPHERD_STATUS_LABELS[evaluation.status]}${
@@ -347,20 +477,7 @@ export function buildShepherdBotPrompt(
   const stacksText =
     context.stacks.length === 0
       ? 'No open PRs are watched by the bot now.'
-      : context.stacks
-          .map((group, index) => {
-            const header =
-              group.length > 1
-                ? `### Stack ${index + 1} (root first)`
-                : `### Single PR ${index + 1}`;
-            return [
-              header,
-              ...group.map((entry) =>
-                formatPr(entry, runningJobsByUrl.get(entry.pr.status.pr_url) ?? [])
-              ),
-            ].join('\n');
-          })
-          .join('\n\n');
+      : context.stacks.map((group) => formatStack(group, runningJobsByUrl)).join('\n\n');
 
   return `You are the PR shepherd bot for the GitHub repository ${context.repository}. You watch the user's open pull requests and start fix sessions so that the PRs get to a mergeable state. The user stays in control: your job is to remove routine work from them, not to push PRs through as fast as possible.
 
@@ -376,7 +493,20 @@ These lines can name optional checks. Use the "Watched stacks" section to find o
 
 ## Watched stacks
 
-Each stack is ordered from the PR nearest to the trunk to the tip. A PR's base branch is the head branch of the PR above it in the list.
+A stack is a set of PRs that are connected through their branches: the base branch of a PR is the head branch of the PR that it is stacked on. A stack can branch, when two or more PRs are stacked on the same PR. All PRs of a branched stack are one stack. Each stack below has:
+
+- A header that names all PRs in the stack.
+- A line that tells you if a session is running in the stack.
+- For a stack with more than one PR, a tree drawing. Each PR in the drawing is stacked on the PR above it at one less indent level.
+- The details of each PR, from the bottom of the stack to the tip. The "Stacked on" line of each PR gives the PR that it is stacked on.
+
+A session in one stack does not block a session in a different stack.
+
+### Stacks change between runs
+
+Stacks have no fixed name or ID. Before each run, the system calculates the stacks again from the open PRs. When a PR at the bottom of a stack merges, the stack gets a new bottom PR. When a PR that has two or more PRs stacked on it merges, the stack becomes two or more stacks. The user can also add PRs to a stack, or change the base branch of a PR.
+
+Thus, use only this prompt to find which PRs are in a stack. Do not use stack membership from your saved state or from your recent actions. In your summary, your saved state, and your action reasons, refer to PRs by number. Do not use names such as "Stack 1". To refer to a stack, name its PRs, for example "the stack with #12 and #13".
 
 ### Required and optional checks
 
@@ -398,7 +528,7 @@ ${context.jobs.map(formatJob).join('\n') || 'None.'}
 
 ## Your saved state
 
-Your state from the previous run follows. The files are at \`${paths.markdown}\` and \`${paths.json}\`, but you do not write them yourself: return the complete new contents in \`stateMarkdown\` and \`stateJson\`, and the system saves them. Keep the state short. Remove entries for PRs that merged or that are no longer watched.
+Your state from the previous run follows. The files are at \`${paths.markdown}\` and \`${paths.json}\`, but you do not write them yourself: return the complete new contents in \`stateMarkdown\` and \`stateJson\`, and the system saves them. Keep the state short. Write one entry for each PR, by PR number, and do not use stack names: the stacks can be different on the next run. Remove entries for PRs that merged or that are no longer watched.
 
 ### state.md
 
@@ -420,7 +550,7 @@ ${state.json.trim() || '{}'}
 
 1. Act only on PRs that are watched by the bot. You can use the other PRs in a stack as context.
 2. Work from the bottom of the stack up. A failure in a lower PR often causes the same failure in the PRs above it, because they contain its commits. When a lower PR has failing required checks and a PR above it fails the same checks, fix only the lower PR and wait. After the lower PR is fixed, the PRs above it usually need a restack before their CI can pass. Restacking is not one of your actions, so tell the user with \`notify\` when PRs above a fixed PR need a restack.
-3. Start at most one session for each stack. If a session for any PR in a stack is running, do not start another one in that stack. The system also rejects such actions.
+3. Start at most one session for each stack. If a session for any PR in a stack is running, do not start another one in that stack. The system also rejects such actions. Use the "Running sessions" line of each stack to find out if the stack has a running session. A running session in a different stack does not block the stack.
 4. Ignore failing optional checks. Do not start a session for them, do not \`notify\` the user about them, and do not let them stop you from telling the user that a stack is ready to merge.
 5. Running checks delay only \`ci_fix\`. Do not start \`ci_fix\` while required checks are still running or have no result yet, unless a required check already failed and the failure is clear. Do not wait for optional checks. All other actions do not wait for the checks, because the checks cannot change what those actions are for. For example, start \`pr_fix\` for unresolved review threads and \`pr_rebase\` for merge conflicts without waiting for the checks to finish.
 6. Do not start the same fix for the same head SHA more than twice. If a fix did not work twice, stop and \`notify\` the user. The system also enforces this limit.

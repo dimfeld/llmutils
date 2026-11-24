@@ -147,6 +147,51 @@ describe('shepherd bot prompt', () => {
     expect(prompt).not.toContain('- #3 PR 3');
   });
 
+  test('shows branched stacks as trees and running sessions for each stack', () => {
+    // Stack A branches: #1 <- #2 <- #4, and #1 <- #3.
+    const a = addFixturePr(db, 1, { head: 'a-1' });
+    addFixturePr(db, 2, { base: 'a-1', head: 'a-2' });
+    addFixturePr(db, 3, { base: 'a-1', head: 'a-3' });
+    addFixturePr(db, 4, { base: 'a-2', head: 'a-4' });
+    // Stack B is linear: #5 <- #6. Its session must not show in stack A.
+    const b = addFixturePr(db, 5, { head: 'b-5' });
+    addFixturePr(db, 6, { base: 'b-5', head: 'b-6' });
+    setPrShepherdBotEnabled(db, a, true, null);
+    setPrShepherdBotEnabled(db, b, true, null);
+    recordJobStart(db, { projectId, jobType: 'pr-fix', prUrl: fixturePrUrl(6), prNumber: 6 });
+
+    const prompt = buildShepherdBotPrompt(
+      loadShepherdBotContext(db, projectId, []),
+      { markdown: '', json: '{}' },
+      { dir: '/state', markdown: '/state/state.md', json: '/state/state.json' }
+    );
+
+    const sectionFor = (header: string): string => {
+      const start = prompt.indexOf(header);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const end = prompt.indexOf('\n### ', start + 1);
+      return prompt.slice(start, end === -1 ? undefined : end);
+    };
+
+    const stackA = sectionFor('### Stack: #1, #2, #4, #3 (branched)');
+    expect(stackA).toContain(
+      [
+        '#1 (on `main`)',
+        '├─ #2 [not watched]',
+        '│  └─ #4 [not watched]',
+        '└─ #3 [not watched]',
+      ].join('\n')
+    );
+    expect(stackA).toContain('Running sessions in this stack: none.');
+    expect(stackA).toContain('Stacked on: #2');
+    expect(stackA).toContain('PRs stacked on this PR: #2, #3');
+    expect(stackA).not.toContain('pr-fix');
+
+    const stackB = sectionFor('### Stack: #5 → #6');
+    expect(stackB).toMatch(/Running sessions in this stack: `pr-fix` on #6 since /);
+    expect(prompt).not.toMatch(/### Stack \d/);
+  });
+
   test('puts failing and running checks in required and optional groups', () => {
     requireChecksOnMain(db, ['build', 'test']);
     const root = addFixturePr(db, 1, {
