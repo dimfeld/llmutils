@@ -509,14 +509,13 @@ Write a detailed report of what the changes in this PR do, structured like a goo
 
 In addition to describing the changes, identify the decisions in the PR that could reasonably have gone another way: business logic choices, how ambiguous requirements or edge cases are handled, defaults, error-handling behavior, compatibility trade-offs, and similar judgment calls. For each one, state what the PR chose and what the plausible alternatives were, so the reviewer can confirm the choice is the right one.
 
-Explain the "why" behind the changes, not just the "what". Reference specific files, functions, and modules when that helps, but do not turn the comment into a file-by-file inventory.
+Reference specific files, functions, and modules when that helps, but do not turn the comment into a file-by-file inventory.
 
 ## Required Workflow
 1. Determine the full set of changed files from the PR diff, and read enough of the surrounding code to understand how the changed code is used.
 ${nonTestStatsInstructions}
 ${step(2)}. Write each section of the output format below. Use parallel subagents if it makes sense.
-${step(3)}. Identify the specific places a human reviewer should pay special attention to: risky logic, security/permission/auth changes, complex data migrations, public API or schema changes, changed cross-module contracts, or anything subtle-but-important. Reference concrete files (and line numbers where helpful) using \`path/to/file.ts:42\` style.
-${step(4)}. After generating the comment, examine it critically to find decisions and special-attention items that are not really worthy of attention. This often happens when comment generation is not finding much but is looking to say something rather than nothing. Remove or trim down any items that fall into this trap. If a section has nothing real to say, write "None." for it instead of inventing content.
+${step(3)}. After generating the comment, examine it critically to find decisions that are not really worthy of attention. This often happens when comment generation is not finding much but is looking to say something rather than nothing. Remove or trim down any items that fall into this trap. If a section has nothing real to say, write "None." for it instead of inventing content.
 
 ## Output Format
 Write GitHub-flavored markdown using this structure:
@@ -544,10 +543,6 @@ ${nonTestStatsFormat}
 
 ### Limitations and follow-up
 <Limitations of the current implementation, technical debt, or follow-up work that the change implies. Omit this section if nothing notable applies.>
-
-### Pay special attention to
-- \`path/to/file.ts:42\` — why this needs a careful look.
-- ... (omit this section's bullets and write "Nothing stands out for special review." when there are no concerns)
 \`\`\`
 
 ## Constraints
