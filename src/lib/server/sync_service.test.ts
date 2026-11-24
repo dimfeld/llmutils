@@ -245,7 +245,7 @@ describe('sync service lifecycle', () => {
     expect(runnerMock.retentionRunner.stop).toHaveBeenCalledTimes(1);
   });
 
-  test('does NOT start the sequence retention runner for persistent nodes', async () => {
+  test('starts an operation-only retention runner for persistent nodes', async () => {
     const handle = await startSyncService(
       createDb(),
       config({
@@ -258,7 +258,14 @@ describe('sync service lifecycle', () => {
     expect(handle).not.toBeNull();
     handles.push(handle!);
 
-    expect(startSyncSequenceRetentionRunner).not.toHaveBeenCalled();
+    expect(startSyncSequenceRetentionRunner).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(startSyncSequenceRetentionRunner).mock.calls[0][0]).toMatchObject({
+      pruneSequences: false,
+    });
+
+    handle!.stop();
+    handles.pop();
+    expect(runnerMock.retentionRunner.stop).toHaveBeenCalledTimes(1);
   });
 });
 

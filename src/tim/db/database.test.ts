@@ -351,7 +351,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(62);
+    expect(version?.version).toBe(63);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
 
@@ -754,7 +754,7 @@ describe('tim db/database', () => {
         revision: 9,
       });
       expect(db.query<{ version: number }, []>('SELECT version FROM schema_version').get()).toEqual(
-        { version: 62 }
+        { version: 63 }
       );
       expect(
         db
@@ -773,6 +773,38 @@ describe('tim db/database', () => {
     }
   });
 
+  test('runMigrations v63 seeds the sync origin watermark from terminal operations', () => {
+    const db = new Database(':memory:');
+    try {
+      runMigrations(db);
+      const insert = db.prepare(
+        `INSERT INTO sync_operation (
+           operation_uuid, project_uuid, origin_node_id, local_sequence, target_type, target_key,
+           operation_type, payload, status, attempts, created_at, updated_at, batch_atomic
+         ) VALUES (?, '', ?, ?, 'plan', ?, 'plan.add_tag', '{}', ?, 0,
+           '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 0)`
+      );
+      insert.run('op-a1', 'node-a', 1, 'k1', 'applied');
+      insert.run('op-a2', 'node-a', 4, 'k2', 'cleared_rejected');
+      insert.run('op-a3', 'node-a', 9, 'k3', 'queued');
+      insert.run('op-b1', 'node-b', 2, 'k4', 'acked');
+      db.run('DROP TABLE sync_origin_watermark');
+      db.run('UPDATE schema_version SET version = 62');
+
+      runMigrations(db);
+
+      expect(
+        db
+          .query<{ origin_node_id: string; terminal_through_sequence: number }, []>(
+            'SELECT origin_node_id, terminal_through_sequence FROM sync_origin_watermark ORDER BY origin_node_id'
+          )
+          .all()
+      ).toEqual([{ origin_node_id: 'node-a', terminal_through_sequence: 4 }]);
+    } finally {
+      db.close(false);
+    }
+  });
+
   test('openDatabase is idempotent across repeated opens', () => {
     const dbPath = path.join(tempDir, DATABASE_FILENAME);
 
@@ -785,7 +817,7 @@ describe('tim db/database', () => {
         'SELECT version, import_completed, bootstrap_completed FROM schema_version'
       )
       .get();
-    expect(version?.version).toBe(62);
+    expect(version?.version).toBe(63);
     expect(version?.import_completed).toBe(1);
     expect(version?.bootstrap_completed).toBe(0);
     const versionRowCount = db2
@@ -917,7 +949,7 @@ describe('tim db/database', () => {
       const schemaVersion = db
         .query<{ version: number }, []>('SELECT version FROM schema_version')
         .get();
-      expect(schemaVersion?.version).toBe(62);
+      expect(schemaVersion?.version).toBe(63);
 
       const planColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('plan')")
@@ -1068,7 +1100,7 @@ describe('tim db/database', () => {
           'SELECT version FROM schema_version ORDER BY rowid DESC LIMIT 1'
         )
         .get();
-      expect(schemaVersion?.version).toBe(62);
+      expect(schemaVersion?.version).toBe(63);
 
       const checkRows = db
         .query<{ count: number }, []>(
@@ -1389,7 +1421,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(62);
+      ).toBe(63);
       expect(db.query<{ uuid: string }, []>('SELECT uuid FROM project').get()?.uuid).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
       );
@@ -1897,7 +1929,7 @@ describe('tim db/database', () => {
 
       expect(
         db.query<{ version: number }, []>('SELECT version FROM schema_version').get()?.version
-      ).toBe(62);
+      ).toBe(63);
 
       const syncOperationColumns = db
         .query<{ name: string }, []>("PRAGMA table_info('sync_operation')")

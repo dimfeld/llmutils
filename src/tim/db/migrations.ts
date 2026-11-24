@@ -1646,6 +1646,32 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 63,
+    // The FIFO floor for each origin, so that old sync_operation rows can be pruned
+    // without lowering MAX(local_sequence). See src/tim/sync/origin_watermark.ts.
+    up: `
+      CREATE TABLE IF NOT EXISTS sync_origin_watermark (
+        origin_node_id TEXT PRIMARY KEY,
+        terminal_through_sequence INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+    afterUp: (db: Database): void => {
+      if (!tableExists(db, 'sync_operation')) {
+        return;
+      }
+      db.exec(`
+        INSERT OR IGNORE INTO sync_origin_watermark (
+          origin_node_id, terminal_through_sequence, updated_at
+        )
+        SELECT origin_node_id, MAX(local_sequence), ${SQL_NOW_ISO_UTC}
+        FROM sync_operation
+        WHERE status IN ('applied', 'conflict', 'rejected', 'cleared_rejected')
+        GROUP BY origin_node_id
+      `);
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

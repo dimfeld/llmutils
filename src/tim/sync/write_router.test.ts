@@ -42,6 +42,7 @@ import {
   writeProjectUpsert,
 } from './write_router.js';
 import { mergeCanonicalRefresh } from './snapshots.js';
+import { getOriginWatermark } from './origin_watermark.js';
 
 const PROJECT_UUID = '11111111-1111-4111-8111-111111111111';
 const PLAN_UUID = '22222222-2222-4222-8222-222222222222';
@@ -440,9 +441,10 @@ describe('sync write router', () => {
     );
 
     expect(result.mode).toBe('applied');
-    // The project announcement runs first: it adds a marker at the top of the
-    // gap (sequence 2) and takes sequence 3, so the routed operation lands at
-    // sequence 4. Sequence 1 stays empty because checkFifo only uses the max.
+    // The project announcement runs first: it raises the origin watermark to the
+    // top of the gap (sequence 2) and takes sequence 3, so the routed operation
+    // lands at sequence 4. The gap gets no rows because checkFifo only uses the
+    // max of MAX(local_sequence) and the watermark.
     expect(
       db
         .prepare(
@@ -456,11 +458,11 @@ describe('sync write router', () => {
         .all(NODE_ID)
     ).toEqual([
       { local_sequence: 0, status: 'applied', operation_type: 'plan.add_tag' },
-      { local_sequence: 2, status: 'cleared_rejected', operation_type: 'sync.cleared_rejected' },
       { local_sequence: 3, status: 'applied', operation_type: 'project.upsert' },
       { local_sequence: 4, status: 'applied', operation_type: 'plan.add_tag' },
     ]);
     expect(nodeSequenceRow()).toEqual({ next_sequence: 5 });
+    expect(getOriginWatermark(db, NODE_ID)).toBe(2);
   });
 
   test('main-local conflicted writes throw a typed write error by default', async () => {

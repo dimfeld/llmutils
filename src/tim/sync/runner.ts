@@ -24,7 +24,11 @@ import {
   resetSendingOperations,
   type SyncOperationQueueRow,
 } from './queue.js';
-import { pruneSyncSequence } from './retention.js';
+import {
+  pruneSyncOperationHistory,
+  pruneSyncSequence,
+  type PruneSyncOperationHistoryOptions,
+} from './retention.js';
 import {
   applyInvalidationsWithSnapshots,
   applyOperationResultsWithSnapshots,
@@ -80,6 +84,12 @@ export interface SyncSequenceRetentionRunnerOptions {
   db: Database;
   retentionMaxAgeMs?: number;
   intervalMs?: number;
+  /** Prune sync_sequence. Only the main node owns that history. Default true. */
+  pruneSequences?: boolean;
+  /** Options for pruning old sync_operation rows, which runs on every node. */
+  operationRetention?: Omit<PruneSyncOperationHistoryOptions, 'now'>;
+  /** Delay before the next operation prune when a run stopped at its batch limit. */
+  operationFollowUpDelayMs?: number;
 }
 
 export interface SyncSequenceRetentionRunner {
@@ -96,6 +106,33 @@ export function startSyncSequenceRetentionRunner(
 ): SyncSequenceRetentionRunner {
   let stopped = false;
   let running = false;
+  let followUp: ReturnType<typeof setTimeout> | null = null;
+
+  function pruneOperations(): void {
+    if (stopped) {
+      return;
+    }
+    const result = pruneSyncOperationHistory(options.db, {
+      remoteRetentionMs: options.retentionMaxAgeMs,
+      ...options.operationRetention,
+    });
+    if (!result.complete && !followUp && !stopped) {
+      // More old rows are left. Continue soon, but give other work the event loop first.
+      followUp = setTimeout(() => {
+        followUp = null;
+        try {
+          pruneOperations();
+        } catch (error) {
+          warn(
+            `Sync operation retention pruning failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }, options.operationFollowUpDelayMs ?? 1000);
+      followUp.unref?.();
+    }
+  }
 
   function runOnce(): number {
     if (running) {
@@ -103,7 +140,12 @@ export function startSyncSequenceRetentionRunner(
     }
     running = true;
     try {
-      return pruneSyncSequence(options.db, { retentionMaxAgeMs: options.retentionMaxAgeMs });
+      const pruned =
+        options.pruneSequences === false
+          ? 0
+          : pruneSyncSequence(options.db, { retentionMaxAgeMs: options.retentionMaxAgeMs });
+      pruneOperations();
+      return pruned;
     } finally {
       running = false;
     }
@@ -142,6 +184,10 @@ export function startSyncSequenceRetentionRunner(
       }
       stopped = true;
       clearInterval(interval);
+      if (followUp) {
+        clearTimeout(followUp);
+        followUp = null;
+      }
     },
   };
 }

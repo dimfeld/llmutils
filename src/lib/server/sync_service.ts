@@ -95,11 +95,15 @@ export async function startSyncService(
           reconnect: true,
         });
         runner.start();
+        // Persistent nodes do not own sync_sequence history; only prune their own
+        // acknowledged sync_operation rows.
+        const retentionRunner = startSyncSequenceRetentionRunner({ db, pruneSequences: false });
         console.info(
           `[sync] Started persistent sync service (node=${nodeId}) for ${resolved.mainUrl}`
         );
         return {
           ...idempotentStopHandle('persistent', () => {
+            retentionRunner.stop();
             runner.stop();
             console.info('[sync] Stopped sync service');
           }),

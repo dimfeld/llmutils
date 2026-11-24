@@ -281,6 +281,16 @@ tim sync resolve <conflictId> --manual '"operator supplied value"'
 
 Use `--apply-incoming` to accept the peer's value, `--apply-current` to keep the current main-node value, or `--manual` with a JSON value for explicit resolution.
 
+## Operation History Retention
+
+The web server prunes old `sync_operation` rows every hour, on every node with a running sync service (`pruneSyncOperationHistory()` in `src/tim/sync/retention.ts`, started by `startSyncSequenceRetentionRunner()`).
+
+- Only history rows are deleted: status `applied`, `acked`, or `cleared_rejected`. Rows that are `rejected`, `conflict`, or still active stay, and so do all rows of a batch that has one of those rows.
+- Operations from this node (origins in `tim_node_sequence`) are kept for 1 day. Operations from other nodes are kept for `sync.sequenceRetentionDays` (default 30).
+- Each origin has a FIFO floor in `sync_origin_watermark`. Before a row is deleted, the watermark is raised to its `local_sequence`, so `checkFifo` uses `max(MAX(local_sequence), watermark)` and pruning never lowers the floor. `repairClearedRejectedSequenceMarkers()` also only raises the watermark when the highest allocated sequence has no row; it does not add rows.
+- Main makes a resent operation idempotent by its `operation_uuid`. If a persistent node resends an operation after main pruned that row, main rejects it, because its sequence is below the floor. The operation is not applied two times. This can only occur when a node does not get an ack for longer than the remote retention.
+- Each run deletes at most 20 batches of 500 rows, each in its own transaction. When more rows are left, the next run starts after 1 second.
+
 ## Troubleshooting
 
 Check these first:

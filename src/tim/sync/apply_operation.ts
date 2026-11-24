@@ -9,6 +9,8 @@ import {
 import type { Project } from '../db/project.js';
 import { SQL_NOW_ISO_UTC } from '../db/sql_utils.js';
 import { SyncFifoGapError, SyncValidationError } from './errors.js';
+import { FIFO_TERMINAL_OPERATION_STATUSES, getOriginWatermark } from './origin_watermark.js';
+import { sqlPlaceholders } from './statuses.js';
 import { createSyncConflict } from './conflicts.js';
 import {
   assertValidEnvelope,
@@ -311,12 +313,19 @@ function checkFifo(db: Database, envelope: SyncOperationEnvelope): SyncFifoGapEr
         SELECT MAX(local_sequence) AS max_sequence
         FROM sync_operation
         WHERE origin_node_id = ?
-          AND status IN ('applied', 'conflict', 'rejected', 'cleared_rejected')
+          AND status IN (${sqlPlaceholders(FIFO_TERMINAL_OPERATION_STATUSES)})
           AND operation_uuid <> ?
       `
     )
-    .get(envelope.originNodeId, envelope.operationUuid) as { max_sequence: number | null };
-  const maxSequence = row.max_sequence;
+    .get(envelope.originNodeId, ...FIFO_TERMINAL_OPERATION_STATUSES, envelope.operationUuid) as {
+    max_sequence: number | null;
+  };
+  // Pruned rows no longer count in MAX(local_sequence); the watermark keeps their floor.
+  const watermark = getOriginWatermark(db, envelope.originNodeId);
+  const maxSequence =
+    row.max_sequence === null && watermark === null
+      ? null
+      : Math.max(row.max_sequence ?? -1, watermark ?? -1);
   if (maxSequence === null) {
     // Existing operation constructors/tests have historically started at either
     // 0 or 1. Once a terminal operation exists, the floor is strict max(seq)+1.

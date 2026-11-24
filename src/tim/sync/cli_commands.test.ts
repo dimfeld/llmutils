@@ -37,6 +37,7 @@ import {
   setProjectSettingOperation,
 } from './operations.js';
 import type { SyncOperationEnvelope } from './types.js';
+import { getOriginWatermark } from './origin_watermark.js';
 import type { TimConfig } from '../configSchema.js';
 
 vi.mock('../../logging.js', () => ({
@@ -431,10 +432,8 @@ describe('tim sync CLI node commands', () => {
           `
         )
         .all(PERSISTENT_NODE)
-    ).toEqual([
-      { local_sequence: 0, status: 'applied' },
-      { local_sequence: 3, status: 'cleared_rejected' },
-    ]);
+    ).toEqual([{ local_sequence: 0, status: 'applied' }]);
+    expect(getOriginWatermark(db, PERSISTENT_NODE)).toBe(3);
     expect(mockLog).toHaveBeenCalledWith('Cleared 0 rejected sync operations.');
     expect(mockLog).toHaveBeenCalledWith('Repaired 1 cleared sync sequence slot.');
   });

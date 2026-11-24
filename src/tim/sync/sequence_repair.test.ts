@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import type { Database } from 'bun:sqlite';
 
 import { openDatabase } from '../db/database.js';
+import { getOriginWatermark, raiseOriginWatermark } from './origin_watermark.js';
 import { repairClearedRejectedSequenceMarkers } from './sequence_repair.js';
 
 describe('repairClearedRejectedSequenceMarkers', () => {
@@ -23,55 +24,68 @@ describe('repairClearedRejectedSequenceMarkers', () => {
     ).run(nodeId, nextSequence);
   }
 
-  function sequences(nodeId: string): number[] {
-    return (
-      db
-        .prepare(
-          'SELECT local_sequence FROM sync_operation WHERE origin_node_id = ? ORDER BY local_sequence'
-        )
-        .all(nodeId) as Array<{ local_sequence: number }>
-    ).map((row) => row.local_sequence);
+  function insertOperationRow(nodeId: string, localSequence: number, status: string): void {
+    db.prepare(
+      `INSERT INTO sync_operation (
+         operation_uuid, project_uuid, origin_node_id, local_sequence, target_type, target_key,
+         operation_type, payload, status, attempts, created_at, updated_at, batch_atomic
+       ) VALUES (?, '', ?, ?, 'sync', ?, 'test.op', '{}', ?, 0,
+         '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 0)`
+    ).run(`${nodeId}-${localSequence}`, nodeId, localSequence, `k:${localSequence}`, status);
   }
 
   test('does nothing when no sequence was allocated', () => {
     setNextSequence('node-a', 0);
     expect(repairClearedRejectedSequenceMarkers(db)).toBe(0);
-    expect(sequences('node-a')).toEqual([]);
+    expect(getOriginWatermark(db, 'node-a')).toBeNull();
   });
 
-  test('adds one marker at the top slot and leaves lower gaps empty', () => {
-    setNextSequence('node-a', 1);
-    expect(repairClearedRejectedSequenceMarkers(db)).toBe(1);
-    expect(sequences('node-a')).toEqual([0]);
-
+  test('raises the watermark to the top slot and adds no rows', () => {
+    insertOperationRow('node-a', 0, 'applied');
     setNextSequence('node-a', 5);
-    expect(repairClearedRejectedSequenceMarkers(db, { originNodeId: 'node-a' })).toBe(1);
-    expect(sequences('node-a')).toEqual([0, 4]);
 
-    const marker = db
-      .prepare(
-        'SELECT status, operation_type, target_key FROM sync_operation WHERE origin_node_id = ? AND local_sequence = 4'
-      )
-      .get('node-a');
-    expect(marker).toEqual({
-      status: 'cleared_rejected',
-      operation_type: 'sync.cleared_rejected',
-      target_key: 'sync:node-a:4',
-    });
+    expect(repairClearedRejectedSequenceMarkers(db, { originNodeId: 'node-a' })).toBe(1);
+    expect(getOriginWatermark(db, 'node-a')).toBe(4);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM sync_operation').get()).toEqual({ n: 1 });
+
+    // A second call finds the floor already at the top.
+    expect(repairClearedRejectedSequenceMarkers(db)).toBe(0);
   });
 
-  test('is a no-op when the top slot already has a row', () => {
+  test('is a no-op when the top slot has a row', () => {
+    insertOperationRow('node-a', 2, 'applied');
     setNextSequence('node-a', 3);
-    repairClearedRejectedSequenceMarkers(db);
     expect(repairClearedRejectedSequenceMarkers(db)).toBe(0);
-    expect(sequences('node-a')).toEqual([2]);
+    expect(getOriginWatermark(db, 'node-a')).toBeNull();
+  });
+
+  test('is a no-op when the watermark already covers the top slot', () => {
+    raiseOriginWatermark(db, 'node-a', 7);
+    setNextSequence('node-a', 5);
+    expect(repairClearedRejectedSequenceMarkers(db)).toBe(0);
+    expect(getOriginWatermark(db, 'node-a')).toBe(7);
   });
 
   test('only repairs the given origin when originNodeId is set', () => {
     setNextSequence('node-a', 2);
     setNextSequence('node-b', 2);
     expect(repairClearedRejectedSequenceMarkers(db, { originNodeId: 'node-b' })).toBe(1);
-    expect(sequences('node-a')).toEqual([]);
-    expect(sequences('node-b')).toEqual([1]);
+    expect(getOriginWatermark(db, 'node-a')).toBeNull();
+    expect(getOriginWatermark(db, 'node-b')).toBe(1);
+  });
+});
+
+describe('raiseOriginWatermark', () => {
+  test('never lowers the watermark', () => {
+    const db = openDatabase(':memory:');
+    try {
+      raiseOriginWatermark(db, 'node-a', 10);
+      raiseOriginWatermark(db, 'node-a', 3);
+      expect(getOriginWatermark(db, 'node-a')).toBe(10);
+      raiseOriginWatermark(db, 'node-a', 12);
+      expect(getOriginWatermark(db, 'node-a')).toBe(12);
+    } finally {
+      db.close(false);
+    }
   });
 });

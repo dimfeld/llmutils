@@ -26,6 +26,7 @@ import {
   setApplyBatchOperationHookForTesting,
 } from './apply.js';
 import { mergeCanonicalRefresh } from './snapshots.js';
+import { pruneSyncOperationHistory } from './retention.js';
 import { loadCanonicalSnapshot } from './server.js';
 import {
   addPlanDependencyOperation,
@@ -1790,6 +1791,55 @@ describe('main-node sync apply engine', () => {
         .map((row) => row.tag)
         .toSorted()
     ).toEqual(['next', 'prior']);
+  });
+
+  test('pruned operations keep the per-origin FIFO floor through the watermark', async () => {
+    seedPlan();
+    for (const [localSequence, tag] of [
+      [1, 'one'],
+      [2, 'two'],
+    ] as const) {
+      const operation = await addPlanTagOperation(
+        PROJECT_UUID,
+        { planUuid: PLAN_UUID, tag },
+        { originNodeId: NODE_A, localSequence }
+      );
+      expect(applyOperation(db, operation).status).toBe('applied');
+    }
+
+    const pruned = pruneSyncOperationHistory(db, {
+      now: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    });
+    expect(pruned).toEqual({ deleted: 2, complete: true });
+    expect(countRows('sync_operation')).toBe(0);
+
+    const reused = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'reused-sequence' },
+      { originNodeId: NODE_A, localSequence: 2 }
+    );
+    expect(() => applyOperation(db, reused)).toThrow(
+      'localSequence 2 is below next expected sequence 3'
+    );
+
+    const gap = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'gap' },
+      { originNodeId: NODE_A, localSequence: 4 }
+    );
+    expect(() => applyOperation(db, gap)).toThrow(SyncFifoGapError);
+
+    const next = await addPlanTagOperation(
+      PROJECT_UUID,
+      { planUuid: PLAN_UUID, tag: 'three' },
+      { originNodeId: NODE_A, localSequence: 3 }
+    );
+    expect(applyOperation(db, next).status).toBe('applied');
+    expect(
+      getPlanTagsByUuid(db, PLAN_UUID)
+        .map((row) => row.tag)
+        .toSorted()
+    ).toEqual(['one', 'three', 'two']);
   });
 
   test('partial batch replay persists missing operation rejections so FIFO can advance', async () => {
