@@ -1633,6 +1633,19 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 62,
+    // pruneOldWebhookLogs filters on ingested_at. Without this index each prune scans the
+    // full table, payloads included, while it holds the write lock.
+    up: `SELECT 1;`,
+    afterUp: (db: Database): void => {
+      if (tableExists(db, 'webhook_log')) {
+        db.exec(
+          'CREATE INDEX IF NOT EXISTS idx_webhook_log_ingested_at ON webhook_log(ingested_at)'
+        );
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

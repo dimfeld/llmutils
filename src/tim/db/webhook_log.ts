@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { logSlowSqliteOperation } from './sqlite_lock_timing.js';
 import { SQL_NOW_ISO_UTC } from './sql_utils.js';
 
 export interface WebhookLogEntry {
@@ -57,20 +58,51 @@ export function updateWebhookCursor(db: Database, lastEventId: number): void {
   ).run(lastEventId);
 }
 
-export function pruneOldWebhookLogs(db: Database, maxAgeDays = 7): number {
-  const result = db
-    .prepare(
-      `
-        DELETE FROM webhook_log
-        WHERE ingested_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', printf('-%d days', ?))
-      `
-    )
-    .run(maxAgeDays);
+const PRUNE_BATCH_SIZE = 500;
 
-  if (result.changes) {
+/**
+ * Delete webhook log entries older than `maxAgeDays`. Rows can hold large payloads, so the
+ * delete runs in small batches. Each batch is its own statement, so other processes can
+ * take the write lock between batches.
+ */
+export function pruneOldWebhookLogs(
+  db: Database,
+  maxAgeDays = 7,
+  options: { batchSize?: number; now?: Date } = {}
+): number {
+  const batchSize = Math.max(1, options.batchSize ?? PRUNE_BATCH_SIZE);
+  const cutoff = new Date(
+    (options.now ?? new Date()).getTime() - maxAgeDays * 24 * 60 * 60 * 1000
+  ).toISOString();
+  const deleteBatch = db.prepare(
+    `
+      DELETE FROM webhook_log
+      WHERE id IN (
+        SELECT id FROM webhook_log
+        WHERE ingested_at < ?
+        ORDER BY ingested_at
+        LIMIT ?
+      )
+    `
+  );
+
+  let total = 0;
+  let slowestBatchMs = 0;
+  for (;;) {
+    const start = performance.now();
+    const { changes } = deleteBatch.run(cutoff, batchSize);
+    slowestBatchMs = Math.max(slowestBatchMs, performance.now() - start);
+    total += changes;
+    if (changes < batchSize) {
+      break;
+    }
+  }
+  logSlowSqliteOperation(db.filename, 'pruneOldWebhookLogs batch', slowestBatchMs);
+
+  if (total) {
     console.log(
-      `[webhook-ingest] Pruned ${result.changes} webhook log entries older than ${maxAgeDays} days`
+      `[webhook-ingest] Pruned ${total} webhook log entries older than ${maxAgeDays} days`
     );
   }
-  return result.changes;
+  return total;
 }

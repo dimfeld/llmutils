@@ -1812,6 +1812,14 @@ describe('common/github/webhook_ingest', () => {
     // pruneOldWebhookLogs was called once (first run had events), not on second run
     expect(pruneOldWebhookLogsSpy).toHaveBeenCalledTimes(1);
     expect(mocks.fetchAndUpdatePrMergeableStatus).toHaveBeenCalledTimes(1);
+
+    // Third run: a new event, but the prune already ran within the last hour
+    mocks.fetchWebhookEvents
+      .mockReset()
+      .mockResolvedValueOnce([{ ...events[0], id: 43, deliveryId: 'third-delivery' }])
+      .mockResolvedValueOnce([]);
+    expect((await ingestWebhookEvents(db)).eventsIngested).toBe(1);
+    expect(pruneOldWebhookLogsSpy).toHaveBeenCalledTimes(1);
   });
 
   function buildReviewEvent(params: {

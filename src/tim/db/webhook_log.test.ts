@@ -128,4 +128,50 @@ describe('tim db/webhook_log', () => {
 
     expect(remainingRows).toEqual([{ delivery_id: 'delivery-new' }]);
   });
+
+  function insertAt(deliveryId: string, ingestedAt: string): void {
+    db.prepare(
+      `
+        INSERT INTO webhook_log (
+          delivery_id, event_type, action, repository_full_name, payload_json,
+          received_at, ingested_at
+        ) VALUES (?, 'pull_request', 'opened', 'example/repo', '{}', ?, ?)
+      `
+    ).run(deliveryId, ingestedAt, ingestedAt);
+  }
+
+  test('pruneOldWebhookLogs deletes in batches and keeps rows at or after the cutoff', () => {
+    const now = new Date('2026-04-10T00:00:00.000Z');
+    for (let i = 0; i < 5; i++) {
+      insertAt(`old-${i}`, `2026-04-0${i + 1}T00:00:00.000Z`);
+    }
+    insertAt('at-cutoff', '2026-04-03T00:00:00.000Z');
+    insertAt('new', '2026-04-09T00:00:00.000Z');
+
+    // Cutoff is 2026-04-03. Rows old-0 and old-1 are older; old-2 and at-cutoff are equal.
+    expect(pruneOldWebhookLogs(db, 7, { now, batchSize: 1 })).toBe(2);
+    // A batch size that divides the count exactly must still finish.
+    expect(pruneOldWebhookLogs(db, 3, { now, batchSize: 2 })).toBe(4);
+
+    const remaining = db
+      .query<{ delivery_id: string }, []>(
+        'SELECT delivery_id FROM webhook_log ORDER BY delivery_id'
+      )
+      .all()
+      .map((row) => row.delivery_id);
+    expect(remaining).toEqual(['new']);
+  });
+
+  test('pruneOldWebhookLogs uses the ingested_at index', () => {
+    const plan = db
+      .query<{ detail: string }, []>(
+        `EXPLAIN QUERY PLAN
+         SELECT id FROM webhook_log WHERE ingested_at < '2026-01-01' ORDER BY ingested_at LIMIT 10`
+      )
+      .all()
+      .map((row) => row.detail)
+      .join('\n');
+    expect(plan).toContain('idx_webhook_log_ingested_at');
+    expect(plan).not.toMatch(/SCAN webhook_log(?! USING)/);
+  });
 });

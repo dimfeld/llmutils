@@ -420,6 +420,19 @@ function areWebhookPlanStatusUpdatesEnabled(config: Pick<TimConfig, 'githubWebho
   return config.githubWebhooks?.planStatusUpdates !== false;
 }
 
+const WEBHOOK_LOG_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+const lastWebhookLogPruneAt = new WeakMap<Database, number>();
+
+/** Prune the webhook log at most once an hour for each database connection. */
+function pruneOldWebhookLogsThrottled(db: Database, now: number = Date.now()): void {
+  const lastPruneAt = lastWebhookLogPruneAt.get(db);
+  if (lastPruneAt !== undefined && now - lastPruneAt < WEBHOOK_LOG_PRUNE_INTERVAL_MS) {
+    return;
+  }
+  lastWebhookLogPruneAt.set(db, now);
+  pruneOldWebhookLogs(db);
+}
+
 export async function ingestWebhookEvents(
   db: Database,
   options: IngestWebhookEventsOptions = {}
@@ -764,7 +777,7 @@ export async function ingestWebhookEvents(
   }
 
   if (eventsProcessed > 0) {
-    pruneOldWebhookLogs(db);
+    pruneOldWebhookLogsThrottled(db);
   }
 
   return {

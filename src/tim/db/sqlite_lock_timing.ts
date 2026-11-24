@@ -48,6 +48,35 @@ function writeSlowTransactionEntry(logFile: string, entry: SlowTransactionEntry)
   }
 }
 
+/**
+ * Log a slow database operation that does not run in `db.transaction`, such as a single
+ * large statement. Uses the same threshold and log file as the transaction logging.
+ */
+export function logSlowSqliteOperation(
+  dbPath: string,
+  mode: string,
+  holdMs: number,
+  options: { thresholdMs?: number; logFile?: string } = {}
+): void {
+  const thresholdMs = options.thresholdMs ?? getSlowTransactionThresholdMs();
+  if (thresholdMs <= 0 || holdMs < thresholdMs) {
+    return;
+  }
+  writeSlowTransactionEntry(
+    options.logFile ?? path.join(getLogDir(), SLOW_TRANSACTION_LOG_FILENAME),
+    {
+      time: new Date().toISOString(),
+      pid: process.pid,
+      argv: process.argv.slice(1),
+      db: dbPath,
+      mode,
+      holdMs: Math.round(holdMs),
+      waitMs: 0,
+      stack: callerStack(),
+    }
+  );
+}
+
 function callerStack(): string {
   const lines = (new Error().stack ?? '').split('\n').slice(1);
   // Drop the frames that come from this file and from bun:sqlite.
