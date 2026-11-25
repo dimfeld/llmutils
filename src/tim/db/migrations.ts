@@ -1687,6 +1687,17 @@ const migrations: Migration[] = [
       );
     `,
   },
+  {
+    version: 65,
+    // The process that runs the job, so that a job whose process died without recording an
+    // outcome can be marked as failed.
+    up: `SELECT 1;`,
+    afterUp: (db: Database) => {
+      if (tableExists(db, 'job') && !tableColumns(db, 'job').has('pid')) {
+        db.exec('ALTER TABLE job ADD COLUMN pid INTEGER');
+      }
+    },
+  },
 ];
 
 function rebuildPlanStatusConstraintsForReviewed(db: Database): void {

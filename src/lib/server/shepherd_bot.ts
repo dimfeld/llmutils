@@ -17,6 +17,7 @@ import { resolveGitHubToken } from '$common/github/token.js';
 import { getGitHubUsername } from '$common/github/user.js';
 import type { TimConfig } from '$tim/configSchema.js';
 import { upsertInboxItem } from '$tim/db/inbox_item.js';
+import { reconcileDeadJobs } from '$tim/db/job.js';
 import {
   getPrShepherd,
   listBotEnabledShepherdPrs,
@@ -48,6 +49,7 @@ import { findOpenStackForPr, getStackPathToPr } from '$tim/shepherd_bot/stack.js
 import {
   computeShepherdBotSnapshotForPr,
   enqueueShepherdBotSessionEnded,
+  enqueueShepherdBotTriggerForJob,
   getProjectIdForPrStatus,
   SHEPHERD_BOT_FIX_COMMANDS,
 } from '$tim/shepherd_bot/triggers.js';
@@ -292,6 +294,7 @@ export class ShepherdBotRunner {
       const sessionManager = this.getSessionManager();
       this.ensureDisconnectListener(sessionManager);
       this.reconcileRuns();
+      this.reconcileJobs();
       await this.executeRequestedActions(sessionManager);
       await this.rerunCancelledChecks(sessionManager);
       for (const projectId of listRunningShepherdBotProjectIds(this.db)) {
@@ -416,6 +419,31 @@ export class ShepherdBotRunner {
       if (reason) {
         console.warn(`[shepherd_bot] Run ${run.id} interrupted: ${reason}`);
         finishShepherdBotRun(this.db, run.id, 'interrupted', { error: reason, now });
+      }
+    }
+  }
+
+  /**
+   * Mark jobs as failed when their process died without recording an outcome. Otherwise the
+   * bot sees the session as running forever and does not start a session in that stack.
+   */
+  private reconcileJobs(): void {
+    const changed = reconcileDeadJobs(this.db, {
+      isProcessAlive: this.options.isProcessAlive ?? defaultIsProcessAlive,
+      now: this.now(),
+    });
+    for (const job of changed) {
+      console.warn(
+        `[shepherd_bot] Job ${job.id} (${job.job_type}) marked as failed: its process is gone`
+      );
+      // Wake the bot, because it saw this session as running in its last run. Jobs without a
+      // pid are old rows from before the pid was recorded, so they do not wake the bot.
+      if (job.pid !== null) {
+        try {
+          enqueueShepherdBotTriggerForJob(this.db, job);
+        } catch (err) {
+          console.warn(`[shepherd_bot] Failed to queue a trigger for job ${job.id}`, err);
+        }
       }
     }
   }

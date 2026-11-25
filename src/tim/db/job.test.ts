@@ -6,8 +6,11 @@ import * as path from 'node:path';
 
 import { DATABASE_FILENAME, openDatabase } from './database.js';
 import {
+  getJobById,
+  LEGACY_RUNNING_JOB_MAX_AGE_MS,
   listRecentJobs,
   markJobFinished,
+  reconcileDeadJobs,
   recordJobStart,
   updateJobFromSessionInfo,
 } from './job.js';
@@ -181,6 +184,62 @@ describe('tim db/job', () => {
       plan_id: 99,
       plan_uuid: PLAN_UUID,
       plan_title: 'Linked plan',
+    });
+  });
+
+  describe('reconcileDeadJobs', () => {
+    const DEAD_PID = 111_111;
+    const LIVE_PID = 222_222;
+    const isProcessAlive = (pid: number): boolean => pid === LIVE_PID;
+
+    function setStartedAt(jobId: number, startedAt: Date): void {
+      db.prepare('UPDATE job SET started_at = ? WHERE id = ?').run(startedAt.toISOString(), jobId);
+    }
+
+    test('records the pid of a job', () => {
+      const jobId = recordJobStart(db, { projectId, jobType: 'ci-fix', pid: LIVE_PID });
+      expect(getJobById(db, jobId)?.pid).toBe(LIVE_PID);
+      expect(listRecentJobs(db, { projectId })[0].pid).toBe(LIVE_PID);
+    });
+
+    test('marks a running job as failed when its process is gone', () => {
+      const deadJob = recordJobStart(db, {
+        projectId,
+        jobType: 'ci-fix',
+        prUrl: PR_URL,
+        pid: DEAD_PID,
+      });
+      const liveJob = recordJobStart(db, { projectId, jobType: 'pr-fix', pid: LIVE_PID });
+
+      const changed = reconcileDeadJobs(db, { isProcessAlive });
+
+      expect(changed.map((job) => job.id)).toEqual([deadJob]);
+      expect(changed[0]).toMatchObject({ status: 'failed', pr_url: PR_URL, pid: DEAD_PID });
+      expect(changed[0].finished_at).not.toBeNull();
+      expect(getJobById(db, deadJob)?.status).toBe('failed');
+      expect(getJobById(db, liveJob)?.status).toBe('running');
+      expect(reconcileDeadJobs(db, { isProcessAlive })).toEqual([]);
+    });
+
+    test('does not change finished jobs', () => {
+      const jobId = recordJobStart(db, { projectId, jobType: 'ci-fix', pid: DEAD_PID });
+      markJobFinished(db, jobId, 'completed');
+
+      expect(reconcileDeadJobs(db, { isProcessAlive })).toEqual([]);
+      expect(getJobById(db, jobId)?.status).toBe('completed');
+    });
+
+    test('marks a running job without a pid as failed only when it is old', () => {
+      const now = new Date();
+      const oldJob = recordJobStart(db, { projectId, jobType: 'agent' });
+      const recentJob = recordJobStart(db, { projectId, jobType: 'agent' });
+      setStartedAt(oldJob, new Date(now.getTime() - LEGACY_RUNNING_JOB_MAX_AGE_MS - 60_000));
+      setStartedAt(recentJob, new Date(now.getTime() - 60_000));
+
+      const changed = reconcileDeadJobs(db, { isProcessAlive: () => false, now });
+
+      expect(changed.map((job) => job.id)).toEqual([oldJob]);
+      expect(getJobById(db, recentJob)?.status).toBe('running');
     });
   });
 });

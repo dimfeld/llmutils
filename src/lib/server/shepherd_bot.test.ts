@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite';
 import { constructGitHubRepositoryId } from '$common/github/pull_requests.js';
 import { openDatabase } from '$tim/db/database.js';
 import { listRecentInboxItems } from '$tim/db/inbox_item.js';
+import { getJobById, recordJobStart } from '$tim/db/job.js';
 import { getPrShepherd, setPrShepherdBotEnabled } from '$tim/db/pr_shepherd.js';
 import { getOrCreateProject } from '$tim/db/project.js';
 import {
@@ -287,6 +288,80 @@ describe('lib/server/shepherd_bot', () => {
       await runner.tick();
       expect(killProcess).toHaveBeenCalledWith(12345);
       expect(getShepherdBotRun(db, runId)?.error).toBe('The run took too long and was stopped');
+    });
+  });
+
+  describe('reconciling jobs', () => {
+    test('marks a job with a dead process as failed and wakes the bot', async () => {
+      setShepherdBotRunning(db, projectId, true);
+      addWatchedStack();
+      const deadJob = recordJobStart(db, {
+        projectId,
+        jobType: 'ci-fix',
+        prUrl: fixturePrUrl(1),
+        prNumber: 1,
+        pid: 12345,
+      });
+      const liveJob = recordJobStart(db, {
+        projectId,
+        jobType: 'pr-fix',
+        prUrl: fixturePrUrl(2),
+        prNumber: 2,
+        pid: 54321,
+      });
+      const runner = new ShepherdBotRunner(db, {
+        config: {},
+        getSessionManager: () => sessionManager,
+        spawnRun,
+        isProcessAlive: (pid) => pid !== 12345,
+        now: () => now,
+      });
+
+      await runner.tick();
+
+      expect(getJobById(db, deadJob)?.status).toBe('failed');
+      expect(getJobById(db, liveJob)?.status).toBe('running');
+      const sessionEnded = listPendingShepherdBotTriggers(db, projectId).filter(
+        (trigger) => trigger.kind === 'session_ended'
+      );
+      expect(sessionEnded).toHaveLength(1);
+      expect(sessionEnded[0].pr_url).toBe(fixturePrUrl(1));
+      expect(JSON.parse(sessionEnded[0].details ?? '{}')).toMatchObject({
+        command: 'ci-fix',
+        outcome: 'failed',
+        jobId: deadJob,
+      });
+    });
+
+    test('does not wake the bot for an old job without a pid', async () => {
+      setShepherdBotRunning(db, projectId, true);
+      addWatchedStack();
+      const jobId = recordJobStart(db, {
+        projectId,
+        jobType: 'ci-fix',
+        prUrl: fixturePrUrl(1),
+        prNumber: 1,
+      });
+      db.prepare('UPDATE job SET started_at = ? WHERE id = ?').run(
+        new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        jobId
+      );
+      const runner = new ShepherdBotRunner(db, {
+        config: {},
+        getSessionManager: () => sessionManager,
+        spawnRun,
+        isProcessAlive: () => false,
+        now: () => now,
+      });
+
+      await runner.tick();
+
+      expect(getJobById(db, jobId)?.status).toBe('failed');
+      expect(
+        listPendingShepherdBotTriggers(db, projectId).filter(
+          (trigger) => trigger.kind === 'session_ended'
+        )
+      ).toHaveLength(0);
     });
   });
 

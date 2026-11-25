@@ -227,6 +227,7 @@ async function recordJobStartFromSession(
       buildSha: sessionInfo.buildSha ?? null,
       buildTime: sessionInfo.buildTime ?? null,
       binaryPath: sessionInfo.binaryPath ?? null,
+      pid: process.pid,
     });
   } catch (err) {
     debugLog(`Failed to record job start for ${command}: ${err as Error}`);

@@ -36,6 +36,8 @@ export interface JobRow {
   build_sha: string | null;
   build_time: string | null;
   binary_path: string | null;
+  /** The process that runs the job. Null for jobs recorded before this column existed. */
+  pid: number | null;
 }
 
 export interface RecordJobStartInput {
@@ -51,6 +53,7 @@ export interface RecordJobStartInput {
   buildSha?: string | null;
   buildTime?: string | null;
   binaryPath?: string | null;
+  pid?: number | null;
 }
 
 /**
@@ -77,11 +80,12 @@ export function recordJobStart(db: Database, input: RecordJobStartInput): number
           build_sha,
           build_time,
           binary_path,
+          pid,
           status,
           started_at,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC}, ${SQL_NOW_ISO_UTC})
       `
     )
     .run(
@@ -96,7 +100,8 @@ export function recordJobStart(db: Database, input: RecordJobStartInput): number
       input.gitRemote ?? null,
       input.buildSha ?? null,
       input.buildTime ?? null,
-      input.binaryPath ?? null
+      input.binaryPath ?? null,
+      input.pid ?? null
     );
 
   return Number(result.lastInsertRowid);
@@ -118,6 +123,62 @@ export function markJobFinished(
       WHERE id = ?
     `
   ).run(status, jobId);
+}
+
+/**
+ * A running job without a pid is from a tim version that did not record the pid. Such a job
+ * is marked as failed after this long, because its process cannot be checked.
+ */
+export const LEGACY_RUNNING_JOB_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export interface ReconcileDeadJobsOptions {
+  isProcessAlive: (pid: number) => boolean;
+  now?: Date;
+}
+
+/**
+ * Mark `running` jobs as `failed` when their process is gone. The process records the outcome
+ * itself, but it cannot do that when it crashes or is killed. A job without a pid is marked
+ * as failed when it is older than {@link LEGACY_RUNNING_JOB_MAX_AGE_MS}.
+ *
+ * Returns the jobs that this call changed, with their new status.
+ */
+export function reconcileDeadJobs(db: Database, options: ReconcileDeadJobsOptions): JobRow[] {
+  const now = options.now ?? new Date();
+  const legacyBefore = new Date(now.getTime() - LEGACY_RUNNING_JOB_MAX_AGE_MS).toISOString();
+  const running = db
+    .prepare(`SELECT id, pid, started_at FROM job WHERE status = 'running'`)
+    .all() as Array<Pick<JobRow, 'id' | 'pid' | 'started_at'>>;
+
+  const deadIds = running
+    .filter((job) =>
+      job.pid === null ? job.started_at < legacyBefore : !options.isProcessAlive(job.pid)
+    )
+    .map((job) => job.id);
+  if (deadIds.length === 0) {
+    return [];
+  }
+
+  // The status check keeps an outcome that the process recorded after the SELECT.
+  const markFailed = db.prepare(
+    `
+      UPDATE job
+      SET status = 'failed', finished_at = ${SQL_NOW_ISO_UTC}, updated_at = ${SQL_NOW_ISO_UTC}
+      WHERE id = ? AND status = 'running'
+    `
+  );
+  const changed: JobRow[] = [];
+  db.transaction(() => {
+    for (const id of deadIds) {
+      if (markFailed.run(id).changes > 0) {
+        const job = getJobById(db, id);
+        if (job) {
+          changed.push(job);
+        }
+      }
+    }
+  }).immediate();
+  return changed;
 }
 
 /**
@@ -213,6 +274,7 @@ export function listRecentJobs(
           j.build_sha,
           j.build_time,
           j.binary_path,
+          j.pid,
           j.status,
           j.started_at,
           j.finished_at,

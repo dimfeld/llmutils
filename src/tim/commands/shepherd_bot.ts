@@ -6,6 +6,8 @@ import { loadEffectiveConfig } from '../configLoader.js';
 import { getDatabase } from '../db/database.js';
 import { retryOnSqliteBusy } from '../db/sqlite_retry.js';
 import { upsertInboxItem } from '../db/inbox_item.js';
+import { reconcileDeadJobs } from '../db/job.js';
+import { isProcessAlive } from '../db/workspace_lock.js';
 import {
   finishShepherdBotRun,
   getShepherdBotRun,
@@ -201,6 +203,8 @@ export async function handleShepherdBotRunCommand(
       interactive: false,
       callback: async () => {
         const triggers = listShepherdBotTriggersForRun(db, runId);
+        // A crashed session leaves its job as `running`. Correct that before the bot reads it.
+        reconcileDeadJobs(db, { isProcessAlive });
         const context = loadShepherdBotContext(db, run.project_id, triggers);
         const state = await readShepherdBotState(run.project_id);
         const prompt = buildShepherdBotPrompt(
