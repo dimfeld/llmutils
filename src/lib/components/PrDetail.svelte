@@ -916,6 +916,30 @@
       </div>
     {/if}
 
+    <!-- Linked Plans -->
+    {#if pr.linkedPlans.length > 0}
+      <div>
+        <h3 class="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Linked Plans
+        </h3>
+        <ul class="space-y-1">
+          {#each sortedLinkedPlans as plan (plan.planUuid)}
+            <li>
+              <a
+                href="/projects/{projectId}/plans/{plan.planUuid}"
+                class="text-sm text-blue-600 hover:underline dark:text-blue-400"
+              >
+                #{plan.planId}
+                {#if plan.title}
+                  {plan.title}
+                {/if}
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
     <!-- PR Stack -->
     {#if prChain.length > 1}
       {@const currentIndex = prChain.findIndex((e) => e.isCurrent)}
@@ -1070,30 +1094,6 @@
           {@html renderMarkdown(prContent.reviewGuideComment.body)}
         </div>
       </details>
-    {/if}
-
-    <!-- Linked Plans -->
-    {#if pr.linkedPlans.length > 0}
-      <div>
-        <h3 class="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-          Linked Plans
-        </h3>
-        <ul class="space-y-1">
-          {#each sortedLinkedPlans as plan (plan.planUuid)}
-            <li>
-              <a
-                href="/projects/{projectId}/plans/{plan.planUuid}"
-                class="text-sm text-blue-600 hover:underline dark:text-blue-400"
-              >
-                #{plan.planId}
-                {#if plan.title}
-                  {plan.title}
-                {/if}
-              </a>
-            </li>
-          {/each}
-        </ul>
-      </div>
     {/if}
 
     <!-- Check Runs -->
